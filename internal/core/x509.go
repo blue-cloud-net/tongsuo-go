@@ -1,12 +1,20 @@
 package core
 
 import (
+	"encoding/hex"
 	"fmt"
 	"time"
 	"unsafe"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
+
+// NameEntry 表示 X.509 名字中的一个 RDN 条目。
+type NameEntry struct {
+	Nid   int    // 字段 NID（如 native.NidCommonName）
+	Field string // 字段短名（如 "CN"、"O"）
+	Value string // 字段值（UTF-8）
+}
 
 // Name 表示 X.509 名字（X509_NAME 的包装），用于构建证书主题/签发者。
 type Name struct {
@@ -41,6 +49,49 @@ func (n *Name) Text(nid int) string {
 	return native.X509_NAME_get_text_by_NID(n.handle.Ptr(), nid)
 }
 
+// Get 返回名字中指定字段短名（如 "CN"、"O"）的文本；未找到返回空串。
+func (n *Name) Get(field string) string {
+	if n == nil || n.handle == nil || n.handle.IsClosed() {
+		return ""
+	}
+	return native.X509_NAME_get_text_by_txt(n.handle.Ptr(), field)
+}
+
+// Entries 返回名字的全部 RDN 条目（保持证书中的顺序）。
+func (n *Name) Entries() []NameEntry {
+	if n == nil || n.handle == nil || n.handle.IsClosed() {
+		return nil
+	}
+	count := native.X509_NAME_get_entry_count(n.handle.Ptr())
+	entries := make([]NameEntry, 0, count)
+	for i := 0; i < count; i++ {
+		e := native.X509_NAME_get_entry(n.handle.Ptr(), i)
+		if e == nil {
+			continue
+		}
+		nid := native.X509_NAME_ENTRY_nid(e)
+		value, ok := native.X509_NAME_ENTRY_value(e)
+		if !ok {
+			continue
+		}
+		entries = append(entries, NameEntry{
+			Nid:   nid,
+			Field: native.OBJ_nid2sn(nid),
+			Value: value,
+		})
+	}
+	return entries
+}
+
+// String 返回名字的完整单行文本（如 "/CN=example.com/O=Example Org"）。
+func (n *Name) String() string {
+	if n == nil || n.handle == nil || n.handle.IsClosed() {
+		return ""
+	}
+	s, _ := native.X509_NAME_oneline(n.handle.Ptr())
+	return s
+}
+
 // Close 释放底层名字。幂等。
 func (n *Name) Close() error {
 	if n == nil {
@@ -73,6 +124,15 @@ func LoadCertificatePEM(pem []byte) (*Certificate, error) {
 	x := native.X_PEM_read_bio_X509(bio)
 	if x == nil {
 		return nil, NewOpError("x509: PEM_read_bio_X509", native.PopError())
+	}
+	return &Certificate{handle: NewHandle(x, true, native.X509_free)}, nil
+}
+
+// LoadCertificateDER 从 DER 编码加载证书。
+func LoadCertificateDER(der []byte) (*Certificate, error) {
+	x := native.D2i_X509(der)
+	if x == nil {
+		return nil, NewOpError("x509: d2i_X509", native.PopError())
 	}
 	return &Certificate{handle: NewHandle(x, true, native.X509_free)}, nil
 }
@@ -250,6 +310,317 @@ func (c *Certificate) Serial() int64 {
 	return native.X509_get_serial_int(c.handle.Ptr())
 }
 
+// Version 返回证书版本（0=v1，1=v2，2=v3）。
+func (c *Certificate) Version() int {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return 0
+	}
+	return native.X509_get_version(c.handle.Ptr())
+}
+
+// SubjectEntries 返回主题完整 RDN 条目。
+func (c *Certificate) SubjectEntries() []NameEntry {
+	n := c.SubjectName()
+	if n == nil {
+		return nil
+	}
+	return n.Entries()
+}
+
+// IssuerEntries 返回签发者完整 RDN 条目。
+func (c *Certificate) IssuerEntries() []NameEntry {
+	n := c.IssuerName()
+	if n == nil {
+		return nil
+	}
+	return n.Entries()
+}
+
+// SubjectText 返回主题完整 RDN 单行文本。
+func (c *Certificate) SubjectText() string {
+	n := c.SubjectName()
+	if n == nil {
+		return ""
+	}
+	return n.String()
+}
+
+// IssuerText 返回签发者完整 RDN 单行文本。
+func (c *Certificate) IssuerText() string {
+	n := c.IssuerName()
+	if n == nil {
+		return ""
+	}
+	return n.String()
+}
+
+// SAN 返回证书 SAN（subjectAltName）扩展条目（如 "DNS:example.com"、"IP:1.2.3.4"）；
+// 无 SAN 扩展返回 nil。
+func (c *Certificate) SAN() []string {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil
+	}
+	names := native.X509_get_san(c.handle.Ptr())
+	if names == nil {
+		return nil
+	}
+	defer native.X509_GENERAL_NAMES_free(names)
+	count := native.X509_GENERAL_NAMES_num(names)
+	out := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		gn := native.X509_GENERAL_NAMES_value(names, i)
+		if gn == nil {
+			continue
+		}
+		t := native.X509_GENERAL_NAME_type(gn)
+		v := native.X509_GENERAL_NAME_to_string(gn)
+		out = append(out, formatGeneralName(t, v))
+	}
+	return out
+}
+
+// formatGeneralName 按类型给 SAN 值加前缀（与 openssl 输出风格一致）。
+func formatGeneralName(t int, v string) string {
+	switch t {
+	case native.GenEmail:
+		return "email:" + v
+	case native.GenDNS:
+		return "DNS:" + v
+	case native.GenURI:
+		return "URI:" + v
+	case native.GenIPAdd:
+		return "IP:" + v
+	case native.GenRegistered:
+		return "RID:" + v
+	case native.GenDirName:
+		return "dirName:" + v
+	case native.GenEdiParty:
+		return "ediPartyName:" + v
+	default:
+		return v
+	}
+}
+
+var keyUsageNames = map[int]string{
+	0: "digitalSignature",
+	1: "nonRepudiation",
+	2: "keyEncipherment",
+	3: "dataEncipherment",
+	4: "keyAgreement",
+	5: "keyCertSign",
+	6: "cRLSign",
+	7: "encipherOnly",
+	8: "decipherOnly",
+}
+
+// KeyUsage 返回证书 KeyUsage 扩展的能力位名称列表（如 ["digitalSignature"]）；
+// 无 KeyUsage 扩展返回 nil。
+func (c *Certificate) KeyUsage() []string {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil
+	}
+	bs := native.X509_get_key_usage(c.handle.Ptr())
+	if bs == nil {
+		return nil
+	}
+	defer native.X509_ASN1_BIT_STRING_free(bs)
+	var out []string
+	for bit := 0; bit <= 8; bit++ {
+		if native.ASN1_BIT_STRING_get_bit(bs, bit) {
+			out = append(out, keyUsageNames[bit])
+		}
+	}
+	return out
+}
+
+// ExtendedKeyUsage 返回证书 EKU（extendedKeyUsage）扩展条目（如 ["serverAuth"]）；
+// 无 EKU 扩展返回 nil。
+func (c *Certificate) ExtendedKeyUsage() []string {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil
+	}
+	eku := native.X509_get_eku(c.handle.Ptr())
+	if eku == nil {
+		return nil
+	}
+	defer native.X509_EXTENDED_KEY_USAGE_free(eku)
+	count := native.X509_EXTENDED_KEY_USAGE_num(eku)
+	out := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		o := native.X509_EXTENDED_KEY_USAGE_value(eku, i)
+		if o == nil {
+			continue
+		}
+		out = append(out, native.OBJ_to_string(o))
+	}
+	return out
+}
+
+// IsCA 报告证书是否为 CA（BasicConstraints 的 CA 标志为真）。
+func (c *Certificate) IsCA() bool {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return false
+	}
+	bc := native.X509_get_basic_constraints(c.handle.Ptr())
+	if bc == nil {
+		return false
+	}
+	defer native.X509_BASIC_CONSTRAINTS_free(bc)
+	return native.X509_BASIC_CONSTRAINTS_ca(bc) != 0
+}
+
+// PathLen 返回 CA 路径长度约束；无 pathlen 约束或非 CA 返回 -1。
+func (c *Certificate) PathLen() int64 {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return -1
+	}
+	bc := native.X509_get_basic_constraints(c.handle.Ptr())
+	if bc == nil {
+		return -1
+	}
+	defer native.X509_BASIC_CONSTRAINTS_free(bc)
+	return native.X509_BASIC_CONSTRAINTS_pathlen(bc)
+}
+
+// SubjectKeyID 返回 subjectKeyIdentifier 扩展字节；无则返回 nil。
+func (c *Certificate) SubjectKeyID() []byte {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil
+	}
+	return native.X509_get0_subject_key_id(c.handle.Ptr())
+}
+
+// AuthorityKeyID 返回 authorityKeyIdentifier 扩展中 keyid 的字节；无则返回 nil。
+func (c *Certificate) AuthorityKeyID() []byte {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil
+	}
+	return native.X509_get0_authority_key_id(c.handle.Ptr())
+}
+
+// CertificateType 返回证书公钥算法名（如 "SM2"、"RSA"、"EC"）。
+func (c *Certificate) CertificateType() string {
+	k, err := c.PublicKey()
+	if err != nil {
+		return ""
+	}
+	defer k.Close()
+	return k.Algorithm()
+}
+
+// Fingerprint 计算证书指纹（十六进制小写）。md 传 core.SHA1() / core.SHA256() 等。
+func (c *Certificate) Fingerprint(md *Digest) (string, error) {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return "", fmt.Errorf("x509: certificate closed")
+	}
+	if md == nil || md.handle == nil {
+		return "", fmt.Errorf("x509: invalid digest")
+	}
+	fp, ok := native.X509_digest(c.handle.Ptr(), md.handle.Ptr())
+	if !ok {
+		return "", NewOpError("x509: X509_digest", native.PopError())
+	}
+	return hex.EncodeToString(fp), nil
+}
+
+// Extension 表示证书/CSR 中的一个 X.509 扩展。
+type Extension struct {
+	Nid      int    // 扩展 NID（如 native.NidSubjectAltName）
+	Field    string // 扩展短名（读取时填充，如 "subjectAltName"）
+	Critical bool   // critical 标志（读取时填充）
+	Value    string // X509V3_EXT_conf 配置串（构建时使用，如 "DNS:example.com"）
+	Data     []byte // DER 编码的扩展值（读取时填充）
+}
+
+// Extensions 返回证书的全部扩展（按出现顺序）。
+func (c *Certificate) Extensions() []Extension {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil
+	}
+	count := native.X509_get_ext_count(c.handle.Ptr())
+	out := make([]Extension, 0, count)
+	for i := 0; i < count; i++ {
+		e := native.X509_get_ext(c.handle.Ptr(), i)
+		if e == nil {
+			continue
+		}
+		nid := native.OBJ_obj2nid(native.X509_EXTENSION_get_object(e))
+		out = append(out, Extension{
+			Nid:      nid,
+			Field:    native.OBJ_nid2sn(nid),
+			Critical: native.X509_EXTENSION_get_critical(e) != 0,
+			Data:     native.ASN1_STRING_data_bytes(native.X509_EXTENSION_get_data(e)),
+		})
+	}
+	return out
+}
+
+// AddExtension 添加一个通用扩展（必须在 Sign 之前调用）。
+// nid 为扩展 NID；value 为 X509V3_EXT_conf 配置串（如 "DNS:example.com"，
+// 可含 "critical," 前缀）。
+func (c *Certificate) AddExtension(nid int, value string) error {
+	return c.addExtCtx(c, nil, nid, value)
+}
+
+// AddSubjectAltName 添加 SAN 扩展（如 "DNS:example.com,IP:1.2.3.4"）。
+func (c *Certificate) AddSubjectAltName(value string) error {
+	return c.AddExtension(native.NidSubjectAltName, value)
+}
+
+// AddKeyUsage 添加 KeyUsage 扩展（如 "critical,digitalSignature,keyEncipherment"）。
+func (c *Certificate) AddKeyUsage(value string) error {
+	return c.AddExtension(native.NidKeyUsage, value)
+}
+
+// AddExtendedKeyUsage 添加 EKU 扩展（如 "serverAuth,clientAuth"）。
+func (c *Certificate) AddExtendedKeyUsage(value string) error {
+	return c.AddExtension(native.NidExtKeyUsage, value)
+}
+
+// AddSubjectKeyID 添加 SKID 扩展（值为 "hash"，按主题公钥计算）。
+func (c *Certificate) AddSubjectKeyID() error {
+	return c.addExtCtx(c, nil, native.NidSubjectKeyIdentifier, "hash")
+}
+
+// AddAuthorityKeyID 添加 AKID 扩展（keyid 取自 issuer 证书的 SKID 或按 issuer 公钥计算）。
+// 须先为 issuer 完成公钥设置（含 AddSubjectKeyID 更佳）。
+func (c *Certificate) AddAuthorityKeyID(issuer *Certificate) error {
+	if issuer == nil || issuer.handle == nil || issuer.handle.IsClosed() {
+		return fmt.Errorf("x509: invalid issuer certificate")
+	}
+	return c.addExtCtx(c, issuer, native.NidAuthorityKeyIdentifier, "keyid:always")
+}
+
+// addExtCtx 带 X509V3_CTX 创建扩展并追加（subject 用于 SKID，issuer 用于 AKID）。
+func (c *Certificate) addExtCtx(subject, issuer *Certificate, nid int, value string) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: certificate closed")
+	}
+	var sub, iss unsafe.Pointer
+	if subject != nil {
+		sub = subject.handle.Ptr()
+	}
+	if issuer != nil {
+		iss = issuer.handle.Ptr()
+	}
+	if !native.X509V3_EXT_conf_nid_ctx(c.handle.Ptr(), sub, iss, nid, value) {
+		return NewOpError("x509: X509V3_EXT_conf_nid", native.PopError())
+	}
+	return nil
+}
+
+// MarshalDER 导出证书为 DER 编码。
+func (c *Certificate) MarshalDER() ([]byte, error) {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil, fmt.Errorf("x509: certificate closed")
+	}
+	der, ok := native.I2d_X509(c.handle.Ptr())
+	if !ok {
+		return nil, NewOpError("x509: i2d_X509", native.PopError())
+	}
+	return der, nil
+}
+
 // PublicKey 返回证书公钥（新引用，调用方负责释放）。
 func (c *Certificate) PublicKey() (*PKey, error) {
 	p := native.X509_get_pubkey(c.handle.Ptr())
@@ -295,6 +666,15 @@ func LoadCertificateRequestPEM(pem []byte) (*CertificateRequest, error) {
 	return &CertificateRequest{handle: NewHandle(r, true, native.X509_REQ_free)}, nil
 }
 
+// LoadCertificateRequestDER 从 DER 编码加载 CSR。
+func LoadCertificateRequestDER(der []byte) (*CertificateRequest, error) {
+	r := native.D2i_X509_REQ(der)
+	if r == nil {
+		return nil, NewOpError("x509: d2i_X509_REQ", native.PopError())
+	}
+	return &CertificateRequest{handle: NewHandle(r, true, native.X509_REQ_free)}, nil
+}
+
 // MarshalPEM 导出 CSR 为 PEM。
 func (r *CertificateRequest) MarshalPEM() ([]byte, error) {
 	if r == nil || r.handle == nil || r.handle.IsClosed() {
@@ -320,6 +700,124 @@ func (r *CertificateRequest) SetSubject(n *Name) error {
 		return NewOpError("x509: X509_REQ_set_subject_name", native.PopError())
 	}
 	return nil
+}
+
+// SubjectName 返回 CSR 主题（内部指针，勿关闭）。
+func (r *CertificateRequest) SubjectName() *Name {
+	n := native.X509_REQ_get_subject_name(r.handle.Ptr())
+	if n == nil {
+		return nil
+	}
+	return &Name{handle: NewHandle(n, false, nil)}
+}
+
+// SetChallengePassword 设置 CSR 挑战密码（PKCS#9 challengePassword 属性，须在 Sign 之前调用）。
+func (r *CertificateRequest) SetChallengePassword(pwd string) error {
+	if r == nil || r.handle == nil || r.handle.IsClosed() {
+		return fmt.Errorf("x509: request closed")
+	}
+	if !native.X509_REQ_set_challenge_password(r.handle.Ptr(), pwd) {
+		return NewOpError("x509: X509_REQ_set_challenge_password", native.PopError())
+	}
+	return nil
+}
+
+// ChallengePassword 返回 CSR 挑战密码；未设置返回空串。
+func (r *CertificateRequest) ChallengePassword() string {
+	if r == nil || r.handle == nil || r.handle.IsClosed() {
+		return ""
+	}
+	return native.X509_REQ_get_challenge_password(r.handle.Ptr())
+}
+
+// AddExtensions 为 CSR 添加多个扩展（如 SAN / KeyUsage / EKU，须在 Sign 之前调用）。
+func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
+	if r == nil || r.handle == nil || r.handle.IsClosed() {
+		return fmt.Errorf("x509: request closed")
+	}
+	if len(exts) == 0 {
+		return nil
+	}
+	sk := native.X509_sk_X509_EXTENSION_new_null()
+	if sk == nil {
+		return NewOpError("x509: sk_X509_EXTENSION_new_null", native.PopError())
+	}
+	defer native.X509_sk_X509_EXTENSION_free(sk)
+	// 扩展压栈后不能立即释放：X509_REQ_add_extensions 在编码时会读取栈中元素。
+	created := make([]unsafe.Pointer, 0, len(exts))
+	freeAll := func() {
+		for _, x := range created {
+			native.X509_EXTENSION_free(x)
+		}
+	}
+	for _, e := range exts {
+		ext := native.X509V3_EXT_conf_nid(e.Nid, e.Value)
+		if ext == nil {
+			freeAll()
+			return NewOpError("x509: X509V3_EXT_conf_nid", native.PopError())
+		}
+		created = append(created, ext)
+		if !native.X509_sk_X509_EXTENSION_push(sk, ext) {
+			freeAll()
+			return NewOpError("x509: sk_X509_EXTENSION_push", native.PopError())
+		}
+	}
+	if !native.X509_REQ_add_extensions(r.handle.Ptr(), sk) {
+		freeAll()
+		return NewOpError("x509: X509_REQ_add_extensions", native.PopError())
+	}
+	freeAll()
+	return nil
+}
+
+// AddExtension 为 CSR 添加单个扩展（须在 Sign 之前调用）。
+func (r *CertificateRequest) AddExtension(nid int, value string) error {
+	return r.AddExtensions(Extension{Nid: nid, Value: value})
+}
+
+// AddSubjectAltName 为 CSR 添加 SAN 扩展（如 "DNS:example.com"）。
+func (r *CertificateRequest) AddSubjectAltName(value string) error {
+	return r.AddExtension(native.NidSubjectAltName, value)
+}
+
+// Extensions 返回 CSR 中的扩展列表（来自 extensionRequest 属性）。
+func (r *CertificateRequest) Extensions() []Extension {
+	if r == nil || r.handle == nil || r.handle.IsClosed() {
+		return nil
+	}
+	sk := native.X509_REQ_get_extensions(r.handle.Ptr())
+	if sk == nil {
+		return nil
+	}
+	defer native.X509_sk_X509_EXTENSION_pop_free(sk)
+	count := native.X509_sk_X509_EXTENSION_num(sk)
+	out := make([]Extension, 0, count)
+	for i := 0; i < count; i++ {
+		e := native.X509_sk_X509_EXTENSION_value(sk, i)
+		if e == nil {
+			continue
+		}
+		nid := native.OBJ_obj2nid(native.X509_EXTENSION_get_object(e))
+		out = append(out, Extension{
+			Nid:      nid,
+			Field:    native.OBJ_nid2sn(nid),
+			Critical: native.X509_EXTENSION_get_critical(e) != 0,
+			Data:     native.ASN1_STRING_data_bytes(native.X509_EXTENSION_get_data(e)),
+		})
+	}
+	return out
+}
+
+// MarshalDER 导出 CSR 为 DER 编码。
+func (r *CertificateRequest) MarshalDER() ([]byte, error) {
+	if r == nil || r.handle == nil || r.handle.IsClosed() {
+		return nil, fmt.Errorf("x509: request closed")
+	}
+	der, ok := native.I2d_X509_REQ(r.handle.Ptr())
+	if !ok {
+		return nil, NewOpError("x509: i2d_X509_REQ", native.PopError())
+	}
+	return der, nil
 }
 
 // SetPublicKey 设置 CSR 公钥。

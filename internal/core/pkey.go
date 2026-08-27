@@ -17,6 +17,44 @@ type PKey struct {
 	handle *Handle
 }
 
+// BaseID 返回密钥底层类型 ID（如 native.EvpPkeyEC）。
+func (k *PKey) BaseID() int {
+	if k == nil || k.handle == nil || k.handle.IsClosed() {
+		return native.NidUndef
+	}
+	return native.EVP_PKEY_get_base_id(k.handle.Ptr())
+}
+
+// TypeID 返回密钥完整类型 ID（如 SM2 密钥返回 native.EvpPkeySM2）。
+func (k *PKey) TypeID() int {
+	if k == nil || k.handle == nil || k.handle.IsClosed() {
+		return native.NidUndef
+	}
+	return native.EVP_PKEY_get_id(k.handle.Ptr())
+}
+
+// Algorithm 返回密钥算法名（如 "SM2"、"RSA"、"EC"）；未知返回 "id:<n>"。
+func (k *PKey) Algorithm() string {
+	// 铜锁/OpenSSL 3.x 中 SM2 密钥的 base id 为 EC（EVP_PKEY_EC），
+	// 需用完整类型 id（EVP_PKEY_SM2）区分。
+	if k.BaseID() == native.EvpPkeyEC {
+		if k.TypeID() == native.EvpPkeySM2 {
+			return "SM2"
+		}
+		return "EC"
+	}
+	switch k.BaseID() {
+	case native.EvpPkeySM2:
+		return "SM2"
+	case native.EvpPkeyRSA:
+		return "RSA"
+	case native.EvpPkeyDSA:
+		return "DSA"
+	default:
+		return fmt.Sprintf("id:%d", k.BaseID())
+	}
+}
+
 // GenerateSM2Key 生成新的 SM2 密钥对（基于 EVP_PKEY_Q_keygen）。
 func GenerateSM2Key() (*PKey, error) {
 	p := native.X_EVP_PKEY_Q_keygen_sm2()

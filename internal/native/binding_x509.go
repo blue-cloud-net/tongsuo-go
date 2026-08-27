@@ -21,11 +21,101 @@ const (
 	NidStateOrProvinceName    = 16
 	NidOrganizationName       = 17
 	NidOrganizationalUnitName = 18
-	NidSerialNumber           = 105
 	NidEmailAddress           = 48
+	NidSerialNumber           = 105
+	NidSurname                = 100
+	NidGivenName              = 99
+	NidTitle                  = 62
 	// NidBasicConstraints 为 BasicConstraints 扩展 NID。
 	NidBasicConstraints = 87
+	// 扩展 NID（来自 objects.h / obj_mac.h）。
+	NidSubjectAltName         = 85
+	NidKeyUsage               = 83
+	NidExtKeyUsage            = 126
+	NidSubjectKeyIdentifier   = 82
+	NidAuthorityKeyIdentifier = 90
+	NidUndef                  = 0
 )
+
+// GENERAL_NAME 类型常量（来自 x509v3.h 宏）。
+const (
+	GenOtherName  = 0
+	GenEmail      = 1
+	GenDNS        = 2
+	GenDirName    = 4
+	GenEdiParty   = 5
+	GenURI        = 6
+	GenIPAdd      = 7
+	GenRegistered = 8
+	GenX400       = 3
+	GenOther      = -1
+)
+
+// OBJ_nid2sn 返回 NID 对应的短名（如 "CN"），未知返回空串。
+func OBJ_nid2sn(nid int) string {
+	c := C.OBJ_nid2sn(C.int(nid))
+	if c == nil {
+		return ""
+	}
+	return C.GoString(c)
+}
+
+// OBJ_obj2nid 返回 OID 对象对应的 NID（NidUndef 表示未知）。
+func OBJ_obj2nid(o unsafe.Pointer) int {
+	return int(C.OBJ_obj2nid((*C.ASN1_OBJECT)(o)))
+}
+
+// OBJ_txt2nid 按短名/长名/OID 文本解析 NID（NidUndef 表示未知）。
+func OBJ_txt2nid(s string) int {
+	c := C.CString(s)
+	defer C.free(unsafe.Pointer(c))
+	return int(C.OBJ_txt2nid(c))
+}
+
+// X509_NAME_get_entry_count 返回名字条目数。
+func X509_NAME_get_entry_count(n unsafe.Pointer) int {
+	return int(C.X_X509_NAME_entry_count((*C.X509_NAME)(n)))
+}
+
+// X509_NAME_get_entry 返回第 i 个名字条目（内部指针，勿释放）。
+func X509_NAME_get_entry(n unsafe.Pointer, i int) unsafe.Pointer {
+	return unsafe.Pointer(C.X_X509_NAME_get_entry((*C.X509_NAME)(n), C.int(i)))
+}
+
+// X509_NAME_ENTRY_nid 返回名字条目的 NID（NidUndef 表示未知）。
+func X509_NAME_ENTRY_nid(e unsafe.Pointer) int {
+	return int(C.X_X509_NAME_ENTRY_nid(e))
+}
+
+// X509_NAME_ENTRY_value 返回名字条目的 UTF-8 值。
+func X509_NAME_ENTRY_value(e unsafe.Pointer) (string, bool) {
+	c := C.X_X509_NAME_ENTRY_value(e)
+	if c == nil {
+		return "", false
+	}
+	defer C.X_OPENSSL_free(unsafe.Pointer(c))
+	return C.GoString(c), true
+}
+
+// X509_NAME_oneline 返回名字的单行文本（如 "/CN=.."）。
+func X509_NAME_oneline(n unsafe.Pointer) (string, bool) {
+	c := C.X_X509_NAME_oneline((*C.X509_NAME)(n))
+	if c == nil {
+		return "", false
+	}
+	defer C.X_OPENSSL_free(unsafe.Pointer(c))
+	return C.GoString(c), true
+}
+
+// X509_NAME_get_text_by_txt 按字段短名（如 "CN"、"O"）读取名字文本。
+// 注意：X509_NAME_get_text_by_txt 在 OpenSSL 3.x 中为宏，故用 OBJ_txt2nid 组合实现。
+func X509_NAME_get_text_by_txt(n unsafe.Pointer, field string) string {
+	nid := OBJ_txt2nid(field)
+	if nid == NidUndef {
+		return ""
+	}
+	return X509_NAME_get_text_by_NID(n, nid)
+}
 
 // X509_NAME_new 创建新的 X509_NAME。
 func X509_NAME_new() unsafe.Pointer {
@@ -281,4 +371,302 @@ func X_PEM_read_bio_X509_REQ(bio unsafe.Pointer) unsafe.Pointer {
 // X_PEM_write_bio_X509_REQ 将 CSR 以 PEM 写入 BIO。
 func X_PEM_write_bio_X509_REQ(bio unsafe.Pointer, r unsafe.Pointer) bool {
 	return C.X_PEM_write_bio_X509_REQ((*C.BIO)(bio), (*C.X509_REQ)(r)) == 1
+}
+
+// X509V3_EXT_conf_nid_ctx 带 X509V3_CTX 创建并追加扩展（SKID/AKID 需要 ctx）。
+// subject/issuer 可传 nil（分别用于 SKID 的 subject 公钥、AKID 的 issuer 证书）。
+func X509V3_EXT_conf_nid_ctx(target, subject, issuer unsafe.Pointer, nid int, value string) bool {
+	cVal := C.CString(value)
+	defer C.free(unsafe.Pointer(cVal))
+	return C.X_X509V3_EXT_conf_nid_ctx((*C.X509)(target),
+		(*C.X509)(subject), (*C.X509)(issuer), C.int(nid), cVal) == 1
+}
+
+// X509_get_version 返回证书版本（0=v1，1=v2，2=v3）。
+func X509_get_version(x unsafe.Pointer) int {
+	return int(C.X509_get_version((*C.X509)(x)))
+}
+
+// X509_get_ext_count 返回证书扩展数量。
+func X509_get_ext_count(x unsafe.Pointer) int {
+	return int(C.X509_get_ext_count((*C.X509)(x)))
+}
+
+// X509_get_ext 返回第 i 个扩展（内部指针，勿释放）。
+func X509_get_ext(x unsafe.Pointer, i int) unsafe.Pointer {
+	return unsafe.Pointer(C.X509_get_ext((*C.X509)(x), C.int(i)))
+}
+
+// X509_EXTENSION_get_object 返回扩展 OID（内部指针）。
+func X509_EXTENSION_get_object(e unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X509_EXTENSION_get_object((*C.X509_EXTENSION)(e)))
+}
+
+// X509_EXTENSION_get_critical 返回扩展 critical 标志。
+func X509_EXTENSION_get_critical(e unsafe.Pointer) int {
+	return int(C.X509_EXTENSION_get_critical((*C.X509_EXTENSION)(e)))
+}
+
+// X509_EXTENSION_get_data 返回扩展数据的 ASN1_OCTET_STRING（内部指针）。
+func X509_EXTENSION_get_data(e unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X509_EXTENSION_get_data((*C.X509_EXTENSION)(e)))
+}
+
+// ASN1_STRING_data_bytes 返回 ASN1_STRING 的原始字节（复制）。
+func ASN1_STRING_data_bytes(s unsafe.Pointer) []byte {
+	length := C.ASN1_STRING_length((*C.ASN1_STRING)(s))
+	data := C.ASN1_STRING_get0_data((*C.ASN1_STRING)(s))
+	if length <= 0 || data == nil {
+		return nil
+	}
+	return C.GoBytes(unsafe.Pointer(data), C.int(length))
+}
+
+// X509_digest 计算证书指纹。md 为摘要算法描述符。
+func X509_digest(x, md unsafe.Pointer) ([]byte, bool) {
+	var buf [64]C.uchar
+	var n C.uint
+	if C.X509_digest((*C.X509)(x), (*C.EVP_MD)(md), &buf[0], &n) != 1 {
+		return nil, false
+	}
+	return C.GoBytes(unsafe.Pointer(&buf[0]), C.int(n)), true
+}
+
+// I2d_X509 将证书编码为 DER。
+func I2d_X509(x unsafe.Pointer) ([]byte, bool) {
+	n := C.i2d_X509((*C.X509)(x), nil)
+	if n <= 0 {
+		return nil, false
+	}
+	buf := C.malloc(C.size_t(n))
+	if buf == nil {
+		return nil, false
+	}
+	defer C.free(buf)
+	p := (*C.uchar)(buf)
+	C.i2d_X509((*C.X509)(x), &p)
+	return C.GoBytes(unsafe.Pointer(buf), C.int(n)), true
+}
+
+// D2i_X509 从 DER 解析证书。
+// 注意：der 须先复制到 C 内存，避免 cgo「Go 指针指向 Go 指针」规则违规。
+func D2i_X509(der []byte) unsafe.Pointer {
+	if len(der) == 0 {
+		return nil
+	}
+	buf := C.malloc(C.size_t(len(der)))
+	if buf == nil {
+		return nil
+	}
+	defer C.free(buf)
+	C.memcpy(buf, unsafe.Pointer(&der[0]), C.size_t(len(der)))
+	p := (*C.uchar)(buf)
+	return unsafe.Pointer(C.d2i_X509(nil, &p, C.long(len(der))))
+}
+
+// I2d_X509_REQ 将 CSR 编码为 DER。
+func I2d_X509_REQ(r unsafe.Pointer) ([]byte, bool) {
+	n := C.i2d_X509_REQ((*C.X509_REQ)(r), nil)
+	if n <= 0 {
+		return nil, false
+	}
+	buf := C.malloc(C.size_t(n))
+	if buf == nil {
+		return nil, false
+	}
+	defer C.free(buf)
+	p := (*C.uchar)(buf)
+	C.i2d_X509_REQ((*C.X509_REQ)(r), &p)
+	return C.GoBytes(unsafe.Pointer(buf), C.int(n)), true
+}
+
+// D2i_X509_REQ 从 DER 解析 CSR。
+// 注意：der 须先复制到 C 内存，避免 cgo「Go 指针指向 Go 指针」规则违规。
+func D2i_X509_REQ(der []byte) unsafe.Pointer {
+	if len(der) == 0 {
+		return nil
+	}
+	buf := C.malloc(C.size_t(len(der)))
+	if buf == nil {
+		return nil
+	}
+	defer C.free(buf)
+	C.memcpy(buf, unsafe.Pointer(&der[0]), C.size_t(len(der)))
+	p := (*C.uchar)(buf)
+	return unsafe.Pointer(C.d2i_X509_REQ(nil, &p, C.long(len(der))))
+}
+
+// X509_get_san 返回 SAN 扩展的 GENERAL_NAMES 栈（无则 nil）。调用方负责 X509_GENERAL_NAMES_free。
+func X509_get_san(x unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X_X509_get_san((*C.X509)(x)))
+}
+
+// X509_GENERAL_NAMES_free 释放 GENERAL_NAMES 栈。
+func X509_GENERAL_NAMES_free(sk unsafe.Pointer) {
+	C.X_GENERAL_NAMES_free(sk)
+}
+
+// X509_GENERAL_NAMES_num 返回 SAN 条目数。
+func X509_GENERAL_NAMES_num(sk unsafe.Pointer) int {
+	return int(C.X_GENERAL_NAMES_num(sk))
+}
+
+// X509_GENERAL_NAMES_value 返回第 i 个 GENERAL_NAME（内部指针）。
+func X509_GENERAL_NAMES_value(sk unsafe.Pointer, i int) unsafe.Pointer {
+	return unsafe.Pointer(C.X_GENERAL_NAMES_value(sk, C.int(i)))
+}
+
+// X509_GENERAL_NAME_type 返回 GENERAL_NAME 类型（Gen* 常量）。
+func X509_GENERAL_NAME_type(gn unsafe.Pointer) int {
+	return int(C.X_GENERAL_NAME_type(gn))
+}
+
+// X509_GENERAL_NAME_to_string 返回 GENERAL_NAME 的值文本（如 "example.com"）。
+func X509_GENERAL_NAME_to_string(gn unsafe.Pointer) string {
+	c := C.X_GENERAL_NAME_to_string(gn)
+	if c == nil {
+		return ""
+	}
+	defer C.X_OPENSSL_free(unsafe.Pointer(c))
+	return C.GoString(c)
+}
+
+// X509_get_key_usage 返回 KeyUsage 扩展的 ASN1_BIT_STRING（无则 nil）。调用方负责 X509_ASN1_BIT_STRING_free。
+func X509_get_key_usage(x unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X_X509_get_key_usage((*C.X509)(x)))
+}
+
+// X509_ASN1_BIT_STRING_free 释放 ASN1_BIT_STRING。
+func X509_ASN1_BIT_STRING_free(bs unsafe.Pointer) {
+	C.X_ASN1_BIT_STRING_free(bs)
+}
+
+// ASN1_BIT_STRING_get_bit 读取位串第 bit 位。
+func ASN1_BIT_STRING_get_bit(bs unsafe.Pointer, bit int) bool {
+	return C.ASN1_BIT_STRING_get_bit((*C.ASN1_BIT_STRING)(bs), C.int(bit)) == 1
+}
+
+// X509_get_eku 返回 EKU 扩展的 EXTENDED_KEY_USAGE 栈（无则 nil）。调用方负责 X509_EXTENDED_KEY_USAGE_free。
+func X509_get_eku(x unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X_X509_get_eku((*C.X509)(x)))
+}
+
+// X509_EXTENDED_KEY_USAGE_free 释放 EKU 栈。
+func X509_EXTENDED_KEY_USAGE_free(sk unsafe.Pointer) {
+	C.X_EXTENDED_KEY_USAGE_free(sk)
+}
+
+// X509_EXTENDED_KEY_USAGE_num 返回 EKU 条目数。
+func X509_EXTENDED_KEY_USAGE_num(sk unsafe.Pointer) int {
+	return int(C.X_EXTENDED_KEY_USAGE_num(sk))
+}
+
+// X509_EXTENDED_KEY_USAGE_value 返回第 i 个 EKU 的 ASN1_OBJECT（内部指针）。
+func X509_EXTENDED_KEY_USAGE_value(sk unsafe.Pointer, i int) unsafe.Pointer {
+	return unsafe.Pointer(C.X_EXTENDED_KEY_USAGE_value(sk, C.int(i)))
+}
+
+// OBJ_to_string 返回 ASN1_OBJECT 的名称或 OID 文本。
+func OBJ_to_string(o unsafe.Pointer) string {
+	c := C.X_OBJ_to_string(o)
+	if c == nil {
+		return ""
+	}
+	defer C.X_OPENSSL_free(unsafe.Pointer(c))
+	return C.GoString(c)
+}
+
+// X509_get_basic_constraints 返回 BasicConstraints 扩展（无则 nil）。调用方负责 X509_BASIC_CONSTRAINTS_free。
+func X509_get_basic_constraints(x unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X_X509_get_basic_constraints((*C.X509)(x)))
+}
+
+// X509_BASIC_CONSTRAINTS_free 释放 BASIC_CONSTRAINTS。
+func X509_BASIC_CONSTRAINTS_free(bc unsafe.Pointer) {
+	C.X_BASIC_CONSTRAINTS_free(bc)
+}
+
+// X509_BASIC_CONSTRAINTS_ca 返回 BasicConstraints 的 CA 标志。
+func X509_BASIC_CONSTRAINTS_ca(bc unsafe.Pointer) int {
+	return int(C.X_BASIC_CONSTRAINTS_ca(bc))
+}
+
+// X509_BASIC_CONSTRAINTS_pathlen 返回 pathlen（无约束为 -1）。
+func X509_BASIC_CONSTRAINTS_pathlen(bc unsafe.Pointer) int64 {
+	return int64(C.X_BASIC_CONSTRAINTS_pathlen(bc))
+}
+
+// X509_get0_subject_key_id 返回 SKID 字节（内部指针，勿释放）。
+func X509_get0_subject_key_id(x unsafe.Pointer) []byte {
+	c := C.X509_get0_subject_key_id((*C.X509)(x))
+	if c == nil {
+		return nil
+	}
+	return ASN1_STRING_data_bytes(unsafe.Pointer(c))
+}
+
+// X509_get0_authority_key_id 返回 AKID 中 keyid 字节（内部指针，勿释放）。
+func X509_get0_authority_key_id(x unsafe.Pointer) []byte {
+	c := C.X509_get0_authority_key_id((*C.X509)(x))
+	if c == nil {
+		return nil
+	}
+	return ASN1_STRING_data_bytes(unsafe.Pointer(c))
+}
+
+// X509_sk_X509_EXTENSION_new_null 创建空的扩展栈。
+func X509_sk_X509_EXTENSION_new_null() unsafe.Pointer {
+	return unsafe.Pointer(C.X_sk_X509_EXTENSION_new_null())
+}
+
+// X509_sk_X509_EXTENSION_push 向扩展栈压入扩展（栈不拥有该扩展）。
+func X509_sk_X509_EXTENSION_push(sk, ext unsafe.Pointer) bool {
+	return C.X_sk_X509_EXTENSION_push(sk, ext) == 1
+}
+
+// X509_sk_X509_EXTENSION_free 释放扩展栈（不释放元素）。
+func X509_sk_X509_EXTENSION_free(sk unsafe.Pointer) {
+	C.X_sk_X509_EXTENSION_free(sk)
+}
+
+// X509_sk_X509_EXTENSION_pop_free 释放扩展栈并释放全部元素。
+func X509_sk_X509_EXTENSION_pop_free(sk unsafe.Pointer) {
+	C.X_sk_X509_EXTENSION_pop_free(sk)
+}
+
+// X509_sk_X509_EXTENSION_num 返回扩展栈条目数。
+func X509_sk_X509_EXTENSION_num(sk unsafe.Pointer) int {
+	return int(C.X_sk_X509_EXTENSION_num(sk))
+}
+
+// X509_sk_X509_EXTENSION_value 返回扩展栈第 i 个扩展（内部指针）。
+func X509_sk_X509_EXTENSION_value(sk unsafe.Pointer, i int) unsafe.Pointer {
+	return unsafe.Pointer(C.X_sk_X509_EXTENSION_value(sk, C.int(i)))
+}
+
+// X509_REQ_add_extensions 为 CSR 添加扩展（须在 Sign 之前调用）。
+func X509_REQ_add_extensions(r, sk unsafe.Pointer) bool {
+	return C.X_X509_REQ_add_extensions((*C.X509_REQ)(r), sk) == 1
+}
+
+// X509_REQ_get_extensions 返回 CSR 中的扩展栈（调用方负责 X509_sk_X509_EXTENSION_pop_free）。
+func X509_REQ_get_extensions(r unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X_X509_REQ_get_extensions((*C.X509_REQ)(r)))
+}
+
+// X509_REQ_set_challenge_password 设置 CSR 挑战密码（PKCS#9 challengePassword 属性）。
+func X509_REQ_set_challenge_password(r unsafe.Pointer, pwd string) bool {
+	c := C.CString(pwd)
+	defer C.free(unsafe.Pointer(c))
+	return C.X_X509_REQ_set_challenge_password((*C.X509_REQ)(r), c) == 1
+}
+
+// X509_REQ_get_challenge_password 返回 CSR 挑战密码（无则为空串）。
+func X509_REQ_get_challenge_password(r unsafe.Pointer) string {
+	c := C.X_X509_REQ_get_challenge_password((*C.X509_REQ)(r))
+	if c == nil {
+		return ""
+	}
+	defer C.X_OPENSSL_free(unsafe.Pointer(c))
+	return C.GoString(c)
 }

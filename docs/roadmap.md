@@ -156,39 +156,40 @@
 
 ---
 
-### Phase 8 — 证书结构化解析与交换（对应需求 2.2 P0/P1 主干）
+### Phase 8 — 证书结构化解析与交换（对应需求 2.2 P0/P1 主干，已完成）
 
 **证书结构化解析**
-- [ ] 绑定层：`X509_NAME_get_entry_count/get_entry`、`X509_NAME_ENTRY_get_object/data`、
+- [x] 绑定层：`X509_NAME_get_entry_count/get_entry`、`X509_NAME_ENTRY_get_object/data`、
   `ASN1_STRING_to_UTF8` + 更多 NID（O / OU / L / ST / C / E / serialNumber）——完整 RDN
-- [ ] 绑定层：`X509_get_ext_d2i`（SAN / KeyUsage / EKU / BasicConstraints / SKID / AKID）、
+- [x] 绑定层：`X509_get_ext_d2i`（SAN / KeyUsage / EKU / BasicConstraints / SKID / AKID）、
   `X509_get0_subject_key_id` / `X509_get0_authority_key_id`
-- [ ] 核心层：`Name` 扩展条目枚举（`Entries()` / `Get(nid)` / 完整 `String()`）
-- [ ] API 层：`crypto/x509` 的 `Subject()` / `Issuer()`（完整 RDN）、`SAN()` / `KeyUsage()` /
-  `ExtendedKeyUsage()` / `IsCA()` / `Version()` / `CertificateType()`
-- [ ] 测试：解析真实证书断言各字段
+- [x] 核心层：`Name` 扩展条目枚举（`Entries()` / `Get(field)` / 完整 `String()`）
+- [x] API 层：`crypto/x509` 的 `SubjectName()` / `IssuerName()`（完整 RDN）、`SAN()` /
+  `KeyUsage()` / `ExtendedKeyUsage()` / `IsCA()` / `PathLen()` / `Version()` / `CertificateType()`
+- [x] 测试：解析真实证书断言各字段（完整 RDN / SAN / KeyUsage / EKU / SKID / AKID / 扩展列表）
 
 **证书指纹（P0）**
-- [ ] 绑定层：`X509_digest`（EVP_sha1 / EVP_sha256）
-- [ ] API 层：`Fingerprint(alg)` 返回十六进制指纹
-- [ ] 测试：与 `openssl x509 -fingerprint` / `-sha256` 一致
+- [x] 绑定层：`X509_digest`（EVP_sha1 / EVP_sha256 / SM3 等）
+- [x] API 层：`Fingerprint(alg)` 返回十六进制指纹（sha1 / sha256 / sm3 / md5 / sha384 / sha512）
+- [x] 测试：与 `openssl x509 -fingerprint -sha256` 一致
 
 **证书 DER 交换（PEM ↔ DER）**
-- [ ] 绑定层：`i2d_X509` / `d2i_X509`、`i2d_X509_REQ` / `d2i_X509_REQ`
-- [ ] API 层：`MarshalDER()` / `LoadCertificateDER` / CSR 对应 DER 加载导出
-- [ ] 测试：PEM ↔ DER 往返、与 `openssl x509 -outform DER` 互通
+- [x] 绑定层：`i2d_X509` / `d2i_X509`、`i2d_X509_REQ` / `d2i_X509_REQ`
+- [x] API 层：`MarshalDER()` / `LoadCertificateDER` / CSR 对应 DER 加载导出
+- [x] 测试：PEM ↔ DER 往返、与 `openssl x509 -outform DER` 互通（字节一致）
 
 **证书构建扩展补充**
-- [ ] 绑定层：`X509V3_EXT_conf_nid` 扩展至 SAN / KeyUsage / EKU（现仅 basicConstraints）
-- [ ] API 层：`CreateCertificate` / `NewCertificate` 构建器支持 SAN、KeyUsage、ExtendedKeyUsage、
-  SKID / AKID 扩展
-- [ ] 测试：生成的证书含扩展、`openssl x509 -text` 对比
+- [x] 绑定层：`X509V3_EXT_conf_nid`（带 `X509V3_CTX`）扩展至 SAN / KeyUsage / EKU / SKID / AKID
+- [x] API 层：`NewCertificate` 构建器支持 `AddSubjectAltName` / `AddKeyUsage` /
+  `AddExtendedKeyUsage` / `AddSubjectKeyID` / `AddAuthorityKeyID`
+- [x] 测试：生成的证书含扩展、`openssl x509 -text` 对比（SKID/AKID 链关系断言）
 
 **CSR 高级**
-- [ ] 绑定层：`X509_REQ_add_extensions` / `X509_REQ_get_extensions`、
+- [x] 绑定层：`X509_REQ_add_extensions` / `X509_REQ_get_extensions`、
   `X509_REQ_set/get_challenge_password`
-- [ ] API 层：CSR 生成支持 SAN / 扩展 / 挑战密码 / 多字段 Subject
-- [ ] 测试：CSR 扩展读取、挑战密码校验、`openssl req -text` 对比
+- [x] API 层：`NewEmptyCertificateRequest` 构建器（`SetSubject` / `SetPublicKey` /
+  `SetChallengePassword` / `AddExtensions` / `Sign`），支持 SAN / 扩展 / 挑战密码 / 多字段 Subject
+- [x] 测试：CSR 扩展读取、挑战密码校验、`openssl req -text` 对比
 
 ---
 
@@ -307,10 +308,15 @@
   `DecryptWithOrder`（DER ↔ C1C3C2 ↔ C1C2C3 密文互转）；`crypto/sm4` 新增 `*Zero` 填充便捷函数
   （ECB / CBC）；`crypto/hmac` 新增 `NewSHA384` / `SumSHA384`。已通过单元测试与
   铜锁 openssl CLI 交叉验证
-- 🚧 Phase 8–12 为**待实施**规划（对应 [new-requirement.md](../new-requirement.md) 需求清单）：
-  Phase 8 证书结构化解析与交换（P0/P1）、Phase 9 证书链验证与吊销（P1）、
-  Phase 10 密钥体系扩展 RSA/EC（P1）、Phase 11 容器格式 PKCS#12/PKCS#7（P2）、
-  Phase 12 在线与格式工具 OCSP/ASN.1/JWK（P2）
+- ✅ **Phase 8（证书结构化解析与交换，P0/P1）已完成**：完整 RDN 解析（`SubjectName()` /
+  `IssuerName()` + `Entries()` / `Get()` / `String()`）、证书指纹（`Fingerprint(alg)`，
+  sha1/sha256/sm3/md5/sha384/sha512）、DER 交换（`MarshalDER` / `Load*DER`，证书与 CSR）、
+  构建扩展（SAN / KeyUsage / EKU / SKID / AKID）、CSR 高级（SAN / 扩展 / 挑战密码 /
+  多字段 Subject，`NewEmptyCertificateRequest` 构建器）。已通过单元测试与铜锁 openssl
+  CLI 交叉验证（fingerprint / DER / x509 -text / req -text）
+- 🚧 Phase 9–12 为**待实施**规划（对应 [new-requirement.md](../new-requirement.md) 需求清单）：
+  Phase 9 证书链验证与吊销（P1）、Phase 10 密钥体系扩展 RSA/EC（P1）、
+  Phase 11 容器格式 PKCS#12/PKCS#7（P2）、Phase 12 在线与格式工具 OCSP/ASN.1/JWK（P2）
 - 依赖关系：Phase 11 依赖 Phase 10（密钥体系）；Phase 12 的 OCSP 依赖 Phase 9（链验证）、
   JWK/XML 依赖 Phase 10（RSA/EC 参数提取）；Phase 7–10 相互独立，可按需调整实施顺序
 - 说明：Phase 5 中延后的 CRL 解析与吊销检查已并入 Phase 9 统一规划；

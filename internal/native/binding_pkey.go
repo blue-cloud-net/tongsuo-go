@@ -37,6 +37,24 @@ func EVP_PKEY_free(pkey unsafe.Pointer) {
 	C.EVP_PKEY_free((*C.EVP_PKEY)(pkey))
 }
 
+// EVP_PKEY 类型常量（来自 evp.h 宏，OpenSSL 3.x / 铜锁）。
+const (
+	EvpPkeyRSA = 6
+	EvpPkeyDSA = 116
+	EvpPkeyEC  = 408
+	EvpPkeySM2 = 1172
+)
+
+// EVP_PKEY_get_base_id 返回密钥底层类型 ID（如 EvpPkeyEC）。
+func EVP_PKEY_get_base_id(pkey unsafe.Pointer) int {
+	return int(C.EVP_PKEY_get_base_id((*C.EVP_PKEY)(pkey)))
+}
+
+// EVP_PKEY_get_id 返回密钥完整类型 ID（如 SM2 密钥返回 EvpPkeySM2）。
+func EVP_PKEY_get_id(pkey unsafe.Pointer) int {
+	return int(C.EVP_PKEY_get_id((*C.EVP_PKEY)(pkey)))
+}
+
 // EVP_PKEY_CTX_new_from_pkey 基于密钥创建操作上下文。
 func EVP_PKEY_CTX_new_from_pkey(pkey unsafe.Pointer) unsafe.Pointer {
 	return unsafe.Pointer(C.EVP_PKEY_CTX_new_from_pkey(nil, (*C.EVP_PKEY)(pkey), nil))
