@@ -5,6 +5,7 @@
 package sm4
 
 import (
+	"bytes"
 	"crypto/cipher"
 	"fmt"
 
@@ -111,6 +112,76 @@ func DecryptCBC(key, iv, data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("sm4: invalid iv size %d, want %d", len(iv), BlockSize)
 	}
 	return cryptAll(key, iv, data, false, core.SM4CBC())
+}
+
+// EncryptECBZero 使用 SM4-ECB 加密 data（Zero 填充，补零到 BlockSize 倍数）。
+// 注意：Zero 填充不记录原始长度，解密时去除尾部 0x00；仅当明文不以 0x00 结尾时可靠。
+func EncryptECBZero(key, data []byte) ([]byte, error) {
+	return cryptAllNoPad(key, nil, zeroPad(data), true, core.SM4ECB())
+}
+
+// DecryptECBZero 使用 SM4-ECB 解密 data（Zero 填充）。
+func DecryptECBZero(key, data []byte) ([]byte, error) {
+	out, err := cryptAllNoPad(key, nil, data, false, core.SM4ECB())
+	if err != nil {
+		return nil, err
+	}
+	return zeroUnpad(out), nil
+}
+
+// EncryptCBCZero 使用 SM4-CBC 加密 data（Zero 填充）。
+// iv 长度必须为 BlockSize。
+func EncryptCBCZero(key, iv, data []byte) ([]byte, error) {
+	if len(iv) != BlockSize {
+		return nil, fmt.Errorf("sm4: invalid iv size %d, want %d", len(iv), BlockSize)
+	}
+	return cryptAllNoPad(key, iv, zeroPad(data), true, core.SM4CBC())
+}
+
+// DecryptCBCZero 使用 SM4-CBC 解密 data（Zero 填充）。
+// iv 必须与加密时一致。
+func DecryptCBCZero(key, iv, data []byte) ([]byte, error) {
+	if len(iv) != BlockSize {
+		return nil, fmt.Errorf("sm4: invalid iv size %d, want %d", len(iv), BlockSize)
+	}
+	out, err := cryptAllNoPad(key, iv, data, false, core.SM4CBC())
+	if err != nil {
+		return nil, err
+	}
+	return zeroUnpad(out), nil
+}
+
+// zeroPad 将 data 补零到 BlockSize 的整数倍（至少补 1 字节）。
+func zeroPad(data []byte) []byte {
+	padding := BlockSize - len(data)%BlockSize
+	out := make([]byte, 0, len(data)+padding)
+	out = append(out, data...)
+	out = append(out, bytes.Repeat([]byte{0}, padding)...)
+	return out
+}
+
+// zeroUnpad 去除 data 尾部的 0x00 填充。
+func zeroUnpad(data []byte) []byte {
+	return bytes.TrimRight(data, "\x00")
+}
+
+// cryptAllNoPad 与 cryptAll 相同，但关闭填充（配合 Zero 填充在 Go 层处理）。
+func cryptAllNoPad(key, iv, data []byte, enc bool, c *core.Cipher) ([]byte, error) {
+	if len(key) != KeySize {
+		return nil, fmt.Errorf("sm4: invalid key size %d, want %d", len(key), KeySize)
+	}
+	ctx, err := core.NewCipherCtx(c, key, iv, enc)
+	if err != nil {
+		return nil, err
+	}
+	defer ctx.Close()
+	if err := ctx.SetPadding(false); err != nil {
+		return nil, err
+	}
+	if enc {
+		return ctx.EncryptAll(data)
+	}
+	return ctx.DecryptAll(data)
 }
 
 func cryptAll(key, iv, data []byte, enc bool, c *core.Cipher) ([]byte, error) {
