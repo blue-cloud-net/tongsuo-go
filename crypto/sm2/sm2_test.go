@@ -111,6 +111,104 @@ func TestEncryptDifferentCiphertext(t *testing.T) {
 	}
 }
 
+// TestCipherFormatRoundTrip 验证 DER / C1C3C2 / C1C2C3 三种密文格式互转与加解密往返。
+func TestCipherFormatRoundTrip(t *testing.T) {
+	priv, err := GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := priv.Public()
+	plaintext := []byte("tongsuo sm2 cipher format")
+
+	der, err := Encrypt(pub, plaintext)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 互转：DER → C1C3C2 → C1C2C3 → DER 应还原原始 DER。
+	c132, err := Format(der, "der", "c1c3c2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c123, err := Format(c132, "c1c3c2", "c1c2c3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := Format(c123, "c1c2c3", "der")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(back, der) {
+		t.Fatal("DER roundtrip mismatch")
+	}
+
+	// 裸格式仅 C2/C3 顺序不同：C1 相同、C3 一致。
+	if len(c132) != len(c123) {
+		t.Fatalf("raw length mismatch: %d vs %d", len(c132), len(c123))
+	}
+	if !bytes.Equal(c132[:65], c123[:65]) {
+		t.Fatal("C1 mismatch")
+	}
+	c3 := c132[65 : 65+32]
+	c2 := c132[65+32:]
+	if !bytes.Equal(c3, c123[len(c123)-32:]) {
+		t.Fatal("C3 mismatch")
+	}
+	if !bytes.Equal(c2, c123[65:65+len(c2)]) {
+		t.Fatal("C2 mismatch")
+	}
+
+	// 裸格式加解密（含默认顺序）。
+	for _, order := range []string{"c1c3c2", "c1c2c3", ""} {
+		enc, err := EncryptWithOrder(pub, plaintext, order)
+		if err != nil {
+			t.Fatalf("encrypt order %q: %v", order, err)
+		}
+		if enc[0] != 0x04 {
+			t.Fatalf("expected uncompressed C1 for order %q", order)
+		}
+		pt, err := DecryptWithOrder(priv, enc, order)
+		if err != nil {
+			t.Fatalf("decrypt order %q: %v", order, err)
+		}
+		if !bytes.Equal(pt, plaintext) {
+			t.Fatalf("roundtrip mismatch for order %q", order)
+		}
+	}
+
+	// Format 相同格式返回副本。
+	copyOf, err := Format(der, "der", "der")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(copyOf, der) {
+		t.Fatal("same-format copy mismatch")
+	}
+}
+
+// TestCipherFormatErrors 验证密文格式转换的错误路径。
+func TestCipherFormatErrors(t *testing.T) {
+	if _, err := Format([]byte{1}, "bogus", "der"); err == nil {
+		t.Fatal("expected unknown from-format error")
+	}
+	if _, err := Format([]byte{1}, "der", "bogus"); err == nil {
+		t.Fatal("expected unknown to-format error")
+	}
+	if _, err := Format([]byte("not-der"), "der", "c1c3c2"); err == nil {
+		t.Fatal("expected invalid DER error")
+	}
+	if _, err := Format([]byte{0x04, 0x01}, "c1c3c2", "der"); err == nil {
+		t.Fatal("expected short ciphertext error")
+	}
+	if _, err := Format([]byte{0x00, 0x01}, "c1c2c3", "der"); err == nil {
+		t.Fatal("expected unsupported point prefix error")
+	}
+	// 压缩点无法转 DER（缺少坐标）。
+	if _, err := Format(bytes.Repeat([]byte{0x02}, 33+32+8), "c1c3c2", "der"); err == nil {
+		t.Fatal("expected compressed-to-DER error")
+	}
+}
+
 // TestSignVerify 验证 SM2withSM3 签名验签（默认 userId）。
 func TestSignVerify(t *testing.T) {
 	priv, err := GenerateKey()
