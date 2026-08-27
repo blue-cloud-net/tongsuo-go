@@ -5,6 +5,8 @@
 package x509
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -480,4 +482,214 @@ func (r *CertificateRequest) Extensions() []Extension {
 // MarshalDER 导出 CSR 为 DER 编码。
 func (r *CertificateRequest) MarshalDER() ([]byte, error) {
 	return r.req.MarshalDER()
+}
+
+// Store 表示证书信任存储，作为 ChainVerify 的信任锚。
+type Store struct {
+	store *core.Store
+}
+
+// NewStore 创建空的信任存储。
+func NewStore() *Store {
+	s, err := core.NewStore()
+	if err != nil {
+		panic(err)
+	}
+	return &Store{store: s}
+}
+
+// AddCert 向存储添加信任证书（如 Root CA 证书）。
+func (s *Store) AddCert(c *Certificate) error {
+	if c == nil {
+		return fmt.Errorf("x509: nil certificate")
+	}
+	return s.store.AddCert(c.cert)
+}
+
+// AddCRL 向存储添加 CRL（配合 SetCRLCheck / SetCRLCheckAll 启用吊销检查）。
+func (s *Store) AddCRL(c *CRL) error {
+	if c == nil {
+		return fmt.Errorf("x509: nil CRL")
+	}
+	return s.store.AddCRL(c.crl)
+}
+
+// SetCRLCheck 启用 CRL 吊销检查（仅检查叶证书所在链）。
+func (s *Store) SetCRLCheck() error {
+	return s.store.SetFlags(0x4)
+}
+
+// SetCRLCheckAll 启用全链 CRL 吊销检查（检查链上所有证书）。
+func (s *Store) SetCRLCheckAll() error {
+	return s.store.SetFlags(0x8)
+}
+
+// VerifyError 表示证书链验证失败详情。
+type VerifyError struct {
+	Code    int    // X509_V_ERR_* 错误码（如 10=certificate has expired）
+	Depth   int    // 出错深度（0 为待验证证书本身）
+	Message string // 错误描述
+}
+
+// Error 实现 error 接口。
+func (e *VerifyError) Error() string {
+	return fmt.Sprintf("x509: certificate verify failed: %s (code=%d, depth=%d)",
+		e.Message, e.Code, e.Depth)
+}
+
+// ChainVerify 验证证书链并返回构建的完整链（索引 0 为叶证书，末位为根）。
+// roots 为信任锚存储（含 Root CA）；intermediates 为中间证书（用于补全链，可省略）。
+// 验证失败返回 *VerifyError。
+func ChainVerify(cert *Certificate, roots *Store, intermediates []*Certificate) ([]*Certificate, error) {
+	if cert == nil {
+		return nil, fmt.Errorf("x509: nil certificate")
+	}
+	if roots == nil {
+		return nil, fmt.Errorf("x509: nil trust store")
+	}
+	ccerts := make([]*core.Certificate, 0, len(intermediates))
+	for _, ic := range intermediates {
+		if ic == nil {
+			return nil, fmt.Errorf("x509: nil intermediate certificate")
+		}
+		ccerts = append(ccerts, ic.cert)
+	}
+	chain, err := core.ChainVerify(cert.cert, roots.store, ccerts)
+	if err != nil {
+		var ve *core.VerifyError
+		if errors.As(err, &ve) {
+			return nil, &VerifyError{Code: ve.Code, Depth: ve.Depth, Message: ve.Message}
+		}
+		return nil, err
+	}
+	out := make([]*Certificate, 0, len(chain))
+	for _, c := range chain {
+		out = append(out, &Certificate{cert: c})
+	}
+	return out, nil
+}
+
+// RevokedEntry 表示 CRL 中的一条吊销记录。
+type RevokedEntry struct {
+	Serial         int64     // 被吊销证书的序列号
+	RevocationDate time.Time // 吊销时间
+	ReasonCode     int       // 原因码（-1 表示未指定）
+	Reason         string    // 原因名（如 "keyCompromise"）
+}
+
+// CRL 表示证书吊销列表。
+type CRL struct {
+	crl *core.CRL
+}
+
+// ParseCRL 从 PEM 或 DER 解析 CRL（自动识别格式）。
+func ParseCRL(data []byte) (*CRL, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("x509: empty CRL data")
+	}
+	var c *core.CRL
+	var err error
+	if bytes.HasPrefix(bytes.TrimSpace(data), []byte("-----BEGIN ")) {
+		c, err = core.LoadCRLPEM(data)
+	} else {
+		c, err = core.LoadCRLDER(data)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &CRL{crl: c}, nil
+}
+
+// LoadCRLPEM 从 PEM 加载 CRL。
+func LoadCRLPEM(pem []byte) (*CRL, error) {
+	c, err := core.LoadCRLPEM(pem)
+	if err != nil {
+		return nil, err
+	}
+	return &CRL{crl: c}, nil
+}
+
+// LoadCRLDER 从 DER 加载 CRL。
+func LoadCRLDER(der []byte) (*CRL, error) {
+	c, err := core.LoadCRLDER(der)
+	if err != nil {
+		return nil, err
+	}
+	return &CRL{crl: c}, nil
+}
+
+// MarshalPEM 导出 CRL 为 PEM。
+func (c *CRL) MarshalPEM() ([]byte, error) {
+	return c.crl.MarshalPEM()
+}
+
+// MarshalDER 导出 CRL 为 DER。
+func (c *CRL) MarshalDER() ([]byte, error) {
+	return c.crl.MarshalDER()
+}
+
+// Issuer 返回 CRL 签发者完整名字（含全部 RDN 条目）。
+func (c *CRL) Issuer() *Name {
+	return &Name{name: c.crl.Issuer()}
+}
+
+// Version 返回 CRL 版本字段值（0=v1，1=v2）。
+func (c *CRL) Version() int {
+	return c.crl.Version()
+}
+
+// LastUpdate 返回 CRL 生效时间。
+func (c *CRL) LastUpdate() time.Time {
+	return c.crl.LastUpdate()
+}
+
+// NextUpdate 返回 CRL 过期时间。
+func (c *CRL) NextUpdate() time.Time {
+	return c.crl.NextUpdate()
+}
+
+// RevokedEntries 返回 CRL 中的全部吊销记录。
+func (c *CRL) RevokedEntries() []RevokedEntry {
+	es := c.crl.RevokedEntries()
+	out := make([]RevokedEntry, 0, len(es))
+	for _, e := range es {
+		out = append(out, RevokedEntry{
+			Serial:         e.Serial,
+			RevocationDate: e.RevocationDate,
+			ReasonCode:     e.ReasonCode,
+			Reason:         e.Reason,
+		})
+	}
+	return out
+}
+
+// IsRevoked 报告证书是否在此 CRL 中被吊销（仅按序列号匹配）。
+func (c *CRL) IsRevoked(cert *Certificate) bool {
+	if cert == nil {
+		return false
+	}
+	serial := cert.Serial()
+	for _, e := range c.RevokedEntries() {
+		if e.Serial == serial {
+			return true
+		}
+	}
+	return false
+}
+
+// RevocationCheck 检查证书是否被任一 CRL 吊销。
+// 仅当 CRL 的签发者与证书签发者一致且序列号匹配时判定为已吊销。
+// 未吊销返回 nil；已吊销返回描述性错误。
+func RevocationCheck(cert *Certificate, crls []*CRL) error {
+	if cert == nil {
+		return fmt.Errorf("x509: nil certificate")
+	}
+	ccrls := make([]*core.CRL, 0, len(crls))
+	for _, c := range crls {
+		if c == nil {
+			continue
+		}
+		ccrls = append(ccrls, c.crl)
+	}
+	return core.RevocationCheck(cert.cert, ccrls)
 }

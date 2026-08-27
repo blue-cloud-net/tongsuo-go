@@ -4,8 +4,10 @@ package x509
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -310,5 +312,199 @@ func TestCLICSRText(t *testing.T) {
 	}
 	if !strings.Contains(s, "CN=csr-cli.example.com") || !strings.Contains(s, "O=CLI CSR Org") {
 		t.Fatalf("openssl req text missing subject fields: %s", s)
+	}
+}
+
+// runOpenSSLInDir 在指定目录下运行铜锁 openssl（供 openssl ca 相对路径配置使用）。
+func runOpenSSLInDir(t *testing.T, dir string, args ...string) []byte {
+	t.Helper()
+	cmd := exec.Command(testutil.OpenSSLBin(), args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("openssl %v: %v\n%s", args, err, out)
+	}
+	return out
+}
+
+// setupCRLEnv 在临时目录搭建 openssl CA 环境并生成：
+// ca.pem（CA）、leaf1.pem（已吊销）、leaf2.pem（未吊销）、crl.pem（吊销 leaf1）。
+func setupCRLEnv(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.MkdirAll(dir+"/demoCA/newcerts", 0o700))
+	must(os.WriteFile(dir+"/demoCA/index.txt", nil, 0o600))
+	must(os.WriteFile(dir+"/demoCA/serial", []byte("1000\n"), 0o600))
+	must(os.WriteFile(dir+"/demoCA/crlnumber", []byte("1000\n"), 0o600))
+	cnf := `[ ca ]
+default_ca = CA_default
+[ CA_default ]
+dir = ./demoCA
+database = $dir/index.txt
+new_certs_dir = $dir/newcerts
+serial = $dir/serial
+crlnumber = $dir/crlnumber
+private_key = ./ca.key
+certificate = ./ca.pem
+default_md = sha256
+default_days = 365
+default_crl_days = 30
+policy = policy_any
+[ policy_any ]
+commonName = supplied
+`
+	must(os.WriteFile(dir+"/openssl.cnf", []byte(cnf), 0o600))
+
+	runOpenSSLInDir(t, dir, "req", "-new", "-x509", "-nodes", "-keyout", "ca.key",
+		"-out", "ca.pem", "-subj", "/CN=CRL Test CA", "-days", "3650")
+	for _, n := range []string{"leaf1", "leaf2"} {
+		runOpenSSLInDir(t, dir, "req", "-new", "-nodes", "-keyout", n+".key",
+			"-out", n+".csr", "-subj", "/CN="+n+".crl.dev")
+		runOpenSSLInDir(t, dir, "ca", "-batch", "-config", "openssl.cnf",
+			"-in", n+".csr", "-out", n+".pem")
+	}
+	runOpenSSLInDir(t, dir, "ca", "-config", "openssl.cnf",
+		"-revoke", "leaf1.pem", "-crl_reason", "keyCompromise")
+	runOpenSSLInDir(t, dir, "ca", "-config", "openssl.cnf", "-gencrl", "-out", "crl.pem")
+	return dir
+}
+
+// TestCLICrlParse 本库解析 openssl 生成的 CRL（签发者/时间窗/吊销条目与原因），并对比 openssl crl -text。
+func TestCLICrlParse(t *testing.T) {
+	dir := setupCRLEnv(t)
+	crlPEM, err := os.ReadFile(dir + "/crl.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	crl, err := LoadCRLPEM(crlPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if crl.Version() != 1 { // 0=v1，1=v2
+		t.Fatalf("CRL version = %d, want 1 (v2)", crl.Version())
+	}
+	if crl.Issuer().Get("CN") != "CRL Test CA" {
+		t.Fatalf("CRL issuer = %q", crl.Issuer().String())
+	}
+	if crl.LastUpdate().IsZero() {
+		t.Fatal("empty LastUpdate")
+	}
+	if !crl.NextUpdate().After(crl.LastUpdate()) {
+		t.Fatal("NextUpdate should be after LastUpdate")
+	}
+
+	entries := crl.RevokedEntries()
+	if len(entries) != 1 {
+		t.Fatalf("revoked entries = %d, want 1", len(entries))
+	}
+	if entries[0].Serial == 0 {
+		t.Fatal("empty serial")
+	}
+	if entries[0].Reason != "keyCompromise" {
+		t.Fatalf("reason = %q, want keyCompromise", entries[0].Reason)
+	}
+	if entries[0].RevocationDate.IsZero() {
+		t.Fatal("empty revocation date")
+	}
+
+	// DER 往返
+	der, err := crl.MarshalDER()
+	if err != nil {
+		t.Fatal(err)
+	}
+	crl2, err := LoadCRLDER(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(crl2.RevokedEntries()) != 1 || crl2.RevokedEntries()[0].Serial != entries[0].Serial {
+		t.Fatal("DER roundtrip lost revoked entries")
+	}
+
+	// 与 openssl crl -text 对比（openssl 以十六进制显示序列号）
+	hexSerial := strings.ToUpper(strconv.FormatInt(entries[0].Serial, 16))
+	out := runOpenSSLInDir(t, dir, "crl", "-in", "crl.pem", "-noout", "-text")
+	if !strings.Contains(string(out), "Serial Number: "+hexSerial) {
+		t.Fatalf("openssl crl text missing serial %s: %s", hexSerial, out)
+	}
+	if !strings.Contains(string(out), "Key Compromise") {
+		t.Fatalf("openssl crl text missing reason: %s", out)
+	}
+}
+
+// TestCLIRevocationCheck 本库吊销检查与 openssl verify -crl_check 互通。
+func TestCLIRevocationCheck(t *testing.T) {
+	dir := setupCRLEnv(t)
+	caPEM, _ := os.ReadFile(dir + "/ca.pem")
+	leaf1PEM, _ := os.ReadFile(dir + "/leaf1.pem")
+	leaf2PEM, _ := os.ReadFile(dir + "/leaf2.pem")
+	crlPEM, _ := os.ReadFile(dir + "/crl.pem")
+
+	caCert, err := LoadCertificatePEM(caPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf1, err := LoadCertificatePEM(leaf1PEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf2, err := LoadCertificatePEM(leaf2PEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crl, err := LoadCRLPEM(crlPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// RevocationCheck：leaf1 被吊销，leaf2 未吊销
+	if err := RevocationCheck(leaf1, []*CRL{crl}); err == nil {
+		t.Fatal("leaf1 should be revoked")
+	} else if !strings.Contains(err.Error(), strconv.FormatInt(leaf1.Serial(), 10)) {
+		t.Fatalf("revoke error should mention serial %d: %v", leaf1.Serial(), err)
+	}
+	if err := RevocationCheck(leaf2, []*CRL{crl}); err != nil {
+		t.Fatalf("leaf2 should not be revoked: %v", err)
+	}
+
+	// Store + SetCRLCheck + ChainVerify：leaf1 报 code 23（CERT_REVOKED）
+	roots := NewStore()
+	if err := roots.AddCert(caCert); err != nil {
+		t.Fatal(err)
+	}
+	if err := roots.AddCRL(crl); err != nil {
+		t.Fatal(err)
+	}
+	if err := roots.SetCRLCheck(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ChainVerify(leaf1, roots, nil); err == nil {
+		t.Fatal("leaf1 verify should fail (revoked)")
+	} else {
+		var ve *VerifyError
+		if !errors.As(err, &ve) {
+			t.Fatalf("expected VerifyError, got %T: %v", err, err)
+		}
+		if ve.Code != 23 { // X509_V_ERR_CERT_REVOKED
+			t.Fatalf("error code = %d, want 23 (certificate revoked): %v", ve.Code, err)
+		}
+	}
+	if _, err := ChainVerify(leaf2, roots, nil); err != nil {
+		t.Fatalf("leaf2 verify should pass: %v", err)
+	}
+
+	// 与 openssl verify -crl_check 结果一致（openssl 对验证失败返回退出码 2，属预期）
+	cmd := exec.Command(testutil.OpenSSLBin(), "verify", "-CAfile", "ca.pem",
+		"-crl_check", "-CRLfile", "crl.pem", "leaf1.pem")
+	cmd.Dir = dir
+	out, _ := cmd.CombinedOutput()
+	if !bytes.Contains(out, []byte("certificate revoked")) {
+		t.Fatalf("openssl verify -crl_check should report revoked: %s", out)
 	}
 }

@@ -193,27 +193,29 @@
 
 ---
 
-### Phase 9 — 证书链验证与吊销（对应需求 2.2，P1）
+### Phase 9 — 证书链验证与吊销（对应需求 2.2，P1，已完成）
 
 **证书链验证（X509_STORE）**
-- [ ] 绑定层：`X509_STORE_new/free/add_cert/set_flags`、`X509_STORE_CTX_new/free/init/set_chain`
-- [ ] 绑定层：`X509_verify_cert`、`X509_STORE_CTX_get_error/error_depth/current_cert`、
-  `get0_chain`（链补全）
-- [ ] 核心层：`Store`（封装 X509_STORE：AddCert / SetFlags）
-- [ ] API 层：`ChainVerify(cert, roots, intermediates)`（错误码映射 `OpError`）
-- [ ] 测试：自签链通过、伪造 CA 拒绝、过期证书拒绝、`openssl verify -CAfile` 互通
+- [x] 绑定层：`X509_STORE_new/free/add_cert/add_crl/set_flags`、`X509_STORE_CTX_new/free/init/set0_untrusted`
+- [x] 绑定层：`X509_verify_cert`、`X509_STORE_CTX_get_error/error_depth/current_cert`、
+  `get0_chain`（链补全）、`X509_verify_cert_error_string`
+- [x] 核心层：`Store`（封装 X509_STORE：AddCert / AddCRL / SetFlags）
+- [x] API 层：`ChainVerify(cert, roots, intermediates)` 返回完整链，失败映射 `*VerifyError`
+  （Code / Depth / Message）
+- [x] 测试：自签链通过、伪造 CA 拒绝、过期证书拒绝（code 10）、Root→Intermediate→Leaf
+  三层链补全、`openssl verify -CAfile` 互通
 
 **CRL（证书吊销列表）**
-- [ ] 绑定层：`d2i_X509_CRL` / `i2d_X509_CRL`、`X509_CRL_get_issuer/version/lastUpdate/nextUpdate`、
-  `X509_CRL_get_REVOKED`、`X509_REVOKED_get_serialNumber/revocationDate/get_ext_d2i`（吊销原因）
-- [ ] 核心层：`CRL` 类型（Load / Issuer / 时间窗 / RevokedEntries 含原因）
-- [ ] API 层：`crypto/x509` 的 `ParseCRL` / `CRL`
-- [ ] 测试：解析真实 CRL 断言吊销条目与原因、`openssl crl -text` 对比
+- [x] 绑定层：`d2i_X509_CRL` / `i2d_X509_CRL`、`X509_CRL_get_issuer/version/lastUpdate/nextUpdate`、
+  `X509_CRL_get_REVOKED`、`X509_REVOKED_get0_serialNumber/revocationDate/get_ext_d2i`（吊销原因）
+- [x] 核心层：`CRL` 类型（Load PEM/DER / Issuer / 时间窗 / RevokedEntries 含原因 / MarshalPEM/DER）
+- [x] API 层：`crypto/x509` 的 `ParseCRL` / `LoadCRLPEM` / `LoadCRLDER` / `CRL` / `RevokedEntry`
+- [x] 测试：解析 openssl 生成的 CRL 断言吊销条目与原因、`openssl crl -text` 对比
 
 **吊销检查**
-- [ ] 绑定层：`X509_V_FLAG_CRL_CHECK` / `X509_V_FLAG_CRL_CHECK_ALL`
-- [ ] API 层：`RevocationCheck(cert, crls)`（序列号比对 + issuer 匹配）
-- [ ] 测试：撤销证书拒绝、未撤销通过、`openssl verify -crl_check` 互通
+- [x] 绑定层：`X509_V_FLAG_CRL_CHECK` / `X509_V_FLAG_CRL_CHECK_ALL`（`Store.SetCRLCheck(All)`）
+- [x] API 层：`RevocationCheck(cert, crls)`（序列号比对 + issuer 匹配）
+- [x] 测试：撤销证书拒绝（ChainVerify 报 code 23）、未撤销通过、`openssl verify -crl_check` 互通
 
 ---
 
@@ -314,10 +316,15 @@
   构建扩展（SAN / KeyUsage / EKU / SKID / AKID）、CSR 高级（SAN / 扩展 / 挑战密码 /
   多字段 Subject，`NewEmptyCertificateRequest` 构建器）。已通过单元测试与铜锁 openssl
   CLI 交叉验证（fingerprint / DER / x509 -text / req -text）
-- 🚧 Phase 9–12 为**待实施**规划（对应 [new-requirement.md](../new-requirement.md) 需求清单）：
-  Phase 9 证书链验证与吊销（P1）、Phase 10 密钥体系扩展 RSA/EC（P1）、
-  Phase 11 容器格式 PKCS#12/PKCS#7（P2）、Phase 12 在线与格式工具 OCSP/ASN.1/JWK（P2）
-- 依赖关系：Phase 11 依赖 Phase 10（密钥体系）；Phase 12 的 OCSP 依赖 Phase 9（链验证）、
+- ✅ **Phase 9（证书链验证与吊销，P1）已完成**：`Store`（信任锚：AddCert / AddCRL /
+  SetFlags）+ `ChainVerify(cert, roots, intermediates)`（返回完整链，失败映射 `*VerifyError`
+  含 Code/Depth/Message）；CRL 解析（`ParseCRL` / `LoadCRLPEM` / `LoadCRLDER`，吊销条目含
+  序列号/时间/原因）；`RevocationCheck(cert, crls)`（序列号 + issuer 匹配）。已通过单元测试
+  与铜锁 openssl CLI 交叉验证（verify -CAfile / crl -text / verify -crl_check，撤销报 code 23）
+- 🚧 Phase 10–12 为**待实施**规划（对应 [new-requirement.md](../new-requirement.md) 需求清单）：
+  Phase 10 密钥体系扩展 RSA/EC（P1）、Phase 11 容器格式 PKCS#12/PKCS#7（P2）、
+  Phase 12 在线与格式工具 OCSP/ASN.1/JWK（P2）
+- 依赖关系：Phase 11 依赖 Phase 10（密钥体系）；Phase 12 的 OCSP 依赖 Phase 9（链验证，✅ 已完成）、
   JWK/XML 依赖 Phase 10（RSA/EC 参数提取）；Phase 7–10 相互独立，可按需调整实施顺序
 - 说明：Phase 5 中延后的 CRL 解析与吊销检查已并入 Phase 9 统一规划；
   证书签名当前支持 SM2（Phase 10 落地后 `CreateCertificate` 泛化支持 RSA / ECDSA）

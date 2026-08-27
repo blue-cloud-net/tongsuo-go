@@ -900,3 +900,319 @@ func readAllBIO(bio unsafe.Pointer) ([]byte, error) {
 	}
 	return out, nil
 }
+
+// VerifyError 表示证书链验证失败详情。
+type VerifyError struct {
+	Code    int    // X509_V_ERR_* 错误码（如 native.X509VErrCertHasExpired）
+	Depth   int    // 出错深度（0 为待验证证书本身）
+	Message string // 错误描述
+}
+
+// Error 实现 error 接口。
+func (e *VerifyError) Error() string {
+	if e == nil {
+		return "x509: verify error"
+	}
+	return fmt.Sprintf("x509: certificate verify failed: %s (code=%d, depth=%d)",
+		e.Message, e.Code, e.Depth)
+}
+
+// Store 表示证书信任存储（X509_STORE 的包装），作为 ChainVerify 的信任锚。
+type Store struct {
+	handle *Handle
+}
+
+// NewStore 创建空的信任存储。
+func NewStore() (*Store, error) {
+	s := native.X509_STORE_new()
+	if s == nil {
+		return nil, NewOpError("x509: X509_STORE_new", native.PopError())
+	}
+	return &Store{handle: NewHandle(s, true, native.X509_STORE_free)}, nil
+}
+
+// AddCert 向存储添加信任证书。
+func (s *Store) AddCert(c *Certificate) error {
+	if s == nil || s.handle == nil || s.handle.IsClosed() {
+		return fmt.Errorf("x509: store closed")
+	}
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: invalid certificate")
+	}
+	if !native.X509_STORE_add_cert(s.handle.Ptr(), c.handle.Ptr()) {
+		return NewOpError("x509: X509_STORE_add_cert", native.PopError())
+	}
+	return nil
+}
+
+// AddCRL 向存储添加 CRL（配合 SetFlags(X509VFlagCRLCheck*) 启用吊销检查）。
+func (s *Store) AddCRL(c *CRL) error {
+	if s == nil || s.handle == nil || s.handle.IsClosed() {
+		return fmt.Errorf("x509: store closed")
+	}
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: invalid CRL")
+	}
+	if !native.X509_STORE_add_crl(s.handle.Ptr(), c.handle.Ptr()) {
+		return NewOpError("x509: X509_STORE_add_crl", native.PopError())
+	}
+	return nil
+}
+
+// SetFlags 设置验证标志（如 native.X509VFlagCRLCheck / X509VFlagCRLCheckAll）。
+func (s *Store) SetFlags(flags uint64) error {
+	if s == nil || s.handle == nil || s.handle.IsClosed() {
+		return fmt.Errorf("x509: store closed")
+	}
+	if !native.X509_STORE_set_flags(s.handle.Ptr(), flags) {
+		return NewOpError("x509: X509_STORE_set_flags", native.PopError())
+	}
+	return nil
+}
+
+// Close 释放信任存储。幂等。
+func (s *Store) Close() error {
+	if s == nil {
+		return nil
+	}
+	return s.handle.Close()
+}
+
+// ChainVerify 验证证书链并返回构建的完整链（索引 0 为叶证书，末位为根）。
+// store 为信任锚（Root CA）；intermediates 为中间证书（用于补全链）。
+// 验证失败返回 *VerifyError。
+func ChainVerify(cert *Certificate, store *Store, intermediates []*Certificate) ([]*Certificate, error) {
+	if cert == nil || cert.handle == nil || cert.handle.IsClosed() {
+		return nil, fmt.Errorf("x509: invalid certificate")
+	}
+	if store == nil || store.handle == nil || store.handle.IsClosed() {
+		return nil, fmt.Errorf("x509: invalid trust store")
+	}
+	ctx := native.X509_STORE_CTX_new()
+	if ctx == nil {
+		return nil, NewOpError("x509: X509_STORE_CTX_new", native.PopError())
+	}
+	defer native.X509_STORE_CTX_free(ctx)
+	if !native.X509_STORE_CTX_init(ctx, store.handle.Ptr(), cert.handle.Ptr()) {
+		return nil, NewOpError("x509: X509_STORE_CTX_init", native.PopError())
+	}
+	if len(intermediates) > 0 {
+		sk := native.X509_sk_X509_new_null()
+		if sk == nil {
+			return nil, NewOpError("x509: sk_X509_new_null", native.PopError())
+		}
+		ok := true
+		for _, ic := range intermediates {
+			if ic == nil || ic.handle == nil || ic.handle.IsClosed() {
+				ok = false
+				break
+			}
+			if !native.X509_sk_X509_push(sk, ic.handle.Ptr()) {
+				ok = false
+				break
+			}
+		}
+		if !ok {
+			native.X509_sk_X509_free(sk)
+			return nil, fmt.Errorf("x509: invalid intermediate certificate")
+		}
+		// 所有权转移给 ctx，ctx 释放时一并释放栈（不释放元素）。
+		native.X509_STORE_CTX_set0_untrusted(ctx, sk)
+	}
+	ret := native.X509_verify_cert(ctx)
+	if ret != 1 {
+		code := native.X509_STORE_CTX_get_error(ctx)
+		depth := native.X509_STORE_CTX_get_error_depth(ctx)
+		msg := native.X509_verify_cert_error_string(code)
+		return nil, &VerifyError{Code: code, Depth: depth, Message: msg}
+	}
+	// 链补全：复制已验证链。
+	chainSk := native.X509_STORE_CTX_get0_chain(ctx)
+	if chainSk == nil {
+		return nil, fmt.Errorf("x509: X509_STORE_CTX_get0_chain returned nil")
+	}
+	count := native.X509_sk_X509_num(chainSk)
+	chain := make([]*Certificate, 0, count)
+	for i := 0; i < count; i++ {
+		x := native.X509_sk_X509_value(chainSk, i)
+		if x == nil {
+			continue
+		}
+		dup := native.X509_dup(x)
+		if dup == nil {
+			return nil, NewOpError("x509: X509_dup", native.PopError())
+		}
+		chain = append(chain, &Certificate{handle: NewHandle(dup, true, native.X509_free)})
+	}
+	return chain, nil
+}
+
+// crlReasonNames 为 CRL 吊销原因码到名称的映射（与 openssl crl -text 输出一致）。
+var crlReasonNames = map[int]string{
+	0:  "unspecified",
+	1:  "keyCompromise",
+	2:  "CACompromise",
+	3:  "affiliationChanged",
+	4:  "superseded",
+	5:  "cessationOfOperation",
+	6:  "certificateHold",
+	8:  "removeFromCRL",
+	9:  "privilegeWithdrawn",
+	10: "aACompromise",
+}
+
+// RevokedEntry 表示 CRL 中的一条吊销记录。
+type RevokedEntry struct {
+	Serial         int64
+	RevocationDate time.Time
+	ReasonCode     int    // -1 表示未指定
+	Reason         string // 原因名（如 "keyCompromise"）
+}
+
+// CRL 表示证书吊销列表（X509_CRL 的包装）。
+type CRL struct {
+	handle *Handle
+}
+
+// LoadCRLPEM 从 PEM 加载 CRL。
+func LoadCRLPEM(pem []byte) (*CRL, error) {
+	bio := native.BIO_new_mem_buf(pem)
+	if bio == nil {
+		return nil, NewOpError("x509: BIO_new_mem_buf", native.PopError())
+	}
+	defer native.BIO_free(bio)
+	c := native.X_PEM_read_bio_X509_CRL(bio)
+	if c == nil {
+		return nil, NewOpError("x509: PEM_read_bio_X509_CRL", native.PopError())
+	}
+	return &CRL{handle: NewHandle(c, true, native.X509_CRL_free)}, nil
+}
+
+// LoadCRLDER 从 DER 加载 CRL。
+func LoadCRLDER(der []byte) (*CRL, error) {
+	c := native.D2i_X509_CRL(der)
+	if c == nil {
+		return nil, NewOpError("x509: d2i_X509_CRL", native.PopError())
+	}
+	return &CRL{handle: NewHandle(c, true, native.X509_CRL_free)}, nil
+}
+
+// MarshalPEM 导出 CRL 为 PEM。
+func (c *CRL) MarshalPEM() ([]byte, error) {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil, fmt.Errorf("x509: CRL closed")
+	}
+	bio := native.BIO_new(native.BIO_s_mem())
+	if bio == nil {
+		return nil, NewOpError("x509: BIO_new", native.PopError())
+	}
+	defer native.BIO_free(bio)
+	if !native.X_PEM_write_bio_X509_CRL(bio, c.handle.Ptr()) {
+		return nil, NewOpError("x509: PEM_write_bio_X509_CRL", native.PopError())
+	}
+	return readAllBIO(bio)
+}
+
+// MarshalDER 导出 CRL 为 DER。
+func (c *CRL) MarshalDER() ([]byte, error) {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil, fmt.Errorf("x509: CRL closed")
+	}
+	der, ok := native.I2d_X509_CRL(c.handle.Ptr())
+	if !ok {
+		return nil, NewOpError("x509: i2d_X509_CRL", native.PopError())
+	}
+	return der, nil
+}
+
+// Issuer 返回 CRL 签发者名字（内部指针，勿关闭）。
+func (c *CRL) Issuer() *Name {
+	n := native.X509_CRL_get_issuer(c.handle.Ptr())
+	if n == nil {
+		return nil
+	}
+	return &Name{handle: NewHandle(n, false, nil)}
+}
+
+// Version 返回 CRL 版本字段值（0=v1，1=v2）。
+func (c *CRL) Version() int {
+	return native.X509_CRL_get_version(c.handle.Ptr())
+}
+
+// LastUpdate 返回 CRL 生效时间。
+func (c *CRL) LastUpdate() time.Time {
+	return time.Unix(native.X509_CRL_get0_lastUpdate(c.handle.Ptr()), 0).UTC()
+}
+
+// NextUpdate 返回 CRL 过期时间。
+func (c *CRL) NextUpdate() time.Time {
+	return time.Unix(native.X509_CRL_get0_nextUpdate(c.handle.Ptr()), 0).UTC()
+}
+
+// RevokedEntries 返回 CRL 中的全部吊销记录。
+func (c *CRL) RevokedEntries() []RevokedEntry {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil
+	}
+	sk := native.X509_CRL_get_REVOKED(c.handle.Ptr())
+	if sk == nil {
+		return nil
+	}
+	count := native.X509_sk_X509_REVOKED_num(sk)
+	out := make([]RevokedEntry, 0, count)
+	for i := 0; i < count; i++ {
+		rev := native.X509_sk_X509_REVOKED_value(sk, i)
+		if rev == nil {
+			continue
+		}
+		code := native.X509_REVOKED_crl_reason(rev)
+		entry := RevokedEntry{
+			Serial:         native.X509_REVOKED_get0_serialNumber(rev),
+			RevocationDate: time.Unix(native.X509_REVOKED_get0_revocationDate(rev), 0).UTC(),
+			ReasonCode:     code,
+			Reason:         crlReasonNames[code],
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+// Close 释放 CRL。幂等。
+func (c *CRL) Close() error {
+	if c == nil {
+		return nil
+	}
+	return c.handle.Close()
+}
+
+// RevocationCheck 检查证书是否被任何 CRL 吊销。
+// 仅当 CRL 的签发者与证书签发者一致且序列号匹配时判定为已吊销。
+// 未吊销返回 nil；已吊销返回描述性错误。
+func RevocationCheck(cert *Certificate, crls []*CRL) error {
+	if cert == nil || cert.handle == nil || cert.handle.IsClosed() {
+		return fmt.Errorf("x509: invalid certificate")
+	}
+	serial := cert.Serial()
+	certIssuer := native.X509_get_issuer_name(cert.handle.Ptr())
+	for _, crl := range crls {
+		if crl == nil || crl.handle == nil || crl.handle.IsClosed() {
+			continue
+		}
+		crlIssuer := native.X509_CRL_get_issuer(crl.handle.Ptr())
+		if native.X509_NAME_cmp(certIssuer, crlIssuer) != 0 {
+			continue // 签发者不匹配
+		}
+		for _, e := range crl.RevokedEntries() {
+			if e.Serial != serial {
+				continue
+			}
+			reason := e.Reason
+			if reason == "" {
+				reason = "unspecified"
+			}
+			return fmt.Errorf("x509: certificate with serial %d is revoked (reason: %s)",
+				serial, reason)
+		}
+	}
+	return nil
+}

@@ -345,3 +345,58 @@ char *X_X509_REQ_get_challenge_password(X509_REQ *r)
         return NULL;
     return (char *)out;
 }
+
+void *X_sk_X509_new_null(void)
+{
+    return sk_X509_new_null();
+}
+
+int X_sk_X509_push(void *sk, void *x)
+{
+    return sk_X509_push((STACK_OF(X509) *)sk, (X509 *)x);
+}
+
+void X_sk_X509_free(void *sk)
+{
+    sk_X509_free((STACK_OF(X509) *)sk);
+}
+
+int X_sk_X509_num(const void *sk)
+{
+    return sk_X509_num((const STACK_OF(X509) *)sk);
+}
+
+void *X_sk_X509_value(const void *sk, int i)
+{
+    return sk_X509_value((const STACK_OF(X509) *)sk, i);
+}
+
+void X_X509_STORE_CTX_set0_untrusted(X509_STORE_CTX *ctx, void *sk)
+{
+    X509_STORE_CTX_set0_untrusted(ctx, (STACK_OF(X509) *)sk);
+}
+
+int X_sk_X509_REVOKED_num(const void *sk)
+{
+    return sk_X509_REVOKED_num((const STACK_OF(X509_REVOKED) *)sk);
+}
+
+void *X_sk_X509_REVOKED_value(const void *sk, int i)
+{
+    return sk_X509_REVOKED_value((const STACK_OF(X509_REVOKED) *)sk, i);
+}
+
+void X_ASN1_ENUMERATED_free(void *a)
+{
+    ASN1_ENUMERATED_free((ASN1_ENUMERATED *)a);
+}
+
+X509_CRL *X_PEM_read_bio_X509_CRL(BIO *bp)
+{
+    return PEM_read_bio_X509_CRL(bp, NULL, NULL, NULL);
+}
+
+int X_PEM_write_bio_X509_CRL(BIO *bp, X509_CRL *x)
+{
+    return PEM_write_bio_X509_CRL(bp, x);
+}

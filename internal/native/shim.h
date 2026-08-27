@@ -94,4 +94,30 @@ void *X_X509_REQ_get_extensions(X509_REQ *r);              /* 调用方 pop_free
 int X_X509_REQ_set_challenge_password(X509_REQ *r, const char *pwd);
 char *X_X509_REQ_get_challenge_password(X509_REQ *r);      /* 调用方 free */
 
+/*
+ * Phase 9：证书链验证与吊销。
+ * X509_STORE_CTX_set0_untrusted 的 STACK_OF(X509) 以 void * 传递。
+ */
+
+/* X509 栈（中间证书链 / 已验证链） */
+void *X_sk_X509_new_null(void);                             /* STACK_OF(X509)* */
+int X_sk_X509_push(void *sk, void *x);
+void X_sk_X509_free(void *sk);
+int X_sk_X509_num(const void *sk);
+void *X_sk_X509_value(const void *sk, int i);               /* X509* */
+
+/* 已验证链设置（所有权转移给 ctx，不再单独释放） */
+void X_X509_STORE_CTX_set0_untrusted(X509_STORE_CTX *ctx, void *sk);
+
+/* CRL 吊销条目栈（内部指针，勿释放） */
+int X_sk_X509_REVOKED_num(const void *sk);
+void *X_sk_X509_REVOKED_value(const void *sk, int i);       /* X509_REVOKED* */
+
+/* CRL 吊销原因枚举释放 */
+void X_ASN1_ENUMERATED_free(void *a);
+
+/* CRL PEM 读写（回调固定 NULL） */
+X509_CRL *X_PEM_read_bio_X509_CRL(BIO *bp);
+int X_PEM_write_bio_X509_CRL(BIO *bp, X509_CRL *x);
+
 #endif /* TONGSUO_GO_SHIM_H */

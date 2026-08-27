@@ -670,3 +670,248 @@ func X509_REQ_get_challenge_password(r unsafe.Pointer) string {
 	defer C.X_OPENSSL_free(unsafe.Pointer(c))
 	return C.GoString(c)
 }
+
+// NidCrlReason 为 CRL 吊销原因扩展 NID（来自 obj_mac.h）。
+const NidCrlReason = 141
+
+// X509_V_ERR_* 证书链验证错误码（来自 x509_vfy.h 宏）。
+const (
+	X509VOK                       = 0
+	X509VErrUnableToGetIssuer     = 2
+	X509VErrUnableToGetCRL        = 3
+	X509VErrCertSignatureFail     = 7
+	X509VErrCertNotYetValid       = 9
+	X509VErrCertHasExpired        = 10
+	X509VErrCRLNotYetValid        = 11
+	X509VErrCRLHasExpired         = 12
+	X509VErrDepthZeroSelfSigned   = 18
+	X509VErrSelfSignedInChain     = 19
+	X509VErrUnableToGetLocalIssue = 20
+	X509VErrCertRevoked           = 23
+)
+
+// X509_V_FLAG_* 证书链验证标志（来自 x509_vfy.h 宏）。
+const (
+	X509VFlagCRLCheck    = 0x4
+	X509VFlagCRLCheckAll = 0x8
+)
+
+// X509_dup 复制证书（返回新引用，调用方负责 X509_free）。
+func X509_dup(x unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X509_dup((*C.X509)(x)))
+}
+
+// X509_STORE_new 创建证书存储。
+func X509_STORE_new() unsafe.Pointer {
+	return unsafe.Pointer(C.X509_STORE_new())
+}
+
+// X509_STORE_free 释放证书存储。
+func X509_STORE_free(s unsafe.Pointer) {
+	C.X509_STORE_free((*C.X509_STORE)(s))
+}
+
+// X509_STORE_add_cert 向存储添加信任证书（存储内部持引用，调用方仍拥有证书）。
+func X509_STORE_add_cert(s, x unsafe.Pointer) bool {
+	return C.X509_STORE_add_cert((*C.X509_STORE)(s), (*C.X509)(x)) == 1
+}
+
+// X509_STORE_add_crl 向存储添加 CRL（存储内部持引用）。
+func X509_STORE_add_crl(s, crl unsafe.Pointer) bool {
+	return C.X509_STORE_add_crl((*C.X509_STORE)(s), (*C.X509_CRL)(crl)) == 1
+}
+
+// X509_STORE_set_flags 设置存储验证标志。
+func X509_STORE_set_flags(s unsafe.Pointer, flags uint64) bool {
+	return C.X509_STORE_set_flags((*C.X509_STORE)(s), C.ulong(flags)) == 1
+}
+
+// X509_STORE_CTX_new 创建验证上下文。
+func X509_STORE_CTX_new() unsafe.Pointer {
+	return unsafe.Pointer(C.X509_STORE_CTX_new())
+}
+
+// X509_STORE_CTX_free 释放验证上下文。
+func X509_STORE_CTX_free(ctx unsafe.Pointer) {
+	C.X509_STORE_CTX_free((*C.X509_STORE_CTX)(ctx))
+}
+
+// X509_STORE_CTX_init 初始化验证上下文（store 为信任存储，cert 为待验证证书）。
+func X509_STORE_CTX_init(ctx, store, cert unsafe.Pointer) bool {
+	return C.X509_STORE_CTX_init((*C.X509_STORE_CTX)(ctx),
+		(*C.X509_STORE)(store), (*C.X509)(cert), nil) == 1
+}
+
+// X509_STORE_CTX_set0_untrusted 设置中间证书链（所有权转移给 ctx，勿再释放）。
+func X509_STORE_CTX_set0_untrusted(ctx, sk unsafe.Pointer) {
+	C.X_X509_STORE_CTX_set0_untrusted((*C.X509_STORE_CTX)(ctx), sk)
+}
+
+// X509_verify_cert 验证证书链（1=通过，0=失败，-1=内部错误）。
+func X509_verify_cert(ctx unsafe.Pointer) int {
+	return int(C.X509_verify_cert((*C.X509_STORE_CTX)(ctx)))
+}
+
+// X509_STORE_CTX_get_error 返回验证错误码。
+func X509_STORE_CTX_get_error(ctx unsafe.Pointer) int {
+	return int(C.X509_STORE_CTX_get_error((*C.X509_STORE_CTX)(ctx)))
+}
+
+// X509_STORE_CTX_get_error_depth 返回出错深度。
+func X509_STORE_CTX_get_error_depth(ctx unsafe.Pointer) int {
+	return int(C.X509_STORE_CTX_get_error_depth((*C.X509_STORE_CTX)(ctx)))
+}
+
+// X509_STORE_CTX_get_current_cert 返回出错证书（内部指针，勿释放）。
+func X509_STORE_CTX_get_current_cert(ctx unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X509_STORE_CTX_get_current_cert((*C.X509_STORE_CTX)(ctx)))
+}
+
+// X509_STORE_CTX_get0_chain 返回已验证链（内部栈，勿释放）。
+func X509_STORE_CTX_get0_chain(ctx unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X509_STORE_CTX_get0_chain((*C.X509_STORE_CTX)(ctx)))
+}
+
+// X509_verify_cert_error_string 返回验证错误码对应的描述。
+func X509_verify_cert_error_string(code int) string {
+	c := C.X509_verify_cert_error_string(C.long(code))
+	if c == nil {
+		return ""
+	}
+	return C.GoString(c)
+}
+
+// X509_sk_X509_new_null 创建 X509 栈。
+func X509_sk_X509_new_null() unsafe.Pointer {
+	return unsafe.Pointer(C.X_sk_X509_new_null())
+}
+
+// X509_sk_X509_push 向 X509 栈压入证书（栈不拥有元素）。
+func X509_sk_X509_push(sk, x unsafe.Pointer) bool {
+	return C.X_sk_X509_push(sk, x) == 1
+}
+
+// X509_sk_X509_free 释放 X509 栈（不释放元素）。
+func X509_sk_X509_free(sk unsafe.Pointer) {
+	C.X_sk_X509_free(sk)
+}
+
+// X509_sk_X509_num 返回 X509 栈条目数。
+func X509_sk_X509_num(sk unsafe.Pointer) int {
+	return int(C.X_sk_X509_num(sk))
+}
+
+// X509_sk_X509_value 返回 X509 栈第 i 个证书（内部指针）。
+func X509_sk_X509_value(sk unsafe.Pointer, i int) unsafe.Pointer {
+	return unsafe.Pointer(C.X_sk_X509_value(sk, C.int(i)))
+}
+
+// X509_NAME_cmp 比较两个名字（0=相等）。
+func X509_NAME_cmp(a, b unsafe.Pointer) int {
+	return int(C.X509_NAME_cmp((*C.X509_NAME)(a), (*C.X509_NAME)(b)))
+}
+
+// D2i_X509_CRL 从 DER 解析 CRL。
+func D2i_X509_CRL(der []byte) unsafe.Pointer {
+	if len(der) == 0 {
+		return nil
+	}
+	buf := C.malloc(C.size_t(len(der)))
+	if buf == nil {
+		return nil
+	}
+	defer C.free(buf)
+	C.memcpy(buf, unsafe.Pointer(&der[0]), C.size_t(len(der)))
+	p := (*C.uchar)(buf)
+	return unsafe.Pointer(C.d2i_X509_CRL(nil, &p, C.long(len(der))))
+}
+
+// I2d_X509_CRL 将 CRL 编码为 DER。
+func I2d_X509_CRL(crl unsafe.Pointer) ([]byte, bool) {
+	n := C.i2d_X509_CRL((*C.X509_CRL)(crl), nil)
+	if n <= 0 {
+		return nil, false
+	}
+	buf := C.malloc(C.size_t(n))
+	if buf == nil {
+		return nil, false
+	}
+	defer C.free(buf)
+	p := (*C.uchar)(buf)
+	C.i2d_X509_CRL((*C.X509_CRL)(crl), &p)
+	return C.GoBytes(unsafe.Pointer(buf), C.int(n)), true
+}
+
+// X_PEM_read_bio_X509_CRL 从 BIO 读取 PEM CRL。
+func X_PEM_read_bio_X509_CRL(bio unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X_PEM_read_bio_X509_CRL((*C.BIO)(bio)))
+}
+
+// X_PEM_write_bio_X509_CRL 将 CRL 以 PEM 写入 BIO。
+func X_PEM_write_bio_X509_CRL(bio unsafe.Pointer, crl unsafe.Pointer) bool {
+	return C.X_PEM_write_bio_X509_CRL((*C.BIO)(bio), (*C.X509_CRL)(crl)) == 1
+}
+
+// X509_CRL_free 释放 CRL。
+func X509_CRL_free(crl unsafe.Pointer) {
+	C.X509_CRL_free((*C.X509_CRL)(crl))
+}
+
+// X509_CRL_get_version 返回 CRL 版本。
+func X509_CRL_get_version(crl unsafe.Pointer) int {
+	return int(C.X509_CRL_get_version((*C.X509_CRL)(crl)))
+}
+
+// X509_CRL_get0_lastUpdate 返回 CRL 生效时间（unix 秒）。
+func X509_CRL_get0_lastUpdate(crl unsafe.Pointer) int64 {
+	return asn1TimeToUnix(C.X509_CRL_get0_lastUpdate((*C.X509_CRL)(crl)))
+}
+
+// X509_CRL_get0_nextUpdate 返回 CRL 过期时间（unix 秒）。
+func X509_CRL_get0_nextUpdate(crl unsafe.Pointer) int64 {
+	return asn1TimeToUnix(C.X509_CRL_get0_nextUpdate((*C.X509_CRL)(crl)))
+}
+
+// X509_CRL_get_issuer 返回 CRL 签发者名字（内部指针，勿释放）。
+func X509_CRL_get_issuer(crl unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X509_CRL_get_issuer((*C.X509_CRL)(crl)))
+}
+
+// X509_CRL_get_REVOKED 返回 CRL 吊销条目栈（内部指针，勿释放）。
+func X509_CRL_get_REVOKED(crl unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X509_CRL_get_REVOKED((*C.X509_CRL)(crl)))
+}
+
+// X509_sk_X509_REVOKED_num 返回吊销条目数。
+func X509_sk_X509_REVOKED_num(sk unsafe.Pointer) int {
+	return int(C.X_sk_X509_REVOKED_num(sk))
+}
+
+// X509_sk_X509_REVOKED_value 返回第 i 个吊销条目（内部指针）。
+func X509_sk_X509_REVOKED_value(sk unsafe.Pointer, i int) unsafe.Pointer {
+	return unsafe.Pointer(C.X_sk_X509_REVOKED_value(sk, C.int(i)))
+}
+
+// X509_REVOKED_get0_serialNumber 返回吊销条目的序列号。
+func X509_REVOKED_get0_serialNumber(rev unsafe.Pointer) int64 {
+	ai := C.X509_REVOKED_get0_serialNumber((*C.X509_REVOKED)(rev))
+	if ai == nil {
+		return 0
+	}
+	return int64(C.ASN1_INTEGER_get(ai))
+}
+
+// X509_REVOKED_get0_revocationDate 返回吊销条目的吊销时间（unix 秒）。
+func X509_REVOKED_get0_revocationDate(rev unsafe.Pointer) int64 {
+	return asn1TimeToUnix(C.X509_REVOKED_get0_revocationDate((*C.X509_REVOKED)(rev)))
+}
+
+// X509_REVOKED_crl_reason 返回吊销条目的原因码（无原因返回 -1）。
+func X509_REVOKED_crl_reason(rev unsafe.Pointer) int {
+	en := C.X509_REVOKED_get_ext_d2i((*C.X509_REVOKED)(rev), C.int(NidCrlReason), nil, nil)
+	if en == nil {
+		return -1
+	}
+	defer C.X_ASN1_ENUMERATED_free(en)
+	return int(C.ASN1_ENUMERATED_get((*C.ASN1_ENUMERATED)(en)))
+}
