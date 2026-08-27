@@ -4,6 +4,7 @@ import (
 	"bytes"
 	stdhmac "crypto/hmac"
 	stdsha256 "crypto/sha256"
+	stdsha384 "crypto/sha512"
 	"hash"
 	"testing"
 )
@@ -21,6 +22,23 @@ func TestHmacSHA256CrossStdlib(t *testing.T) {
 		_, _ = mac.Write(data)
 		if !bytes.Equal(got, mac.Sum(nil)) {
 			t.Fatalf("hmac-sha256 mismatch for len %d", len(data))
+		}
+	}
+}
+
+// TestHmacSHA384CrossStdlib 与 Go 标准库 hmac+sha384 交叉验证。
+func TestHmacSHA384CrossStdlib(t *testing.T) {
+	key := []byte("secret-hmac-key")
+	for _, data := range [][]byte{
+		{},
+		[]byte("a"),
+		bytes.Repeat([]byte("tongsuo-hmac-384"), 10),
+	} {
+		got := SumSHA384(key, data)
+		mac := stdhmac.New(stdsha384.New384, key)
+		_, _ = mac.Write(data)
+		if !bytes.Equal(got, mac.Sum(nil)) {
+			t.Fatalf("hmac-sha384 mismatch for len %d", len(data))
 		}
 	}
 }

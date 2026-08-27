@@ -21,6 +21,9 @@ func NewSHA1(key []byte) hash.Hash { return newHMAC(key, core.SHA1()) }
 // NewSHA256 返回 HMAC-SHA256 的 hash.Hash。
 func NewSHA256(key []byte) hash.Hash { return newHMAC(key, core.SHA256()) }
 
+// NewSHA384 返回 HMAC-SHA384 的 hash.Hash。
+func NewSHA384(key []byte) hash.Hash { return newHMAC(key, core.SHA384()) }
+
 // NewSHA512 返回 HMAC-SHA512 的 hash.Hash。
 func NewSHA512(key []byte) hash.Hash { return newHMAC(key, core.SHA512()) }
 
@@ -34,6 +37,13 @@ func SumSM3(key, data []byte) []byte {
 // SumSHA256 一次性计算 HMAC-SHA256。
 func SumSHA256(key, data []byte) []byte {
 	h := NewSHA256(key)
+	_, _ = h.Write(data)
+	return h.Sum(nil)
+}
+
+// SumSHA384 一次性计算 HMAC-SHA384。
+func SumSHA384(key, data []byte) []byte {
+	h := NewSHA384(key)
 	_, _ = h.Write(data)
 	return h.Sum(nil)
 }
