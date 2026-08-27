@@ -121,7 +121,7 @@
   CertificationRequestInfo 并走 SM2 验签路径（结果与 `openssl req -verify` 一致）
 
 **CRL（证书吊销列表）**
-- [ ] 规划中：CRL 解析与吊销查询（后续补充）
+- [ ] 已移至 Phase 9 统一规划（CRL 解析 + 吊销检查）
 
 **测试**
 - [x] 自签/CA 链/CSR 单元测试 + openssl CLI 交叉验证（verify / x509 / req -verify）
@@ -134,13 +134,157 @@
 - [x] NTLS（国密 TLS）双证书支持（加密证书 + 签名证书，`Config.SignCert/EncCert`）
 - [x] 测试：回环握手 / 多轮读写 / 协议版本与密码套件
 - [x] 互操作测试：与官方 `openssl s_server` / `s_client`（`-ntls -enable_ntls` 双证书）互通
-- [ ] `net/http` 集成（可选，延后）
-- [ ] 会话复用（session resumption，可选，延后）
+
+---
+
+### Phase 7 — 加密层补全（P0，已完成）
+
+**SM2 密文顺序转换（C1C2C3 ↔ C1C3C2 ↔ DER）**
+- [x] `crypto/sm2` 新增 `Format(ct, from, to)`：DER / C1C2C3 / C1C3C2 三种密文格式互转
+  （纯 Go 解析 ASN.1 中的 C1 点坐标、C3 哈希、C2 密文并重排，无需新绑定）
+- [x] 便捷函数 `EncryptWithOrder` / `DecryptWithOrder`（默认 C1C3C2，兼容裸格式互操作）
+- [x] 测试：三格式往返一致性、与铜锁 openssl pkeyutl 输出对比
+
+**SM4 Zero 填充（ECB / CBC）**
+- [x] `crypto/sm4` 新增 `EncryptECBZero` / `DecryptECBZero` / `EncryptCBCZero` / `DecryptCBCZero`
+  （底层复用 `SetPadding(false)` + 手动补零）
+- [x] 测试：Zero 填充往返、非法 IV
+
+**HMAC-SHA384**
+- [x] `crypto/hmac` 新增 `NewSHA384` / `SumSHA384`（复用核心层已具备的 SHA-384 描述符）
+- [x] 测试：Go 标准库 `crypto/hmac` 交叉验证
+
+---
+
+### Phase 8 — 证书结构化解析与交换（对应需求 2.2 P0/P1 主干）
+
+**证书结构化解析**
+- [ ] 绑定层：`X509_NAME_get_entry_count/get_entry`、`X509_NAME_ENTRY_get_object/data`、
+  `ASN1_STRING_to_UTF8` + 更多 NID（O / OU / L / ST / C / E / serialNumber）——完整 RDN
+- [ ] 绑定层：`X509_get_ext_d2i`（SAN / KeyUsage / EKU / BasicConstraints / SKID / AKID）、
+  `X509_get0_subject_key_id` / `X509_get0_authority_key_id`
+- [ ] 核心层：`Name` 扩展条目枚举（`Entries()` / `Get(nid)` / 完整 `String()`）
+- [ ] API 层：`crypto/x509` 的 `Subject()` / `Issuer()`（完整 RDN）、`SAN()` / `KeyUsage()` /
+  `ExtendedKeyUsage()` / `IsCA()` / `Version()` / `CertificateType()`
+- [ ] 测试：解析真实证书断言各字段
+
+**证书指纹（P0）**
+- [ ] 绑定层：`X509_digest`（EVP_sha1 / EVP_sha256）
+- [ ] API 层：`Fingerprint(alg)` 返回十六进制指纹
+- [ ] 测试：与 `openssl x509 -fingerprint` / `-sha256` 一致
+
+**证书 DER 交换（PEM ↔ DER）**
+- [ ] 绑定层：`i2d_X509` / `d2i_X509`、`i2d_X509_REQ` / `d2i_X509_REQ`
+- [ ] API 层：`MarshalDER()` / `LoadCertificateDER` / CSR 对应 DER 加载导出
+- [ ] 测试：PEM ↔ DER 往返、与 `openssl x509 -outform DER` 互通
+
+**证书构建扩展补充**
+- [ ] 绑定层：`X509V3_EXT_conf_nid` 扩展至 SAN / KeyUsage / EKU（现仅 basicConstraints）
+- [ ] API 层：`CreateCertificate` / `NewCertificate` 构建器支持 SAN、KeyUsage、ExtendedKeyUsage、
+  SKID / AKID 扩展
+- [ ] 测试：生成的证书含扩展、`openssl x509 -text` 对比
+
+**CSR 高级**
+- [ ] 绑定层：`X509_REQ_add_extensions` / `X509_REQ_get_extensions`、
+  `X509_REQ_set/get_challenge_password`
+- [ ] API 层：CSR 生成支持 SAN / 扩展 / 挑战密码 / 多字段 Subject
+- [ ] 测试：CSR 扩展读取、挑战密码校验、`openssl req -text` 对比
+
+---
+
+### Phase 9 — 证书链验证与吊销（对应需求 2.2，P1）
+
+**证书链验证（X509_STORE）**
+- [ ] 绑定层：`X509_STORE_new/free/add_cert/set_flags`、`X509_STORE_CTX_new/free/init/set_chain`
+- [ ] 绑定层：`X509_verify_cert`、`X509_STORE_CTX_get_error/error_depth/current_cert`、
+  `get0_chain`（链补全）
+- [ ] 核心层：`Store`（封装 X509_STORE：AddCert / SetFlags）
+- [ ] API 层：`ChainVerify(cert, roots, intermediates)`（错误码映射 `OpError`）
+- [ ] 测试：自签链通过、伪造 CA 拒绝、过期证书拒绝、`openssl verify -CAfile` 互通
+
+**CRL（证书吊销列表）**
+- [ ] 绑定层：`d2i_X509_CRL` / `i2d_X509_CRL`、`X509_CRL_get_issuer/version/lastUpdate/nextUpdate`、
+  `X509_CRL_get_REVOKED`、`X509_REVOKED_get_serialNumber/revocationDate/get_ext_d2i`（吊销原因）
+- [ ] 核心层：`CRL` 类型（Load / Issuer / 时间窗 / RevokedEntries 含原因）
+- [ ] API 层：`crypto/x509` 的 `ParseCRL` / `CRL`
+- [ ] 测试：解析真实 CRL 断言吊销条目与原因、`openssl crl -text` 对比
+
+**吊销检查**
+- [ ] 绑定层：`X509_V_FLAG_CRL_CHECK` / `X509_V_FLAG_CRL_CHECK_ALL`
+- [ ] API 层：`RevocationCheck(cert, crls)`（序列号比对 + issuer 匹配）
+- [ ] 测试：撤销证书拒绝、未撤销通过、`openssl verify -crl_check` 互通
+
+---
+
+### Phase 10 — 密钥体系扩展（RSA / EC，对应需求 2.3，P1）
+
+**RSA / EC 密钥类型支持**
+- [ ] 绑定层：通用 keygen（shim 扩展 `X_EVP_PKEY_Q_keygen` 参数化 RSA / EC / SM2）
+- [ ] 绑定层：`EVP_PKEY_get_base_id` / `EVP_PKEY_get_id`（密钥类型识别）
+- [ ] 绑定层：参数提取 `EVP_PKEY_get_bn_param`（RSA n/e/d/p/q；EC d）、`EVP_PKEY_get1_RSA` /
+  `get1_EC_KEY`、EC 坐标 `EC_POINT_get_affine_coordinates`、curve 名
+- [ ] 核心层：`PKey` 泛化（`BaseID`、RSA Sign/Verify PKCS1v15/PSS、RSA Encrypt/Decrypt OAEP、
+  ECDSA Sign/Verify DER、`Params`）
+- [ ] API 层：`crypto/rsa`（`GenerateKey` / `Load` / `Marshal` / `Sign` / `Verify` / `Encrypt` / `Decrypt` / `Params`）
+- [ ] API 层：`crypto/ecdsa`（`GenerateKey` / `Load` / `Marshal` / `Sign` / `Verify` / `Params`）
+- [ ] `CreateCertificate` 泛化 key 接口（SM2 / RSA / ECDSA 均可签发）
+- [ ] 测试：与 openssl 交叉验证（keygen / PEM / 签名验签 / 加解密）
+
+**密钥格式转换**
+- [ ] 绑定层：PKCS#1 `PEM_read/write_bio_RSAPrivateKey`、`i2d/d2i_RSAPrivateKey`
+- [ ] API 层：`Convert`（PKCS#1 ↔ PKCS#8、DER ↔ PEM）
+- [ ] 测试：各格式往返、`openssl rsa -traditional` 对比
+
+**私钥 ops**
+- [ ] 绑定层：shim 口令回调桥接（`pem_password_cb`）
+- [ ] API 层：`MarshalEncryptedPEM` / `ChangePassword` / `Public()`
+- [ ] 测试：加密 PEM 往返、改密、提公钥、`openssl pkey -aes256` 互通
+
+**密钥匹配**
+- [ ] 绑定层：`EVP_PKEY_eq` / `EVP_PKEY_public_eq`
+- [ ] API 层：`Match`（证书 ↔ 密钥 / CSR ↔ 密钥 / 公钥 ↔ 私钥）
+- [ ] 测试：匹配 / 不匹配场景
+
+---
+
+### Phase 11 — 容器格式（对应需求 2.4，P2，依赖 Phase 10）
+
+**PKCS#12（PFX）**
+- [ ] 绑定层：补 `BIO_write`；核心层新增 `MemBIO` 封装
+- [ ] 绑定层：`PKCS12_create` / `d2i_PKCS12` / `i2d_PKCS12` / `PKCS12_parse` / `PKCS12_set_mac`
+- [ ] API 层：`crypto/pkcs12` 的 `Pack`（证书 + 密钥 + CA 链 + 口令）/ `Parse` / `ChangePassword`
+- [ ] 测试：打包 / 拆分 / 改密往返、`openssl pkcs12` 互通
+
+**PKCS#7（P7B）**
+- [ ] 绑定层：`PKCS7_sign` / `PKCS7_verify` / `d2i_PKCS7_bio` / `i2d_PKCS7_bio` / `PKCS7_get_certificates`
+- [ ] API 层：`crypto/pkcs7` 的 `Build`（证书集合）/ `Extract`
+- [ ] 测试：`openssl crl2pkcs7` / `openssl smime` 互通
+
+---
+
+### Phase 12 — 在线与格式工具（对应需求 2.5/2.6，P2；OCSP 依赖 Phase 9，JWK/XML 依赖 Phase 10）
+
+**OCSP（在线证书状态协议）**
+- [ ] 绑定层：`OCSP_REQUEST_new` / `OCSP_CERTID_new` / `OCSP_request_add0_id` / `i2d_OCSP_REQUEST`、
+  `d2i_OCSP_RESPONSE` / `OCSP_response_get1_basic` / `OCSP_resp_find_status` /
+  `OCSP_check_validity` / `OCSP_basic_verify`
+- [ ] API 层：`crypto/ocsp` 的 `CreateRequest` / `ParseResponse` / `Verify`（响应验证复用 Phase 9 链验证）
+- [ ] 测试：本地 OCSP responder / `openssl ocsp` 互通
+
+**ASN.1 树 / DER dump**
+- [ ] API 层：`crypto/asn1`（纯 Go）DER → 可读树（tag / len / value）+ hex dump
+- [ ] 测试：对已知证书 DER 断言结构
+
+**JWK / XML**
+- [ ] API 层：`crypto/jwk`（JWK ↔ PEM，RSA n/e/d、EC crv/x/y，base64url）
+- [ ] API 层：RSA PEM ↔ XML
+- [ ] 测试：JWK 与 `openssl pkey -pubin -text` 互通、XML 往返
 
 ---
 
 ### 发布
 
+- [ ] 发布 tag（v0.1.0）：打 tag 供消费方 `go get @v0.x.y` 固定版本
 - [ ] CI/CD 流水线（GitHub Actions：编译、测试、lint、覆盖率、静态链接验证）
 - [ ] 完整 GoDoc API 文档
 - [ ] 示例程序完善（`examples/`）
@@ -159,6 +303,17 @@
   `-enable_ntls`**（仅 `-ntls` 会因状态机未路由到 NTLS 而报
   `state_machine:internal error`）。
 - Phase 1–5 已完成（基础框架 + SM3/SM4 核心国密 + SM2 + SM4-GCM + RNG + HMAC + 哈希 + AES + X.509 证书/CSR）
-- 说明：Phase 5 中 CRL 解析延后至后续补充；证书签名当前支持 SM2（RSA/EC 证书待对应密钥类型支持）
-- 核心国密优先：Phase 1–3 是重点；Phase 4–6 顺序可根据实际需求调整
+- ✅ **Phase 7（加密层补全，P0）已完成**：`crypto/sm2` 新增 `Format` / `EncryptWithOrder` /
+  `DecryptWithOrder`（DER ↔ C1C3C2 ↔ C1C2C3 密文互转）；`crypto/sm4` 新增 `*Zero` 填充便捷函数
+  （ECB / CBC）；`crypto/hmac` 新增 `NewSHA384` / `SumSHA384`。已通过单元测试与
+  铜锁 openssl CLI 交叉验证
+- 🚧 Phase 8–12 为**待实施**规划（对应 [new-requirement.md](../new-requirement.md) 需求清单）：
+  Phase 8 证书结构化解析与交换（P0/P1）、Phase 9 证书链验证与吊销（P1）、
+  Phase 10 密钥体系扩展 RSA/EC（P1）、Phase 11 容器格式 PKCS#12/PKCS#7（P2）、
+  Phase 12 在线与格式工具 OCSP/ASN.1/JWK（P2）
+- 依赖关系：Phase 11 依赖 Phase 10（密钥体系）；Phase 12 的 OCSP 依赖 Phase 9（链验证）、
+  JWK/XML 依赖 Phase 10（RSA/EC 参数提取）；Phase 7–10 相互独立，可按需调整实施顺序
+- 说明：Phase 5 中延后的 CRL 解析与吊销检查已并入 Phase 9 统一规划；
+  证书签名当前支持 SM2（Phase 10 落地后 `CreateCertificate` 泛化支持 RSA / ECDSA）
+- 核心国密优先：Phase 1–3 是重点；Phase 4–12 顺序可根据实际需求调整
 - 如需提出新功能需求，请提交 Issue
