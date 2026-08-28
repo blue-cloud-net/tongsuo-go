@@ -1,6 +1,16 @@
 // Package rand 基于铜锁原生实现提供加密安全随机数生成。
 //
 // 提供与 io.Reader 语义一致的 Read 以及一次性便捷函数 Bytes。
+//
+// 注意：包路径与 Go 标准库 crypto/rand 同名，调用方引用本包时**必须使用完整路径**
+// 或起一个明确别名以避免被 stdlib 抢占：
+//
+//	import tongsrand "github.com/blue-cloud-net/tongsuo-go/crypto/rand"
+//	// 或
+//	import "github.com/blue-cloud-net/tongsuo-go/crypto/rand"
+//
+// 与 stdlib crypto/rand 的区别：本包底层走 Tongsuo RAND_bytes（OpenSSL CSPRNG），
+// stdlib crypto/rand 在 Linux 上走 getrandom(2)。两者均属密码学安全随机数。
 package rand
 
 import (
