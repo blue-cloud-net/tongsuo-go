@@ -87,6 +87,11 @@ func LoadCertificateDER(der []byte) (*Certificate, error) {
 	return &Certificate{cert: c}, nil
 }
 
+// WrapCertificate 用底层核心证书构造 Certificate（供内部跨包使用，如 crypto/pkcs12、crypto/pkcs7）。
+func WrapCertificate(c *core.Certificate) *Certificate {
+	return &Certificate{cert: c}
+}
+
 // MarshalPEM 导出证书为 PEM。
 func (c *Certificate) MarshalPEM() ([]byte, error) {
 	return c.cert.MarshalPEM()
