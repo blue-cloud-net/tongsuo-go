@@ -1,75 +1,77 @@
 # tongsuo-go
 
-基于 [铜锁 (Tongsuo)](https://www.tongsuo.net/) 的 Go 国密算法封装库。通过 cgo 直接调用
-铜锁原生库，为 Go 开发者提供**符合 Go 语言惯例**的国密算法接口（`hash.Hash`、
-`cipher.Block`、`cipher.AEAD`、`(T, error)` 返回），实现 SM2 / SM3 / SM4 等商用密码算法，
-并支持 X.509 证书管理与 TLS / NTLS 传输层。
+`tongsuo-go`（`github.com/blue-cloud-net/tongsuo-go`，[Apache-2.0](LICENSE)）是基于[铜锁 (Tongsuo)](https://www.tongsuo.net/) 的 Go 国密算法封装库。
+通过 cgo 直接调用铜锁原生库，向 Go 开发者提供**符合 Go 语言惯例**的国密算法接口
+（`hash.Hash`、`cipher.Block`、`cipher.AEAD`、`(T, error)`），覆盖 SM2 / SM3 / SM4 商用密码算法，
+并提供 X.509 证书管理与 TLS / NTLS 传输层。
 
 - **模块路径**：`github.com/blue-cloud-net/tongsuo-go`
 - **底层依赖**：铜锁 (Tongsuo) **8.4.0+**（Apache-2.0）
-- **授权协议**：[Apache-2.0](LICENSE)
 - **参考设计**：[blue-cloud-net/tongsuo-csharp](https://github.com/blue-cloud-net/tongsuo-csharp)
 - **定位**：全新独立实现，与官方 [tongsuo-project/tongsuo-go-sdk](https://github.com/tongsuo-project/tongsuo-go-sdk) 并存
+- **CI/CD**：GitHub Actions（[`.github/workflows/`](.github/workflows/)）— lint + 跨平台测试 + tag 自动发版
 
 ---
 
-## 特性
+## 功能
 
-- 🔐 **SM2 非对称算法**（GB/T 32918）：密钥生成、PEM 序列化、加密/解密（ASN.1 DER，
-  内含 C1C3C2）、SM2withSM3 签名/验签、自定义 userId
+- 🔐 **SM2 非对称算法**（GB/T 32918）：密钥生成、PEM 序列化、加密/解密（ASN.1 DER，内含 C1C3C2）、
+  SM2withSM3 签名/验签、自定义 userId
 - 🔑 **SM3 哈希算法**（GB/T 32905-2016）：`hash.Hash` 接口 + 一次性 `Sum`
 - 🔒 **SM4 对称加密**（GB/T 32907）：ECB / CBC / CTR / OFB / CFB / GCM（AEAD）
 - 🧮 **HMAC 消息认证码**：HMAC-SM3 / MD5 / SHA1 / SHA256 / SHA512
 - 🔗 **更多哈希**：MD5、SHA1、SHA256、SHA512（`hash.Hash` + `Sum`）
 - 🔄 **AES 对称加密**：ECB / CBC / CTR / GCM（`cipher.Block` + `cipher.AEAD`）
 - 🎲 **安全随机数**：基于铜锁 `RAND_bytes`
-- 📜 **X.509 证书管理**：证书解析、创建、自签名 / CA 签发（SM2 + SM3）、CSR 生成与验证、
-  BasicConstraints 扩展
-- 🌐 **TLS / NTLS 传输层**：客户端 / 服务端封装，支持国密 NTLS 双证书
-  （签名证书 + 加密证书）
-- 🧪 **标准向量测试**：每个算法包覆盖国标标准向量、往返、边界与错误路径，并与
-  openssl CLI 双向交叉验证
+- 📜 **X.509 证书管理**：证书解析、创建、自签名 / CA 签发（SM2 + SM3）、CSR 生成与验证、BasicConstraints 扩展
+- 🌐 **TLS / NTLS 传输层**：客户端 / 服务端封装，支持国密 NTLS 双证书（签名证书 + 加密证书）
+- 🧪 **标准向量测试**：每个算法包覆盖国标标准向量、往返、边界与错误路径，并与 openssl CLI 双向交叉验证
 
-## 快速开始
+## 使用教程
 
 ### 环境要求
 
 - Go 1.21+（启用 CGO）
-- 铜锁 8.4.0+，默认安装路径 `/opt/tongsuo`（可通过环境变量 `TONGSUO_HOME` 覆盖）
+- 铜锁 **8.4.0+**，安装与构建方式见[铜锁官方 README](https://github.com/Tongsuo-Project/Tongsuo#readme)
+- 默认安装路径：`/opt/tongsuo`（可通过环境变量 `TONGSUO_HOME` 覆盖）
 - 平台：**Linux 优先，macOS 兼容**（Windows 后置）
 
-### 安装铜锁
+### 配置 Tongsuo 路径
+
+构建与运行依赖 `cgo` 找到铜锁头文件与库文件。三种常用方式，任选其一即可：
+
+**方式 A — 环境变量（推荐）**：
 
 ```bash
-git clone https://github.com/Tongsuo-Project/Tongsuo.git
-cd Tongsuo
-./config --prefix=/opt/tongsuo --libdir=/opt/tongsuo/lib enable-ntls enable-export-sm4
-make -j$(nproc)
-sudo make install
-# 配置动态库路径
-echo "/opt/tongsuo/lib" | sudo tee /etc/ld.so.conf.d/tongsuo.conf
-sudo ldconfig
+export TONGSUO_HOME=/opt/tongsuo                  # 铜锁安装根目录
+export LD_LIBRARY_PATH=${TONGSUO_HOME}/lib        # Linux
+# export DYLD_LIBRARY_PATH=${TONGSUO_HOME}/lib    # macOS
+
+export CGO_CFLAGS="-I${TONGSUO_HOME}/include -Wno-deprecated-declarations"
+export CGO_LDFLAGS="-L${TONGSUO_HOME}/lib"
 ```
 
-### 构建
+**方式 B — pkg-config**（将 `pkg-config --cflags --libs openssl` 输出注入 cgo flags）：
 
 ```bash
-TONGSUO_HOME=/opt/tongsuo \
-LD_LIBRARY_PATH=${TONGSUO_HOME}/lib \
-CGO_CFLAGS="-I${TONGSUO_HOME}/include -Wno-deprecated-declarations" \
-CGO_LDFLAGS="-L${TONGSUO_HOME}/lib" \
+export PKG_CONFIG_PATH=${TONGSUO_HOME}/lib/pkgconfig:${PKG_CONFIG_PATH}
+```
+
+**方式 C — 静态链接**（适合分发独立二进制）：
+
+```bash
+go build -tags static ./...
+```
+
+> 编译选项 `-Wno-deprecated-declarations` 用于屏蔽铜锁对部分 OpenSSL 已废弃声明的告警，不影响功能。
+
+### 编译与运行
+
+```bash
+# 编译所有包
 go build ./...
-```
 
-- macOS 将 `LD_LIBRARY_PATH` 换为 `DYLD_LIBRARY_PATH`
-- 静态链接：`go build -tags static ./...`
-
-### 运行测试
-
-```bash
-# 单元测试（默认，不包含 CLI 对比）
-TONGSUO_HOME=/opt/tongsuo LD_LIBRARY_PATH=${TONGSUO_HOME}/lib \
-CGO_CFLAGS="-I${TONGSUO_HOME}/include" CGO_LDFLAGS="-L${TONGSUO_HOME}/lib" \
+# 运行单元测试（默认，不包含 openssl CLI 对比）
 go test ./...
 
 # 包含 openssl CLI 交叉验证测试
@@ -77,12 +79,17 @@ go test -tags tongsuocli ./...
 
 # 覆盖率
 go test -cover ./...
-
-# 覆盖率门禁（默认 60%；Phase 14 路线图目标为 80%）
-./scripts/check-coverage.sh
 ```
 
-## 使用示例
+### 在你的项目中使用
+
+```bash
+go get github.com/blue-cloud-net/tongsuo-go
+```
+
+然后在代码中按需导入子包（见下文"代码调用示例"）。
+
+## 代码调用示例
 
 ### SM3 哈希
 
@@ -261,25 +268,7 @@ func main() {
 }
 ```
 
-## 包结构
-
-| 包 | 说明 |
-|----|------|
-| [`crypto/sm2`](crypto/sm2) | SM2 密钥生成、加解密、签名验签（GB/T 32918） |
-| [`crypto/sm3`](crypto/sm3) | SM3 哈希（GB/T 32905-2016） |
-| [`crypto/sm4`](crypto/sm4) | SM4 分组加密：ECB/CBC/CTR/OFB/CFB/GCM（GB/T 32907） |
-| [`crypto/hmac`](crypto/hmac) | HMAC-SM3/MD5/SHA1/SHA256/SHA512 |
-| [`crypto/md5`](crypto/md5) | MD5 哈希 |
-| [`crypto/sha1`](crypto/sha1) | SHA1 哈希 |
-| [`crypto/sha256`](crypto/sha256) | SHA256 哈希 |
-| [`crypto/sha512`](crypto/sha512) | SHA512 哈希 |
-| [`crypto/aes`](crypto/aes) | AES 加密：ECB/CBC/CTR/GCM |
-| [`crypto/rand`](crypto/rand) | 安全随机数（`RAND_bytes`） |
-| [`x509`](x509) | X.509 证书与 CSR 管理（Phase 13.6 从 `crypto/x509` 顶级化） |
-| [`tls`](tls) | TLS / NTLS（国密双证书）传输层 |
-
-> `internal/native` 与 `internal/core` 为内部实现（绑定层 / 核心层），
-> 受 Go `internal` 机制保护，外部不可导入。
+更多可运行示例见 [examples/](./examples)。
 
 ## 架构
 
@@ -296,35 +285,9 @@ API 层（crypto/）              ← 对外高层 API，仅此层可被外部 i
   `runtime.SetFinalizer` 兜底），原生指针不进入公开 API
 - **错误处理**：原生失败统一为携带 `ERR_get_error()` 错误码的 `*core.OpError`
 - **并发模型**：不同句柄可并行使用；单句柄需调用方串行化
+- **内部实现隐藏**：`internal/native` 与 `internal/core` 受 Go `internal` 机制保护，外部不可导入
 
 详细设计见 [docs/architecture.md](docs/architecture.md)。
-
-## 文档
-
-| 文档 | 说明 |
-|------|------|
-| [架构设计](docs/architecture.md) | 三层架构、内存与并发模型、构建依赖 |
-| [开发规范](docs/development-guide.md) | GoDoc、命名、cgo、错误处理、代码风格 |
-| [测试规范](docs/testing-guide.md) | 测试组织与各算法必须覆盖的用例 |
-| [路线图](docs/roadmap.md) | 版本与开发阶段规划 |
-
-## 开发状态
-
-当前实现覆盖路线图 **Phase 1–6**：
-
-- ✅ Phase 1：基础框架 + SM3 / SM4（ECB / CBC）
-- ✅ Phase 2：SM4 流模式 / GCM、随机数
-- ✅ Phase 3：SM2 密钥管理 / 加解密 / 签名验签
-- ✅ Phase 4：HMAC、更多哈希（MD5 / SHA1 / SHA256 / SHA512）、AES
-- ✅ Phase 5：X.509 证书、自签名 / CA 签发、CSR
-- ✅ Phase 6：TLS / NTLS 传输层（含官方 openssl 互通）
-- 🚧 待完善：`net/http` 集成、会话复用、CI/CD 流水线、示例完善
-
-## 示例与文档
-
-- 可运行的最小示例：[examples/](./examples)（SM2 加解密、自签证书、NTLS 回环）
-- API 参考：[pkg.go.dev/github.com/blue-cloud-net/tongsuo-go](https://pkg.go.dev/github.com/blue-cloud-net/tongsuo-go)（打包 tag 后自动索引）
-- 关键 API 通过 `Example*` 函数展示（`go doc ./...` 可见）
 
 ## 协议
 
