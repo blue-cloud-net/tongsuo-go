@@ -1,5 +1,4 @@
 package ecdsa
-package ecdsa
 
 import (
 	"bytes"

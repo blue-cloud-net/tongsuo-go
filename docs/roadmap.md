@@ -252,18 +252,20 @@
 
 ---
 
-### Phase 11 — 容器格式（对应需求 2.4，P2，依赖 Phase 10）
+### Phase 11 — 容器格式（对应需求 2.4，P2，依赖 Phase 10，已完成）
 
 **PKCS#12（PFX）**
-- [ ] 绑定层：补 `BIO_write`；核心层新增 `MemBIO` 封装
-- [ ] 绑定层：`PKCS12_create` / `d2i_PKCS12` / `i2d_PKCS12` / `PKCS12_parse` / `PKCS12_set_mac`
-- [ ] API 层：`crypto/pkcs12` 的 `Pack`（证书 + 密钥 + CA 链 + 口令）/ `Parse` / `ChangePassword`
-- [ ] 测试：打包 / 拆分 / 改密往返、`openssl pkcs12` 互通
+- [x] 绑定层：补 `BIO_write`；核心层新增 `MemBIO` 封装
+- [x] 绑定层：`PKCS12_create`（shim 桥接 CA 栈）/ `d2i_PKCS12` / `i2d_PKCS12` / `PKCS12_parse` /
+  `PKCS12_newpass` / `PKCS12_set_mac`
+- [x] API 层：`crypto/pkcs12` 的 `Pack`（证书 + 私钥 + CA 链 + 口令）/ `Parse`（Bundle）/ `ChangePassword`
+- [x] 测试：打包 / 拆分 / 改密往返、`openssl pkcs12` 双向互通
 
 **PKCS#7（P7B）**
-- [ ] 绑定层：`PKCS7_sign` / `PKCS7_verify` / `d2i_PKCS7_bio` / `i2d_PKCS7_bio` / `PKCS7_get_certificates`
-- [ ] API 层：`crypto/pkcs7` 的 `Build`（证书集合）/ `Extract`
-- [ ] 测试：`openssl crl2pkcs7` / `openssl smime` 互通
+- [x] 绑定层：`PKCS7_new` / `set_type` / `content_new` / `add_certificate` / `d2i_PKCS7` / `i2d_PKCS7`；
+  证书提取经公开结构体 `p7->d.sign->cert`（铜锁无 `PKCS7_get_certificates`）
+- [x] API 层：`crypto/pkcs7` 的 `Build`（证书集合）/ `Extract`（DER 或 PEM）/ `MarshalPEM`
+- [x] 测试：`openssl crl2pkcs7` / `openssl pkcs7 -print_certs` 互通
 
 ---
 
@@ -331,11 +333,16 @@
   私钥加密 PEM / 改密 / 提公钥；密钥匹配（`EVP_PKEY_eq` + SPKI DER 比较）。已通过单元测试
   与铜锁 openssl CLI 交叉验证（pkey / genpkey / dgst -sha256 / pkeyutl OAEP / rsa -traditional /
   pkey -aes256）
-- 🚧 Phase 11–12 为**待实施**规划（对应 [new-requirement.md](../new-requirement.md) 需求清单）：
-  Phase 11 容器格式 PKCS#12/PKCS#7（P2）、Phase 12 在线与格式工具 OCSP/ASN.1/JWK（P2）
-- 依赖关系：Phase 11 依赖 Phase 10（密钥体系，✅ 已完成）；Phase 12 的 OCSP 依赖 Phase 9（链验证，
-  ✅ 已完成）、JWK/XML 依赖 Phase 10（RSA/EC 参数提取，✅ 已完成）；Phase 11/12 相互独立，
-  可按需调整实施顺序
+- ✅ **Phase 11（容器格式 PKCS#12 / PKCS#7，P2）已完成**：新增 `crypto/pkcs12`
+  （`Pack` / `Parse` / `ChangePassword`，支持证书 + 私钥 + CA 链 + 口令）与 `crypto/pkcs7`
+  （`Build` / `Extract` / `MarshalPEM`，证书集合 DER / PEM 交换）；核心层新增 `MemBIO`、
+  PKCS12 / PKCS7 类型；PKCS7 证书提取经公开结构体访问（铜锁无 `PKCS7_get_certificates`）。
+  已通过单元测试与铜锁 openssl CLI 双向互通（pkcs12 -export / pkcs12 -nokeys / crl2pkcs7 /
+  pkcs7 -print_certs）
+- 🚧 Phase 12 为**待实施**规划（对应 [new-requirement.md](../new-requirement.md) 需求清单）：
+  在线与格式工具 OCSP / ASN.1 / JWK / XML（P2）
+- 依赖关系：Phase 12 的 OCSP 依赖 Phase 9（链验证，✅ 已完成）、JWK/XML 依赖 Phase 10
+  （RSA/EC 参数提取，✅ 已完成）、ASN.1 依赖 Phase 8（证书 DER，✅ 已完成）；可按需调整实施顺序
 - 说明：Phase 5 中延后的 CRL 解析与吊销检查已并入 Phase 9 统一规划；
   `CreateCertificate` / CSR 已泛化支持 SM2 / RSA / ECDSA（Phase 10 落地）
 - 核心国密优先：Phase 1–3 是重点；Phase 4–12 顺序可根据实际需求调整
