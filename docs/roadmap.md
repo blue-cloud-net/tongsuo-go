@@ -269,23 +269,24 @@
 
 ---
 
-### Phase 12 — 在线与格式工具（对应需求 2.5/2.6，P2；OCSP 依赖 Phase 9，JWK/XML 依赖 Phase 10）
+### Phase 12 — 在线与格式工具（对应需求 2.5/2.6，P2；OCSP 依赖 Phase 9，JWK/XML 依赖 Phase 10，已完成）
 
 **OCSP（在线证书状态协议）**
-- [ ] 绑定层：`OCSP_REQUEST_new` / `OCSP_CERTID_new` / `OCSP_request_add0_id` / `i2d_OCSP_REQUEST`、
-  `d2i_OCSP_RESPONSE` / `OCSP_response_get1_basic` / `OCSP_resp_find_status` /
-  `OCSP_check_validity` / `OCSP_basic_verify`
-- [ ] API 层：`crypto/ocsp` 的 `CreateRequest` / `ParseResponse` / `Verify`（响应验证复用 Phase 9 链验证）
-- [ ] 测试：本地 OCSP responder / `openssl ocsp` 互通
+- [x] 绑定层：`OCSP_cert_to_id` / `OCSP_REQUEST_new` / `OCSP_request_add0_id` / `i2d_OCSP_REQUEST`、
+  `d2i_OCSP_RESPONSE` / `OCSP_response_get1_basic` / `OCSP_resp_find_status` / `OCSP_basic_verify`
+  （shim 桥接证书栈）、`OCSP_resp_get0_produced_at/certs`
+- [x] API 层：`crypto/ocsp` 的 `CreateRequest` / `ParseResponse` / `Verify`（响应验证经 `OCSP_basic_verify`
+  配合 Phase 9 的 `Store` 信任锚）
+- [x] 测试：本地 `openssl ocsp` 离线 responder 互通（good / revoked 含原因与时间）
 
 **ASN.1 树 / DER dump**
-- [ ] API 层：`crypto/asn1`（纯 Go）DER → 可读树（tag / len / value）+ hex dump
-- [ ] 测试：对已知证书 DER 断言结构
+- [x] API 层：`crypto/asn1`（纯 Go）DER → 可读树（tag / len / value）+ hex dump
+- [x] 测试：对证书 DER 断言结构、与 `openssl asn1parse` 直接子节点数一致
 
 **JWK / XML**
-- [ ] API 层：`crypto/jwk`（JWK ↔ PEM，RSA n/e/d、EC crv/x/y，base64url）
-- [ ] API 层：RSA PEM ↔ XML
-- [ ] 测试：JWK 与 `openssl pkey -pubin -text` 互通、XML 往返
+- [x] API 层：`crypto/jwk`（JWK ↔ PEM，RSA n/e/d/p/q、EC crv/x/y/d，base64url）
+- [x] API 层：`crypto/rsaxml`（RSA PEM ↔ XML，.NET RSAKeyValue 格式，含 DP/DQ/InverseQ）
+- [x] 测试：JWK 与 `openssl pkey` / `genpkey` 互通、XML 往返
 
 ---
 
@@ -339,10 +340,13 @@
   PKCS12 / PKCS7 类型；PKCS7 证书提取经公开结构体访问（铜锁无 `PKCS7_get_certificates`）。
   已通过单元测试与铜锁 openssl CLI 双向互通（pkcs12 -export / pkcs12 -nokeys / crl2pkcs7 /
   pkcs7 -print_certs）
-- 🚧 Phase 12 为**待实施**规划（对应 [new-requirement.md](../new-requirement.md) 需求清单）：
-  在线与格式工具 OCSP / ASN.1 / JWK / XML（P2）
-- 依赖关系：Phase 12 的 OCSP 依赖 Phase 9（链验证，✅ 已完成）、JWK/XML 依赖 Phase 10
-  （RSA/EC 参数提取，✅ 已完成）、ASN.1 依赖 Phase 8（证书 DER，✅ 已完成）；可按需调整实施顺序
+- ✅ **Phase 12（在线与格式工具，P2）已完成**：`crypto/ocsp`（`CreateRequest` / `ParseResponse` /
+  `Verify`，与 `openssl ocsp` 离线 responder 互通，含 good/revoked 状态与原因）；
+  `crypto/asn1`（纯 Go DER 树 + hex dump，与 `openssl asn1parse` 结构一致）；
+  `crypto/jwk`（JWK ↔ PEM，RSA/EC，与 `openssl pkey`/`genpkey` 互通）；
+  `crypto/rsaxml`（RSA PEM ↔ XML，.NET RSAKeyValue）
+- 至此 Phase 1–12 全部完成（v0.1.0 功能规划落地）；后续为发布收尾（CI/CD、示例、GoDoc、覆盖率、
+  发布 tag）
 - 说明：Phase 5 中延后的 CRL 解析与吊销检查已并入 Phase 9 统一规划；
   `CreateCertificate` / CSR 已泛化支持 SM2 / RSA / ECDSA（Phase 10 落地）
 - 核心国密优先：Phase 1–3 是重点；Phase 4–12 顺序可根据实际需求调整
