@@ -8,6 +8,9 @@
 #include <openssl/pem.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
+#include <openssl/rsa.h>
+#include <openssl/ec.h>
+#include <openssl/bn.h>
 
 /*
  * X_EVP_Digest：一次性摘要。EVP_Digest 在部分 OpenSSL 版本中为可变参数宏，
@@ -119,5 +122,17 @@ void X_ASN1_ENUMERATED_free(void *a);
 /* CRL PEM 读写（回调固定 NULL） */
 X509_CRL *X_PEM_read_bio_X509_CRL(BIO *bp);
 int X_PEM_write_bio_X509_CRL(BIO *bp, X509_CRL *x);
+
+/*
+ * Phase 10：RSA / EC 密钥体系。
+ * EVP_PKEY_Q_keygen 为可变参数函数，分别包装 RSA（size_t bits）与 EC（char *curve）。
+ * 口令回调经 void* 上下文（u）传递，规避 cgo 对函数指针类型的限制。
+ */
+EVP_PKEY *X_EVP_PKEY_Q_keygen_rsa(int bits);
+EVP_PKEY *X_EVP_PKEY_Q_keygen_ec(const char *curve);
+EVP_PKEY *X_PEM_read_bio_PrivateKey_pass(BIO *bp, const char *pass);
+int X_PEM_write_bio_PrivateKey_enc(BIO *bp, EVP_PKEY *x, const char *pass);
+RSA *X_PEM_read_bio_RSAPrivateKey(BIO *bp);
+int X_PEM_write_bio_RSAPrivateKey(BIO *bp, RSA *rsa);
 
 #endif /* TONGSUO_GO_SHIM_H */

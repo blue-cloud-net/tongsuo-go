@@ -206,3 +206,177 @@ func EVP_DigestVerifyFinal(ctx unsafe.Pointer, sig []byte) bool {
 	return C.EVP_DigestVerifyFinal((*C.EVP_MD_CTX)(ctx),
 		(*C.uchar)(unsafe.Pointer(&sig[0])), C.size_t(len(sig))) == 1
 }
+
+// RSA 填充常量（来自 rsa.h 宏）。
+const (
+	RsaPaddingPKCS1     = 1
+	RsaPaddingOAEP      = 4
+	RsaPaddingPSS       = 6
+	RsaPssSaltLenDigest = -1
+	RsaPssSaltLenAuto   = -2
+	RsaPssSaltLenMax    = -3
+)
+
+// X_EVP_PKEY_Q_keygen_rsa 生成 RSA 密钥对（bits 为模数位数，如 2048）。
+func X_EVP_PKEY_Q_keygen_rsa(bits int) unsafe.Pointer {
+	return unsafe.Pointer(C.X_EVP_PKEY_Q_keygen_rsa(C.int(bits)))
+}
+
+// X_EVP_PKEY_Q_keygen_ec 生成 EC 密钥对（curve 如 "prime256v1"、"secp384r1"）。
+func X_EVP_PKEY_Q_keygen_ec(curve string) unsafe.Pointer {
+	c := C.CString(curve)
+	defer C.free(unsafe.Pointer(c))
+	return unsafe.Pointer(C.X_EVP_PKEY_Q_keygen_ec(c))
+}
+
+// X_PEM_read_bio_PrivateKey_pass 从 BIO 读取用口令加密的 PEM 私钥。
+func X_PEM_read_bio_PrivateKey_pass(bio unsafe.Pointer, pass string) unsafe.Pointer {
+	c := C.CString(pass)
+	defer C.free(unsafe.Pointer(c))
+	return unsafe.Pointer(C.X_PEM_read_bio_PrivateKey_pass((*C.BIO)(bio), c))
+}
+
+// X_PEM_write_bio_PrivateKey_enc 将私钥以 AES-256-CBC 加密写入 PEM。
+func X_PEM_write_bio_PrivateKey_enc(bio, pkey unsafe.Pointer, pass string) bool {
+	c := C.CString(pass)
+	defer C.free(unsafe.Pointer(c))
+	return C.X_PEM_write_bio_PrivateKey_enc((*C.BIO)(bio), (*C.EVP_PKEY)(pkey), c) == 1
+}
+
+// X_PEM_read_bio_RSAPrivateKey 从 BIO 读取 PKCS#1 PEM 私钥（返回 RSA*）。
+func X_PEM_read_bio_RSAPrivateKey(bio unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X_PEM_read_bio_RSAPrivateKey((*C.BIO)(bio)))
+}
+
+// X_PEM_write_bio_RSAPrivateKey 将 RSA* 以 PKCS#1 PEM 写入 BIO。
+func X_PEM_write_bio_RSAPrivateKey(bio, rsa unsafe.Pointer) bool {
+	return C.X_PEM_write_bio_RSAPrivateKey((*C.BIO)(bio), (*C.RSA)(rsa)) == 1
+}
+
+// RSA_free 释放 RSA 对象。
+func RSA_free(rsa unsafe.Pointer) {
+	C.RSA_free((*C.RSA)(rsa))
+}
+
+// EVP_PKEY_dup 复制密钥（返回新引用，调用方负责 EVP_PKEY_free）。
+func EVP_PKEY_dup(pkey unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_PKEY_dup((*C.EVP_PKEY)(pkey)))
+}
+
+// EVP_PKEY_eq 比较两个密钥是否等价（1=相等，0=不等，-1=错误）。
+func EVP_PKEY_eq(a, b unsafe.Pointer) int {
+	return int(C.EVP_PKEY_eq((*C.EVP_PKEY)(a), (*C.EVP_PKEY)(b)))
+}
+
+// I2d_PUBKEY 将公钥编码为 DER（SubjectPublicKeyInfo）。
+func I2d_PUBKEY(pkey unsafe.Pointer) ([]byte, bool) {
+	n := C.i2d_PUBKEY((*C.EVP_PKEY)(pkey), nil)
+	if n <= 0 {
+		return nil, false
+	}
+	buf := C.malloc(C.size_t(n))
+	if buf == nil {
+		return nil, false
+	}
+	defer C.free(buf)
+	p := (*C.uchar)(buf)
+	C.i2d_PUBKEY((*C.EVP_PKEY)(pkey), &p)
+	return C.GoBytes(unsafe.Pointer(buf), C.int(n)), true
+}
+
+// EVP_PKEY_get_bn_param 返回密钥的大数参数（如 RSA "n"/"e"/"d"/"p"/"q"；EC "d"），
+// 以大端字节返回；参数不存在返回 ok=false。
+func EVP_PKEY_get_bn_param(pkey unsafe.Pointer, name string) ([]byte, bool) {
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	var bn *C.BIGNUM
+	if C.EVP_PKEY_get_bn_param((*C.EVP_PKEY)(pkey), cName, &bn) != 1 {
+		return nil, false
+	}
+	defer C.BN_free(bn)
+	// BN_num_bytes 为宏（(bits+7)/8），改用函数 BN_num_bits。
+	n := (C.BN_num_bits(bn) + 7) / 8
+	if n <= 0 {
+		return nil, false
+	}
+	out := make([]byte, n)
+	C.BN_bn2bin(bn, (*C.uchar)(unsafe.Pointer(&out[0])))
+	return out, true
+}
+
+// EVP_PKEY_get_utf8_string_param 返回密钥的 UTF-8 字符串参数（如 EC "group"）。
+func EVP_PKEY_get_utf8_string_param(pkey unsafe.Pointer, name string) (string, bool) {
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	var buf [64]C.char
+	var outlen C.size_t
+	if C.EVP_PKEY_get_utf8_string_param((*C.EVP_PKEY)(pkey), cName,
+		&buf[0], C.size_t(len(buf)), &outlen) != 1 {
+		return "", false
+	}
+	return C.GoString(&buf[0]), true
+}
+
+// EVP_PKEY_get_octet_string_param 返回密钥的字节串参数（如 EC "pub" 未压缩点）。
+func EVP_PKEY_get_octet_string_param(pkey unsafe.Pointer, name string) ([]byte, bool) {
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	var buf [256]C.uchar
+	var outlen C.size_t
+	if C.EVP_PKEY_get_octet_string_param((*C.EVP_PKEY)(pkey), cName,
+		&buf[0], C.size_t(len(buf)), &outlen) != 1 {
+		return nil, false
+	}
+	return C.GoBytes(unsafe.Pointer(&buf[0]), C.int(outlen)), true
+}
+
+// EVP_PKEY_CTX_set_rsa_padding 设置 RSA 填充模式。
+func EVP_PKEY_CTX_set_rsa_padding(ctx unsafe.Pointer, pad int) bool {
+	return C.EVP_PKEY_CTX_set_rsa_padding((*C.EVP_PKEY_CTX)(ctx), C.int(pad)) == 1
+}
+
+// EVP_PKEY_CTX_set_rsa_pss_saltlen 设置 RSA-PSS 盐长。
+func EVP_PKEY_CTX_set_rsa_pss_saltlen(ctx unsafe.Pointer, saltlen int) bool {
+	return C.EVP_PKEY_CTX_set_rsa_pss_saltlen((*C.EVP_PKEY_CTX)(ctx), C.int(saltlen)) == 1
+}
+
+// EVP_PKEY_CTX_set_rsa_mgf1_md 设置 RSA MGF1 摘要。
+func EVP_PKEY_CTX_set_rsa_mgf1_md(ctx, md unsafe.Pointer) bool {
+	return C.EVP_PKEY_CTX_set_rsa_mgf1_md((*C.EVP_PKEY_CTX)(ctx), (*C.EVP_MD)(md)) == 1
+}
+
+// EVP_PKEY_CTX_set_rsa_oaep_md 设置 RSA-OAEP 摘要。
+func EVP_PKEY_CTX_set_rsa_oaep_md(ctx, md unsafe.Pointer) bool {
+	return C.EVP_PKEY_CTX_set_rsa_oaep_md((*C.EVP_PKEY_CTX)(ctx), (*C.EVP_MD)(md)) == 1
+}
+
+// I2d_PrivateKey 将私钥编码为传统 DER（RSA 为 PKCS#1）。
+func I2d_PrivateKey(pkey unsafe.Pointer) ([]byte, bool) {
+	n := C.i2d_PrivateKey((*C.EVP_PKEY)(pkey), nil)
+	if n <= 0 {
+		return nil, false
+	}
+	buf := C.malloc(C.size_t(n))
+	if buf == nil {
+		return nil, false
+	}
+	defer C.free(buf)
+	p := (*C.uchar)(buf)
+	C.i2d_PrivateKey((*C.EVP_PKEY)(pkey), &p)
+	return C.GoBytes(unsafe.Pointer(buf), C.int(n)), true
+}
+
+// D2i_PrivateKey 从传统 DER 解析私钥（type=0 自动识别）。
+func D2i_PrivateKey(der []byte) unsafe.Pointer {
+	if len(der) == 0 {
+		return nil
+	}
+	buf := C.malloc(C.size_t(len(der)))
+	if buf == nil {
+		return nil
+	}
+	defer C.free(buf)
+	C.memcpy(buf, unsafe.Pointer(&der[0]), C.size_t(len(der)))
+	p := (*C.uchar)(buf)
+	return unsafe.Pointer(C.d2i_PrivateKey(0, nil, &p, C.long(len(der))))
+}

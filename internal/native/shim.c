@@ -400,3 +400,46 @@ int X_PEM_write_bio_X509_CRL(BIO *bp, X509_CRL *x)
 {
     return PEM_write_bio_X509_CRL(bp, x);
 }
+
+EVP_PKEY *X_EVP_PKEY_Q_keygen_rsa(int bits)
+{
+    return EVP_PKEY_Q_keygen(NULL, NULL, "RSA", (size_t)bits);
+}
+
+EVP_PKEY *X_EVP_PKEY_Q_keygen_ec(const char *curve)
+{
+    return EVP_PKEY_Q_keygen(NULL, NULL, "EC", (char *)curve);
+}
+
+static int X_PEM_pass_cb(char *buf, int size, int rwflag, void *u)
+{
+    const char *pass = (const char *)u;
+    if (pass == NULL)
+        return 0;
+    int n = (int)strlen(pass);
+    if (n > size)
+        n = size;
+    memcpy(buf, pass, n);
+    return n;
+}
+
+EVP_PKEY *X_PEM_read_bio_PrivateKey_pass(BIO *bp, const char *pass)
+{
+    return PEM_read_bio_PrivateKey(bp, NULL, X_PEM_pass_cb, (void *)pass);
+}
+
+int X_PEM_write_bio_PrivateKey_enc(BIO *bp, EVP_PKEY *x, const char *pass)
+{
+    return PEM_write_bio_PrivateKey(bp, x, EVP_aes_256_cbc(), NULL, 0,
+                                    X_PEM_pass_cb, (void *)pass);
+}
+
+RSA *X_PEM_read_bio_RSAPrivateKey(BIO *bp)
+{
+    return PEM_read_bio_RSAPrivateKey(bp, NULL, NULL, NULL);
+}
+
+int X_PEM_write_bio_RSAPrivateKey(BIO *bp, RSA *rsa)
+{
+    return PEM_write_bio_RSAPrivateKey(bp, rsa, NULL, NULL, 0, NULL, NULL);
+}
