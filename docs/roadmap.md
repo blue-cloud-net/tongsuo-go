@@ -219,34 +219,36 @@
 
 ---
 
-### Phase 10 — 密钥体系扩展（RSA / EC，对应需求 2.3，P1）
+### Phase 10 — 密钥体系扩展（RSA / EC，对应需求 2.3，P1，已完成）
 
 **RSA / EC 密钥类型支持**
-- [ ] 绑定层：通用 keygen（shim 扩展 `X_EVP_PKEY_Q_keygen` 参数化 RSA / EC / SM2）
-- [ ] 绑定层：`EVP_PKEY_get_base_id` / `EVP_PKEY_get_id`（密钥类型识别）
-- [ ] 绑定层：参数提取 `EVP_PKEY_get_bn_param`（RSA n/e/d/p/q；EC d）、`EVP_PKEY_get1_RSA` /
-  `get1_EC_KEY`、EC 坐标 `EC_POINT_get_affine_coordinates`、curve 名
-- [ ] 核心层：`PKey` 泛化（`BaseID`、RSA Sign/Verify PKCS1v15/PSS、RSA Encrypt/Decrypt OAEP、
+- [x] 绑定层：通用 keygen（shim `X_EVP_PKEY_Q_keygen_rsa(bits)` / `X_EVP_PKEY_Q_keygen_ec(curve)`）
+- [x] 绑定层：`EVP_PKEY_get_base_id` / `EVP_PKEY_get_id`（密钥类型识别，Phase 8 已完成）
+- [x] 绑定层：参数提取 `EVP_PKEY_get_bn_param`（RSA n/e/d/rsa-factor1/rsa-factor2；EC priv）、
+  `EVP_PKEY_get_utf8_string_param`（curve/group）、`EVP_PKEY_get_octet_string_param`（EC pub 点）
+- [x] 核心层：`PKey` 泛化（RSA Sign/Verify PKCS1v15/PSS、RSA Encrypt/Decrypt PKCS1v15/OAEP、
   ECDSA Sign/Verify DER、`Params`）
-- [ ] API 层：`crypto/rsa`（`GenerateKey` / `Load` / `Marshal` / `Sign` / `Verify` / `Encrypt` / `Decrypt` / `Params`）
-- [ ] API 层：`crypto/ecdsa`（`GenerateKey` / `Load` / `Marshal` / `Sign` / `Verify` / `Params`）
-- [ ] `CreateCertificate` 泛化 key 接口（SM2 / RSA / ECDSA 均可签发）
-- [ ] 测试：与 openssl 交叉验证（keygen / PEM / 签名验签 / 加解密）
+- [x] API 层：`crypto/rsa`（`GenerateKey` / `Load` / `Marshal`（PKCS#8 / PKCS#1 / 加密）/ `Sign` /
+  `Verify` / `Encrypt` / `Decrypt` / `Params`）
+- [x] API 层：`crypto/ecdsa`（`GenerateKey` / `Load` / `Marshal` / `Sign` / `Verify` / `Params`）
+- [x] `CreateCertificate` 泛化 key 接口（`PublicKey` / `PrivateKey` 接口，SM2 / RSA / ECDSA 均可签发；
+  签名摘要按密钥类型自动选择）
+- [x] 测试：与 openssl 交叉验证（keygen / PEM / 签名验签 / 加解密）
 
 **密钥格式转换**
-- [ ] 绑定层：PKCS#1 `PEM_read/write_bio_RSAPrivateKey`、`i2d/d2i_RSAPrivateKey`
-- [ ] API 层：`Convert`（PKCS#1 ↔ PKCS#8、DER ↔ PEM）
-- [ ] 测试：各格式往返、`openssl rsa -traditional` 对比
+- [x] 绑定层：`i2d/d2i_PrivateKey`（传统 DER，RSA 为 PKCS#1）
+- [x] API 层：`MarshalPKCS1PEM` / `LoadPrivateKeyPEM`（自动识别 PKCS#8 / PKCS#1）
+- [x] 测试：各格式往返、`openssl rsa -traditional` 对比
 
 **私钥 ops**
-- [ ] 绑定层：shim 口令回调桥接（`pem_password_cb`）
-- [ ] API 层：`MarshalEncryptedPEM` / `ChangePassword` / `Public()`
-- [ ] 测试：加密 PEM 往返、改密、提公钥、`openssl pkey -aes256` 互通
+- [x] 绑定层：shim 口令回调桥接（`pem_password_cb`，经 void* 上下文传递口令）
+- [x] API 层：`MarshalEncryptedPEM` / `ChangePassword` / `LoadEncryptedPEM` / `Public()`
+- [x] 测试：加密 PEM 往返、改密、提公钥、`openssl pkey -aes256` 互通
 
 **密钥匹配**
-- [ ] 绑定层：`EVP_PKEY_eq` / `EVP_PKEY_public_eq`
-- [ ] API 层：`Match`（证书 ↔ 密钥 / CSR ↔ 密钥 / 公钥 ↔ 私钥）
-- [ ] 测试：匹配 / 不匹配场景
+- [x] 绑定层：`EVP_PKEY_eq`；`EVP_PKEY_public_eq` 铜锁不存在 → 用 `i2d_PUBKEY`（SPKI DER）比较
+- [x] API 层：`Match`（私钥 ↔ 公钥 / 证书公钥）
+- [x] 测试：匹配 / 不匹配场景
 
 ---
 
@@ -321,12 +323,20 @@
   含 Code/Depth/Message）；CRL 解析（`ParseCRL` / `LoadCRLPEM` / `LoadCRLDER`，吊销条目含
   序列号/时间/原因）；`RevocationCheck(cert, crls)`（序列号 + issuer 匹配）。已通过单元测试
   与铜锁 openssl CLI 交叉验证（verify -CAfile / crl -text / verify -crl_check，撤销报 code 23）
-- 🚧 Phase 10–12 为**待实施**规划（对应 [new-requirement.md](../new-requirement.md) 需求清单）：
-  Phase 10 密钥体系扩展 RSA/EC（P1）、Phase 11 容器格式 PKCS#12/PKCS#7（P2）、
-  Phase 12 在线与格式工具 OCSP/ASN.1/JWK（P2）
-- 依赖关系：Phase 11 依赖 Phase 10（密钥体系）；Phase 12 的 OCSP 依赖 Phase 9（链验证，✅ 已完成）、
-  JWK/XML 依赖 Phase 10（RSA/EC 参数提取）；Phase 7–10 相互独立，可按需调整实施顺序
+- ✅ **Phase 10（密钥体系扩展 RSA/EC，P1）已完成**：新增 `crypto/rsa`（GenerateKey /
+  Load / Marshal（PKCS#8 / PKCS#1 / 加密 PEM）/ Sign（PKCS1v15 / PSS）/ Verify /
+  Encrypt/Decrypt（PKCS1v15 / OAEP）/ Params / ChangePassword / Match）与 `crypto/ecdsa`
+  （GenerateKey / Load / Marshal / Sign / Verify / Params）；`CreateCertificate` / CSR 泛化
+  为 `PublicKey` / `PrivateKey` 接口（SM2 / RSA / ECDSA 均可签发，摘要按密钥类型自动选择）；
+  私钥加密 PEM / 改密 / 提公钥；密钥匹配（`EVP_PKEY_eq` + SPKI DER 比较）。已通过单元测试
+  与铜锁 openssl CLI 交叉验证（pkey / genpkey / dgst -sha256 / pkeyutl OAEP / rsa -traditional /
+  pkey -aes256）
+- 🚧 Phase 11–12 为**待实施**规划（对应 [new-requirement.md](../new-requirement.md) 需求清单）：
+  Phase 11 容器格式 PKCS#12/PKCS#7（P2）、Phase 12 在线与格式工具 OCSP/ASN.1/JWK（P2）
+- 依赖关系：Phase 11 依赖 Phase 10（密钥体系，✅ 已完成）；Phase 12 的 OCSP 依赖 Phase 9（链验证，
+  ✅ 已完成）、JWK/XML 依赖 Phase 10（RSA/EC 参数提取，✅ 已完成）；Phase 11/12 相互独立，
+  可按需调整实施顺序
 - 说明：Phase 5 中延后的 CRL 解析与吊销检查已并入 Phase 9 统一规划；
-  证书签名当前支持 SM2（Phase 10 落地后 `CreateCertificate` 泛化支持 RSA / ECDSA）
+  `CreateCertificate` / CSR 已泛化支持 SM2 / RSA / ECDSA（Phase 10 落地）
 - 核心国密优先：Phase 1–3 是重点；Phase 4–12 顺序可根据实际需求调整
 - 如需提出新功能需求，请提交 Issue
