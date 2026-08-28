@@ -77,6 +77,9 @@ go test -tags tongsuocli ./...
 
 # 覆盖率
 go test -cover ./...
+
+# 覆盖率门禁（默认 60%；Phase 14 路线图目标为 80%）
+./scripts/check-coverage.sh
 ```
 
 ## 使用示例
@@ -218,7 +221,7 @@ import (
 	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/x509"
+	"github.com/blue-cloud-net/tongsuo-go/x509"
 	"github.com/blue-cloud-net/tongsuo-go/tls"
 )
 
@@ -272,7 +275,7 @@ func main() {
 | [`crypto/sha512`](crypto/sha512) | SHA512 哈希 |
 | [`crypto/aes`](crypto/aes) | AES 加密：ECB/CBC/CTR/GCM |
 | [`crypto/rand`](crypto/rand) | 安全随机数（`RAND_bytes`） |
-| [`crypto/x509`](crypto/x509) | X.509 证书与 CSR 管理 |
+| [`x509`](x509) | X.509 证书与 CSR 管理（Phase 13.6 从 `crypto/x509` 顶级化） |
 | [`tls`](tls) | TLS / NTLS（国密双证书）传输层 |
 
 > `internal/native` 与 `internal/core` 为内部实现（绑定层 / 核心层），
@@ -315,7 +318,13 @@ API 层（crypto/）              ← 对外高层 API，仅此层可被外部 i
 - ✅ Phase 4：HMAC、更多哈希（MD5 / SHA1 / SHA256 / SHA512）、AES
 - ✅ Phase 5：X.509 证书、自签名 / CA 签发、CSR
 - ✅ Phase 6：TLS / NTLS 传输层（含官方 openssl 互通）
-- 🚧 待完善：CRL 解析、`net/http` 集成、会话复用、CI/CD 流水线、示例完善
+- 🚧 待完善：`net/http` 集成、会话复用、CI/CD 流水线、示例完善
+
+## 示例与文档
+
+- 可运行的最小示例：[examples/](./examples)（SM2 加解密、自签证书、NTLS 回环）
+- API 参考：[pkg.go.dev/github.com/blue-cloud-net/tongsuo-go](https://pkg.go.dev/github.com/blue-cloud-net/tongsuo-go)（打包 tag 后自动索引）
+- 关键 API 通过 `Example*` 函数展示（`go doc ./...` 可见）
 
 ## 协议
 

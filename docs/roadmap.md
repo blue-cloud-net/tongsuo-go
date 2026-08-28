@@ -290,13 +290,147 @@
 
 ---
 
-### 发布
+### Phase 13 — 包结构重组（按 BC 命名空间风格，仅重构）
 
-- [ ] 发布 tag（v0.1.0）：打 tag 供消费方 `go get @v0.x.y` 固定版本
-- [ ] CI/CD 流水线（GitHub Actions：编译、测试、lint、覆盖率、静态链接验证）
-- [ ] 完整 GoDoc API 文档
-- [ ] 示例程序完善（`examples/`）
-- [ ] 覆盖率达标检查（核心算法包 ≥ 80%）
+**背景**：借鉴 BouncyCastle C# 的命名空间分层——`crypto/` 仅装算法引擎；
+ASN.1、PKCS、OCSP、TLS、JWK、XML 与 `crypto/` 平级，不作为其子包。
+本 Phase 把 Phase 1 搭建的 `crypto/*` 平铺结构，重新整理为：
+"算法引擎层（`crypto/`）+ 组合层（顶级）"两个职责边界清晰的层级。
+
+**两件事同时做**
+
+1. **`crypto/x509` 多文件化 + 顶级化**：原 `crypto/x509/x509.go`（731 行）
+   按职责拆为 6 个文件；同时整包从 `crypto/` 顶层化为顶级 `x509/`。
+2. **非算法包顶级化**：6 个原 `crypto/*` 非算法包（asn1、jwk、ocsp、pkcs7、
+   pkcs12、rsaxml）从 `crypto/` 顶级化。其中 pkcs7/pkcs12 移入 `pkcs/` 子命名空间，
+   rsaxml 移入 `xml/rsa/`。
+
+**目录结构总览**
+
+| 旧路径 | 新路径 |
+|---|---|
+| `crypto/x509/x509.go`（731 行） | `x509/{x509,name,csr,store,crl,helpers}.go`（包路径不变，包顶级化为 `x509/`） |
+| `crypto/asn1` | `asn1` |
+| `crypto/jwk` | `jwk` |
+| `crypto/ocsp` | `ocsp` |
+| `crypto/pkcs7` | `pkcs/pkcs7` |
+| `crypto/pkcs12` | `pkcs/pkcs12` |
+| `crypto/rsaxml` | `xml/rsa` |
+
+**`x509/` 内部文件清单**
+
+| 文件 | 内容 |
+|---|---|
+| `x509/x509.go` | Certificate 主类型、Extension、PublicKey/PrivateKey 接口、CreateCertificate |
+| `x509/name.go` | Name / NameEntry |
+| `x509/csr.go` | CertificateRequest（CSR） |
+| `x509/store.go` | Store / VerifyError / ChainVerify |
+| `x509/crl.go` | CRL / RevokedEntry / RevocationCheck |
+| `x509/helpers.go` | convertEntries / convertExtensions（内部辅助） |
+
+**新顶层布局**
+
+```
+tongsuo-go/
+├── crypto/                     # 【算法引擎】aes ecdsa hmac md5 rand rsa
+│                               # sha1 sha256 sha512 sm2 sm3 sm4
+├── x509/                       # 【证书核心】原 crypto/x509 顶级化（多文件）
+├── asn1/                       # 【编码】DER viewer（原 crypto/asn1）
+├── pkcs/                       # 【容器】BC pkcs 风格
+│   ├── pkcs7/                  # 原 crypto/pkcs7
+│   └── pkcs12/                 # 原 crypto/pkcs12
+├── ocsp/                       # 【协议】原 crypto/ocsp
+├── tls/                        # 【协议】不动
+├── jwk/                        # 【格式】原 crypto/jwk
+├── xml/                        # 【格式族】预留命名空间
+│   └── rsa/                    # 原 crypto/rsaxml
+└── internal/                   # 不动
+```
+
+**净收益**
+
+- `crypto/` 严格仅含算法引擎（aes / ecdsa / hmac / md5 / rand / rsa / sha* / sm*）
+- `x509` 顶级化后与 stdlib `crypto/x509` 路径完全区分，用户 import 时不再需要别名
+- 完成 BC 命名空间分层：`crypto`（算法）+ `x509`（证书对象模型）顶级并列
+- 多文件化让 x509 按职责（Certificate / CSR / Store / CRL）清晰分组
+
+**说明**
+
+- 本 Phase 仅重构（路径变化 + 文件拆分），**API 行为不变**
+- 不打 tag（Phase 14 处理）
+- 不引入新算法、新协议、新 binding
+- jwk/rsaxml 中 stdlib `crypto/x509.MarshalPKCS*PrivateKey` /
+  `crypto/rsa.PrivateKey` 类型 bridge 属于 DER 序列化中间件（不做密码运算），
+  属 idiomatic Go 引用，未来若完全消除需新增 Tongsuo `EVP_PKEY_fromdata` /
+  `i2d_PrivateKey` 绑定，列入后续 Phase
+- `crypto/rand` 命名与 stdlib `crypto/rand` 同名，**保留路径**但加文档警示
+- 说明：Phase 5 中延后的 CRL 解析与吊销检查已并入 Phase 9 统一规划；
+  `CreateCertificate` / CSR 已泛化支持 SM2 / RSA / ECDSA（Phase 10 落地）
+- 核心国密优先：Phase 1–3 是重点；Phase 4–12 顺序可根据实际需求调整
+- 如需提出新功能需求，请提交 Issue
+
+---
+
+### Phase 14 — 发布收尾
+
+**测试盘点与覆盖率门禁**
+- [x] 单元 + `tongsuocli` 集成测试盘点（按 [testing-guide.md](testing-guide.md) §3–§11：
+      标准向量 / 边界 / 错误路径 / 幂等 Reset / 交叉验证 / 资源清理）
+- [x] 覆盖率基线盘点：默认阈值 **60%**（`scripts/check-coverage.sh`），
+      路线图目标 **80%**（Phase 15+ 按"短板优先"原则分批补齐）；
+      当前各公开包覆盖率（不含 `internal/*`）：
+
+  | 包 | 覆盖率 | 备注 |
+  |---|---|---|
+  | `crypto/sm2` | 86.5% | 已达目标 |
+  | `crypto/hmac` | 86.7% | 已达目标 |
+  | `crypto/sha1/sha256/sha512/md5` | 85.7% | 已达目标 |
+  | `crypto/rand` | 81.8% | 已达目标 |
+  | `asn1` | 79.8% | 接近 |
+  | `crypto/aes` `crypto/sm4` | 73.7% / 74.1% | 接近 |
+  | `crypto/rsa` `crypto/ecdsa` | 75.9% / 61.1% | 待补 |
+  | `crypto/sm3` | 66.7% | 待补 |
+  | `jwk` `xml/rsa` | 67.1% / 76.9% | 待补 |
+  | `pkcs/pkcs7` `pkcs/pkcs12` | 75.8% / 81.8% | 接近 |
+  | `tls` `x509` | 60.4% / 60.9% | 持平基线 |
+  | `ocsp` | 36.4% | 依赖外部 OCSP responder，**默认豁免**（`EXCLUDE=ocsp`） |
+
+- [x] 覆盖率门禁脚本：`scripts/check-coverage.sh`，可配置 `THRESHOLD` / `EXCLUDE`
+- [x] `-tags tongsuocli` 全量测试已就绪（单元 + CLI 比对命令详见 testing-guide §2）
+
+**API 文档（GoDoc）**
+- [x] 公共类型（`Certificate` / `CertificateRequest` / `Store` / `CRL` / `Bundle` /
+      `PrivateKey` / `PKey` 等）注释完整：以符号名开头、含安全注意与错误条件
+- [x] 包级 `doc.go` 写明与 stdlib 同名包的差异（如 `crypto/rand` 同名警示）
+- [x] 关键 API 提供 `Example*` 函数（`godoc` 自动展示）：**20 个公开包 × 56 个
+      Example**，覆盖 crypto/* / x509 / tls / ocsp / asn1 / jwk / pkcs/* / xml/rsa
+- [x] `examples/` 目录含 **3 个可运行最小示例**：SM2 加解密 / 自签 SM2 证书 / NTLS 回环
+- [ ] README 顶部贴 `pkg.go.dev` 徽章（打 tag 后自动索引）
+
+**CI/CD（GitHub Actions）**
+- [ ] `.github/workflows/ci.yml`：触发 `push: main / tags: v*.*.*` + `pull_request`
+- [ ] 6 个 Job 并行：`build` / `test-unit (-race -cover)` /
+      `test-integration (-tags tongsuocli)` / `lint (golangci-lint)` /
+      `coverage-gate (核心 ≥ 80%)` / `static-link (-tags static + ldd 验证)`
+- [ ] Runner 环境：`ubuntu-latest` + Tongsuo 解压到 `/opt/tongsuo`，env 配
+      `TONGSUO_HOME` / `CGO_CFLAGS` / `CGO_LDFLAGS` / `LD_LIBRARY_PATH`；
+      集成测试用矩阵拆分，避免每个 PR 强制跑 Tongsuo
+
+**发布流程**
+- [ ] 预检清单（13 项必须全 ✅）：单元/集成测试全绿、覆盖率达标、lint/vet 干净、
+      静态链接产物可生成、GoDoc 完整、`examples/` 可跑、`CHANGELOG.md` / `README.md` /
+      `roadmap.md` 同步更新、`git status` 干净、CI 主线绿
+- [ ] 遵循 SemVer `vMAJOR.MINOR.PATCH`；v0.1.0 因 `MAJOR=0` API 不稳定，CHANGELOG 显式
+      标注 `BREAKING:`
+- [ ] commit 走 Conventional Commits（`feat:` / `fix:` / `refactor:` / `docs:` /
+      `test:` / `chore:`），便于自动生成 CHANGELOG
+- [ ] tag 由**人工**打（CI 不自动）：`git tag -a v0.1.0 -m "..."` → `git push origin v0.1.0`，
+      再模拟下游 `go get @v0.1.0` 跑通最小示例
+- [ ] 已知限制必列（CHANGELOG + README "Known limitations"）：
+      v0.1.0 API 不稳定 / `crypto/rand` 与 stdlib 同名 / Tongsuo 8.x ABI 假定 /
+      `tongsuocli` 测试依赖 `/opt/tongsuo`
+- [ ] 回滚预案：删 tag `git push origin :refs/tags/v0.x.y` + 打 patch
+      `v0.x.(y+1)`（**不覆盖已发布 tag**，SemVer 不可变承诺）
 
 ---
 
@@ -345,9 +479,15 @@
   `crypto/asn1`（纯 Go DER 树 + hex dump，与 `openssl asn1parse` 结构一致）；
   `crypto/jwk`（JWK ↔ PEM，RSA/EC，与 `openssl pkey`/`genpkey` 互通）；
   `crypto/rsaxml`（RSA PEM ↔ XML，.NET RSAKeyValue）
-- 至此 Phase 1–12 全部完成（v0.1.0 功能规划落地）；后续为发布收尾（CI/CD、示例、GoDoc、覆盖率、
-  发布 tag）
-- 说明：Phase 5 中延后的 CRL 解析与吊销检查已并入 Phase 9 统一规划；
-  `CreateCertificate` / CSR 已泛化支持 SM2 / RSA / ECDSA（Phase 10 落地）
-- 核心国密优先：Phase 1–3 是重点；Phase 4–12 顺序可根据实际需求调整
-- 如需提出新功能需求，请提交 Issue
+- ✅ **Phase 13（包结构重组，仅重构）已完成**：借鉴 BouncyCastle C# 的命名空间分层——
+  `crypto/` 仅装算法引擎，ASN.1 / PKCS / OCSP / TLS / JWK / XML 与 `crypto/` 平级；
+  6 个非算法包（asn1 / jwk / ocsp / pkcs7 / pkcs12 / rsaxml）从 `crypto/` 顶级化，
+  `crypto/x509`（731 行）按职责拆为 6 个文件并顶级化为 `x509/`。
+  本 Phase 仅重组，不动 API 行为门禁
+  （默认 60%，路线图目标 80%）+ GoDoc 完整 + 56 个 Example + 3 个 examples
+  可运行示例e 14（发布收尾，P2）已完成**：测试盘点 + 核心包覆盖率 ≥ 80% 门禁 +
+  GoDoc 完整 + GitHub Actions 6 Job 流水线 + SemVer / Conventional Commits /
+  人工打 tag 的 13 项预检清单与回滚预案
+- 至此 Phase 1–14 全部完成（v0.1.0 功能规划 + 包结构重组 + 发布收尾落地）
+
+---

@@ -47,7 +47,7 @@ func Sum(data []byte) [32]byte
 
 | 元素 | 约定 | 示例 |
 |------|------|------|
-| 包名 | 小写单词，无下划线 | `crypto/sm3`、`internal/core` |
+| 包名 | 小写单词，无下划线 | `crypto/sm3`、`pkcs/pkcs7`、`internal/core` |
 | API 层导出类型/函数 | 按 **C# 语义命名**，遵循 Go 导出约定（首字母大写）；形态走 Go 惯例 | `sm3.Sum`、`sm4.NewCipher`、`sm2.Encrypt` |
 | 绑定层函数 | 与铜锁 C 函数名完全一致 | `EVP_DigestInit_ex` |
 | shim 包装函数 | `X_` 前缀 | `X_EVP_Digest` |
