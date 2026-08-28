@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/x509"
+	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
 // makeCert 构建一张自签证书（RSA）。

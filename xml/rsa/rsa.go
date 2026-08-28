@@ -1,8 +1,11 @@
-// Package rsaxml 提供 RSA 密钥的 XML 序列化（.NET RSAKeyValue 格式）。
+// Package rsa 提供 RSA 密钥的 .NET RSAKeyValue XML 序列化。
 //
 // 与铜锁 openssl / .NET 互操作：Marshal* 将本库 RSA 密钥导出为 XML，
 // Unmarshal* 从 XML 解析并加载为本库 RSA 密钥。
-package rsaxml
+//
+// 注意：本包路径为 xml/rsa，但包名为 rsa；调用方通常需用别名
+// `import rsaxml "github.com/.../xml/rsa"` 以避免与 crypto/rsa 冲突。
+package rsa
 
 import (
 	stdrsa "crypto/rsa"

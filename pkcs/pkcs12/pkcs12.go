@@ -7,7 +7,7 @@ package pkcs12
 import (
 	"fmt"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/x509"
+	"github.com/blue-cloud-net/tongsuo-go/x509"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 

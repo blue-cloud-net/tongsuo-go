@@ -8,7 +8,7 @@ import (
 	"encoding/pem"
 	"fmt"
 
-	tx509 "github.com/blue-cloud-net/tongsuo-go/crypto/x509"
+	tx509 "github.com/blue-cloud-net/tongsuo-go/x509"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 

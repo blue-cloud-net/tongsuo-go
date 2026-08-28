@@ -1,4 +1,4 @@
-package rsaxml
+package rsa
 
 import (
 	"strings"

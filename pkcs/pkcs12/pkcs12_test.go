@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/x509"
+	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
 // buildTestCert 构建 CA 签发叶证书（RSA）。
