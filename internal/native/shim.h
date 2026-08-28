@@ -13,6 +13,7 @@
 #include <openssl/bn.h>
 #include <openssl/pkcs12.h>
 #include <openssl/pkcs7.h>
+#include <openssl/ocsp.h>
 
 /*
  * X_EVP_Digest：一次性摘要。EVP_Digest 在部分 OpenSSL 版本中为可变参数宏，
@@ -148,5 +149,9 @@ PKCS12 *X_PKCS12_create(const char *pass, const char *name, EVP_PKEY *pkey,
 int X_PKCS12_parse(PKCS12 *p12, const char *pass, EVP_PKEY **pkey,
                    X509 **cert, void **ca);
 void *X_PKCS7_get0_certificates(PKCS7 *p7); /* STACK_OF(X509)* 内部指针，勿释放 */
+
+/* Phase 12：OCSP 响应签名验证（STACK_OF(X509) 以 void* 传递）。 */
+int X_OCSP_basic_verify(OCSP_BASICRESP *bs, void *certs, X509_STORE *st,
+                        unsigned long flags);
 
 #endif /* TONGSUO_GO_SHIM_H */

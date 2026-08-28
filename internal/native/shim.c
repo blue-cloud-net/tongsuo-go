@@ -490,3 +490,9 @@ void *X_PKCS7_get0_certificates(PKCS7 *p7)
         return NULL;
     return p7->d.sign->cert;
 }
+
+int X_OCSP_basic_verify(OCSP_BASICRESP *bs, void *certs, X509_STORE *st,
+                        unsigned long flags)
+{
+    return OCSP_basic_verify(bs, (STACK_OF(X509) *)certs, st, flags);
+}
