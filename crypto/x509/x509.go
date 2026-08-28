@@ -275,8 +275,11 @@ func (c *Certificate) SetValidity(notBefore, notAfter time.Time) error {
 	return c.cert.SetValidity(notBefore, notAfter)
 }
 
-// SetPublicKey 设置证书公钥。
-func (c *Certificate) SetPublicKey(pub *sm2.PublicKey) error {
+// SetPublicKey 设置证书公钥（支持 SM2 / RSA / ECDSA）。
+func (c *Certificate) SetPublicKey(pub PublicKey) error {
+	if pub == nil {
+		return fmt.Errorf("x509: nil public key")
+	}
 	return c.cert.SetPublicKey(pub.Key())
 }
 
@@ -286,11 +289,15 @@ func (c *Certificate) AddBasicConstraints(isCA bool) error {
 }
 
 // Sign 使用签名私钥对证书签名（须先配置好版本/序列号/主题/签发者/有效期/公钥/扩展）。
-func (c *Certificate) Sign(signer *sm2.PrivateKey) error {
-	return c.cert.Sign(signer.Key(), core.SM3())
+// signer 支持 SM2 / RSA / ECDSA，摘要按密钥类型自动选择。
+func (c *Certificate) Sign(signer PrivateKey) error {
+	if signer == nil {
+		return fmt.Errorf("x509: nil signer")
+	}
+	return c.cert.Sign(signer.Key(), nil)
 }
 
-// PublicKey 返回证书公钥（SM2）。
+// PublicKey 返回证书公钥（SM2 包装；RSA/ECDSA 证书请用 PublicKeyPKey）。
 func (c *Certificate) PublicKey() (*sm2.PublicKey, error) {
 	k, err := c.cert.PublicKey()
 	if err != nil {
@@ -299,17 +306,35 @@ func (c *Certificate) PublicKey() (*sm2.PublicKey, error) {
 	return sm2.PublicKeyFromPKey(k), nil
 }
 
+// PublicKeyPKey 返回证书公钥的底层核心密钥（适用任意算法，调用方负责 Close）。
+func (c *Certificate) PublicKeyPKey() (*core.PKey, error) {
+	return c.cert.PublicKey()
+}
+
 // Verify 使用签发者公钥验证证书签名。
-func (c *Certificate) Verify(signerPub *sm2.PublicKey) error {
+func (c *Certificate) Verify(signerPub PublicKey) error {
+	if signerPub == nil {
+		return fmt.Errorf("x509: nil public key")
+	}
 	return c.cert.Verify(signerPub.Key())
+}
+
+// PublicKey 表示可作为证书公钥的非对称密钥（SM2 / RSA / ECDSA）。
+type PublicKey interface {
+	Key() *core.PKey
+}
+
+// PrivateKey 表示可作为证书签名密钥的非对称密钥（SM2 / RSA / ECDSA）。
+type PrivateKey interface {
+	Key() *core.PKey
 }
 
 // CreateCertificate 创建一张由 signer 签发的证书。
 // subject 为主题；issuer 为签发者（自签时与 subject 相同）；serial 为序列号；
 // notBefore/notAfter 为有效期；pub 为证书公钥；signer 为签发私钥
-// （自签时与 pub 对应，CA 签发时为 CA 私钥）。
+// （自签时与 pub 对应，CA 签发时为 CA 私钥）。pub/signer 支持 SM2 / RSA / ECDSA。
 func CreateCertificate(subject, issuer *Name, serial int64, notBefore, notAfter time.Time,
-	pub *sm2.PublicKey, signer *sm2.PrivateKey) (*Certificate, error) {
+	pub PublicKey, signer PrivateKey) (*Certificate, error) {
 	if subject == nil || issuer == nil || pub == nil || signer == nil {
 		return nil, fmt.Errorf("x509: nil parameter")
 	}
@@ -335,7 +360,7 @@ func CreateCertificate(subject, issuer *Name, serial int64, notBefore, notAfter 
 	if err := cert.SetPublicKey(pub.Key()); err != nil {
 		return nil, err
 	}
-	if err := cert.Sign(signer.Key(), core.SM3()); err != nil {
+	if err := cert.Sign(signer.Key(), nil); err != nil { // nil → 按密钥类型自动选摘要
 		return nil, err
 	}
 	return &Certificate{cert: cert}, nil
@@ -347,8 +372,8 @@ type CertificateRequest struct {
 }
 
 // NewCertificateRequest 创建 CSR 并签名。
-// subject 为主题；pub 为请求者公钥；priv 为请求者私钥（用于签名）。
-func NewCertificateRequest(subject *Name, pub *sm2.PublicKey, priv *sm2.PrivateKey) (*CertificateRequest, error) {
+// subject 为主题；pub 为请求者公钥；priv 为请求者私钥（用于签名），支持 SM2 / RSA / ECDSA。
+func NewCertificateRequest(subject *Name, pub PublicKey, priv PrivateKey) (*CertificateRequest, error) {
 	if subject == nil || pub == nil || priv == nil {
 		return nil, fmt.Errorf("x509: nil parameter")
 	}
@@ -362,7 +387,7 @@ func NewCertificateRequest(subject *Name, pub *sm2.PublicKey, priv *sm2.PrivateK
 	if err := req.SetPublicKey(pub.Key()); err != nil {
 		return nil, err
 	}
-	if err := req.Sign(priv.Key(), core.SM3()); err != nil {
+	if err := req.Sign(priv.Key(), nil); err != nil { // nil → 按密钥类型自动选摘要
 		return nil, err
 	}
 	return &CertificateRequest{req: req}, nil
@@ -387,8 +412,8 @@ func (r *CertificateRequest) SetSubject(n *Name) error {
 	return r.req.SetSubject(n.name)
 }
 
-// SetPublicKey 设置 CSR 公钥。
-func (r *CertificateRequest) SetPublicKey(pub *sm2.PublicKey) error {
+// SetPublicKey 设置 CSR 公钥（支持 SM2 / RSA / ECDSA）。
+func (r *CertificateRequest) SetPublicKey(pub PublicKey) error {
 	if pub == nil {
 		return fmt.Errorf("x509: nil public key")
 	}
@@ -396,11 +421,12 @@ func (r *CertificateRequest) SetPublicKey(pub *sm2.PublicKey) error {
 }
 
 // Sign 使用请求者私钥对 CSR 签名（须先配置好主题/公钥/扩展/口令）。
-func (r *CertificateRequest) Sign(priv *sm2.PrivateKey) error {
+// priv 支持 SM2 / RSA / ECDSA，摘要按密钥类型自动选择。
+func (r *CertificateRequest) Sign(priv PrivateKey) error {
 	if priv == nil {
 		return fmt.Errorf("x509: nil private key")
 	}
-	return r.req.Sign(priv.Key(), core.SM3())
+	return r.req.Sign(priv.Key(), nil)
 }
 
 // LoadCertificateRequestPEM 从 PEM 加载 CSR。

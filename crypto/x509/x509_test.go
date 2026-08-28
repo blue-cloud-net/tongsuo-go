@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blue-cloud-net/tongsuo-go/crypto/ecdsa"
+	"github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
 	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
 )
 
@@ -843,5 +845,162 @@ func TestRevocationCheckBasic(t *testing.T) {
 	// nil 证书 → 错误
 	if err := RevocationCheck(nil, nil); err == nil {
 		t.Fatal("RevocationCheck with nil cert should error")
+	}
+}
+
+// TestCreateCertificateRSA 验证 RSA 密钥可签发/验证证书（自签）。
+func TestCreateCertificateRSA(t *testing.T) {
+	priv, err := rsa.GenerateKey(2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	subject := NewName().Add("CN", "rsa.example.com")
+	cert, err := CreateCertificate(subject, subject, 20,
+		now.Add(-time.Hour), now.Add(365*24*time.Hour), priv.Public(), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cert.CertificateType() != "RSA" {
+		t.Fatalf("CertificateType = %q, want RSA", cert.CertificateType())
+	}
+	if err := cert.Verify(priv.Public()); err != nil {
+		t.Fatalf("RSA cert self-verify failed: %v", err)
+	}
+
+	// PEM 往返 + 公钥类型仍为 RSA
+	pem, err := cert.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCertificatePEM(pem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pk, err := loaded.PublicKeyPKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pk.Close()
+	if pk.Algorithm() != "RSA" {
+		t.Fatalf("loaded cert pubkey algorithm = %q, want RSA", pk.Algorithm())
+	}
+	if err := loaded.Verify(priv.Public()); err != nil {
+		t.Fatal("loaded RSA cert verify failed")
+	}
+}
+
+// TestCreateCertificateECDSA 验证 ECDSA 密钥可签发/验证证书（自签）。
+func TestCreateCertificateECDSA(t *testing.T) {
+	priv, err := ecdsa.GenerateKey("prime256v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	subject := NewName().Add("CN", "ecdsa.example.com")
+	cert, err := CreateCertificate(subject, subject, 21,
+		now.Add(-time.Hour), now.Add(365*24*time.Hour), priv.Public(), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cert.CertificateType() != "EC" {
+		t.Fatalf("CertificateType = %q, want EC", cert.CertificateType())
+	}
+	if err := cert.Verify(priv.Public()); err != nil {
+		t.Fatalf("ECDSA cert self-verify failed: %v", err)
+	}
+	pem, err := cert.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCertificatePEM(pem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loaded.Verify(priv.Public()); err != nil {
+		t.Fatal("loaded ECDSA cert verify failed")
+	}
+}
+
+// TestChainVerifyRSA 验证 RSA CA 签发 RSA 叶证书的链验证。
+func TestChainVerifyRSA(t *testing.T) {
+	caPriv, err := rsa.GenerateKey(2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafPriv, err := rsa.GenerateKey(2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	caSubject := NewName().Add("CN", "RSA Chain CA")
+	caCert := NewCertificate()
+	if err := caCert.SetVersion(2); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetSerial(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetIssuer(caSubject); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetSubject(caSubject); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetValidity(now.Add(-time.Hour), now.Add(2*365*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetPublicKey(caPriv.Public()); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.AddBasicConstraints(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.Sign(caPriv); err != nil {
+		t.Fatal(err)
+	}
+
+	leafCert, err := CreateCertificate(NewName().Add("CN", "rsa-leaf.example.com"),
+		caSubject, 2, now.Add(-time.Hour), now.Add(365*24*time.Hour), leafPriv.Public(), caPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	roots := NewStore()
+	if err := roots.AddCert(caCert); err != nil {
+		t.Fatal(err)
+	}
+	chain, err := ChainVerify(leafCert, roots, nil)
+	if err != nil {
+		t.Fatalf("RSA chain verify failed: %v", err)
+	}
+	if len(chain) != 2 {
+		t.Fatalf("chain length = %d, want 2", len(chain))
+	}
+}
+
+// TestCSRRSA 验证 RSA 密钥可生成 CSR 并验签。
+func TestCSRRSA(t *testing.T) {
+	priv, err := rsa.GenerateKey(2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := NewCertificateRequest(NewName().Add("CN", "rsa-csr.example.com"), priv.Public(), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := req.Verify(); err != nil {
+		t.Fatal(err)
+	}
+	pem, err := req.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCertificateRequestPEM(pem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loaded.Verify(); err != nil {
+		t.Fatal("loaded RSA CSR verify failed")
 	}
 }
