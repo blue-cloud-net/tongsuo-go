@@ -11,6 +11,8 @@
 #include <openssl/rsa.h>
 #include <openssl/ec.h>
 #include <openssl/bn.h>
+#include <openssl/pkcs12.h>
+#include <openssl/pkcs7.h>
 
 /*
  * X_EVP_Digest：一次性摘要。EVP_Digest 在部分 OpenSSL 版本中为可变参数宏，
@@ -106,6 +108,7 @@ char *X_X509_REQ_get_challenge_password(X509_REQ *r);      /* 调用方 free */
 void *X_sk_X509_new_null(void);                             /* STACK_OF(X509)* */
 int X_sk_X509_push(void *sk, void *x);
 void X_sk_X509_free(void *sk);
+void X_sk_X509_pop_free(void *sk);                          /* 连同元素一起释放 */
 int X_sk_X509_num(const void *sk);
 void *X_sk_X509_value(const void *sk, int i);               /* X509* */
 
@@ -134,5 +137,16 @@ EVP_PKEY *X_PEM_read_bio_PrivateKey_pass(BIO *bp, const char *pass);
 int X_PEM_write_bio_PrivateKey_enc(BIO *bp, EVP_PKEY *x, const char *pass);
 RSA *X_PEM_read_bio_RSAPrivateKey(BIO *bp);
 int X_PEM_write_bio_RSAPrivateKey(BIO *bp, RSA *rsa);
+
+/*
+ * Phase 11：PKCS#12 / PKCS#7 容器格式。
+ * STACK_OF(X509) 以 void* / 数组形式传递，规避 cgo 类型限制；
+ * PKCS7 证书提取经公开结构体 p7->d.sign->cert 访问（铜锁无 PKCS7_get_certificates）。
+ */
+PKCS12 *X_PKCS12_create(const char *pass, const char *name, EVP_PKEY *pkey,
+                        X509 *cert, void **ca, int ca_len);
+int X_PKCS12_parse(PKCS12 *p12, const char *pass, EVP_PKEY **pkey,
+                   X509 **cert, void **ca);
+void *X_PKCS7_get0_certificates(PKCS7 *p7); /* STACK_OF(X509)* 内部指针，勿释放 */
 
 #endif /* TONGSUO_GO_SHIM_H */

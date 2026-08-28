@@ -36,3 +36,11 @@ func BIO_read(bio unsafe.Pointer, buf []byte) int {
 	}
 	return int(C.BIO_read((*C.BIO)(bio), unsafe.Pointer(&buf[0]), C.int(len(buf))))
 }
+
+// BIO_write 向 BIO 写入至多 len(data) 字节，返回实际写入数。
+func BIO_write(bio unsafe.Pointer, data []byte) int {
+	if len(data) == 0 {
+		return 0
+	}
+	return int(C.BIO_write((*C.BIO)(bio), unsafe.Pointer(&data[0]), C.int(len(data))))
+}

@@ -796,6 +796,11 @@ func X509_sk_X509_free(sk unsafe.Pointer) {
 	C.X_sk_X509_free(sk)
 }
 
+// X509_sk_X509_pop_free 释放 X509 栈并释放全部元素。
+func X509_sk_X509_pop_free(sk unsafe.Pointer) {
+	C.X_sk_X509_pop_free(sk)
+}
+
 // X509_sk_X509_num 返回 X509 栈条目数。
 func X509_sk_X509_num(sk unsafe.Pointer) int {
 	return int(C.X_sk_X509_num(sk))

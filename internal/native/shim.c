@@ -361,6 +361,11 @@ void X_sk_X509_free(void *sk)
     sk_X509_free((STACK_OF(X509) *)sk);
 }
 
+void X_sk_X509_pop_free(void *sk)
+{
+    sk_X509_pop_free((STACK_OF(X509) *)sk, X509_free);
+}
+
 int X_sk_X509_num(const void *sk)
 {
     return sk_X509_num((const STACK_OF(X509) *)sk);
@@ -442,4 +447,46 @@ RSA *X_PEM_read_bio_RSAPrivateKey(BIO *bp)
 int X_PEM_write_bio_RSAPrivateKey(BIO *bp, RSA *rsa)
 {
     return PEM_write_bio_RSAPrivateKey(bp, rsa, NULL, NULL, 0, NULL, NULL);
+}
+
+PKCS12 *X_PKCS12_create(const char *pass, const char *name, EVP_PKEY *pkey,
+                        X509 *cert, void **ca, int ca_len)
+{
+    STACK_OF(X509) *ca_sk = NULL;
+    if (ca_len > 0) {
+        ca_sk = sk_X509_new_null();
+        if (ca_sk == NULL)
+            return NULL;
+        X509 **arr = (X509 **)ca;
+        for (int i = 0; i < ca_len; i++) {
+            if (arr[i] == NULL || !sk_X509_push(ca_sk, arr[i])) {
+                sk_X509_free(ca_sk);
+                return NULL;
+            }
+        }
+    }
+    PKCS12 *p12 = PKCS12_create(pass, name, pkey, cert, ca_sk,
+                                NID_pbe_WithSHA1And3_Key_TripleDES_CBC,
+                                NID_pbe_WithSHA1And3_Key_TripleDES_CBC,
+                                2048, 2048, 0);
+    if (ca_sk != NULL)
+        sk_X509_free(ca_sk); /* 栈元素为借用指针，仅释放数组 */
+    return p12;
+}
+
+int X_PKCS12_parse(PKCS12 *p12, const char *pass, EVP_PKEY **pkey,
+                   X509 **cert, void **ca)
+{
+    STACK_OF(X509) *ca_sk = NULL;
+    int ok = PKCS12_parse(p12, pass, pkey, cert, &ca_sk);
+    if (ca != NULL)
+        *ca = ca_sk;
+    return ok;
+}
+
+void *X_PKCS7_get0_certificates(PKCS7 *p7)
+{
+    if (p7 == NULL || OBJ_obj2nid(p7->type) != NID_pkcs7_signed)
+        return NULL;
+    return p7->d.sign->cert;
 }
