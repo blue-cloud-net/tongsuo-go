@@ -32,10 +32,10 @@ func GenerateKey(bits int) (*PrivateKey, error) {
 	return &PrivateKey{key: k}, nil
 }
 
-// Key 返回底层核心密钥对象（供内部跨包使用，如 crypto/x509）。
+// Key 返回底层核心密钥对象（供内部跨包使用，如 x509）。
 func (k *PrivateKey) Key() *core.PKey { return k.key }
 
-// Key 返回底层核心密钥对象（供内部跨包使用，如 crypto/x509）。
+// Key 返回底层核心密钥对象（供内部跨包使用，如 x509）。
 func (k *PublicKey) Key() *core.PKey { return k.key }
 
 // Public 返回对应的公钥（引用同一底层密钥）。

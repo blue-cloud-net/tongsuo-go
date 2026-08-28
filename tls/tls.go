@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/x509"
+	"github.com/blue-cloud-net/tongsuo-go/x509"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/x509"
+	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
 // testServerConfig 生成 SM2 自签服务器证书配置。
