@@ -235,9 +235,13 @@ func (c *Certificate) AddBasicConstraints(isCA bool) error {
 }
 
 // Sign 使用签名私钥与摘要算法对证书签名（自签时签名密钥与公钥对应，CA 签发时用 CA 私钥）。
+// md 传 nil 时按签名密钥类型自动选择（SM2→SM3，RSA/ECDSA→SHA256）。
 func (c *Certificate) Sign(signer *PKey, md *Digest) error {
 	if signer == nil || signer.handle == nil || signer.handle.IsClosed() {
 		return fmt.Errorf("x509: invalid signer")
+	}
+	if md == nil {
+		md = digestForSigner(signer)
 	}
 	if md == nil || md.handle == nil {
 		return fmt.Errorf("x509: invalid digest")
@@ -831,10 +835,13 @@ func (r *CertificateRequest) SetPublicKey(k *PKey) error {
 	return nil
 }
 
-// Sign 使用请求者私钥对 CSR 签名。
+// Sign 使用请求者私钥对 CSR 签名。md 传 nil 时按密钥类型自动选择。
 func (r *CertificateRequest) Sign(priv *PKey, md *Digest) error {
 	if priv == nil || priv.handle == nil || priv.handle.IsClosed() {
 		return fmt.Errorf("x509: invalid private key")
+	}
+	if md == nil {
+		md = digestForSigner(priv)
 	}
 	if md == nil || md.handle == nil {
 		return fmt.Errorf("x509: invalid digest")
@@ -848,8 +855,8 @@ func (r *CertificateRequest) Sign(priv *PKey, md *Digest) error {
 // Verify 使用 CSR 自身公钥验证签名。
 //
 // 注意：Tongsuo 8.5-pre1 的 X509_REQ_verify 对 SM2 证书签名请求存在缺陷
-// （返回 -1），故此处手动重建 CertificationRequestInfo 的 DER 并使用
-// SM2 验签路径校验（结果与 openssl req -verify 一致）。
+// （返回 -1），故此处手动重建 CertificationRequestInfo 的 DER 并按密钥
+// 类型选择摘要验签（结果与 openssl req -verify 一致）。
 func (r *CertificateRequest) Verify() error {
 	info, ok := native.I2d_X509_REQ_INFO(r.handle.Ptr())
 	if !ok {
@@ -865,7 +872,11 @@ func (r *CertificateRequest) Verify() error {
 	}
 	pkey := &PKey{handle: NewHandle(pub, true, native.EVP_PKEY_free)}
 	defer pkey.Close()
-	return pkey.Verify(info, sig, nil)
+	// SM2 走带 userId 的路径；RSA/ECDSA 按类型选摘要。
+	if pkey.TypeID() == native.EvpPkeySM2 {
+		return pkey.Verify(info, sig, nil)
+	}
+	return pkey.VerifyDigest(info, sig, digestForSigner(pkey))
 }
 
 // PublicKey 返回 CSR 公钥（新引用，调用方负责释放）。
