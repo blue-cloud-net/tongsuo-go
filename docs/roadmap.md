@@ -378,6 +378,7 @@ tongsuo-go/
       标准向量 / 边界 / 错误路径 / 幂等 Reset / 交叉验证 / 资源清理）
 - [x] 覆盖率基线盘点：默认阈值 **60%**（`scripts/check-coverage.sh`），
       路线图目标 **80%**（Phase 15+ 按"短板优先"原则分批补齐）；
+      **CI 不再强制检查覆盖率门禁**，仅作本地参考；
       当前各公开包覆盖率（不含 `internal/*`）：
 
   | 包 | 覆盖率 | 备注 |
@@ -395,7 +396,8 @@ tongsuo-go/
   | `tls` `x509` | 60.4% / 60.9% | 持平基线 |
   | `ocsp` | 36.4% | 依赖外部 OCSP responder，**默认豁免**（`EXCLUDE=ocsp`） |
 
-- [x] 覆盖率门禁脚本：`scripts/check-coverage.sh`，可配置 `THRESHOLD` / `EXCLUDE`
+- [x] 覆盖率检查脚本：`scripts/check-coverage.sh`，可配置 `THRESHOLD` / `EXCLUDE`
+      （仅本地参考，CI 不强制）
 - [x] `-tags tongsuocli` 全量测试已就绪（单元 + CLI 比对命令详见 testing-guide §2）
 
 **API 文档（GoDoc）**
@@ -417,7 +419,7 @@ tongsuo-go/
       集成测试用矩阵拆分，避免每个 PR 强制跑 Tongsuo
 
 **发布流程**
-- [ ] 预检清单（13 项必须全 ✅）：单元/集成测试全绿、覆盖率达标、lint/vet 干净、
+- [ ] 预检清单（13 项必须全 ✅）：单元/集成测试全绿、lint/vet 干净、
       静态链接产物可生成、GoDoc 完整、`examples/` 可跑、`CHANGELOG.md` / `README.md` /
       `roadmap.md` 同步更新、`git status` 干净、CI 主线绿
 - [ ] 遵循 SemVer `vMAJOR.MINOR.PATCH`；v0.1.0 因 `MAJOR=0` API 不稳定，CHANGELOG 显式

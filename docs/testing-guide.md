@@ -47,7 +47,8 @@ go test -fuzz FuzzRoundTrip ./crypto/sm4
 
 - CLI 测试依赖铜锁 openssl 命令行，路径通过环境变量 `TONGSUO_OPENSSL_BIN` 指定
   （默认 `/opt/tongsuo/bin/openssl`）或由 `TONGSUO_HOME` 推导
-- 覆盖目标：核心算法包行覆盖 **≥ 80%**，由 CI 强制
+- 覆盖目标：核心算法包行覆盖 **≥ 80%**（参考值，**不**由 CI 强制；本地可通过
+  `./scripts/check-coverage.sh` 手动检查）
 
 ---
 

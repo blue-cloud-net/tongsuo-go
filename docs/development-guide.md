@@ -138,7 +138,11 @@ go build ./...
 ### 9.2 CI（GitHub Actions）
 
 - 步骤：安装铜锁（源码编译）→ `go vet` → `golangci-lint` → `go test ./...` →
-  覆盖率检查 → 静态链接验证（`go build -tags static ./...`）
+  静态链接验证（`go build -tags static ./...`）
+- 完整定义见 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)；
+  详细说明见 [ci-cd.md](ci-cd.md)
+- 矩阵：Linux + macOS × Go 1.21 / 1.23
+- 覆盖率仅作为本地参考指标，CI 不再强制门禁
 
 ---
 
