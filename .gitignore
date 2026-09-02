@@ -27,6 +27,11 @@ go.work.sum
 # env file
 .env
 
+# CI / 本地构建产物
+/.tongsuo-install/
+/dist/
+/artifacts/
+
 # Editor/IDE
 # .idea/
 # .vscode/

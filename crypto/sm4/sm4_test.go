@@ -81,6 +81,62 @@ func TestBlockWithStdlibCBC(t *testing.T) {
 	}
 }
 
+// TestZeroPaddingECBRoundTrip 验证 SM4-ECB Zero 填充加解密往返。
+func TestZeroPaddingECBRoundTrip(t *testing.T) {
+	key := []byte("0123456789abcdef")
+	for _, data := range [][]byte{
+		[]byte("a"),
+		bytes.Repeat([]byte("x"), 15),
+		bytes.Repeat([]byte("x"), 16),
+		bytes.Repeat([]byte("tongsuo"), 7), // 49 字节
+	} {
+		ct, err := EncryptECBZero(key, data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(ct)%BlockSize != 0 {
+			t.Fatalf("ciphertext not block aligned: %d", len(ct))
+		}
+		pt, err := DecryptECBZero(key, ct)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(pt, data) {
+			t.Fatalf("zero-padding ECB roundtrip mismatch: got %q want %q", pt, data)
+		}
+	}
+}
+
+// TestZeroPaddingCBCRoundTrip 验证 SM4-CBC Zero 填充加解密往返。
+func TestZeroPaddingCBCRoundTrip(t *testing.T) {
+	key := []byte("0123456789abcdef")
+	iv := bytes.Repeat([]byte{0x11}, BlockSize)
+	for _, data := range [][]byte{
+		[]byte("a"),
+		bytes.Repeat([]byte("y"), 32),
+		bytes.Repeat([]byte("tongsuo-cbc"), 5), // 60 字节
+	} {
+		ct, err := EncryptCBCZero(key, iv, data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pt, err := DecryptCBCZero(key, iv, ct)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(pt, data) {
+			t.Fatalf("zero-padding CBC roundtrip mismatch: got %q want %q", pt, data)
+		}
+	}
+}
+
+// TestZeroPaddingInvalidIV 验证 Zero 填充 CBC 对非法 IV 报错。
+func TestZeroPaddingInvalidIV(t *testing.T) {
+	if _, err := EncryptCBCZero([]byte("0123456789abcdef"), []byte("short"), []byte("x")); err == nil {
+		t.Fatal("expected error for short IV")
+	}
+}
+
 // TestECBRoundTrip 验证 SM4-ECB 加解密往返（含不同长度与填充）。
 func TestECBRoundTrip(t *testing.T) {
 	for _, data := range [][]byte{

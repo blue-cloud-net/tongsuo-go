@@ -1,0 +1,140 @@
+# GitHub Actions CI for tongsuo-go
+#
+# 触发：push 到 main/dev、PR 到 main/dev、手动触发
+# 矩阵：Linux + macOS × Go 1.21 / 1.23
+# 阶段：lint → test → build(static)
+# Tongsuo 来源：源码编译 + actions/cache，避免每次拉取与重复编译
+
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  tags: ["v*"]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+# 最小权限：仅读仓库内容
+permissions:
+  contents: read
+
+# 全局环境变量：方便一处调整 Tongsuo 版本与仓库
+env:
+  TONGSUO_REPO: OpenTongsuo/Tongsuo
+  # 用 branch 或 tag 都可；推荐固定到稳定 tag（如 v8.5.0）以保证可复现
+  TONGSUO_REF: master
+  TONGSUO_PREFIX: ${{ github.workspace }}/.tongsuo-install
+
+# 取消冗余运行：同一分支/同一 PR 的旧运行自动取消
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. 静态检查：vet + golangci-lint（仅 ubuntu，避免重复消耗 runner）
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint (ubuntu / Go 1.23)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
+  # ---------------------------------------------------------------------------
+  # 2. 编译与测试：动态链接 + 静态链接
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test (${{ matrix.os }} / Go ${{ matrix.go-version }})
+    needs: lint
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        go-version: ["1.21", "1.23"]
+    env:
+      # macOS 用 DYLD_LIBRARY_PATH；Linux 用 LD_LIBRARY_PATH（脚本会按 OS 区分）
+      LD_LIBRARY_PATH: ${{ env.TONGSUO_PREFIX }}/lib
+      DYLD_LIBRARY_PATH: ${{ env.TONGSUO_PREFIX }}/lib
+      CGO_CFLAGS: -I${{ env.TONGSUO_PREFIX }}/include -Wno-deprecated-declarations
+      CGO_LDFLAGS: -L${{ env.TONGSUO_PREFIX }}/lib
+      TONGSUO_HOME: ${{ env.TONGSUO_PREFIX }}
+      # Tongsuo 编译参数（来源：docs/architecture.md §6.2）
+      TONGSUO_CONFIG_FLAGS: --prefix=${{ env.TONGSUO_PREFIX }} --libdir=${{ env.TONGSUO_PREFIX }}/lib enable-ntls enable-export-sm4 enable-ssl-trace no-shared
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      # 缓存 Tongsuo 编译/安装产物，按 OS + 版本号区分 key
+      - name: Cache Tongsuo
+        id: cache-tongsuo
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TONGSUO_PREFIX }}
+          key: tongsuo-${{ runner.os }}-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: |
+            tongsuo-${{ runner.os }}-${{ env.TONGSUO_REF }}-
+
+      - name: Build Tongsuo from source
+        if: steps.cache-tongsuo.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "==> Cloning Tongsuo (${{ env.TONGSUO_REPO }} @ ${{ env.TONGSUO_REF }})"
+          git clone --depth 1 --branch "${{ env.TONGSUO_REF }}" \
+            "https://github.com/${{ env.TONGSUO_REPO }}.git" tongsuo
+          cd tongsuo
+          echo "==> ./config $TONGSUO_CONFIG_FLAGS"
+          ./config $TONGSUO_CONFIG_FLAGS
+          JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
+          echo "==> make -j${JOBS}"
+          make -j"${JOBS}"
+          echo "==> make install_sw"
+          make install_sw
+          echo "==> Tongsuo installed to ${{ env.TONGSUO_PREFIX }}"
+
+      # Linux：写入 ld.so.conf 并 ldconfig（runner 默认 root，可直接写）
+      - name: Configure dynamic linker (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          echo "${{ env.TONGSUO_PREFIX }}/lib" > /etc/ld.so.conf.d/tongsuo.conf
+          ldconfig
+
+      # 动态链接构建
+      - name: go build
+        run: go build ./...
+
+      # 静态链接构建（验证 internal/native/build_static.go 路径）
+      - name: go build (static tag)
+        run: go build -tags static ./...
+
+      # 单元测试（默认不含 CLI 对比测试；tongsuocli tag 需要 openssl CLI，
+      # 本仓库的 *_tongsuocli_test.go 默认不编译，详见 testing-guide.md §2）
+      - name: go test
+        run: go test -count=1 ./...
+  

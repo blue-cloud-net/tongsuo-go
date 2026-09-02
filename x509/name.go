@@ -1,0 +1,68 @@
+package x509
+
+import "github.com/blue-cloud-net/tongsuo-go/internal/core"
+
+// Name 表示证书主题/签发者名字，支持链式构建。
+//
+// Name represents a certificate subject or issuer name and supports fluent construction via Add.
+type Name struct {
+	name *core.Name
+}
+
+// NameEntry 表示名字中的一个 RDN 条目。
+//
+// Nid 为属性 NID；Field 为字段短名（如 "CN"、"O"）；Value 为 UTF-8 编码的属性值。
+//
+// NameEntry represents a single RDN attribute inside a Name.
+//
+// Nid is the attribute NID, Field is the short name (for example "CN" or "O"),
+// and Value is the UTF-8 attribute value.
+type NameEntry struct {
+	Nid   int    // 字段 NID
+	Field string // 字段短名，如 "CN"、"O"
+	Value string // 字段值（UTF-8）
+}
+
+// NewName 创建空名字。
+//
+// NewName creates an empty Name. Use Add to populate it.
+func NewName() *Name {
+	n, err := core.NewName()
+	if err != nil {
+		panic(err)
+	}
+	return &Name{name: n}
+}
+
+// Add 添加名字字段并返回自身（链式）。
+// field 取 "CN"、"C"、"O"、"OU"、"L"、"ST"、"serialNumber"、"emailAddress" 等。
+//
+// Add appends a relative distinguished name attribute and returns the same Name for chaining. field accepts short names such as "CN", "C", "O", "OU", "L", "ST", "serialNumber", and "emailAddress".
+func (n *Name) Add(field, value string) *Name {
+	if err := n.name.AddEntry(field, value); err != nil {
+		panic(err)
+	}
+	return n
+}
+
+// Entries 返回名字的全部 RDN 条目（保持证书中的顺序）。
+//
+// Entries returns every RDN attribute of the Name in the order they were added.
+func (n *Name) Entries() []NameEntry {
+	es := n.name.Entries()
+	out := make([]NameEntry, 0, len(es))
+	for _, e := range es {
+		out = append(out, NameEntry{Nid: e.Nid, Field: e.Field, Value: e.Value})
+	}
+	return out
+}
+
+// Get 返回指定字段短名（如 "CN"、"O"）的值；未找到返回空串。
+//
+// Get returns the value of the attribute with the given short name (for example "CN" or "O"), or an empty string when no such attribute is present.
+func (n *Name) Get(field string) string { return n.name.Get(field) }
+
+// String 返回名字的完整单行文本（如 "/CN=example.com/O=Example Org"）。
+//
+// String returns the Name as a single-line string in OpenSSL-style format (for example "/CN=example.com/O=Example Org").
+func (n *Name) String() string { return n.name.String() }

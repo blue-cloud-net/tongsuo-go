@@ -67,12 +67,19 @@ API 层（crypto/）              ← 对外高层 API，仅此层可被外部 i
 - 上下文类型：`DigestCtx` / `CipherCtx` / `PKey` 等，封装原生对象的完整操作流程
 - 统一处理 OpenSSL 线程锁初始化与需要时的 `runtime.LockOSThread()`
 
-### 3.3 API 层（`crypto/`）
+### 3.3 API 层（公开导入面）
 
-- 对外暴露的公共子包：`crypto/sm3`、`crypto/sm4`、`crypto/sm2`、`crypto/hmac`、
-  `crypto/rand` 等（按 roadmap 分阶段增加）
+- 对外暴露的公共 API 由两层组成：
+  - **算法引擎层**：`crypto/aes`、`crypto/sm2`、`crypto/sm3`、`crypto/sm4`、
+    `crypto/hmac`、`crypto/rand`、`crypto/md5`、`crypto/sha1/256/512`、`crypto/rsa`、
+    `crypto/ecdsa`
+  - **组合层（顶级）**：`x509/`（证书对象模型）、`asn1/`（DER viewer）、
+    `pkcs/pkcs7/`、`pkcs/pkcs12/`、`ocsp/`（协议）、`tls/`（协议）、
+    `jwk/`（格式）、`xml/rsa/`（格式族）
 - 每个算法子包**自带 `*_test.go`** 测试文件（见 [testing-guide.md](testing-guide.md)）
 - 不直接调用绑定层，只通过核心层对象操作
+- **职责边界**：`crypto/` 严格限于算法引擎；ASN.1 / PKCS / OCSP / TLS / 格式转换
+  等"组合层"包独立顶级化，借鉴 BouncyCastle C# 的命名空间分层原则
 
 ---
 
@@ -92,28 +99,41 @@ API 层（crypto/）              ← 对外高层 API，仅此层可被外部 i
 
 ---
 
-## 5. 目录结构
+## 5. 目录结构（v0.2.0 后）
+
+**顶层布局原则**：借鉴 BouncyCastle C# 命名空间分层——`crypto/` 仅装算法引擎；
+ASN.1、PKCS、OCSP、TLS、JWK、XML 与 `crypto/` 平级，不作为其子包。
 
 ```
 tongsuo-go/
 ├── go.mod / go.sum            # module github.com/blue-cloud-net/tongsuo-go
 ├── LICENSE                    # Apache-2.0
 ├── README.md  CHANGELOG.md
-├── docs/                      # 设计文档
-│   ├── architecture.md
-│   ├── development-guide.md
-│   ├── roadmap.md
-│   └── testing-guide.md
+├── docs/                      # 设计文档（architecture / development-guide / roadmap / testing-guide）
 │
-├── crypto/                    # 【API 层】对外公共子包（对应 C# Crypto/）
-│   ├── sm3/                   # hash.Hash 实现 + Sum()
-│   ├── sm4/                   # cipher.Block + 模式封装 + 便捷函数
-│   ├── sm2/                   # 密钥生成 / 加解密(C1C3C2) / 签名验签(SM2withSM3)
-│   ├── hmac/                  # HMAC-SM3 / HMAC-SHA*（Phase 4）
-│   └── rand/                  # 随机数（Phase 2）
+├── crypto/                    # 【算法引擎层】仅算法子包
+│   ├── aes/  ecdsa/  hmac/  md5/  rand/  rsa/
+│   ├── sha1/  sha256/  sha512/  sm2/  sm3/  sm4/
+├── x509/                      # 【协议】证书核心
+│   ├── x509.go                # Certificate / Extension / PublicKey / PrivateKey / CreateCertificate
+│   ├── name.go                # Name / NameEntry / NewName
+│   ├── csr.go                 # CertificateRequest
+│   ├── store.go               # Store / VerifyError / ChainVerify
+│   ├── crl.go                 # CRL / RevokedEntry / RevocationCheck
+│   └── helpers.go             # convertEntries / convertExtensions（内部辅助）
+│
+├── asn1/                      # 【编码】DER viewer（纯 Go）
+├── pkcs/                      # 【容器】BC pkcs 风格
+│   ├── pkcs7/                 # PKCS#7（Build / Extract / MarshalPEM）
+│   └── pkcs12/                # PKCS#12（Pack / Parse / ChangePassword）
+├── ocsp/                      # 【协议】OCSP 客户端
+├── tls/                       # 【协议】TLS / NTLS
+├── jwk/                       # 【格式】JWK ↔ PEM
+├── xml/                       # 【格式族】预留命名空间
+│   └── rsa/                   # .NET RSAKeyValue XML 序列化
 │
 ├── internal/                  # 【内部实现】外部不可 import
-│   ├── native/                # 【绑定层】对应 C# Native/（P/Invoke）
+│   ├── native/                # 【绑定层】cgo + shim（C 桥接）
 │   │   ├── shim.h  shim.c     # C shim：宏/可变参/回调桥接
 │   │   ├── binding_digest.go  # EVP_MD / EVP_Digest* 系列
 │   │   ├── binding_cipher.go  # EVP_CIPHER / EVP_CIPHER_CTX 系列
@@ -122,20 +142,21 @@ tongsuo-go/
 │   │   ├── binding_pem.go     # PEM / DER 系列
 │   │   ├── binding_rand.go    # RAND_* 系列
 │   │   └── binding_version.go # OpenSSL_version / Tongsuo_version_num
-│   └── core/                  # 【核心层】对应 C# Core/（BaseWapper）
+│   └── core/                  # 【核心层】句柄包装 + 生命周期 + 错误
 │       ├── handle.go          # 句柄基类：owned 所有权 + Close() + SetFinalizer
 │       ├── error.go           # OpError（携带 ERR_get_error 错误码）
 │       ├── version.go         # 版本查询
 │       ├── digest.go  cipher.go  pkey.go  bio.go …
+│       └── testutil/          # 测试共享工具（openssl CLI 封装、向量加载）
 │
-├── internal/testutil/         # 测试共享工具（openssl CLI 封装、向量加载）
-├── examples/                  # 示例（对应 C# Demo/；Go 惯例用 examples/）
+├── examples/                  # 示例（对应 C# Demo/）
 │   ├── sm3/main.go  sm4/main.go  sm2/main.go …
 └── testdata/                  # 测试数据（标准向量、证书等）
 ```
 
-> **内部实现隐藏**：`internal/` 目录使绑定层与核心层对库外部不可见，公开 API 仅由
-> `crypto/*` 子包构成，避免 cgo 与原生句柄泄漏到公开面，保证 API 稳定。
+> **内部实现隐藏**：`internal/` 目录使绑定层与核心层对库外部不可见，公开 API 由
+> `crypto/*` 与顶级 `asn1/`、`pkcs/*`、`ocsp/`、`tls/`、`jwk/`、`xml/*` 共同构成。
+> `crypto/` 仅限算法；非算法的"组合层"包独立顶级化。
 
 ---
 
