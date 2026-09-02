@@ -1,7 +1,11 @@
 // Package pkcs12 基于铜锁原生实现实现 PKCS#12 容器（.p12 / .pfx）。
-//
 // 提供打包（证书 + 私钥 + CA 链 + 口令）、解析与改密。输入输出均为 DER 编码，
 // 与 `openssl pkcs12` 互通。
+//
+// Package pkcs12 implements the PKCS#12 container (.p12 / .pfx) backed by the
+// Tongsuo native library. It provides Pack (certificate + private key + CA
+// chain + password), Parse and ChangePassword; inputs and outputs are DER
+// and interoperable with `openssl pkcs12`.
 package pkcs12
 
 import (
@@ -12,9 +16,15 @@ import (
 )
 
 // PrivateKey 表示可打包进 PKCS#12 的私钥（sm2 / rsa / ecdsa 的 PrivateKey 均实现）。
+//
+// PrivateKey is the private key that can be packed into a PKCS#12 container;
+// the PrivateKey types of sm2 / rsa / ecdsa all satisfy it.
 type PrivateKey = x509.PrivateKey
 
 // Bundle 表示解析后的 PKCS#12 内容。
+//
+// Bundle is the parsed content of a PKCS#12 container; PrivateKey must be
+// Closed by the caller.
 type Bundle struct {
 	PrivateKey  *core.PKey          // 私钥（调用方负责 Close）
 	Certificate *x509.Certificate   // 主证书
@@ -23,6 +33,12 @@ type Bundle struct {
 
 // Pack 将证书、私钥与 CA 链打包为 PKCS#12（DER）。
 // password 为口令；name 为友好名称（可空）。
+// cert 与 key 必须非 nil；ca 中的 nil 条目会被静默跳过。
+//
+// Pack packages a certificate, private key and CA chain into a PKCS#12
+// container (DER). cert and key must be non-nil; nil entries in ca are
+// silently skipped. password is the encryption password; name is the
+// friendly name (may be empty).
 func Pack(cert *x509.Certificate, key PrivateKey, ca []*x509.Certificate, password, name string) ([]byte, error) {
 	if cert == nil {
 		return nil, fmt.Errorf("pkcs12: nil certificate")
@@ -45,6 +61,12 @@ func Pack(cert *x509.Certificate, key PrivateKey, ca []*x509.Certificate, passwo
 }
 
 // Parse 从 DER 解析 PKCS#12。
+// 解析后的 Bundle 中 PrivateKey 包装底层 core.PKey（调用方负责 Close）；
+// 容器不含主证书时 Certificate 为 nil。
+//
+// Parse parses a PKCS#12 container from DER. On success it returns a Bundle
+// whose PrivateKey field wraps the underlying core.PKey (must be Closed by
+// the caller); when the container has no leaf certificate, Certificate is nil.
 func Parse(data []byte, password string) (*Bundle, error) {
 	p12, err := core.LoadPKCS12DER(data)
 	if err != nil {
@@ -66,6 +88,9 @@ func Parse(data []byte, password string) (*Bundle, error) {
 }
 
 // ChangePassword 修改 PKCS#12 口令（输入输出均为 DER）。
+//
+// ChangePassword rewrites the encryption password of a PKCS#12 container;
+// both input and output are DER.
 func ChangePassword(data []byte, oldPass, newPass string) ([]byte, error) {
 	p12, err := core.LoadPKCS12DER(data)
 	if err != nil {

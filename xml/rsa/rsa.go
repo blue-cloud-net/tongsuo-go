@@ -5,6 +5,17 @@
 //
 // 注意：本包路径为 xml/rsa，但包名为 rsa；调用方通常需用别名
 // `import rsaxml "github.com/.../xml/rsa"` 以避免与 crypto/rsa 冲突。
+//
+// Package rsa serializes RSA keys in the .NET RSAKeyValue XML format.
+//
+// Marshal* exports an RSA key from this library to XML; Unmarshal*
+// parses the XML and loads the result back as an RSA key in this
+// library. This interoperates with Tongsuo's openssl CLI and with the
+// .NET Framework.
+//
+// Note: the import path is xml/rsa but the package name is rsa. To
+// avoid a collision with crypto/rsa, callers usually import this
+// subpackage with an alias, e.g. `import rsaxml "github.com/.../xml/rsa"`.
 package rsa
 
 import (
@@ -20,6 +31,8 @@ import (
 )
 
 // rsaKeyValue 为 .NET XML RSA 格式。
+//
+// rsaKeyValue mirrors the .NET Framework's RSAKeyValue XML element.
 type rsaKeyValue struct {
 	XMLName  xml.Name `xml:"RSAKeyValue"`
 	Modulus  string   `xml:"Modulus"`
@@ -32,7 +45,13 @@ type rsaKeyValue struct {
 	D        string   `xml:"D,omitempty"`
 }
 
-// MarshalPrivate 导出 RSA 私钥为 XML（含 D/P/Q/DP/DQ/InverseQ）。
+// MarshalPrivate 导出 RSA 私钥为 XML（含 D/P/Q/DP/DQ/InverseQ）；priv 必须为 RSA 类型私钥，非 nil 错值或类型不符返回 error。
+//
+// MarshalPrivate exports an RSA private key to XML containing Modulus,
+// Exponent, D, and—when the CRT factors are available—P, Q, DP, DQ,
+// InverseQ. priv must be a non-nil *trsa.PrivateKey backed by an "RSA"
+// params record (Type=="RSA", with N/E/D set); otherwise an error is
+// returned. The result is indented XML suitable for storage or transport.
 func MarshalPrivate(priv *trsa.PrivateKey) ([]byte, error) {
 	if priv == nil {
 		return nil, fmt.Errorf("rsaxml: nil private key")
@@ -59,7 +78,12 @@ func MarshalPrivate(priv *trsa.PrivateKey) ([]byte, error) {
 	return xml.MarshalIndent(v, "", "  ")
 }
 
-// MarshalPublic 导出 RSA 公钥为 XML（仅 Modulus + Exponent）。
+// MarshalPublic 导出 RSA 公钥为 XML（仅 Modulus + Exponent）；pub 必须为 RSA 类型公钥，非 nil 错值或类型不符返回 error。
+//
+// MarshalPublic exports an RSA public key to XML containing only
+// Modulus and Exponent (no private parameters). pub must be a non-nil
+// *trsa.PublicKey backed by an "RSA" params record (Type=="RSA", with
+// N/E set); otherwise an error is returned.
 func MarshalPublic(pub *trsa.PublicKey) ([]byte, error) {
 	if pub == nil {
 		return nil, fmt.Errorf("rsaxml: nil public key")
@@ -72,7 +96,13 @@ func MarshalPublic(pub *trsa.PublicKey) ([]byte, error) {
 	return xml.MarshalIndent(v, "", "  ")
 }
 
-// UnmarshalPrivate 从 XML 解析 RSA 私钥。
+// UnmarshalPrivate 从 XML 解析 RSA 私钥；解析失败返回 error，XML 缺少 Modulus / Exponent / D 会报错。
+//
+// UnmarshalPrivate parses an .NET RSAKeyValue XML document and returns
+// the corresponding *trsa.PrivateKey. The XML must include Modulus,
+// Exponent and D; missing any of these produces an error. Internally
+// the XML is re-encoded as PKCS#1 PEM and re-loaded, so the returned
+// key flows back into this library's native key handling.
 func UnmarshalPrivate(data []byte) (*trsa.PrivateKey, error) {
 	var v rsaKeyValue
 	if err := xml.Unmarshal(data, &v); err != nil {
@@ -90,7 +120,13 @@ func UnmarshalPrivate(data []byte) (*trsa.PrivateKey, error) {
 	return trsa.LoadPrivateKeyPEM(pemBytes) // 自动识别 PKCS#1
 }
 
-// UnmarshalPublic 从 XML 解析 RSA 公钥。
+// UnmarshalPublic 从 XML 解析 RSA 公钥；XML 缺少 Modulus / Exponent 或 base64 解码失败会返回 error。
+//
+// UnmarshalPublic parses an .NET RSAKeyValue XML document and returns
+// the corresponding *trsa.PublicKey. The XML must include Modulus and
+// Exponent; missing fields, malformed XML, or base64 decoding errors
+// all produce an error. Internally the parsed values are re-encoded as
+// SPKI PEM and re-loaded.
 func UnmarshalPublic(data []byte) (*trsa.PublicKey, error) {
 	var v rsaKeyValue
 	if err := xml.Unmarshal(data, &v); err != nil {
@@ -117,6 +153,10 @@ func UnmarshalPublic(data []byte) (*trsa.PublicKey, error) {
 }
 
 // toStdPrivate 从 XML 值构造标准库 RSA 私钥。
+//
+// toStdPrivate rebuilds a standard-library *rsa.PrivateKey from a parsed
+// rsaKeyValue (Modulus, Exponent, D, and optionally P/Q). It validates
+// the result via (*rsa.PrivateKey).Validate and precomputes CRT tables.
 func toStdPrivate(v *rsaKeyValue) (*stdrsa.PrivateKey, error) {
 	n, err := unb64Std(v.Modulus)
 	if err != nil {
@@ -153,11 +193,17 @@ func toStdPrivate(v *rsaKeyValue) (*stdrsa.PrivateKey, error) {
 }
 
 // b64Std 标准 base64 编码（含填充）。
+//
+// b64Std encodes the absolute value of n using standard base64 (RFC 4648,
+// with "=" padding). It is used by Marshal* for the .NET XML format.
 func b64Std(n *big.Int) string {
 	return base64.StdEncoding.EncodeToString(n.Bytes())
 }
 
 // unb64Std 标准 base64 解码。
+//
+// unb64Std decodes a standard base64 (RFC 4648, with "=" padding) string
+// into a non-negative big.Int; an error is returned on invalid input.
 func unb64Std(s string) (*big.Int, error) {
 	b, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {

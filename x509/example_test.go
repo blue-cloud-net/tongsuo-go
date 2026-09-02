@@ -12,6 +12,10 @@ import (
 //
 // subject 与 signer 主题相同即为自签；返回的证书可调用 MarshalPEM 导出，
 // 并用 Verify 自验签。
+//
+// ExampleCreateCertificate demonstrates creating a self-signed SM2 certificate.
+//
+// Using the same subject name for both subject and signer yields a self-signed certificate. The returned certificate can be exported with MarshalPEM and self-verified with Verify.
 func ExampleCreateCertificate() {
 	priv, _ := sm2.GenerateKey()
 	now := time.Now()
@@ -37,6 +41,10 @@ func ExampleCreateCertificate() {
 // ExampleCertificate_Fingerprint 演示计算证书指纹。
 //
 // alg 支持 sha1 / sha256 / sm3 / md5 / sha384 / sha512。
+//
+// ExampleCertificate_Fingerprint demonstrates computing a certificate fingerprint.
+//
+// The alg parameter accepts sha1, sha256, sm3, md5, sha384, and sha512.
 func ExampleCertificate_Fingerprint() {
 	priv, _ := sm2.GenerateKey()
 	subject := x509.NewName().Add("CN", "example.com")
@@ -52,6 +60,8 @@ func ExampleCertificate_Fingerprint() {
 }
 
 // ExampleCertificate_MarshalPEM 演示证书 PEM 往返。
+//
+// ExampleCertificate_MarshalPEM demonstrates a PEM round trip for a certificate.
 func ExampleCertificate_MarshalPEM() {
 	priv, _ := sm2.GenerateKey()
 	subject := x509.NewName().Add("CN", "example.com")
@@ -71,6 +81,8 @@ func ExampleCertificate_MarshalPEM() {
 }
 
 // ExampleNewCertificateRequest 演示生成 CSR 并校验签名。
+//
+// ExampleNewCertificateRequest demonstrates generating a CSR and verifying its signature.
 func ExampleNewCertificateRequest() {
 	priv, _ := sm2.GenerateKey()
 	subject := x509.NewName().Add("CN", "example.com").Add("O", "Example Org")

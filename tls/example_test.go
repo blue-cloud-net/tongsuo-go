@@ -9,13 +9,17 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/tls"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
-
 // ExampleDial 演示 NTLS（国密 TLCP）双证书回环握手。
 //
 // 需要生成 4 个密钥：签名 + 加密 × 私钥 + 证书。本例同密钥对两证（生产环境应分开）。
-//
 // 客户端通过 Dial 握手；服务端通过 NewServer + Accept 握手。
 // 握手完成后双方可 Read/Write；关闭任一端即释放。
+//
+// ExampleDial demonstrates an NTLS (GM/T 0024 TLCP) dual-certificate loopback handshake.
+//
+// The example generates the signing and encryption key pairs and self-signed
+// certificates, then performs a handshake on a loopback socket. Production
+// deployments should keep the signing and encryption keys distinct.
 func ExampleDial() {
 	// 生成密钥
 	signPriv, _ := sm2.GenerateKey()

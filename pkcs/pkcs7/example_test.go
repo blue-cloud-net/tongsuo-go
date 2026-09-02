@@ -8,11 +8,14 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/pkcs/pkcs7"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
-
 // ExampleBuild 演示用证书集合构建 PKCS#7（DER）。
-//
 // 当前实现支持 Certs-only 类型——多个 X.509 证书的 DER 串接封装，常用扩展名 .p7b。
 // 等价于 `openssl crl2pkcs7 -nocrl` 的输出。
+//
+// ExampleBuild demonstrates building a PKCS#7 container (DER) from a
+// certificate bundle. The current implementation produces a certs-only type
+// -- a DER concatenation of multiple X.509 certificates, commonly stored with
+// the .p7b extension; equivalent to `openssl crl2pkcs7 -nocrl`.
 func ExampleBuild() {
 	// 生成两张自签证书模拟证书链
 	caPriv, _ := sm2.GenerateKey()
@@ -35,6 +38,8 @@ func ExampleBuild() {
 }
 
 // ExampleMarshalPEM 演示 DER → PEM 转换。
+//
+// ExampleMarshalPEM demonstrates the DER → PEM conversion.
 func ExampleMarshalPEM() {
 	pem := pkcs7.MarshalPEM([]byte{0x30, 0x00})
 	fmt.Println(string(pem[:10]))
@@ -42,6 +47,9 @@ func ExampleMarshalPEM() {
 }
 
 // ExampleExtract 演示从 PEM 中提取证书。
+//
+// ExampleExtract demonstrates extracting certificates from PEM-encoded
+// PKCS#7 data.
 func ExampleExtract() {
 	// 用 Build 构造 DER 后转 PEM，再用 Extract 提取——形成完整往返
 	caPriv, _ := sm2.GenerateKey()

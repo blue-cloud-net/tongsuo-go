@@ -5,6 +5,9 @@
 //	TONGSUO_HOME=/opt/tongsuo LD_LIBRARY_PATH=${TONGSUO_HOME}/lib64 \
 //	CGO_CFLAGS="-I${TONGSUO_HOME}/include" CGO_LDFLAGS="-L${TONGSUO_HOME}/lib64" \
 //	go run ./examples/self-signed-cert
+//
+// Package main demonstrates a minimal runnable example that issues a
+// self-signed SM2 certificate with SM3 as the signing digest.
 package main
 
 import (

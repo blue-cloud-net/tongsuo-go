@@ -8,6 +8,14 @@
 //	TONGSUO_HOME=/opt/tongsuo LD_LIBRARY_PATH=${TONGSUO_HOME}/lib64 \
 //	CGO_CFLAGS="-I${TONGSUO_HOME}/include" CGO_LDFLAGS="-L${TONGSUO_HOME}/lib64" \
 //	go run ./examples/ntls-loopback
+//
+// Package main demonstrates an NTLS (GM/T 0024 TLCP) dual-certificate loopback
+// handshake with multiple read/write rounds.
+//
+// NTLS uses two certificates simultaneously: a sign certificate (SM2withSM3)
+// and an encryption certificate (SM4-GCM-SM3). This example signs both
+// certificates with the same key pair; production deployments should use
+// distinct sign and encryption keys.
 package main
 
 import (

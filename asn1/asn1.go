@@ -1,6 +1,9 @@
-// Package asn1 提供 DER 编码解析为可读树（tag / len / value + hex dump）。
+// Package asn1 提供 DER 编码解析为可读树（tag / len / value + hex dump）；纯 Go 实现，不依赖铜锁，可用于调试证书/密钥/签名等 DER 结构。
 //
-// 纯 Go 实现，不依赖铜锁，可用于调试证书/密钥/签名等 DER 结构。
+// Package asn1 parses DER-encoded bytes into a readable TLV tree (tag,
+// length, value plus a hex dump) for debugging certificates, keys and
+// signatures. It is a pure Go implementation that does not depend on
+// the Tongsuo native library.
 package asn1
 
 import (
@@ -10,6 +13,9 @@ import (
 )
 
 // ASN.1 类常量。
+//
+// Class constants encode the four ASN.1 tag classes (universal,
+// application, context-specific, private).
 const (
 	ClassUniversal       = 0
 	ClassApplication     = 1
@@ -18,6 +24,9 @@ const (
 )
 
 // Universal tag 编号。
+//
+// Universal tag numbers identify the built-in ASN.1 types (BOOLEAN,
+// INTEGER, OCTET STRING, SEQUENCE, …).
 const (
 	TagBoolean         = 1
 	TagInteger         = 2
@@ -36,6 +45,11 @@ const (
 )
 
 // Node 表示 DER 中的一个 TLV 节点。
+//
+// Node is one parsed DER TLV (tag/length/value) element. For constructed
+// types Children holds the nested elements; Value is the raw byte slice
+// for that element. Offset is the absolute byte offset of the tag byte
+// within the input, and Length is the length of the value in bytes.
 type Node struct {
 	Offset      int    // 起始偏移
 	Tag         byte   // 首个 tag 字节
@@ -47,7 +61,12 @@ type Node struct {
 	Children    []*Node
 }
 
-// Parse 解析 DER 编码为树。
+// Parse 解析 DER 编码为树，der 不能为空；DER 不允许不定长编码；末尾若有 trailing 字节会报错。
+//
+// Parse decodes a complete DER byte slice into a *Node tree. It returns
+// an error when der is empty, when the encoded data is truncated, when
+// the length field is malformed, when DER forbids indefinite length
+// encoding, or when trailing bytes remain after the top-level value.
 func Parse(der []byte) (*Node, error) {
 	if len(der) == 0 {
 		return nil, fmt.Errorf("asn1: empty DER")
@@ -63,6 +82,10 @@ func Parse(der []byte) (*Node, error) {
 }
 
 // parseNode 解析一个 TLV 节点，返回节点与消费的字节数。
+//
+// parseNode parses one TLV (tag / length / value) element from der at the
+// given absolute base offset. It returns the parsed *Node and the number
+// of bytes consumed from the input slice.
 func parseNode(der []byte, base int) (*Node, int, error) {
 	if len(der) == 0 {
 		return nil, 0, fmt.Errorf("asn1: truncated")
@@ -115,6 +138,10 @@ func parseNode(der []byte, base int) (*Node, int, error) {
 }
 
 // parseLength 解析长度字节，返回长度与消耗字节数。
+//
+// parseLength decodes the ASN.1 length field at the start of b. It
+// returns the length and the number of bytes consumed. DER indefinite-
+// length encoding is rejected.
 func parseLength(b []byte) (int, int, error) {
 	if len(b) == 0 {
 		return 0, 0, fmt.Errorf("asn1: truncated length")
@@ -138,6 +165,9 @@ func parseLength(b []byte) (int, int, error) {
 }
 
 // classStr 返回类名。
+//
+// classStr returns the human-readable name of an ASN.1 tag class
+// (UNIVERSAL, APPLICATION, CONTEXT, or PRIVATE).
 func classStr(c int) string {
 	switch c {
 	case ClassUniversal:
@@ -152,6 +182,9 @@ func classStr(c int) string {
 }
 
 // tagName 返回 tag 的通用名称（Universal 类）或 "tag:n"。
+//
+// tagName returns the canonical name for a Universal-class tag (BOOLEAN,
+// INTEGER, SEQUENCE, ...) or the literal "tag:n" for other classes.
 func tagName(n *Node) string {
 	if n.Class != ClassUniversal {
 		return fmt.Sprintf("tag:%d", n.Number)
@@ -191,6 +224,10 @@ func tagName(n *Node) string {
 }
 
 // Dump 返回 DER 树的可读文本（含 hex dump）。
+//
+// Dump renders the parsed tree as an indented human-readable string.
+// For each leaf node it appends a 16-byte-per-line hex/ASCII dump of
+// the underlying value.
 func Dump(n *Node) string {
 	var sb strings.Builder
 	dumpNode(&sb, n, 0)
@@ -213,6 +250,9 @@ func dumpNode(sb *strings.Builder, n *Node, depth int) {
 }
 
 // hexDump 输出 value 的十六进制转储（每行 16 字节）。
+//
+// hexDump returns an indented hex/ASCII dump of b with 16 bytes per line.
+// It is used by Dump to render leaf node values.
 func hexDump(b []byte, depth int) string {
 	indent := strings.Repeat("  ", depth)
 	var sb strings.Builder
@@ -239,6 +279,9 @@ func hexDump(b []byte, depth int) string {
 }
 
 // printable 将字节转为可打印 ASCII 字符串。
+//
+// printable renders b as ASCII where each byte in [0x20, 0x7e] is kept
+// verbatim and any other byte is replaced with a single '.' character.
 func printable(b []byte) string {
 	var sb strings.Builder
 	for _, c := range b {

@@ -5,6 +5,9 @@
 //	TONGSUO_HOME=/opt/tongsuo LD_LIBRARY_PATH=${TONGSUO_HOME}/lib64 \
 //	CGO_CFLAGS="-I${TONGSUO_HOME}/include" CGO_LDFLAGS="-L${TONGSUO_HOME}/lib64" \
 //	go run ./examples/sm2
+//
+// Package main demonstrates a minimal runnable example covering SM2
+// public-key encryption/decryption and signature/verification.
 package main
 
 import (
