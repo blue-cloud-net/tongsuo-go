@@ -79,7 +79,7 @@ jobs:
           cd tongsuo
           ./config --prefix=${{ github.workspace }}/.tongsuo-install \
                    --libdir=${{ github.workspace }}/.tongsuo-install/lib \
-                   enable-ntls enable-export-sm4 enable-ssl-trace no-shared
+                   enable-ntls enable-trace no-shared
           make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
           make install_sw
 

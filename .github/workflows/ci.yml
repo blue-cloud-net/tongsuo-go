@@ -43,7 +43,7 @@ jobs:
       CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
       CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
       TONGSUO_HOME: ${{ github.workspace }}/.tongsuo-install
-      TONGSUO_CONFIG_FLAGS: --prefix=${{ github.workspace }}/.tongsuo-install --libdir=${{ github.workspace }}/.tongsuo-install/lib enable-ntls enable-export-sm4 enable-ssl-trace no-shared
+      TONGSUO_CONFIG_FLAGS: --prefix=${{ github.workspace }}/.tongsuo-install --libdir=${{ github.workspace }}/.tongsuo-install/lib enable-ntls enable-trace no-shared
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -113,7 +113,7 @@ jobs:
       CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
       TONGSUO_HOME: ${{ github.workspace }}/.tongsuo-install
       # Tongsuo 编译参数（来源：docs/architecture.md §6.2）
-      TONGSUO_CONFIG_FLAGS: --prefix=${{ github.workspace }}/.tongsuo-install --libdir=${{ github.workspace }}/.tongsuo-install/lib enable-ntls enable-export-sm4 enable-ssl-trace no-shared
+      TONGSUO_CONFIG_FLAGS: --prefix=${{ github.workspace }}/.tongsuo-install --libdir=${{ github.workspace }}/.tongsuo-install/lib enable-ntls enable-trace no-shared
     steps:
       - name: Checkout
         uses: actions/checkout@v5
