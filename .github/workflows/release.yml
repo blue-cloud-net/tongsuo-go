@@ -83,11 +83,14 @@ jobs:
           make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
           make install_sw
 
+      # GitHub Actions hosted runner 默认以 `runner` 用户运行（非 root），
+      # 写入 /etc 需要 sudo；runner 用户已具备免密 sudo 权限。
       - name: Configure dynamic linker (Linux)
         if: runner.os == 'Linux'
         run: |
-          echo "${{ github.workspace }}/.tongsuo-install/lib" > /etc/ld.so.conf.d/tongsuo.conf
-          ldconfig
+          echo "${{ github.workspace }}/.tongsuo-install/lib" \
+            | sudo tee /etc/ld.so.conf.d/tongsuo.conf > /dev/null
+          sudo ldconfig
 
       - name: go test
         run: go test -count=1 ./...

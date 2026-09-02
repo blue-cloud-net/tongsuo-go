@@ -151,12 +151,15 @@ jobs:
           make install_sw
           echo "==> Tongsuo installed to ${{ github.workspace }}/.tongsuo-install"
 
-      # Linux：写入 ld.so.conf 并 ldconfig（runner 默认 root，可直接写）
+      # Linux：写入 ld.so.conf 并 ldconfig
+      # GitHub Actions hosted runner 默认以 `runner` 用户运行（非 root），
+      # 写入 /etc 需要 sudo；runner 用户已具备免密 sudo 权限。
       - name: Configure dynamic linker (Linux)
         if: runner.os == 'Linux'
         run: |
-          echo "${{ github.workspace }}/.tongsuo-install/lib" > /etc/ld.so.conf.d/tongsuo.conf
-          ldconfig
+          echo "${{ github.workspace }}/.tongsuo-install/lib" \
+            | sudo tee /etc/ld.so.conf.d/tongsuo.conf > /dev/null
+          sudo ldconfig
 
       # 动态链接构建
       - name: go build

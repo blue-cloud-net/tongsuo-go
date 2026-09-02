@@ -71,7 +71,8 @@ CGO_LDFLAGS: -L${TONGSUO_PREFIX}/lib
 TONGSUO_HOME: ${TONGSUO_PREFIX}
 ```
 
-- Linux runner 默认 root，写入 `/etc/ld.so.conf.d/tongsuo.conf` + `ldconfig` 生效
+- Linux runner 默认以 `runner` 用户运行（非 root），需通过 `sudo tee` 写入
+  `/etc/ld.so.conf.d/tongsuo.conf` + `sudo ldconfig` 生效
 - macOS 通过 `DYLD_LIBRARY_PATH` 让动态链接器找到 Tongsuo
 
 ### 2.4 覆盖率（可选）
