@@ -52,16 +52,17 @@ jobs:
       CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
       TONGSUO_HOME: ${{ github.workspace }}/.tongsuo-install
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
+          cache-dependency-path: go.mod
 
       - name: Cache Tongsuo
         id: cache-tongsuo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.tongsuo-install
           key: tongsuo-${{ runner.os }}-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/release.yml') }}
@@ -123,12 +124,13 @@ jobs:
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.23"
           cache: true
+          cache-dependency-path: go.mod
 
       # Linux 交叉编译到其他 arch 需要 C 交叉工具链
       - name: Install cross compilers (non-native arch)
@@ -167,7 +169,7 @@ jobs:
           ls -la dist/
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: example-${{ matrix.target }}
           path: dist/sm2-${{ matrix.target }}
@@ -184,7 +186,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: artifacts
 
