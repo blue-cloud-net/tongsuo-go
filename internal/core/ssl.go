@@ -3,7 +3,6 @@ package core
 import (
 	"fmt"
 	"runtime"
-	"syscall"
 	"time"
 	"unsafe"
 
@@ -366,35 +365,13 @@ func (s *SSLConn) retry(op string, ret int) error {
 	}
 }
 
-// waitFD 等待 fd 可读（write=false）或可写（write=true）。
+// waitFD 在内部平台实现文件里定义（waitfd_linux.go / waitfd_darwin.go）。
 //
-// waitFD blocks until fd becomes ready for read (write=false) or write
-// (write=true) and returns any syscall failure.
-func waitFD(fd int, write bool) error {
-	var rfds, wfds syscall.FdSet
-	if write {
-		wfds.Bits[fd/64] |= 1 << (uint(fd) % 64)
-	} else {
-		rfds.Bits[fd/64] |= 1 << (uint(fd) % 64)
-	}
-	timeout := &syscall.Timeval{
-		Sec:  int64(waitFDTimeout / time.Second),
-		Usec: int64((waitFDTimeout % time.Second) / time.Microsecond),
-	}
-	n, err := func() (int, error) {
-		if write {
-			return syscall.Select(fd+1, nil, &wfds, nil, timeout)
-		}
-		return syscall.Select(fd+1, &rfds, nil, nil, timeout)
-	}()
-	if err != nil {
-		return fmt.Errorf("tls: wait fd: %w", err)
-	}
-	if n == 0 {
-		return fmt.Errorf("tls: wait fd timeout")
-	}
-	return nil
-}
+// waitFD is implemented in the per-OS build files
+// waitfd_linux.go and waitfd_darwin.go because syscall.Timeval field
+// types and syscall.Select return shape differ between Linux and
+// macOS. Keeping a single implementation per OS avoids runtime
+// branching while preserving cross-platform correctness.
 
 // Close 发送关闭通知并释放底层句柄。幂等。
 //

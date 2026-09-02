@@ -101,12 +101,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # macOS 暂时下线：Tongsuo 的 cgo 绑定在 darwin 上的 Build-Options 还会产生
+        # 链接问题（例如 .pc 文件、cgo toolchain 等），目前阶段优先稳定 Linux。
+        # 待 cgo/Platform 支持完善后再加回 macos-latest。
+        os: [ubuntu-latest]
         go-version: ["1.21", "1.23"]
     env:
-      # macOS 用 DYLD_LIBRARY_PATH；Linux 用 LD_LIBRARY_PATH（脚本会按 OS 区分）
       LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
-      DYLD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
       CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
       CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
       TONGSUO_HOME: ${{ github.workspace }}/.tongsuo-install
