@@ -14,9 +14,20 @@
 - 注释**以符号名开头**（Go 惯例，便于 `go doc` 检索），说明"做什么"而非"怎么做"
 - 需要包含：参数/返回值含义、错误条件（何时返回 error）、安全注意事项
 - 需要示例的 API 提供 `Example*` 测试函数（`_test.go` 中），会被 `go doc` 展示
-- **禁止**：无意义注释（重复代码内容）、中英混杂（统一中文，标识符/函数名除外）
+- **注释必须以中文为主段**；可附一段**英文段**置于中文段之后（详见 §1.5）。
+  - 中文段保持字符级不修改；英文段以符号名起头，术语保留（SM2/SM3/SM4/SM9/PEM/DER/
+    PKCS#8/SPKI/CRL/CSR/OCSP/NTLS/JWS/JWE/JWK/RFC 7517 等**不翻译**）
+- **禁止**：无意义注释（重复代码内容）、中英混杂于同一行
 
-### 1.2 各层注释侧重点
+### 1.2 验收清单（段式/单行式存在性）
+
+段式符号必须满足：经 `go doc -all` 渲染后，**首段含 CJK 字符**、**存在以符号名
+起头的英文段**。
+
+单行式 cgo binding 必须满足：`//export <Name>` 行上方紧邻两行分别为中英，**不隔
+空行**。
+
+### 1.3 各层注释侧重点
 
 **绑定层**——注释 C 函数语义与参数约束（通常来自 OpenSSL man page）：
 
@@ -40,6 +51,69 @@
 // 返回 32 字节的摘要。
 func Sum(data []byte) [32]byte
 ```
+
+---
+
+### 1.4 8 条规则
+
+所有公共 API（包级 doc、类型、函数、方法、常量、变量、`Example*`）必须包含中英
+两段；`internal/native/binding_*.go` 中的 cgo binding 函数采用**单行式**。
+
+1. **段式 vs 单行式**：公共包与 `internal/core`、`internal/digest`、`internal/testutil`、
+   所有 `Example*` 与所有**包级 doc** 走**段式**；`internal/native/binding_*.go` 中的
+   cgo binding 函数走**单行式**。
+2. **段式条目**：中文段在前，英文段在后；两段之间有且仅一个空行；每段都以符号名
+   起头（Go 惯例）。
+3. **单行式条目**：中英独立两行，**中间不加空行**；上行为中文、下行为英文；两句各
+   自以符号名起头。
+4. **不重写中文**：原中文内容字符级不修改（单行式若原仅一行中文，则在下方补一行英
+   文；段式若原有多段中文，则保留并在其末尾附段空行 + 英文段）。
+5. **代码块缩进**：保留现有 tab-缩进 `//\t...` 风格不变；英文段里的代码块同样用
+   tab 缩进。
+6. **术语保留**：SM2/SM3/SM4/SM9/PEM/DER/PKCS#8/SPKI/CRL/CSR/OCSP/NTLS/JWS/JWE/JWK/
+   RFC 7517 等**不翻译**。
+7. **`// Output:` 行不动**：必须紧贴函数体最后一行（`go test` 工具约束），与上方说
+   明区互相独立。
+8. **包级注释**第一行 `// Package xxx 中文一句话`，末尾再加 `// Package xxx does X in
+   English.` 一句英文总括。
+
+### 1.5 模板示例
+
+#### 段式（公共包、`internal/core`、`internal/digest`、`internal/testutil`、包级 doc、`Example*`）
+
+```go
+// LoadCertificatePEM 从 PEM 加载证书。
+//
+// 支持 PEM 块包含单张证书或多张证书（多张时只解析第一张）；
+// 出错时返回包装的 OpError。
+//
+// LoadCertificatePEM parses PEM-encoded certificate data and returns a *Certificate.
+//
+// It accepts PEM blocks that contain a single certificate or a bundle of
+// certificates; when multiple certificates are present, only the first is
+// returned. Errors are wrapped as OpError.
+func LoadCertificatePEM(pemBytes []byte) (*Certificate, error) { ... }
+```
+
+#### 单行式（`internal/native/binding_*.go` 的 cgo binding 函数）
+
+```go
+// Encrypt 使用 SM2 公钥加密 data。
+// Encrypt encrypts data with the given SM2 public key.
+//
+//export Cgo_SM2_Encrypt
+func Cgo_SM2_Encrypt(...) (...) { ... }
+```
+
+#### 校验脚本
+
+辅助校验脚本位于 `/tmp/tongsuo-go-tools/check-bilingual-doc.sh`（不进仓库；仅本地
+临时使用）。CI 不固化此脚本。
+
+#### 段式对齐与维护指引
+
+中英段式对齐的完整说明、改动统计、常见不对称类型、新增符号检查清单、中英对照常用
+动词词典见 [bilingual-doc-guide.md](bilingual-doc-guide.md)。
 
 ---
 
