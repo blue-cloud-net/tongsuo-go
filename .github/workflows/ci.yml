@@ -41,7 +41,13 @@ jobs:
   lint:
     name: Lint (ubuntu / Go 1.23)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    env:
+      LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
+      CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
+      CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
+      TONGSUO_HOME: ${{ github.workspace }}/.tongsuo-install
+      TONGSUO_CONFIG_FLAGS: --prefix=${{ github.workspace }}/.tongsuo-install --libdir=${{ github.workspace }}/.tongsuo-install/lib enable-ntls enable-trace no-shared
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -52,6 +58,34 @@ jobs:
           go-version: "1.23"
           cache: true
           cache-dependency-path: go.mod
+
+      # 缓存 Tongsuo 编译/安装产物；go vet 解析 cgo 同样需要 Tongsuo 头文件
+      - name: Cache Tongsuo
+        id: cache-tongsuo
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/.tongsuo-install
+          key: tongsuo-${{ runner.os }}-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: |
+            tongsuo-${{ runner.os }}-${{ env.TONGSUO_REF }}-
+
+      - name: Build Tongsuo from source
+        if: steps.cache-tongsuo.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "==> Cloning Tongsuo (${{ env.TONGSUO_REPO }} @ ${{ env.TONGSUO_REF }})"
+          git clone --depth 1 --branch "${{ env.TONGSUO_REF }}" \
+            "https://github.com/${{ env.TONGSUO_REPO }}.git" tongsuo
+          cd tongsuo
+          echo "==> ./config $TONGSUO_CONFIG_FLAGS"
+          ./config $TONGSUO_CONFIG_FLAGS
+          JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
+          echo "==> make -j${JOBS}"
+          make -j"${JOBS}"
+          echo "==> make install_sw"
+          make install_sw
+          echo "==> Tongsuo installed to ${{ github.workspace }}/.tongsuo-install"
 
       - name: go vet
         run: go vet ./...
