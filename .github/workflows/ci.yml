@@ -24,7 +24,6 @@ env:
   TONGSUO_REPO: OpenTongsuo/Tongsuo
   # 用 branch 或 tag 都可；推荐固定到稳定 tag（如 v8.5.0）以保证可复现
   TONGSUO_REF: master
-  TONGSUO_PREFIX: ${{ github.workspace }}/.tongsuo-install
 
 # 取消冗余运行：同一分支/同一 PR 的旧运行自动取消
 concurrency:
@@ -73,13 +72,13 @@ jobs:
         go-version: ["1.21", "1.23"]
     env:
       # macOS 用 DYLD_LIBRARY_PATH；Linux 用 LD_LIBRARY_PATH（脚本会按 OS 区分）
-      LD_LIBRARY_PATH: ${{ env.TONGSUO_PREFIX }}/lib
-      DYLD_LIBRARY_PATH: ${{ env.TONGSUO_PREFIX }}/lib
-      CGO_CFLAGS: -I${{ env.TONGSUO_PREFIX }}/include -Wno-deprecated-declarations
-      CGO_LDFLAGS: -L${{ env.TONGSUO_PREFIX }}/lib
-      TONGSUO_HOME: ${{ env.TONGSUO_PREFIX }}
+      LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
+      DYLD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
+      CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
+      CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
+      TONGSUO_HOME: ${{ github.workspace }}/.tongsuo-install
       # Tongsuo 编译参数（来源：docs/architecture.md §6.2）
-      TONGSUO_CONFIG_FLAGS: --prefix=${{ env.TONGSUO_PREFIX }} --libdir=${{ env.TONGSUO_PREFIX }}/lib enable-ntls enable-export-sm4 enable-ssl-trace no-shared
+      TONGSUO_CONFIG_FLAGS: --prefix=${{ github.workspace }}/.tongsuo-install --libdir=${{ github.workspace }}/.tongsuo-install/lib enable-ntls enable-export-sm4 enable-ssl-trace no-shared
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -95,7 +94,7 @@ jobs:
         id: cache-tongsuo
         uses: actions/cache@v4
         with:
-          path: ${{ env.TONGSUO_PREFIX }}
+          path: ${{ github.workspace }}/.tongsuo-install
           key: tongsuo-${{ runner.os }}-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/ci.yml') }}
           restore-keys: |
             tongsuo-${{ runner.os }}-${{ env.TONGSUO_REF }}-
@@ -116,13 +115,13 @@ jobs:
           make -j"${JOBS}"
           echo "==> make install_sw"
           make install_sw
-          echo "==> Tongsuo installed to ${{ env.TONGSUO_PREFIX }}"
+          echo "==> Tongsuo installed to ${{ github.workspace }}/.tongsuo-install"
 
       # Linux：写入 ld.so.conf 并 ldconfig（runner 默认 root，可直接写）
       - name: Configure dynamic linker (Linux)
         if: runner.os == 'Linux'
         run: |
-          echo "${{ env.TONGSUO_PREFIX }}/lib" > /etc/ld.so.conf.d/tongsuo.conf
+          echo "${{ github.workspace }}/.tongsuo-install/lib" > /etc/ld.so.conf.d/tongsuo.conf
           ldconfig
 
       # 动态链接构建

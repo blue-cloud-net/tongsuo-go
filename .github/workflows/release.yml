@@ -27,7 +27,6 @@ permissions:
 env:
   TONGSUO_REPO: OpenTongsuo/Tongsuo
   TONGSUO_REF: master
-  TONGSUO_PREFIX: ${{ github.workspace }}/.tongsuo-install
 
 concurrency:
   group: release-${{ github.ref }}
@@ -47,11 +46,11 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         go-version: ["1.21", "1.23"]
     env:
-      LD_LIBRARY_PATH: ${{ env.TONGSUO_PREFIX }}/lib
-      DYLD_LIBRARY_PATH: ${{ env.TONGSUO_PREFIX }}/lib
-      CGO_CFLAGS: -I${{ env.TONGSUO_PREFIX }}/include -Wno-deprecated-declarations
-      CGO_LDFLAGS: -L${{ env.TONGSUO_PREFIX }}/lib
-      TONGSUO_HOME: ${{ env.TONGSUO_PREFIX }}
+      LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
+      DYLD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
+      CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
+      CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
+      TONGSUO_HOME: ${{ github.workspace }}/.tongsuo-install
     steps:
       - uses: actions/checkout@v4
 
@@ -64,7 +63,7 @@ jobs:
         id: cache-tongsuo
         uses: actions/cache@v4
         with:
-          path: ${{ env.TONGSUO_PREFIX }}
+          path: ${{ github.workspace }}/.tongsuo-install
           key: tongsuo-${{ runner.os }}-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/release.yml') }}
           restore-keys: |
             tongsuo-${{ runner.os }}-${{ env.TONGSUO_REF }}-
@@ -77,8 +76,8 @@ jobs:
           git clone --depth 1 --branch "${{ env.TONGSUO_REF }}" \
             "https://github.com/${{ env.TONGSUO_REPO }}.git" tongsuo
           cd tongsuo
-          ./config --prefix=${{ env.TONGSUO_PREFIX }} \
-                   --libdir=${{ env.TONGSUO_PREFIX }}/lib \
+          ./config --prefix=${{ github.workspace }}/.tongsuo-install \
+                   --libdir=${{ github.workspace }}/.tongsuo-install/lib \
                    enable-ntls enable-export-sm4 enable-ssl-trace no-shared
           make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
           make install_sw
@@ -86,7 +85,7 @@ jobs:
       - name: Configure dynamic linker (Linux)
         if: runner.os == 'Linux'
         run: |
-          echo "${{ env.TONGSUO_PREFIX }}/lib" > /etc/ld.so.conf.d/tongsuo.conf
+          echo "${{ github.workspace }}/.tongsuo-install/lib" > /etc/ld.so.conf.d/tongsuo.conf
           ldconfig
 
       - name: go test
@@ -117,9 +116,9 @@ jobs:
             goos: darwin
             goarch: arm64
     env:
-      LD_LIBRARY_PATH: ${{ env.TONGSUO_PREFIX }}/lib
-      CGO_CFLAGS: -I${{ env.TONGSUO_PREFIX }}/include -Wno-deprecated-declarations
-      CGO_LDFLAGS: -L${{ env.TONGSUO_PREFIX }}/lib
+      LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
+      CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
+      CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
       CGO_ENABLED: "1"
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
