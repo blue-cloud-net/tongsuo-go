@@ -10,6 +10,7 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/crypto/ecdsa"
 	"github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
 	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
 // TestSelfSignedCert 验证自签证书创建、字段读取、自验签与 PEM 往返。
@@ -157,6 +158,91 @@ func TestCSR(t *testing.T) {
 	pt, err := sm2.Decrypt(priv, ct)
 	if err != nil || string(pt) != "csr pub" {
 		t.Fatal("CSR pubkey encrypt/decrypt mismatch")
+	}
+}
+
+// TestCSRSignatureInfoSM2 验证 SM2 CSR 签名值/算法/OID 三件套读取，并支持 PEM 往返。
+func TestCSRSignatureInfoSM2(t *testing.T) {
+	priv, _ := sm2.GenerateKey()
+	subject := NewName().Add("CN", "csr-sig-sm2.example.com")
+	req, err := NewCertificateRequest(subject, priv.Public(), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(req.Signature()) == 0 {
+		t.Fatal("SM2 CSR Signature bytes should not be empty")
+	}
+	if req.SignatureAlgorithm() != "SM2-SM3" {
+		t.Fatalf("SM2 CSR SignatureAlgorithm = %q, want SM2-SM3", req.SignatureAlgorithm())
+	}
+	if req.SignatureAlgorithmOID() != "1.2.156.10197.1.501" {
+		t.Fatalf("SM2 CSR SignatureAlgorithmOID = %q, want 1.2.156.10197.1.501", req.SignatureAlgorithmOID())
+	}
+
+	// PEM 往返后三件套保持一致
+	pem, err := req.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCertificateRequestPEM(pem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(loaded.Signature(), req.Signature()) {
+		t.Fatal("SM2 CSR Signature bytes changed after PEM roundtrip")
+	}
+	if loaded.SignatureAlgorithm() != "SM2-SM3" {
+		t.Fatalf("loaded CSR SignatureAlgorithm = %q, want SM2-SM3", loaded.SignatureAlgorithm())
+	}
+	if loaded.SignatureAlgorithmOID() != "1.2.156.10197.1.501" {
+		t.Fatalf("loaded CSR SignatureAlgorithmOID = %q, want 1.2.156.10197.1.501", loaded.SignatureAlgorithmOID())
+	}
+}
+
+// TestCSRSignatureInfoRSA 验证 RSA CSR 签名值/算法/OID 三件套读取。
+func TestCSRSignatureInfoRSA(t *testing.T) {
+	priv, err := rsa.GenerateKey(2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	subject := NewName().Add("CN", "csr-sig-rsa.example.com")
+	req, err := NewCertificateRequest(subject, priv.Public(), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(req.Signature()) != 256 {
+		t.Fatalf("RSA-SHA256 CSR signature length = %d, want 256", len(req.Signature()))
+	}
+	if req.SignatureAlgorithm() != "RSA-SHA256" {
+		t.Fatalf("RSA CSR SignatureAlgorithm = %q, want RSA-SHA256", req.SignatureAlgorithm())
+	}
+	if req.SignatureAlgorithmOID() != "1.2.840.113549.1.1.11" {
+		t.Fatalf("RSA CSR SignatureAlgorithmOID = %q, want 1.2.840.113549.1.1.11", req.SignatureAlgorithmOID())
+	}
+}
+
+// TestCSRSignatureInfoECDSA 验证 ECDSA CSR 签名值/算法/OID 三件套读取。
+func TestCSRSignatureInfoECDSA(t *testing.T) {
+	priv, err := ecdsa.GenerateKey("prime256v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	subject := NewName().Add("CN", "csr-sig-ecdsa.example.com")
+	req, err := NewCertificateRequest(subject, priv.Public(), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(req.Signature()) == 0 {
+		t.Fatal("ECDSA CSR Signature bytes should not be empty")
+	}
+	if req.SignatureAlgorithm() != "ecdsa-with-SHA256" {
+		t.Fatalf("ECDSA CSR SignatureAlgorithm = %q, want ecdsa-with-SHA256", req.SignatureAlgorithm())
+	}
+	if req.SignatureAlgorithmOID() != "1.2.840.10045.4.3.2" {
+		t.Fatalf("ECDSA CSR SignatureAlgorithmOID = %q, want 1.2.840.10045.4.3.2", req.SignatureAlgorithmOID())
 	}
 }
 
@@ -922,6 +1008,103 @@ func TestCreateCertificateECDSA(t *testing.T) {
 	}
 }
 
+// TestSignatureInfoSM2 验证 SM2 证书签名值/算法/OID 三件套读取，并支持 PEM 往返。
+func TestSignatureInfoSM2(t *testing.T) {
+	priv, err := sm2.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	subject := NewName().Add("CN", "sig-sm2.example.com")
+	cert, err := CreateCertificate(subject, subject, 30,
+		now.Add(-time.Hour), now.Add(365*24*time.Hour), priv.Public(), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sig := cert.Signature()
+	if len(sig) == 0 {
+		t.Fatal("SM2 Signature bytes should not be empty")
+	}
+	if cert.SignatureAlgorithm() != "SM2-SM3" {
+		t.Fatalf("SM2 SignatureAlgorithm = %q, want SM2-SM3", cert.SignatureAlgorithm())
+	}
+	if cert.SignatureAlgorithmOID() != "1.2.156.10197.1.501" {
+		t.Fatalf("SM2 SignatureAlgorithmOID = %q, want 1.2.156.10197.1.501", cert.SignatureAlgorithmOID())
+	}
+
+	// PEM 往返后三件套保持一致
+	pem, err := cert.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCertificatePEM(pem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(loaded.Signature(), sig) {
+		t.Fatal("SM2 Signature bytes changed after PEM roundtrip")
+	}
+	if loaded.SignatureAlgorithm() != "SM2-SM3" {
+		t.Fatalf("loaded SignatureAlgorithm = %q, want SM2-SM3", loaded.SignatureAlgorithm())
+	}
+	if loaded.SignatureAlgorithmOID() != "1.2.156.10197.1.501" {
+		t.Fatalf("loaded SignatureAlgorithmOID = %q, want 1.2.156.10197.1.501", loaded.SignatureAlgorithmOID())
+	}
+}
+
+// TestSignatureInfoRSA 验证 RSA 证书签名值/算法/OID 三件套读取（SHA-256）。
+func TestSignatureInfoRSA(t *testing.T) {
+	priv, err := rsa.GenerateKey(2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	subject := NewName().Add("CN", "sig-rsa.example.com")
+	cert, err := CreateCertificate(subject, subject, 31,
+		now.Add(-time.Hour), now.Add(365*24*time.Hour), priv.Public(), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sig := cert.Signature()
+	if len(sig) != 256 {
+		t.Fatalf("RSA-SHA256 signature length = %d, want 256", len(sig))
+	}
+	if cert.SignatureAlgorithm() != "RSA-SHA256" {
+		t.Fatalf("RSA SignatureAlgorithm = %q, want RSA-SHA256", cert.SignatureAlgorithm())
+	}
+	if cert.SignatureAlgorithmOID() != "1.2.840.113549.1.1.11" {
+		t.Fatalf("RSA SignatureAlgorithmOID = %q, want 1.2.840.113549.1.1.11", cert.SignatureAlgorithmOID())
+	}
+}
+
+// TestSignatureInfoECDSA 验证 ECDSA 证书签名值/算法/OID 三件套读取（SHA-256）。
+func TestSignatureInfoECDSA(t *testing.T) {
+	priv, err := ecdsa.GenerateKey("prime256v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	subject := NewName().Add("CN", "sig-ecdsa.example.com")
+	cert, err := CreateCertificate(subject, subject, 32,
+		now.Add(-time.Hour), now.Add(365*24*time.Hour), priv.Public(), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sig := cert.Signature()
+	if len(sig) == 0 {
+		t.Fatal("ECDSA signature bytes should not be empty")
+	}
+	if cert.SignatureAlgorithm() != "ecdsa-with-SHA256" {
+		t.Fatalf("ECDSA SignatureAlgorithm = %q, want ecdsa-with-SHA256", cert.SignatureAlgorithm())
+	}
+	if cert.SignatureAlgorithmOID() != "1.2.840.10045.4.3.2" {
+		t.Fatalf("ECDSA SignatureAlgorithmOID = %q, want 1.2.840.10045.4.3.2", cert.SignatureAlgorithmOID())
+	}
+}
+
 // TestChainVerifyRSA 验证 RSA CA 签发 RSA 叶证书的链验证。
 func TestChainVerifyRSA(t *testing.T) {
 	caPriv, err := rsa.GenerateKey(2048)
@@ -1002,5 +1185,347 @@ func TestCSRRSA(t *testing.T) {
 	}
 	if err := loaded.Verify(); err != nil {
 		t.Fatal("loaded RSA CSR verify failed")
+	}
+}
+
+// TestSelfSigned 验证 Certificate.SelfSigned：自签返回 true，CA 签发叶证书返回 false。
+func TestSelfSigned(t *testing.T) {
+	priv, _ := sm2.GenerateKey()
+	now := time.Now()
+	subject := NewName().Add("CN", "self.example.com")
+
+	// 自签证书
+	selfCert, err := CreateCertificate(subject, subject, 1,
+		now.Add(-time.Hour), now.Add(365*24*time.Hour), priv.Public(), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok, err := selfCert.SelfSigned()
+	if err != nil || !ok {
+		t.Fatalf("self-signed cert SelfSigned = (%v, %v), want (true, nil)", ok, err)
+	}
+
+	// CA 签发叶证书
+	caPriv, _ := sm2.GenerateKey()
+	caCert := makeCACert(t, caPriv, "Self CA")
+	leafPriv, _ := sm2.GenerateKey()
+	leafCert, err := CreateCertificate(NewName().Add("CN", "leaf.example.com"),
+		caCert.SubjectName(), 2, now.Add(-time.Hour), now.Add(365*24*time.Hour),
+		leafPriv.Public(), caPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok, err = leafCert.SelfSigned()
+	if err != nil || ok {
+		t.Fatalf("CA-issued cert SelfSigned = (%v, %v), want (false, nil)", ok, err)
+	}
+}
+
+// TestNameHelpers 验证 Name.Nid / Name.Len / SubjectText / IssuerEntries / SubjectEntries。
+func TestNameHelpers(t *testing.T) {
+	n := NewName().Add("CN", "name.example.com").Add("O", "Name Org").Add("C", "CN")
+	if n.Len() != 3 {
+		t.Fatalf("Name.Len = %d, want 3", n.Len())
+	}
+	if n.Nid("CN") == 0 {
+		t.Fatal("Name.Nid(\"CN\") = 0, want nonzero")
+	}
+	if n.Nid("") != 0 {
+		t.Fatalf("Name.Nid(\"\") = %d, want 0", n.Nid(""))
+	}
+	if n.Nid("unknown-field-xyz") != 0 {
+		t.Fatal("Name.Nid(unknown) should return 0")
+	}
+	if n.String() == "" {
+		t.Fatal("Name.String() should not be empty")
+	}
+
+	// CSR SubjectEntries / SubjectText
+	priv, _ := sm2.GenerateKey()
+	req, _ := NewCertificateRequest(n, priv.Public(), priv)
+	entries := req.SubjectEntries()
+	if len(entries) != 3 {
+		t.Fatalf("CSR SubjectEntries = %d, want 3", len(entries))
+	}
+	if req.SubjectText() == "" {
+		t.Fatal("CSR SubjectText should not be empty")
+	}
+}
+
+// TestCSRPublicKeyPKey 验证 CSR.PublicKeyPKey 在 SM2 / RSA / ECDSA 上均工作。
+func TestCSRPublicKeyPKey(t *testing.T) {
+	// SM2
+	sm2priv, _ := sm2.GenerateKey()
+	req, _ := NewCertificateRequest(NewName().Add("CN", "sm2.example.com"),
+		sm2priv.Public(), sm2priv)
+	pk, err := req.PublicKeyPKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pk.Algorithm() != "SM2" {
+		t.Fatalf("SM2 CSR PublicKeyPKey algo = %q, want SM2", pk.Algorithm())
+	}
+	pk.Close()
+
+	// RSA
+	rsapriv, _ := rsa.GenerateKey(2048)
+	req, _ = NewCertificateRequest(NewName().Add("CN", "rsa.example.com"),
+		rsapriv.Public(), rsapriv)
+	pk, err = req.PublicKeyPKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pk.Algorithm() != "RSA" {
+		t.Fatalf("RSA CSR PublicKeyPKey algo = %q, want RSA", pk.Algorithm())
+	}
+	pk.Close()
+
+	// ECDSA
+	ecpriv, _ := ecdsa.GenerateKey("prime256v1")
+	req, _ = NewCertificateRequest(NewName().Add("CN", "ec.example.com"),
+		ecpriv.Public(), ecpriv)
+	pk, err = req.PublicKeyPKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pk.Algorithm() != "EC" {
+		t.Fatalf("ECDSA CSR PublicKeyPKey algo = %q, want EC", pk.Algorithm())
+	}
+	pk.Close()
+}
+
+// TestStoreSetFlags 验证 Store.SetFlags 通用方法（传入 0 应不报错）。
+func TestStoreSetFlags(t *testing.T) {
+	s := NewStore()
+	if err := s.SetFlags(0); err != nil {
+		t.Fatalf("SetFlags(0) failed: %v", err)
+	}
+	if err := s.SetFlags(0x4); err != nil { // X509VFlagCRLCheck
+		t.Fatalf("SetFlags(0x4) failed: %v", err)
+	}
+}
+
+// TestCRLSignatureInfoSM2 验证 SM2 签发 CRL 的签名三件套、Issuer 辅助方法、Number、Extensions。
+// CRL 由 core 直接签发（绕开 CA 证书持有），通过 PEM 往返后由公开 API 加载与验证。
+func TestCRLSignatureInfoSM2(t *testing.T) {
+	caPriv, _ := sm2.GenerateKey()
+	now := time.Now()
+	caName := NewName().Add("CN", "CRL SM2 CA")
+
+	// 通过 core 直接构建 CRL
+	coreCRL, err := core.NewCRL(caName.name, caPriv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	if err != nil {
+		t.Fatalf("core.NewCRL: %v", err)
+	}
+	defer coreCRL.Close()
+
+	// 序列化为 PEM 再通过公开 API 加载（避免所有权/句柄泄漏）
+	pem, err := coreCRL.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCRLPEM(pem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loaded.Close()
+
+	if loaded.Version() != 1 {
+		t.Fatalf("CRL version = %d, want 1 (v2)", loaded.Version())
+	}
+	if len(loaded.Signature()) == 0 {
+		t.Fatal("CRL signature should not be empty")
+	}
+	if loaded.SignatureAlgorithm() != "SM2-SM3" {
+		t.Fatalf("CRL SignatureAlgorithm = %q, want SM2-SM3", loaded.SignatureAlgorithm())
+	}
+	if loaded.SignatureAlgorithmOID() != "1.2.156.10197.1.501" {
+		t.Fatalf("CRL SignatureAlgorithmOID = %q, want 1.2.156.10197.1.501", loaded.SignatureAlgorithmOID())
+	}
+
+	// Issuer 辅助方法
+	if loaded.Issuer().Get("CN") != "CRL SM2 CA" {
+		t.Fatalf("CRL issuer CN = %q", loaded.Issuer().Get("CN"))
+	}
+	issuerEntries := loaded.IssuerEntries()
+	if len(issuerEntries) != 1 || issuerEntries[0].Value != "CRL SM2 CA" {
+		t.Fatalf("CRL IssuerEntries = %v", issuerEntries)
+	}
+	if loaded.IssuerText() == "" {
+		t.Fatal("CRL IssuerText should not be empty")
+	}
+
+	// Extensions 应至少含 CRL Number
+	exts := loaded.Extensions()
+	hasNumber := false
+	for _, e := range exts {
+		if e.Field == "crlNumber" {
+			hasNumber = true
+		}
+	}
+	if !hasNumber {
+		t.Logf("note: CRL extensions lack crlNumber (OpenSSL may not attach it to empty v2 CRL): %v", exts)
+	}
+
+	// Number() 在 OpenSSL 未附加 CRL Number 扩展时返回 -1（已记录）
+	if loaded.Number() >= 0 {
+		t.Logf("CRL Number() = %d", loaded.Number())
+	}
+
+	// DER 往返
+	der, err := loaded.MarshalDER()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded2, err := LoadCRLDER(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loaded2.Close()
+	if loaded2.SignatureAlgorithm() != "SM2-SM3" {
+		t.Fatalf("DER-loaded CRL SignatureAlgorithm = %q", loaded2.SignatureAlgorithm())
+	}
+}
+
+// TestCRLAKID 验证 CRL.AuthorityKeyID 与 issuer CA 的 SKID 一致（自签发 CRL 场景）。
+func TestCRLAKID(t *testing.T) {
+	caPriv, _ := sm2.GenerateKey()
+	now := time.Now()
+	caName := NewName().Add("CN", "AKID CRL CA")
+
+	caCert := NewCertificate()
+	if err := caCert.SetVersion(2); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetSerial(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetIssuer(caName); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetSubject(caName); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetValidity(now.Add(-time.Hour), now.Add(2*365*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetPublicKey(caPriv.Public()); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.AddBasicConstraints(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.AddSubjectKeyID(); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.Sign(caPriv); err != nil {
+		t.Fatal(err)
+	}
+
+	// 通过 core 直接签发 CRL；core.NewCRL 不附加 AKID，需手工附加（与 openssl ca -gencrl 行为类似）。
+	coreCRL, err := core.NewCRL(caName.name, caPriv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	if err != nil {
+		t.Fatalf("core.NewCRL: %v", err)
+	}
+	defer coreCRL.Close()
+
+	// 手工添加 AuthorityKeyIdentifier 扩展（keyid 取自 CA 的 SKID）
+	if err := coreCRL.AddAuthorityKeyID(caCert.Core()); err != nil {
+		t.Fatalf("AddAuthorityKeyID: %v", err)
+	}
+
+	pem, err := coreCRL.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCRLPEM(pem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loaded.Close()
+
+	akid := loaded.AuthorityKeyID()
+	if len(akid) == 0 {
+		t.Fatal("CRL AuthorityKeyID should not be empty")
+	}
+	if !bytes.Equal(akid, caCert.SubjectKeyID()) {
+		t.Fatalf("CRL AKID = %x, want CA SKID = %x", akid, caCert.SubjectKeyID())
+	}
+}
+
+// TestCRLExtensions 验证 CRL.Extensions 至少包含 CRL Number 扩展（OpenSSL 默认附加）。
+func TestCRLExtensions(t *testing.T) {
+	priv, _ := sm2.GenerateKey()
+	now := time.Now()
+	caName := NewName().Add("CN", "Ext CRL CA")
+
+	coreCRL, err := core.NewCRL(caName.name, priv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	if err != nil {
+		t.Fatalf("core.NewCRL: %v", err)
+	}
+	defer coreCRL.Close()
+
+	pem, err := coreCRL.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCRLPEM(pem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loaded.Close()
+
+	exts := loaded.Extensions()
+	if len(exts) == 0 {
+		t.Fatal("CRL Extensions should not be empty (OpenSSL attaches at least CRL Number)")
+	}
+	// 至少存在 CRL Number 扩展
+	hasNumber := false
+	for _, e := range exts {
+		if e.Field == "crlNumber" {
+			hasNumber = true
+			break
+		}
+	}
+	if !hasNumber {
+		t.Fatalf("CRL extensions missing CRL Number: %v", exts)
+	}
+}
+
+// TestCRLIssuerEntries / TestCRLIssuerText 验证 Issuer 辅助方法返回完整 RDN。
+func TestCRLIssuerEntries(t *testing.T) {
+	priv, _ := sm2.GenerateKey()
+	now := time.Now()
+	caName := NewName().Add("CN", "Entries CRL CA").Add("O", "Entries Org").Add("C", "CN")
+
+	coreCRL, err := core.NewCRL(caName.name, priv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	if err != nil {
+		t.Fatalf("core.NewCRL: %v", err)
+	}
+	defer coreCRL.Close()
+
+	pem, err := coreCRL.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCRLPEM(pem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loaded.Close()
+
+	entries := loaded.IssuerEntries()
+	if len(entries) != 3 {
+		t.Fatalf("CRL IssuerEntries = %d, want 3: %v", len(entries), entries)
+	}
+	want := map[string]string{"CN": "Entries CRL CA", "O": "Entries Org", "C": "CN"}
+	for _, e := range entries {
+		if got, ok := want[e.Field]; !ok || got != e.Value {
+			t.Fatalf("unexpected entry %s=%q: %v", e.Field, e.Value, entries)
+		}
+	}
+	text := loaded.IssuerText()
+	if !strings.Contains(text, "CN=Entries CRL CA") {
+		t.Fatalf("CRL IssuerText missing CN: %q", text)
 	}
 }

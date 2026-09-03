@@ -102,6 +102,39 @@ func (n *Name) Get(field string) string {
 	return native.X509_NAME_get_text_by_txt(n.handle.Ptr(), field)
 }
 
+// Nid 返回指定字段短名（如 "CN"、"O"）对应的 OpenSSL NID。
+// field 可为短名 / 长名 / 点分 OID；未知字段返回 native.NidUndef（0）。
+//
+// 对 nil 接收者或已关闭的 Name 调用是安全的：均返回 native.NidUndef。
+//
+// Nid returns the OpenSSL NID for the given field name (short name, long
+// name, or dotted OID), or native.NidUndef (0) when the field is
+// unknown.
+//
+// The method is safe to call on a nil receiver or on a closed Name: in
+// both cases it returns native.NidUndef.
+func (n *Name) Nid(field string) int {
+	if n == nil || n.handle == nil || n.handle.IsClosed() {
+		return native.NidUndef
+	}
+	return native.OBJ_txt2nid(field)
+}
+
+// Len 返回 Name 中的 RDN 条目数。
+//
+// 对 nil 接收者或已关闭的 Name 调用是安全的：均返回 0。
+//
+// Len returns the number of RDN entries in the Name.
+//
+// The method is safe to call on a nil receiver or on a closed Name: in
+// both cases it returns 0.
+func (n *Name) Len() int {
+	if n == nil || n.handle == nil || n.handle.IsClosed() {
+		return 0
+	}
+	return native.X509_NAME_get_entry_count(n.handle.Ptr())
+}
+
 // Entries 按证书中的原始顺序返回名字的全部 RDN 条目。
 //
 // 对 nil 接收者或已关闭的 Name 调用是安全的：均返回 nil；解码失败的条目会被跳过而非中断遍历。
@@ -456,6 +489,60 @@ func (c *Certificate) Verify(pub *PKey) error {
 		return NewOpError("x509: X509_verify", native.PopError())
 	}
 	return nil
+}
+
+// Signature 返回证书的原始签名字节（ASN.1 BIT STRING 内容，DER 编码）。
+//
+// 对 nil 或已关闭证书返回 nil；不可用时同样返回 nil，不返回错误。
+//
+// Signature returns the raw signature bytes of the certificate (the
+// contents of the ASN.1 BIT STRING, i.e. the DER-encoded signature).
+//
+// The result is nil for a nil or closed certificate, and also nil when
+// the signature is unavailable; the call never reports an error.
+func (c *Certificate) Signature() []byte {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil
+	}
+	sig, _, _ := native.X509_get_signature_info(c.handle.Ptr())
+	return sig
+}
+
+// SignatureAlgorithm 返回证书签名算法的短名（如 "SM2-SM3"、"RSA-SHA256"、"ecdsa-with-SHA256"）。
+//
+// 对 nil 或已关闭证书返回空字符串；OpenSSL 无法识别签名算法时同样返回空字符串。返回值取自 OBJ_nid2_sn。
+//
+// SignatureAlgorithm returns the certificate signature algorithm short name
+// (for example "SM2-SM3", "RSA-SHA256", or "ecdsa-with-SHA256").
+//
+// The result is the empty string for a nil or closed certificate, and
+// also when the signature algorithm is not recognized by OpenSSL. The
+// value comes from OBJ_nid2_sn.
+func (c *Certificate) SignatureAlgorithm() string {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return ""
+	}
+	_, nid, _ := native.X509_get_signature_info(c.handle.Ptr())
+	return native.OBJ_nid2sn(nid)
+}
+
+// SignatureAlgorithmOID 返回证书签名算法的 OID 点分文本（如 "1.2.156.10197.1.501"、"1.2.840.113549.1.1.11"）。
+//
+// 对 nil 或已关闭证书返回空字符串；OpenSSL 无法读取算法 OID 时同样返回空字符串。返回值取自 OBJ_obj2txt(_, _, _, 1)。
+//
+// SignatureAlgorithmOID returns the certificate signature algorithm OID
+// as a dotted string (for example "1.2.156.10197.1.501" for SM2-with-SM3
+// or "1.2.840.113549.1.1.11" for sha256WithRSAEncryption).
+//
+// The result is the empty string for a nil or closed certificate, and
+// also when the signature algorithm OID cannot be read. The value comes
+// from OBJ_obj2txt(_, _, _, 1).
+func (c *Certificate) SignatureAlgorithmOID() string {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return ""
+	}
+	_, _, oid := native.X509_get_signature_info(c.handle.Ptr())
+	return oid
 }
 
 // SubjectName 返回证书主题名字。
@@ -1457,6 +1544,60 @@ func (r *CertificateRequest) PublicKey() (*PKey, error) {
 	return &PKey{handle: NewHandle(p, true, native.EVP_PKEY_free)}, nil
 }
 
+// Signature 返回 CSR 的原始签名字节（ASN.1 BIT STRING 内容，DER 编码）。
+//
+// 对 nil 或已关闭的 CSR 返回 nil；不可用时同样返回 nil，不返回错误。
+//
+// Signature returns the raw signature bytes of the CSR (the contents of
+// the ASN.1 BIT STRING, i.e. the DER-encoded signature).
+//
+// The result is nil for a nil or closed CSR, and also nil when the
+// signature is unavailable; the call never reports an error.
+func (r *CertificateRequest) Signature() []byte {
+	if r == nil || r.handle == nil || r.handle.IsClosed() {
+		return nil
+	}
+	sig, _, _ := native.X509_REQ_get_signature_info(r.handle.Ptr())
+	return sig
+}
+
+// SignatureAlgorithm 返回 CSR 签名算法的短名（如 "SM2-SM3"、"RSA-SHA256"、"ecdsa-with-SHA256"）。
+//
+// 对 nil 或已关闭的 CSR 返回空字符串；OpenSSL 无法识别签名算法时同样返回空字符串。返回值取自 OBJ_nid2_sn。
+//
+// SignatureAlgorithm returns the CSR signature algorithm short name
+// (for example "SM2-SM3", "RSA-SHA256", or "ecdsa-with-SHA256").
+//
+// The result is the empty string for a nil or closed CSR, and also
+// when the signature algorithm is not recognized by OpenSSL. The value
+// comes from OBJ_nid2_sn.
+func (r *CertificateRequest) SignatureAlgorithm() string {
+	if r == nil || r.handle == nil || r.handle.IsClosed() {
+		return ""
+	}
+	_, nid, _ := native.X509_REQ_get_signature_info(r.handle.Ptr())
+	return native.OBJ_nid2sn(nid)
+}
+
+// SignatureAlgorithmOID 返回 CSR 签名算法的 OID 点分文本（如 "1.2.156.10197.1.501"、"1.2.840.113549.1.1.11"）。
+//
+// 对 nil 或已关闭的 CSR 返回空字符串；OpenSSL 无法读取算法 OID 时同样返回空字符串。返回值取自 OBJ_obj2txt(_, _, _, 1)。
+//
+// SignatureAlgorithmOID returns the CSR signature algorithm OID as a
+// dotted string (for example "1.2.156.10197.1.501" for SM2-with-SM3
+// or "1.2.840.113549.1.1.11" for sha256WithRSAEncryption).
+//
+// The result is the empty string for a nil or closed CSR, and also
+// when the signature algorithm OID cannot be read. The value comes
+// from OBJ_obj2txt(_, _, _, 1).
+func (r *CertificateRequest) SignatureAlgorithmOID() string {
+	if r == nil || r.handle == nil || r.handle.IsClosed() {
+		return ""
+	}
+	_, _, oid := native.X509_REQ_get_signature_info(r.handle.Ptr())
+	return oid
+}
+
 // Close 释放底层 X509_REQ 句柄。
 //
 // 调用是幂等的：对 nil 接收者或已关闭的 CSR 调用返回 nil，不产生副作用；Close 返回后，
@@ -1798,6 +1939,72 @@ func LoadCRLPEM(pem []byte) (*CRL, error) {
 	return &CRL{handle: NewHandle(c, true, native.X509_CRL_free)}, nil
 }
 
+// NewCRL 创建并签发一张空的 CRL（不含吊销条目），适用于测试 / 工具链。
+//
+// issuer 为签发者名字（直接借用其底层 X509_NAME，不复制；调用方须保证 issuer 在 Sign 后仍有效）；
+// priv 为签发者私钥（必须是未关闭的有效 *PKey）；thisUpdate / nextUpdate 为 CRL 生效与过期时间；
+// 返回的 CRL 默认 version = v2，并自动附加 CRL Number 扩展（值 = 1，匹配 `openssl ca -gencrl` 的默认行为）。
+//
+// 返回值拥有底层 X509_CRL 句柄，调用方负责 Close 释放；错误以 OpError 包装。
+//
+// NewCRL creates and signs an empty CRL (no revoked entries) for testing
+// or tooling purposes.
+//
+// issuer is the issuer name (its underlying X509_NAME is borrowed, not
+// duplicated, so the caller must keep issuer alive through Sign); priv
+// is the issuer private key (must be a live, non-closed *PKey);
+// thisUpdate / nextUpdate define the CRL time window. The returned CRL
+// defaults to v2 and includes a CRL Number extension set to 1 (matching
+// the default behavior of `openssl ca -gencrl`). The returned *CRL owns
+// its handle and the caller must invoke Close to release it. Errors are
+// wrapped as OpError.
+func NewCRL(issuer *Name, priv *PKey, thisUpdate, nextUpdate time.Time) (*CRL, error) {
+	if issuer == nil || issuer.handle == nil || issuer.handle.IsClosed() {
+		return nil, fmt.Errorf("x509: invalid issuer name")
+	}
+	if priv == nil || priv.handle == nil || priv.handle.IsClosed() {
+		return nil, fmt.Errorf("x509: invalid signing key")
+	}
+	c := native.X509_CRL_new()
+	if c == nil {
+		return nil, NewOpError("x509: X509_CRL_new", native.PopError())
+	}
+	crl := &CRL{handle: NewHandle(c, true, native.X509_CRL_free)}
+	if !native.X509_CRL_set_version(c, 1) { // v2
+		crl.Close()
+		return nil, NewOpError("x509: X509_CRL_set_version", native.PopError())
+	}
+	if !native.X509_CRL_set_issuer_name(c, issuer.handle.Ptr()) {
+		crl.Close()
+		return nil, NewOpError("x509: X509_CRL_set_issuer_name", native.PopError())
+	}
+	if !native.X509_CRL_set1_lastUpdate(c, thisUpdate.Unix()) {
+		crl.Close()
+		return nil, NewOpError("x509: X509_CRL_set1_lastUpdate", native.PopError())
+	}
+	if !nextUpdate.IsZero() {
+		if !native.X509_CRL_set1_nextUpdate(c, nextUpdate.Unix()) {
+			crl.Close()
+			return nil, NewOpError("x509: X509_CRL_set1_nextUpdate", native.PopError())
+		}
+	}
+	// 附加 CRL Number 扩展（值 = 1），匹配 openssl ca -gencrl 默认行为
+	if !native.X509_CRL_set_crl_number(c, 1) {
+		crl.Close()
+		return nil, NewOpError("x509: CRL Number extension", native.PopError())
+	}
+	md := digestForSigner(priv)
+	if md == nil || md.handle == nil {
+		crl.Close()
+		return nil, fmt.Errorf("x509: invalid digest for signer")
+	}
+	if !native.X509_CRL_sign(c, priv.handle.Ptr(), md.handle.Ptr()) {
+		crl.Close()
+		return nil, NewOpError("x509: X509_CRL_sign", native.PopError())
+	}
+	return crl, nil
+}
+
 // LoadCRLDER 解析 ASN.1 DER 编码的 CRL。
 //
 // 返回值拥有底层 X509_CRL 句柄，调用方须调用 Close 释放；错误以 OpError 包装。
@@ -1856,6 +2063,33 @@ func (c *CRL) MarshalDER() ([]byte, error) {
 		return nil, NewOpError("x509: i2d_X509_CRL", native.PopError())
 	}
 	return der, nil
+}
+
+// AddAuthorityKeyID 向 CRL 追加 authorityKeyIdentifier 扩展（keyid 取自 issuer 的 SKID 或公钥）。
+//
+// issuer 必须是已设置公钥的未关闭 *Certificate（推荐先对 issuer 调用 AddSubjectKeyID）；
+// 必须在 MarshalPEM / MarshalDER 之前调用；底层 OpenSSL 错误以 OpError 包装。
+//
+// AddAuthorityKeyID appends an authorityKeyIdentifier extension to the CRL
+// whose keyid is taken from issuer's SKID (preferred) or derived from
+// the issuer's public key.
+//
+// issuer must be a live, non-closed *Certificate with a public key
+// configured (AddSubjectKeyID is recommended). Must be invoked before
+// MarshalPEM / MarshalDER. Errors from the underlying OpenSSL call are
+// wrapped as OpError.
+func (c *CRL) AddAuthorityKeyID(issuer *Certificate) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: CRL closed")
+	}
+	if issuer == nil || issuer.handle == nil || issuer.handle.IsClosed() {
+		return fmt.Errorf("x509: invalid issuer certificate")
+	}
+	if !native.X509V3_EXT_conf_nid_ctx_crl(c.handle.Ptr(), issuer.handle.Ptr(),
+		native.NidAuthorityKeyIdentifier, "keyid:always") {
+		return NewOpError("x509: X509V3_EXT_conf_nid (CRL AKID)", native.PopError())
+	}
+	return nil
 }
 
 // Issuer 返回 CRL 的签发者名字。
@@ -1928,6 +2162,120 @@ func (c *CRL) RevokedEntries() []RevokedEntry {
 			Reason:         crlReasonNames[code],
 		}
 		out = append(out, entry)
+	}
+	return out
+}
+
+// Signature 返回 CRL 的原始签名字节（ASN.1 BIT STRING 内容，DER 编码）。
+//
+// 对 nil 或已关闭的 CRL 返回 nil；不可用时同样返回 nil，不返回错误。
+//
+// Signature returns the raw signature bytes of the CRL (the contents of
+// the ASN.1 BIT STRING, i.e. the DER-encoded signature).
+//
+// The result is nil for a nil or closed CRL, and also nil when the
+// signature is unavailable; the call never reports an error.
+func (c *CRL) Signature() []byte {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil
+	}
+	sig, _, _ := native.X509_CRL_get_signature_info(c.handle.Ptr())
+	return sig
+}
+
+// SignatureAlgorithm 返回 CRL 签名算法的短名（如 "SM2-SM3"、"RSA-SHA256"、"ecdsa-with-SHA256"）。
+//
+// 对 nil 或已关闭的 CRL 返回空字符串；OpenSSL 无法识别签名算法时同样返回空字符串。
+//
+// SignatureAlgorithm returns the CRL signature algorithm short name
+// (for example "SM2-SM3", "RSA-SHA256", or "ecdsa-with-SHA256").
+//
+// The result is the empty string for a nil or closed CRL, and also when
+// the signature algorithm is not recognized by OpenSSL. The value
+// comes from OBJ_nid2_sn.
+func (c *CRL) SignatureAlgorithm() string {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return ""
+	}
+	_, nid, _ := native.X509_CRL_get_signature_info(c.handle.Ptr())
+	return native.OBJ_nid2sn(nid)
+}
+
+// SignatureAlgorithmOID 返回 CRL 签名算法的 OID 点分文本（如 "1.2.156.10197.1.501"、"1.2.840.113549.1.1.11"）。
+//
+// 对 nil 或已关闭的 CRL 返回空字符串；OpenSSL 无法读取算法 OID 时同样返回空字符串。
+//
+// SignatureAlgorithmOID returns the CRL signature algorithm OID as a
+// dotted string (for example "1.2.156.10197.1.501" for SM2-with-SM3
+// or "1.2.840.113549.1.1.11" for sha256WithRSAEncryption).
+//
+// The result is the empty string for a nil or closed CRL, and also when
+// the signature algorithm OID cannot be read. The value comes from
+// OBJ_obj2txt(_, _, _, 1).
+func (c *CRL) SignatureAlgorithmOID() string {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return ""
+	}
+	_, _, oid := native.X509_CRL_get_signature_info(c.handle.Ptr())
+	return oid
+}
+
+// AuthorityKeyID 返回 authorityKeyIdentifier 扩展中 keyid 的字节；无则返回 nil。
+//
+// AuthorityKeyID returns the keyid bytes of the authorityKeyIdentifier
+// extension, or nil when the extension is absent or has no keyid
+// component.
+func (c *CRL) AuthorityKeyID() []byte {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil
+	}
+	return native.X509_CRL_get0_authority_key_id(c.handle.Ptr())
+}
+
+// Number 返回 CRL Number 扩展的整数值（RFC 5280 §5.2.3）。
+// 无 CRL Number 扩展或已关闭 CRL 返回 -1。
+//
+// Number returns the integer value of the CRL Number extension
+// (RFC 5280 §5.2.3), or -1 when the CRL has no CRL Number extension or
+// has been closed via Close.
+func (c *CRL) Number() int64 {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return -1
+	}
+	ai := native.X509_CRL_get_crl_number(c.handle.Ptr())
+	if ai == nil {
+		return -1
+	}
+	defer native.ASN1_INTEGER_free(ai)
+	return native.ASN1_INTEGER_get(ai)
+}
+
+// Extensions 按出现顺序返回 CRL 的全部扩展。
+//
+// 对 nil 或已关闭的 CRL 返回 nil；每条包含扩展 NID、短名、critical 标志及 DER 字节。
+//
+// Extensions returns every extension of the CRL in their original order.
+//
+// The result is nil for a nil or closed CRL. Each entry contains the
+// extension NID, short name, critical flag and DER bytes.
+func (c *CRL) Extensions() []Extension {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil
+	}
+	count := native.X509_CRL_get_ext_count(c.handle.Ptr())
+	out := make([]Extension, 0, count)
+	for i := 0; i < count; i++ {
+		e := native.X509_CRL_get_ext(c.handle.Ptr(), i)
+		if e == nil {
+			continue
+		}
+		nid := native.OBJ_obj2nid(native.X509_EXTENSION_get_object(e))
+		out = append(out, Extension{
+			Nid:      nid,
+			Field:    native.OBJ_nid2sn(nid),
+			Critical: native.X509_EXTENSION_get_critical(e) != 0,
+			Data:     native.ASN1_STRING_data_bytes(native.X509_EXTENSION_get_data(e)),
+		})
 	}
 	return out
 }

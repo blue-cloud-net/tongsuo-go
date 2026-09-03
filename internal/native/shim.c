@@ -111,6 +111,19 @@ int X_X509V3_EXT_conf_nid_ctx(X509 *target, X509 *subject, X509 *issuer,
     return ok;
 }
 
+int X_X509V3_EXT_conf_nid_ctx_crl(X509_CRL *target, X509 *issuer,
+                                   int nid, const char *value)
+{
+    X509V3_CTX ctx;
+    X509V3_set_ctx(&ctx, issuer, NULL, NULL, NULL, 0);
+    X509_EXTENSION *ext = X509V3_EXT_conf_nid(NULL, &ctx, nid, value);
+    if (ext == NULL)
+        return 0;
+    int ok = X509_CRL_add_ext(target, ext, -1);
+    X509_EXTENSION_free(ext);
+    return ok;
+}
+
 void *X_X509_get_san(const X509 *x)
 {
     return X509_get_ext_d2i(x, NID_subject_alt_name, NULL, NULL);
@@ -404,6 +417,19 @@ X509_CRL *X_PEM_read_bio_X509_CRL(BIO *bp)
 int X_PEM_write_bio_X509_CRL(BIO *bp, X509_CRL *x)
 {
     return PEM_write_bio_X509_CRL(bp, x);
+}
+
+unsigned char *X_X509_CRL_get_akid_keyid(X509_CRL *crl, int *out_len)
+{
+    if (crl == NULL || out_len == NULL)
+        return NULL;
+    AUTHORITY_KEYID *akid = (AUTHORITY_KEYID *)X509_CRL_get_ext_d2i(
+        crl, NID_authority_key_identifier, NULL, NULL);
+    if (akid == NULL || akid->keyid == NULL)
+        return NULL;
+    *out_len = ASN1_STRING_length((ASN1_STRING *)akid->keyid);
+    /* ASN1_STRING_get0_data 返回 const，强制丢弃 const 以匹配 Go 端的 []byte。 */
+    return (unsigned char *)ASN1_STRING_get0_data((ASN1_STRING *)akid->keyid);
 }
 
 EVP_PKEY *X_EVP_PKEY_Q_keygen_rsa(int bits)

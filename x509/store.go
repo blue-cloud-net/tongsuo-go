@@ -80,6 +80,21 @@ func (s *Store) SetCRLCheckAll() error {
 	return s.store.SetFlags(0x8)
 }
 
+// SetFlags 通用设置存储验证标志（位或组合）。
+// 可用标志包括 native.X509VFlagCRLCheck / native.X509VFlagCRLCheckAll；
+// 标志值取自 OpenSSL 的 X509_V_FLAG_*。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// SetFlags sets verification flags on the Store as a bitwise combination.
+// Available flags include native.X509VFlagCRLCheck and
+// native.X509VFlagCRLCheckAll (bit values match OpenSSL's X509_V_FLAG_*).
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (s *Store) SetFlags(flags uint64) error {
+	return s.store.SetFlags(flags)
+}
+
 // VerifyError 表示证书链验证失败详情。
 //
 // Code 为 X509_V_ERR_* 错误码（如 10 表示 "certificate has expired"）；

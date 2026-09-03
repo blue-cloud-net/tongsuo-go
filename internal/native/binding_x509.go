@@ -255,6 +255,21 @@ func X509_get_serial_int(x unsafe.Pointer) int64 {
 	return int64(C.ASN1_INTEGER_get(ai))
 }
 
+// ASN1_INTEGER_free 释放 ASN1_INTEGER。
+//
+// ASN1_INTEGER_free releases ai. Safe on NULL.
+func ASN1_INTEGER_free(ai unsafe.Pointer) {
+	C.ASN1_INTEGER_free((*C.ASN1_INTEGER)(ai))
+}
+
+// ASN1_INTEGER_get 读取 ASN1_INTEGER 整型值（保留符号）。
+//
+// ASN1_INTEGER_get returns the integer value of ai (sign preserved).
+// Returns 0 when ai is NULL.
+func ASN1_INTEGER_get(ai unsafe.Pointer) int64 {
+	return int64(C.ASN1_INTEGER_get((*C.ASN1_INTEGER)(ai)))
+}
+
 // X509_set_issuer_name 设置签发者名字。
 //
 // X509_set_issuer_name sets the issuer name of x to n; X509_set duplicates n
@@ -512,6 +527,89 @@ func X509_REQ_get0_signature(r unsafe.Pointer) ([]byte, bool) {
 	return C.GoBytes(unsafe.Pointer(data), C.int(length)), true
 }
 
+// X509_REQ_get_signature_info 返回 CSR 签名的原始字节、签名算法 NID 与签名算法 OID（点分文本）。
+// 任一字段不可用时返回空值（nil / 0 / ""），永不返回错误。
+//
+// X509_REQ_get_signature_info returns the raw signature bytes, the
+// signature algorithm NID, and the signature algorithm OID as dotted
+// text from r. When a field is unavailable the corresponding zero
+// value (nil / 0 / "") is returned; the call never reports an error.
+func X509_REQ_get_signature_info(r unsafe.Pointer) ([]byte, int, string) {
+	var psig *C.ASN1_BIT_STRING
+	var palg *C.X509_ALGOR
+	C.X509_REQ_get0_signature((*C.X509_REQ)(r), &psig, &palg)
+
+	var sig []byte
+	if psig != nil {
+		length := C.ASN1_STRING_length((*C.ASN1_STRING)(psig))
+		data := C.ASN1_STRING_get0_data((*C.ASN1_STRING)(psig))
+		if length > 0 && data != nil {
+			sig = C.GoBytes(unsafe.Pointer(data), C.int(length))
+		}
+	}
+
+	var nid int
+	var oid string
+	if palg != nil {
+		var paobj *C.ASN1_OBJECT
+		var pptype C.int
+		var ppval unsafe.Pointer
+		C.X509_ALGOR_get0(&paobj, &pptype, &ppval, palg)
+		if paobj != nil {
+			nid = int(C.OBJ_obj2nid(paobj))
+			n := C.OBJ_obj2txt(nil, 0, paobj, C.int(1))
+			if n > 0 {
+				buf := make([]C.char, n+1)
+				C.OBJ_obj2txt(&buf[0], n+1, paobj, C.int(1))
+				oid = C.GoString(&buf[0])
+			}
+		}
+	}
+	return sig, nid, oid
+}
+
+// X509_get_signature_info 返回证书签名的原始字节、签名算法 NID 与签名算法 OID（点分文本）。
+// 任一字段不可用时返回空值（nil / 0 / ""），永不返回错误。
+//
+// X509_get_signature_info returns the raw signature bytes, the signature
+// algorithm NID, and the signature algorithm OID as dotted text (for
+// example "1.2.156.10197.1.501"). When a field is unavailable the
+// corresponding zero value (nil / 0 / "") is returned; the call never
+// reports an error.
+func X509_get_signature_info(x unsafe.Pointer) ([]byte, int, string) {
+	var psig *C.ASN1_BIT_STRING
+	var palg *C.X509_ALGOR
+	C.X509_get0_signature(&psig, &palg, (*C.X509)(x))
+
+	var sig []byte
+	if psig != nil {
+		length := C.ASN1_STRING_length((*C.ASN1_STRING)(psig))
+		data := C.ASN1_STRING_get0_data((*C.ASN1_STRING)(psig))
+		if length > 0 && data != nil {
+			sig = C.GoBytes(unsafe.Pointer(data), C.int(length))
+		}
+	}
+
+	nid := int(C.X509_get_signature_nid((*C.X509)(x)))
+
+	var oid string
+	if palg != nil {
+		var paobj *C.ASN1_OBJECT
+		var pptype C.int
+		var ppval unsafe.Pointer
+		C.X509_ALGOR_get0(&paobj, &pptype, &ppval, palg)
+		if paobj != nil {
+			n := C.OBJ_obj2txt(nil, 0, paobj, C.int(1))
+			if n > 0 {
+				buf := make([]C.char, n+1)
+				C.OBJ_obj2txt(&buf[0], n+1, paobj, C.int(1))
+				oid = C.GoString(&buf[0])
+			}
+		}
+	}
+	return sig, nid, oid
+}
+
 // X_PEM_read_bio_X509_REQ 从 BIO 读取 PEM CSR。
 //
 // X_PEM_read_bio_X509_REQ (shim) reads a PEM-encoded PKCS#10 CSR from bio.
@@ -539,6 +637,56 @@ func X509V3_EXT_conf_nid_ctx(target, subject, issuer unsafe.Pointer, nid int, va
 	defer C.free(unsafe.Pointer(cVal))
 	return C.X_X509V3_EXT_conf_nid_ctx((*C.X509)(target),
 		(*C.X509)(subject), (*C.X509)(issuer), C.int(nid), cVal) == 1
+}
+
+// X509V3_EXT_conf_nid_crl 在 CRL 上创建并追加通用扩展（无 ctx）。
+//
+// X509V3_EXT_conf_nid_crl builds a new X509_EXTENSION for nid on a CRL
+// using the OpenSSL config-format value. The extension is added in place.
+// Returns true on success.
+func X509V3_EXT_conf_nid_crl(crl unsafe.Pointer, nid int, value string) bool {
+	cVal := C.CString(value)
+	defer C.free(unsafe.Pointer(cVal))
+	ext := C.X509V3_EXT_conf_nid(nil, nil, C.int(nid), cVal)
+	if ext == nil {
+		return false
+	}
+	ok := C.X509_CRL_add_ext((*C.X509_CRL)(crl), ext, C.int(-1)) == 1
+	C.X509_EXTENSION_free(ext)
+	return ok
+}
+
+// X509_CRL_set_crl_number 设置 CRL Number 扩展（值为整型）。
+//
+// X509_CRL_set_crl_number sets the CRL Number extension to value.
+// Returns true on success.
+func X509_CRL_set_crl_number(crl unsafe.Pointer, value int64) bool {
+	ai := C.ASN1_INTEGER_new()
+	if ai == nil {
+		return false
+	}
+	defer C.ASN1_INTEGER_free(ai)
+	if C.ASN1_INTEGER_set(ai, C.long(value)) != 1 {
+		return false
+	}
+	ext := C.X509V3_EXT_i2d(C.int(NidCrlNumber), C.int(0), unsafe.Pointer(ai))
+	if ext == nil {
+		return false
+	}
+	ok := C.X509_CRL_add_ext((*C.X509_CRL)(crl), ext, C.int(-1)) == 1
+	C.X509_EXTENSION_free(ext)
+	return ok
+}
+
+// X509V3_EXT_conf_nid_ctx_crl 在 CRL 上创建并追加需要 X509V3_CTX 的扩展（CRL 的 AKID）。
+//
+// X509V3_EXT_conf_nid_ctx_crl builds an extension on a CRL target using
+// the issuer context (needed for CRL AKID). Returns true on success.
+func X509V3_EXT_conf_nid_ctx_crl(target, issuer unsafe.Pointer, nid int, value string) bool {
+	cVal := C.CString(value)
+	defer C.free(unsafe.Pointer(cVal))
+	return C.X_X509V3_EXT_conf_nid_ctx_crl((*C.X509_CRL)(target),
+		(*C.X509)(issuer), C.int(nid), cVal) == 1
 }
 
 // X509_get_version 返回证书版本（0=v1，1=v2，2=v3）。
@@ -1236,6 +1384,73 @@ func X509_CRL_free(crl unsafe.Pointer) {
 	C.X509_CRL_free((*C.X509_CRL)(crl))
 }
 
+// X509_CRL_new 创建空 CRL。
+//
+// X509_CRL_new allocates a new empty X509_CRL (v1 by default; caller may
+// upgrade to v2 via X509_CRL_set_version). Caller owns the result and
+// must release it with X509_CRL_free.
+func X509_CRL_new() unsafe.Pointer {
+	return unsafe.Pointer(C.X509_CRL_new())
+}
+
+// X509_CRL_set_version 设置 CRL 版本（0=v1，1=v2）。
+//
+// X509_CRL_set_version sets the CRL version (0 for v1, 1 for v2).
+// Returns true on success.
+func X509_CRL_set_version(crl unsafe.Pointer, version int) bool {
+	return C.X509_CRL_set_version((*C.X509_CRL)(crl), C.long(version)) == 1
+}
+
+// X509_CRL_set_issuer_name 设置 CRL 签发者名字（X509_CRL 复制其内部指针）。
+//
+// X509_CRL_set_issuer_name sets the issuer name of crl; X509_CRL duplicates
+// the X509_NAME internally so caller still owns name.
+func X509_CRL_set_issuer_name(crl, name unsafe.Pointer) bool {
+	return C.X509_CRL_set_issuer_name((*C.X509_CRL)(crl),
+		(*C.X509_NAME)(name)) == 1
+}
+
+// X509_CRL_set1_lastUpdate 设置 CRL thisUpdate 时间（unix 秒）。
+//
+// X509_CRL_set1_lastUpdate sets the thisUpdate field of crl from a unix
+// timestamp (seconds).
+func X509_CRL_set1_lastUpdate(crl unsafe.Pointer, unix int64) bool {
+	tt := C.ASN1_TIME_new()
+	if tt == nil {
+		return false
+	}
+	defer C.ASN1_TIME_free(tt)
+	if C.ASN1_TIME_set(tt, C.time_t(unix)) == nil {
+		return false
+	}
+	return C.X509_CRL_set1_lastUpdate((*C.X509_CRL)(crl), tt) == 1
+}
+
+// X509_CRL_set1_nextUpdate 设置 CRL nextUpdate 时间（unix 秒）。
+//
+// X509_CRL_set1_nextUpdate sets the nextUpdate field of crl from a unix
+// timestamp (seconds).
+func X509_CRL_set1_nextUpdate(crl unsafe.Pointer, unix int64) bool {
+	tt := C.ASN1_TIME_new()
+	if tt == nil {
+		return false
+	}
+	defer C.ASN1_TIME_free(tt)
+	if C.ASN1_TIME_set(tt, C.time_t(unix)) == nil {
+		return false
+	}
+	return C.X509_CRL_set1_nextUpdate((*C.X509_CRL)(crl), tt) == 1
+}
+
+// X509_CRL_sign 用签名密钥与摘要算法对 CRL 签名。
+//
+// X509_CRL_sign signs crl with pkey and the message digest md. Returns
+// true on success.
+func X509_CRL_sign(crl, pkey, md unsafe.Pointer) bool {
+	return C.X509_CRL_sign((*C.X509_CRL)(crl),
+		(*C.EVP_PKEY)(pkey), (*C.EVP_MD)(md)) != 0
+}
+
 // X509_CRL_get_version 返回 CRL 版本。
 //
 // X509_CRL_get_version returns the CRL version (1=v1, 2=v2).
@@ -1272,6 +1487,94 @@ func X509_CRL_get_issuer(crl unsafe.Pointer) unsafe.Pointer {
 func X509_CRL_get_REVOKED(crl unsafe.Pointer) unsafe.Pointer {
 	return unsafe.Pointer(C.X509_CRL_get_REVOKED((*C.X509_CRL)(crl)))
 }
+
+// X509_CRL_get_signature_info 返回 CRL 签名的原始字节、签名算法 NID 与签名算法 OID（点分文本）。
+// 任一字段不可用时返回空值（nil / 0 / ""），永不返回错误。
+//
+// X509_CRL_get_signature_info returns the raw signature bytes, the
+// signature algorithm NID, and the signature algorithm OID as dotted
+// text from crl. When a field is unavailable the corresponding zero
+// value (nil / 0 / "") is returned; the call never reports an error.
+func X509_CRL_get_signature_info(crl unsafe.Pointer) ([]byte, int, string) {
+	var psig *C.ASN1_BIT_STRING
+	var palg *C.X509_ALGOR
+	C.X509_CRL_get0_signature((*C.X509_CRL)(crl), &psig, &palg)
+
+	var sig []byte
+	if psig != nil {
+		length := C.ASN1_STRING_length((*C.ASN1_STRING)(psig))
+		data := C.ASN1_STRING_get0_data((*C.ASN1_STRING)(psig))
+		if length > 0 && data != nil {
+			sig = C.GoBytes(unsafe.Pointer(data), C.int(length))
+		}
+	}
+
+	var nid int
+	var oid string
+	if palg != nil {
+		var paobj *C.ASN1_OBJECT
+		var pptype C.int
+		var ppval unsafe.Pointer
+		C.X509_ALGOR_get0(&paobj, &pptype, &ppval, palg)
+		if paobj != nil {
+			nid = int(C.OBJ_obj2nid(paobj))
+			n := C.OBJ_obj2txt(nil, 0, paobj, C.int(1))
+			if n > 0 {
+				buf := make([]C.char, n+1)
+				C.OBJ_obj2txt(&buf[0], n+1, paobj, C.int(1))
+				oid = C.GoString(&buf[0])
+			}
+		}
+	}
+	return sig, nid, oid
+}
+
+// X509_CRL_get_ext_count 返回 CRL 扩展数量。
+//
+// X509_CRL_get_ext_count returns the number of extensions on crl.
+func X509_CRL_get_ext_count(crl unsafe.Pointer) int {
+	return int(C.X509_CRL_get_ext_count((*C.X509_CRL)(crl)))
+}
+
+// X509_CRL_get_ext 返回 CRL 第 i 个扩展（内部指针，勿释放）。
+//
+// X509_CRL_get_ext returns the i-th extension of crl as an internal pointer; do NOT free it.
+func X509_CRL_get_ext(crl unsafe.Pointer, i int) unsafe.Pointer {
+	return unsafe.Pointer(C.X509_CRL_get_ext((*C.X509_CRL)(crl), C.int(i)))
+}
+
+// X509_CRL_get0_authority_key_id 返回 CRL 的 AKID keyid 字节。
+// 通过 shim 函数 X_X509_CRL_get_akid_keyid 取出 AUTHORITY_KEYID.keyid 的内部指针，
+// 返回 keyid 字节的副本；无 AKID 或无 keyid 时返回 nil。
+//
+// X509_CRL_get0_authority_key_id returns a copy of the AuthorityKeyIdentifier
+// keyid bytes from crl, or nil when the AKID extension is absent or has
+// no keyid component.
+func X509_CRL_get0_authority_key_id(crl unsafe.Pointer) []byte {
+	var length C.int
+	c := C.X_X509_CRL_get_akid_keyid((*C.X509_CRL)(crl), &length)
+	if c == nil || length <= 0 {
+		return nil
+	}
+	return C.GoBytes(unsafe.Pointer(c), length)
+}
+
+// X509_CRL_get_crl_number 返回 CRL Number 扩展的 INTEGER（nil 表示无）。
+// 调用方负责通过 ASN1_INTEGER_free 释放。
+//
+// X509_CRL_get_crl_number returns the CRL Number extension as an
+// ASN1_INTEGER (nil when absent). The caller must release it with
+// ASN1_INTEGER_free.
+func X509_CRL_get_crl_number(crl unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X509_CRL_get_ext_d2i((*C.X509_CRL)(crl),
+		C.int(NidCrlNumber), nil, nil))
+}
+
+// NidCrlNumber 是 CRL Number 扩展 NID（来自 obj_mac.h：NID_crl_number = 88）。
+//
+// NidCrlNumber is the OpenSSL NID for the CRL Number extension
+// (RFC 5280 §5.2.3: NID_crl_number = 88).
+const NidCrlNumber = 88
 
 // X509_sk_X509_REVOKED_num 返回吊销条目数。
 //

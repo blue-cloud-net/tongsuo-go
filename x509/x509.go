@@ -469,6 +469,46 @@ func (c *Certificate) Verify(signerPub PublicKey) error {
 	return c.cert.Verify(signerPub.Key())
 }
 
+// SelfSigned 报告证书是否为自签（主题与签发者名字完全一致，且签名可被自身公钥验证通过）。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// SelfSigned reports whether the certificate is self-signed (subject and issuer names match exactly, and the signature verifies against the certificate's own public key).
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (c *Certificate) SelfSigned() (bool, error) {
+	if c == nil {
+		return false, fmt.Errorf("x509: nil certificate")
+	}
+	if c.SubjectText() != c.IssuerText() {
+		return false, nil
+	}
+	pub, err := c.PublicKey()
+	if err != nil {
+		return false, err
+	}
+	if err := c.Verify(pub); err != nil {
+		// 签名不通过：仍视为"主题/签发者同名"但非真正自签，返回 false 且无错误。
+		return false, nil
+	}
+	return true, nil
+}
+
+// Signature 返回证书的原始签名字节（DER 编码）；证书无效或未签名返回 nil。
+//
+// Signature returns the certificate's raw signature bytes (DER-encoded), or nil when the certificate is invalid or has no signature.
+func (c *Certificate) Signature() []byte { return c.cert.Signature() }
+
+// SignatureAlgorithm 返回证书签名算法的短名（如 "SM2-SM3"、"RSA-SHA256"、"ecdsa-with-SHA256"）；不可识别返回 ""。
+//
+// SignatureAlgorithm returns the signature algorithm short name (for example "SM2-SM3", "RSA-SHA256", or "ecdsa-with-SHA256"), or "" when the algorithm is not recognized.
+func (c *Certificate) SignatureAlgorithm() string { return c.cert.SignatureAlgorithm() }
+
+// SignatureAlgorithmOID 返回证书签名算法的 OID 点分文本（如 "1.2.156.10197.1.501"、"1.2.840.113549.1.1.11"）；不可读取返回 ""。
+//
+// SignatureAlgorithmOID returns the signature algorithm OID as a dotted string (for example "1.2.156.10197.1.501" for SM2-with-SM3 or "1.2.840.113549.1.1.11" for sha256WithRSAEncryption), or "" when the OID cannot be read.
+func (c *Certificate) SignatureAlgorithmOID() string { return c.cert.SignatureAlgorithmOID() }
+
 // PublicKey 表示可作为证书公钥的非对称密钥（SM2 / RSA / ECDSA）。
 //
 // PublicKey is the interface satisfied by asymmetric keys usable as a certificate public key (SM2 / RSA / ECDSA).

@@ -65,6 +65,10 @@ char *X_X509_NAME_oneline(const X509_NAME *n);             /* "/CN=.." 文本，
 int X_X509V3_EXT_conf_nid_ctx(X509 *target, X509 *subject, X509 *issuer,
                               int nid, const char *value);
 
+/* 同上，但 target 为 X509_CRL（CRL 的 AKID 扩展）。 */
+int X_X509V3_EXT_conf_nid_ctx_crl(X509_CRL *target, X509 *issuer,
+                                   int nid, const char *value);
+
 /* SAN（GENERAL_NAMES 栈） */
 void *X_X509_get_san(const X509 *x);                       /* GENERAL_NAMES* 或 NULL */
 void X_GENERAL_NAMES_free(void *sk);
@@ -128,6 +132,10 @@ void X_ASN1_ENUMERATED_free(void *a);
 /* CRL PEM 读写（回调固定 NULL） */
 X509_CRL *X_PEM_read_bio_X509_CRL(BIO *bp);
 int X_PEM_write_bio_X509_CRL(BIO *bp, X509_CRL *x);
+
+/* CRL AuthorityKeyIdentifier keyid 提取（内部指针，不释放）。
+ * 返回值所有权归调用者，必须通过 X_OPENSSL_free 释放；无 AKID 或无 keyid 时返回 NULL。 */
+unsigned char *X_X509_CRL_get_akid_keyid(X509_CRL *crl, int *out_len);
 
 /*
  * Phase 10：RSA / EC 密钥体系。

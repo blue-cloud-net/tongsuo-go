@@ -165,11 +165,59 @@ func (r *CertificateRequest) PublicKey() (*sm2.PublicKey, error) {
 	return sm2.PublicKeyFromPKey(k), nil
 }
 
+// Signature 返回 CSR 的原始签名字节（DER 编码）；CSR 无效或未签名返回 nil。
+//
+// Signature returns the CSR's raw signature bytes (DER-encoded), or nil when the CSR is invalid or has no signature.
+func (r *CertificateRequest) Signature() []byte { return r.req.Signature() }
+
+// SignatureAlgorithm 返回 CSR 签名算法的短名（如 "SM2-SM3"、"RSA-SHA256"、"ecdsa-with-SHA256"）；不可识别返回 ""。
+//
+// SignatureAlgorithm returns the signature algorithm short name (for example "SM2-SM3", "RSA-SHA256", or "ecdsa-with-SHA256"), or "" when the algorithm is not recognized.
+func (r *CertificateRequest) SignatureAlgorithm() string { return r.req.SignatureAlgorithm() }
+
+// SignatureAlgorithmOID 返回 CSR 签名算法的 OID 点分文本（如 "1.2.156.10197.1.501"、"1.2.840.113549.1.1.11"）；不可读取返回 ""。
+//
+// SignatureAlgorithmOID returns the signature algorithm OID as a dotted string (for example "1.2.156.10197.1.501" for SM2-with-SM3 or "1.2.840.113549.1.1.11" for sha256WithRSAEncryption), or "" when the OID cannot be read.
+func (r *CertificateRequest) SignatureAlgorithmOID() string { return r.req.SignatureAlgorithmOID() }
+
 // SubjectName 返回 CSR 主题的完整名字（含全部 RDN 条目）。
 //
 // SubjectName returns the full CSR subject name containing all RDN entries; inspect it with Entries, Get, or String.
 func (r *CertificateRequest) SubjectName() *Name {
 	return &Name{name: r.req.SubjectName()}
+}
+
+// SubjectEntries 返回 CSR 主题的完整 RDN 条目。
+//
+// SubjectEntries returns every RDN entry of the CSR subject in the order they appear.
+func (r *CertificateRequest) SubjectEntries() []NameEntry {
+	n := r.req.SubjectName()
+	if n == nil {
+		return nil
+	}
+	return convertEntries(n.Entries())
+}
+
+// SubjectText 返回 CSR 主题完整 RDN 单行文本。
+//
+// SubjectText returns the CSR subject's full RDN sequence as a single-line string.
+func (r *CertificateRequest) SubjectText() string {
+	n := r.req.SubjectName()
+	if n == nil {
+		return ""
+	}
+	return n.String()
+}
+
+// PublicKeyPKey 返回 CSR 公钥的底层核心密钥（适用任意算法，调用方负责 Close）。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// PublicKeyPKey returns the CSR public key as the underlying *core.PKey, which works for any algorithm. The caller is responsible for closing it.
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (r *CertificateRequest) PublicKeyPKey() (*core.PKey, error) {
+	return r.req.PublicKey()
 }
 
 // SetChallengePassword 设置 CSR 挑战密码（PKCS#9 challengePassword 属性，须在 Sign 之前调用）。
