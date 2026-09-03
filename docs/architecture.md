@@ -73,7 +73,8 @@ API 层（crypto/）              ← 对外高层 API，仅此层可被外部 i
   - **算法引擎层**：`crypto/aes`、`crypto/sm2`、`crypto/sm3`、`crypto/sm4`、
     `crypto/hmac`、`crypto/rand`、`crypto/md5`、`crypto/sha1/256/512`、`crypto/rsa`、
     `crypto/ecdsa`
-  - **组合层（顶级）**：`x509/`（证书对象模型）、`asn1/`（DER viewer）、
+  - **组合层（顶级）**：`x509/`（证书对象模型）、`key/`（密钥统合抽象：
+    对称/非对称接口、PEM 解析、生命周期、KDF）、`asn1/`（DER viewer）、
     `pkcs/pkcs7/`、`pkcs/pkcs12/`、`ocsp/`（协议）、`tls/`（协议）、
     `jwk/`（格式）、`xml/rsa/`（格式族）
 - 每个算法子包**自带 `*_test.go`** 测试文件（见 [testing-guide.md](testing-guide.md)）
@@ -114,6 +115,15 @@ tongsuo-go/
 ├── crypto/                    # 【算法引擎层】仅算法子包
 │   ├── aes/  ecdsa/  hmac/  md5/  rand/  rsa/
 │   ├── sha1/  sha256/  sha512/  sm2/  sm3/  sm4/
+├── key/                       # 【密钥统合抽象】跨算法统一密钥接口/解析/生命周期/KDF
+│   ├── key.go                 # Algorithm / Key 接口 / PEM / 错误 / Close
+│   ├── symmetric.go           # SymmetricKey / AESKey / SM4Key
+│   ├── generate.go            # GenerateSymmetricKey / ParseSymmetricKey
+│   ├── asymmetric.go          # Asymmetric(Private/Public)Key / PrivateKey / PublicKey
+│   ├── asym_generate.go       # GenerateRSAKey / GenerateSM2Key / GenerateECKey
+│   ├── parse.go               # Load*PEM（PKCS#8 / PKCS#1 / SPKI / 加密）
+│   ├── handle.go  store.go    # Handle 元数据 / Store / MemoryStore（轮转）
+│   └── kdf.go                 # Hash / HKDF / PBKDF2 / Argon2ID
 ├── x509/                      # 【协议】证书核心
 │   ├── x509.go                # Certificate / Extension / PublicKey / PrivateKey / CreateCertificate
 │   ├── name.go                # Name / NameEntry / NewName
@@ -141,12 +151,13 @@ tongsuo-go/
 │   │   ├── binding_bio.go     # BIO 系列
 │   │   ├── binding_pem.go     # PEM / DER 系列
 │   │   ├── binding_rand.go    # RAND_* 系列
+│   │   ├── binding_kdf.go     # EVP_KDF（HKDF / PBKDF2 / 可用性探测）
 │   │   └── binding_version.go # OpenSSL_version / Tongsuo_version_num
 │   └── core/                  # 【核心层】句柄包装 + 生命周期 + 错误
 │       ├── handle.go          # 句柄基类：owned 所有权 + Close() + SetFinalizer
 │       ├── error.go           # OpError（携带 ERR_get_error 错误码）
 │       ├── version.go         # 版本查询
-│       ├── digest.go  cipher.go  pkey.go  bio.go …
+│       ├── digest.go  cipher.go  pkey.go  kdf.go  bio.go …
 │       └── testutil/          # 测试共享工具（openssl CLI 封装、向量加载）
 │
 ├── examples/                  # 示例（对应 C# Demo/）
@@ -155,8 +166,11 @@ tongsuo-go/
 ```
 
 > **内部实现隐藏**：`internal/` 目录使绑定层与核心层对库外部不可见，公开 API 由
-> `crypto/*` 与顶级 `asn1/`、`pkcs/*`、`ocsp/`、`tls/`、`jwk/`、`xml/*` 共同构成。
+> `crypto/*` 与顶级 `key/`、`asn1/`、`pkcs/*`、`ocsp/`、`tls/`、`jwk/`、`xml/*` 共同构成。
 > `crypto/` 仅限算法；非算法的"组合层"包独立顶级化。
+> `key/` 为顶层密钥统合抽象：只依赖 `internal/core` 与 `crypto/rand`，不反向依赖任何
+> 算法包；其对称/非对称类型与 `crypto/{aes,sm4,rsa,sm2,ecdsa}` 并存，底层均持
+> `*core.PKey`（对称持原始字节），可经各自的 `Key()` 互转。
 
 ---
 

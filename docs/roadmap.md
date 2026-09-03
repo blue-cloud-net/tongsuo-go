@@ -493,3 +493,44 @@ tongsuo-go/
 - 至此 Phase 1–14 全部完成（v0.1.0 功能规划 + 包结构重组 + 发布收尾落地）
 
 ---
+
+## v0.2.0（规划中）
+
+### Phase 15 — 统合密钥抽象 `key` 包（进行中）
+
+**目标**：在不破坏既有算法包 API 的前提下，新增顶层 `key/` 包提供算法无关的统合密钥抽象
+（对称 / 非对称接口）、格式解析、密钥生命周期管理与 KDF 派生。`key` 仅依赖
+`internal/core` 与 `crypto/rand`，算法包保持独立。
+
+- [x] **对称密钥抽象**：`Key` / `SymmetricKey` 接口 + `AESKey` / `SM4Key` 包装
+  （`Bytes` / `Size` / `Marshal`，自定义 PEM 带 Algorithm 头）；`GenerateSymmetricKey` /
+  `ParseSymmetricKey`
+- [x] **非对称接口与包装**：`AsymmetricKey` / `AsymmetricPrivateKey` /
+  `AsymmetricPublicKey` 厚接口 + `key.PrivateKey` / `key.PublicKey`（持 `*core.PKey`，与
+  `crypto/{rsa,sm2,ecdsa}` 并存、经 `Key()` 互转）；生成 `GenerateRSAKey` /
+  `GenerateSM2Key` / `GenerateECKey`；PEM 解析 `LoadPrivateKeyPEM`（PKCS#8→PKCS#1 回退）/ `LoadPrivateKeyPEMEncrypted` /
+  `LoadPublicKeyPEM` / `ParsePEM`
+- [x] **密钥生命周期**：`Handle`（ID / Alias / Version / Generation / CreatedAt，JSON
+  序列化）+ `Store` 接口 + `MemoryStore`（Put / Get / Delete / List / Rotate / History，
+  线程安全）
+- [x] **KDF（EVP_KDF 走铜锁）**：`shim` 新增 `X_EVP_KDF_HKDF` / `X_EVP_KDF_PBKDF2` /
+  `X_EVP_KDF_available`；核心层 `HKDF` / `PBKDF2`；key 层 `Hash` + `HKDF` / `PBKDF2` /
+  `Argon2ID`。RFC 5869（HKDF-SHA-256）与 RFC 6070（PBKDF2-SHA-1）官方向量通过
+- [x] **消费方收口（非破坏方式）**：`key` 新增 `CoreKey` 窄载体接口（`Key() *core.PKey`），
+  并被 `AsymmetricKey` / `AsymmetricPrivateKey` / `AsymmetricPublicKey` 内嵌——统合密钥
+  **接口值**即可直接传给 x509（窄接口）/ pkcs12 / jwk，无需类型断言；`jwk` 新增
+  `MarshalKey(key.CoreKey)`（不破坏既有 `jwk.Marshal`）；`pkcs12.PrivateKey` 别名改指
+  `key.CoreKey`（同方法集、源码兼容）；`pkcs12.Bundle.PrivateKey` 维持最通用的底层
+  `*core.PKey`（改接口会削弱 Close/Equal 可用性）。端到端集成测试
+  `key/integration_test.go` 证明统合密钥贯穿 x509 建证 → pkcs12 打包/解析 → jwk 互转，
+  消费方 API 零改动。
+- [ ] **Argon2id 派生接线**：当前 Tongsuo 构建缺 ARGON2ID provider，返回 `ErrUnsupported`；
+  待 provider 可用后补充（scrypt 同理可按需后补）
+- [ ] **HSM / ENGINE 暴露**：`key.LoadKeyFromEngine` + `examples/hsm`
+
+**设计要点**：`key` 层只依赖 `internal/core` + `crypto/rand`；"算法包 import key 实现接口"的
+路线因既有 `Public() *<alg>.PublicKey` 具体返回类型冲突被否决，改用 **key 自持包装类型**
+（方案 A）——算法包保持零改动；`x509` 窄接口 `interface{ Key() *core.PKey }` 已被 key
+类型天然满足，证书 API 零改动即可使用统合密钥。
+
+---
