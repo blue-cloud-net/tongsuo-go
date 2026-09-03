@@ -25,9 +25,8 @@ permissions:
   contents: write   # 创建 release 需要写权限
 
 env:
-  TONGSUO_REPO: OpenTongsuo/Tongsuo
+  TONGSUO_REPO: Tongsuo-Project/Tongsuo
   TONGSUO_REF: master
-  TONGSUO_PREFIX: ${{ github.workspace }}/.tongsuo-install
 
 concurrency:
   group: release-${{ github.ref }}
@@ -47,24 +46,25 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         go-version: ["1.21", "1.23"]
     env:
-      LD_LIBRARY_PATH: ${{ env.TONGSUO_PREFIX }}/lib
-      DYLD_LIBRARY_PATH: ${{ env.TONGSUO_PREFIX }}/lib
-      CGO_CFLAGS: -I${{ env.TONGSUO_PREFIX }}/include -Wno-deprecated-declarations
-      CGO_LDFLAGS: -L${{ env.TONGSUO_PREFIX }}/lib
-      TONGSUO_HOME: ${{ env.TONGSUO_PREFIX }}
+      LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
+      DYLD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
+      CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
+      CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
+      TONGSUO_HOME: ${{ github.workspace }}/.tongsuo-install
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
+          cache-dependency-path: go.mod
 
       - name: Cache Tongsuo
         id: cache-tongsuo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
-          path: ${{ env.TONGSUO_PREFIX }}
+          path: ${{ github.workspace }}/.tongsuo-install
           key: tongsuo-${{ runner.os }}-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/release.yml') }}
           restore-keys: |
             tongsuo-${{ runner.os }}-${{ env.TONGSUO_REF }}-
@@ -77,17 +77,20 @@ jobs:
           git clone --depth 1 --branch "${{ env.TONGSUO_REF }}" \
             "https://github.com/${{ env.TONGSUO_REPO }}.git" tongsuo
           cd tongsuo
-          ./config --prefix=${{ env.TONGSUO_PREFIX }} \
-                   --libdir=${{ env.TONGSUO_PREFIX }}/lib \
-                   enable-ntls enable-export-sm4 enable-ssl-trace no-shared
+          ./config --prefix=${{ github.workspace }}/.tongsuo-install \
+                   --libdir=${{ github.workspace }}/.tongsuo-install/lib \
+                   enable-ntls enable-trace no-shared
           make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
           make install_sw
 
+      # GitHub Actions hosted runner 默认以 `runner` 用户运行（非 root），
+      # 写入 /etc 需要 sudo；runner 用户已具备免密 sudo 权限。
       - name: Configure dynamic linker (Linux)
         if: runner.os == 'Linux'
         run: |
-          echo "${{ env.TONGSUO_PREFIX }}/lib" > /etc/ld.so.conf.d/tongsuo.conf
-          ldconfig
+          echo "${{ github.workspace }}/.tongsuo-install/lib" \
+            | sudo tee /etc/ld.so.conf.d/tongsuo.conf > /dev/null
+          sudo ldconfig
 
       - name: go test
         run: go test -count=1 ./...
@@ -117,19 +120,20 @@ jobs:
             goos: darwin
             goarch: arm64
     env:
-      LD_LIBRARY_PATH: ${{ env.TONGSUO_PREFIX }}/lib
-      CGO_CFLAGS: -I${{ env.TONGSUO_PREFIX }}/include -Wno-deprecated-declarations
-      CGO_LDFLAGS: -L${{ env.TONGSUO_PREFIX }}/lib
+      LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
+      CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
+      CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
       CGO_ENABLED: "1"
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.23"
           cache: true
+          cache-dependency-path: go.mod
 
       # Linux 交叉编译到其他 arch 需要 C 交叉工具链
       - name: Install cross compilers (non-native arch)
@@ -168,7 +172,7 @@ jobs:
           ls -la dist/
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: example-${{ matrix.target }}
           path: dist/sm2-${{ matrix.target }}
@@ -185,7 +189,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: artifacts
 

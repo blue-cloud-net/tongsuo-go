@@ -28,13 +28,17 @@
 ### 2.1 Job 结构
 
 ```
-lint ──► test (ubuntu/macos × Go 1.21/1.23)
+lint ──► test (ubuntu × Go 1.21/1.23)
 ```
 
 | Job | Runner | 关键步骤 |
 |-----|--------|----------|
-| `lint` | ubuntu-latest | `go vet ./...` + `golangci-lint-action` |
-| `test` | ubuntu-latest × macos-latest × Go 1.21 / 1.23 | 编译 Tongsuo（cache 复用）→ 配置动态链接 → `go build ./...` → `go build -tags static ./...` → `go test -count=1 ./...` |
+| `lint` | ubuntu-latest | `go vet ./...` |
+| `test` | ubuntu-latest × Go 1.21 / 1.23 | 编译 Tongsuo（cache 复用）→ 配置动态链接 → `go build ./...` → `go build -tags static ./...` → `go test -count=1 ./...` |
+
+> ⚠️ **macOS runner 暂时下线**。当前 Tongsuo 的 cgo 绑定在 darwin 上的 toolchain
+> 与 Build-Options 仍有未解决问题（cgo 链接器、.pc 文件等），先稳定 Linux。
+> 待 cgo/Platform 支持完善后再加回 `macos-latest`。
 
 ### 2.2 Tongsuo 编译缓存
 
@@ -65,14 +69,15 @@ make install_sw
 
 ```yaml
 LD_LIBRARY_PATH: ${TONGSUO_PREFIX}/lib           # Linux
-DYLD_LIBRARY_PATH: ${TONGSUO_PREFIX}/lib         # macOS
 CGO_CFLAGS: -I${TONGSUO_PREFIX}/include -Wno-deprecated-declarations
 CGO_LDFLAGS: -L${TONGSUO_PREFIX}/lib
 TONGSUO_HOME: ${TONGSUO_PREFIX}
 ```
 
-- Linux runner 默认 root，写入 `/etc/ld.so.conf.d/tongsuo.conf` + `ldconfig` 生效
-- macOS 通过 `DYLD_LIBRARY_PATH` 让动态链接器找到 Tongsuo
+- Linux runner 默认以 `runner` 用户运行（非 root），需通过 `sudo tee` 写入
+  `/etc/ld.so.conf.d/tongsuo.conf` + `sudo ldconfig` 生效
+- macOS 暂时未纳入 CI（见 §2.1 表格下注）；本地在 mac 上调试时可手动用
+  `DYLD_LIBRARY_PATH` 与 `CGO_*` 等价变量，但官方流水线不再跑 darwin。
 
 ### 2.4 覆盖率（可选）
 
@@ -104,7 +109,7 @@ git push origin v0.1.0
 ### 3.2 流程
 
 ```
-test (ubuntu/macos × Go 1.21/1.23)
+test (ubuntu × Go 1.21/1.23, release.yml 仍保留 macos-latest)
    │
    ▼
 build (linux/darwin × amd64/arm64) ──► release
