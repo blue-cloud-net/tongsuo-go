@@ -496,3 +496,98 @@ int X_OCSP_basic_verify(OCSP_BASICRESP *bs, void *certs, X509_STORE *st,
 {
     return OCSP_basic_verify(bs, (STACK_OF(X509) *)certs, st, flags);
 }
+
+/*
+ * X_EVP_KDF_HKDF：一次性 HKDF（RFC 5869）派生。
+ * mode 取 EVP_KDF_HKDF_MODE_*（0=extract-and-expand）。key/salt/info 为空时
+ * 对应参数不设置（extract-and-expand 缺 salt 视为全零盐）。
+ */
+int X_EVP_KDF_HKDF(const char *digest, int mode,
+                   const unsigned char *key, size_t key_len,
+                   const unsigned char *salt, size_t salt_len,
+                   const unsigned char *info, size_t info_len,
+                   unsigned char *out, size_t out_len)
+{
+    EVP_KDF *kdf = NULL;
+    EVP_KDF_CTX *ctx = NULL;
+    OSSL_PARAM params[6];
+    int idx = 0;
+    int ok = 0;
+
+    kdf = EVP_KDF_fetch(NULL, "HKDF", NULL);
+    if (kdf == NULL)
+        goto end;
+    ctx = EVP_KDF_CTX_new(kdf);
+    if (ctx == NULL)
+        goto end;
+    if (digest != NULL)
+        params[idx++] = OSSL_PARAM_construct_utf8_string(
+            OSSL_KDF_PARAM_DIGEST, (char *)digest, 0);
+    params[idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_MODE, &mode);
+    if (key != NULL)
+        params[idx++] = OSSL_PARAM_construct_octet_string(
+            OSSL_KDF_PARAM_KEY, (void *)key, key_len);
+    if (salt != NULL)
+        params[idx++] = OSSL_PARAM_construct_octet_string(
+            OSSL_KDF_PARAM_SALT, (void *)salt, salt_len);
+    if (info != NULL)
+        params[idx++] = OSSL_PARAM_construct_octet_string(
+            OSSL_KDF_PARAM_INFO, (void *)info, info_len);
+    params[idx] = OSSL_PARAM_construct_end();
+    ok = EVP_KDF_derive(ctx, out, out_len, params) == 1;
+end:
+    EVP_KDF_CTX_free(ctx);
+    EVP_KDF_free(kdf);
+    return ok;
+}
+
+/*
+ * X_EVP_KDF_PBKDF2：一次性 PBKDF2（RFC 8018）派生。
+ * iter 为迭代次数；pass 为空时参数不设置（provider 侧将报错）。
+ */
+int X_EVP_KDF_PBKDF2(const char *digest,
+                     const unsigned char *pass, size_t pass_len,
+                     const unsigned char *salt, size_t salt_len,
+                     int iter,
+                     unsigned char *out, size_t out_len)
+{
+    EVP_KDF *kdf = NULL;
+    EVP_KDF_CTX *ctx = NULL;
+    OSSL_PARAM params[5];
+    int idx = 0;
+    int ok = 0;
+
+    kdf = EVP_KDF_fetch(NULL, "PBKDF2", NULL);
+    if (kdf == NULL)
+        goto end;
+    ctx = EVP_KDF_CTX_new(kdf);
+    if (ctx == NULL)
+        goto end;
+    if (digest != NULL)
+        params[idx++] = OSSL_PARAM_construct_utf8_string(
+            OSSL_KDF_PARAM_DIGEST, (char *)digest, 0);
+    if (pass != NULL)
+        params[idx++] = OSSL_PARAM_construct_octet_string(
+            OSSL_KDF_PARAM_PASSWORD, (void *)pass, pass_len);
+    if (salt != NULL)
+        params[idx++] = OSSL_PARAM_construct_octet_string(
+            OSSL_KDF_PARAM_SALT, (void *)salt, salt_len);
+    params[idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_ITER, &iter);
+    params[idx] = OSSL_PARAM_construct_end();
+    ok = EVP_KDF_derive(ctx, out, out_len, params) == 1;
+end:
+    EVP_KDF_CTX_free(ctx);
+    EVP_KDF_free(kdf);
+    return ok;
+}
+
+int X_EVP_KDF_available(const char *algorithm)
+{
+    EVP_KDF *kdf = EVP_KDF_fetch(NULL, algorithm, NULL);
+    if (kdf == NULL) {
+        ERR_clear_error();
+        return 0;
+    }
+    EVP_KDF_free(kdf);
+    return 1;
+}

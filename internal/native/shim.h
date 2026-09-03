@@ -14,6 +14,8 @@
 #include <openssl/pkcs12.h>
 #include <openssl/pkcs7.h>
 #include <openssl/ocsp.h>
+#include <openssl/kdf.h>
+#include <openssl/core_names.h>
 
 /*
  * X_EVP_Digest：一次性摘要。EVP_Digest 在部分 OpenSSL 版本中为可变参数宏，
@@ -153,5 +155,24 @@ void *X_PKCS7_get0_certificates(PKCS7 *p7); /* STACK_OF(X509)* 内部指针，�
 /* Phase 12：OCSP 响应签名验证（STACK_OF(X509) 以 void* 传递）。 */
 int X_OCSP_basic_verify(OCSP_BASICRESP *bs, void *certs, X509_STORE *st,
                         unsigned long flags);
+
+/*
+ * Phase 13：KDF（EVP_KDF）。
+ * HKDF / PBKDF2 的 OSSL_PARAM 数组在 C 侧构造，规避 cgo 对 OSSL_PARAM 结构体
+ * 数组的限制；digest 以算法名（如 "SHA256"）传入，由 provider 解析。
+ * 返回值遵循 OpenSSL 惯例：成功 1，失败 0（错误入队列，经 ERR_get_error 读取）。
+ */
+int X_EVP_KDF_HKDF(const char *digest, int mode,
+                   const unsigned char *key, size_t key_len,
+                   const unsigned char *salt, size_t salt_len,
+                   const unsigned char *info, size_t info_len,
+                   unsigned char *out, size_t out_len);
+int X_EVP_KDF_PBKDF2(const char *digest,
+                     const unsigned char *pass, size_t pass_len,
+                     const unsigned char *salt, size_t salt_len,
+                     int iter,
+                     unsigned char *out, size_t out_len);
+/* 探测某 KDF 算法是否可用（成功返回 1 并清空 fetch 失败入队的错误）。 */
+int X_EVP_KDF_available(const char *algorithm);
 
 #endif /* TONGSUO_GO_SHIM_H */
