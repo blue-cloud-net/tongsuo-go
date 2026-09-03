@@ -11,20 +11,34 @@ package pkcs12
 import (
 	"fmt"
 
-	"github.com/blue-cloud-net/tongsuo-go/x509"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
+	"github.com/blue-cloud-net/tongsuo-go/key"
+	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
-// PrivateKey 表示可打包进 PKCS#12 的私钥（sm2 / rsa / ecdsa 的 PrivateKey 均实现）。
+// PrivateKey 表示可打包进 PKCS#12 的私钥（sm2 / rsa / ecdsa 私钥与
+// key.PrivateKey 均实现）。
+//
+// 本类型是 key.CoreKey 的别名：任一持底层 core.PKey 的私钥类型（含统合密钥
+// key.PrivateKey）都可直接传给 Pack，无需先取出底层句柄。
 //
 // PrivateKey is the private key that can be packed into a PKCS#12 container;
-// the PrivateKey types of sm2 / rsa / ecdsa all satisfy it.
-type PrivateKey = x509.PrivateKey
+// the private key types of sm2 / rsa / ecdsa and key.PrivateKey all satisfy it.
+//
+// It is an alias of key.CoreKey: any private-key type exposing an underlying
+// core.PKey (including the unified key.PrivateKey) can be passed to Pack
+// directly, without extracting the underlying handle first.
+type PrivateKey = key.CoreKey
 
 // Bundle 表示解析后的 PKCS#12 内容。
 //
+// PrivateKey 为最通用的底层 core.PKey 句柄（可直接 Close / Equal / 签名，或经
+// key.LoadPrivateKeyPEM 重新包装为统合密钥类型）。
+//
 // Bundle is the parsed content of a PKCS#12 container; PrivateKey must be
-// Closed by the caller.
+// Closed by the caller. It is the raw core.PKey handle — the most general
+// form — usable directly for Close / Equal / signing, or re-wrapped into a
+// unified key type via key.LoadPrivateKeyPEM.
 type Bundle struct {
 	PrivateKey  *core.PKey          // 私钥（调用方负责 Close）
 	Certificate *x509.Certificate   // 主证书

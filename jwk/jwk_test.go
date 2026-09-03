@@ -5,7 +5,42 @@ import (
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/ecdsa"
 	"github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
+	"github.com/blue-cloud-net/tongsuo-go/key"
 )
+
+// TestMarshalKey 验证 MarshalKey 同时接受算法包密钥与统合 key.PrivateKey。
+//
+// TestMarshalKey verifies MarshalKey accepts both algorithm-package keys and
+// the unified key.PrivateKey.
+func TestMarshalKey(t *testing.T) {
+	rsaPriv, err := rsa.GenerateKey(2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k1, err := MarshalKey(rsaPriv)
+	if err != nil {
+		t.Fatalf("MarshalKey(*rsa.PrivateKey): %v", err)
+	}
+	if k1.Kty != "RSA" || !k1.IsPrivate() {
+		t.Fatalf("unexpected RSA jwk: %+v", k1)
+	}
+
+	uPriv, err := key.GenerateRSAKey(2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k2, err := MarshalKey(uPriv)
+	if err != nil {
+		t.Fatalf("MarshalKey(key.PrivateKey): %v", err)
+	}
+	if k2.Kty != "RSA" || !k2.IsPrivate() {
+		t.Fatalf("unexpected unified RSA jwk: %+v", k2)
+	}
+
+	if _, err := MarshalKey(nil); err == nil {
+		t.Error("MarshalKey(nil): want error")
+	}
+}
 
 // TestRSA 验证 RSA JWK ↔ PEM 往返。
 func TestRSA(t *testing.T) {

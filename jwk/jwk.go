@@ -22,6 +22,7 @@ import (
 	"math/big"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
+	"github.com/blue-cloud-net/tongsuo-go/key"
 )
 
 // Key 表示一个 JWK 密钥。
@@ -94,6 +95,22 @@ func Marshal(key *core.PKey) (*Key, error) {
 	default:
 		return nil, fmt.Errorf("jwk: unsupported key type %q", p.Type)
 	}
+}
+
+// MarshalKey 将任意持底层核心句柄的密钥导出为 JWK。
+// k 接受 key.PrivateKey / key.PublicKey 或 crypto/{rsa,sm2,ecdsa} 的私钥/公钥
+// 类型（均实现 key.CoreKey）；等价于 Marshal(k.Key())。公钥 JWK 不含私钥材料。
+//
+// MarshalKey converts any key exposing its underlying core handle into a JWK.
+// k may be a key.PrivateKey / key.PublicKey or one of the
+// crypto/{rsa,sm2,ecdsa} private/public key types (all implement
+// key.CoreKey); it is equivalent to Marshal(k.Key()). Public-key JWKs carry
+// no private material.
+func MarshalKey(k key.CoreKey) (*Key, error) {
+	if k == nil || k.Key() == nil {
+		return nil, fmt.Errorf("jwk: nil key")
+	}
+	return Marshal(k.Key())
 }
 
 // Parse 解析 JWK JSON。
