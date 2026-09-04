@@ -1494,3 +1494,34 @@ func X509_REVOKED_crl_reason(rev unsafe.Pointer) int {
 	defer C.X_ASN1_ENUMERATED_free(en)
 	return int(C.ASN1_ENUMERATED_get((*C.ASN1_ENUMERATED)(en)))
 }
+
+// X509_sign_ctx 用已初始化的 EVP_MD_CTX 对证书签名（支持 EdDSA 等"无摘要"算法）。
+//
+// ctx 必须已通过 EVP_DigestSignInit 注入了签名密钥（md 传 NULL、e 传 NULL）。
+// 返回签名长度（>0 成功）；非 EdDSA 算法仍推荐使用 X509_sign。
+//
+// X509_sign_ctx signs x using the already-initialized EVP_MD_CTX ctx.
+// ctx must already be set up via EVP_DigestSignInit with md=NULL, e=NULL
+// and the signing key. Returns the signature length (>0 on success);
+// for non-EdDSA algorithms prefer the X509_sign entry point.
+func X509_sign_ctx(x, ctx unsafe.Pointer) int {
+	return int(C.X509_sign_ctx((*C.X509)(x), (*C.EVP_MD_CTX)(ctx)))
+}
+
+// X509_REQ_sign_ctx 用 EVP_MD_CTX 对 CSR 签名（EdDSA 兼容）。
+//
+// X509_REQ_sign_ctx signs r using the already-initialized EVP_MD_CTX
+// ctx; semantically identical to X509_REQ_sign but takes an MD_CTX for
+// digest-less algorithms such as Ed25519 / Ed448.
+func X509_REQ_sign_ctx(r, ctx unsafe.Pointer) int {
+	return int(C.X509_REQ_sign_ctx((*C.X509_REQ)(r), (*C.EVP_MD_CTX)(ctx)))
+}
+
+// X509_CRL_sign_ctx 用 EVP_MD_CTX 对 CRL 签名（EdDSA 兼容）。
+//
+// X509_CRL_sign_ctx signs crl using the already-initialized EVP_MD_CTX
+// ctx; semantically identical to X509_CRL_sign but takes an MD_CTX for
+// digest-less algorithms such as Ed25519 / Ed448.
+func X509_CRL_sign_ctx(crl, ctx unsafe.Pointer) int {
+	return int(C.X509_CRL_sign_ctx((*C.X509_CRL)(crl), (*C.EVP_MD_CTX)(ctx)))
+}

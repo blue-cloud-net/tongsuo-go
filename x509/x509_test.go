@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/ecdsa"
+	"github.com/blue-cloud-net/tongsuo-go/crypto/ed25519"
+	"github.com/blue-cloud-net/tongsuo-go/crypto/ed448"
 	"github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
 	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
@@ -1611,5 +1613,248 @@ func TestCRLVerify(t *testing.T) {
 	}
 	if err := crl.Verify(wrongCert); err == nil {
 		t.Fatal("CRL.Verify with wrong key should fail")
+	}
+}
+
+// ----- Ed25519 / Ed448 自签证书与 CSR 测试 -----
+
+// TestCreateCertificateEd25519 验证 Ed25519 密钥可签发/验证证书（自签 + PEM 往返）。
+//
+// TestCreateCertificateEd25519 verifies Ed25519 self-signed certificate
+// creation, signature info, PEM round-trip and verification.
+func TestCreateCertificateEd25519(t *testing.T) {
+	priv, err := ed25519.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	subject := NewName().Add("CN", "ed25519.example.com")
+	cert, err := CreateCertificate(subject, subject, 40,
+		now.Add(-time.Hour), now.Add(365*24*time.Hour), asX509PubKey(priv.Key()), asX509PrivKey(priv.Key()))
+	if err != nil {
+		t.Fatalf("CreateCertificate Ed25519: %v", err)
+	}
+	if cert.CertificateType() != "ED25519" {
+		t.Fatalf("CertificateType = %q, want ED25519", cert.CertificateType())
+	}
+	if err := cert.Verify(asX509PubKey(priv.Key())); err != nil {
+		t.Fatalf("Ed25519 self-verify failed: %v", err)
+	}
+	if len(cert.Signature()) != 64 {
+		t.Fatalf("Ed25519 cert signature length = %d, want 64", len(cert.Signature()))
+	}
+	if cert.SignatureAlgorithm() != "ED25519" {
+		t.Fatalf("SignatureAlgorithm = %q, want ED25519", cert.SignatureAlgorithm())
+	}
+	if cert.SignatureAlgorithmOID() != "1.3.101.112" {
+		t.Fatalf("SignatureAlgorithmOID = %q, want 1.3.101.112", cert.SignatureAlgorithmOID())
+	}
+
+	// PEM 往返
+	pem, err := cert.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCertificatePEM(pem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loaded.Verify(asX509PubKey(priv.Key())); err != nil {
+		t.Fatal("loaded Ed25519 cert verify failed")
+	}
+	pk, err := loaded.PublicKeyPKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pk.Close()
+	if pk.Algorithm() != "ED25519" {
+		t.Fatalf("loaded pubkey algorithm = %q, want ED25519", pk.Algorithm())
+	}
+}
+
+// TestCreateCertificateEd448 验证 Ed448 密钥可签发/验证证书。
+func TestCreateCertificateEd448(t *testing.T) {
+	priv, err := ed448.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	subject := NewName().Add("CN", "ed448.example.com")
+	cert, err := CreateCertificate(subject, subject, 41,
+		now.Add(-time.Hour), now.Add(365*24*time.Hour), asX509PubKey(priv.Key()), asX509PrivKey(priv.Key()))
+	if err != nil {
+		t.Fatalf("CreateCertificate Ed448: %v", err)
+	}
+	if cert.CertificateType() != "ED448" {
+		t.Fatalf("CertificateType = %q, want ED448", cert.CertificateType())
+	}
+	if err := cert.Verify(asX509PubKey(priv.Key())); err != nil {
+		t.Fatalf("Ed448 self-verify failed: %v", err)
+	}
+	if len(cert.Signature()) != 114 {
+		t.Fatalf("Ed448 cert signature length = %d, want 114", len(cert.Signature()))
+	}
+	if cert.SignatureAlgorithm() != "ED448" {
+		t.Fatalf("SignatureAlgorithm = %q, want ED448", cert.SignatureAlgorithm())
+	}
+	if cert.SignatureAlgorithmOID() != "1.3.101.113" {
+		t.Fatalf("SignatureAlgorithmOID = %q, want 1.3.101.113", cert.SignatureAlgorithmOID())
+	}
+
+	pem, err := cert.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCertificatePEM(pem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loaded.Verify(asX509PubKey(priv.Key())); err != nil {
+		t.Fatal("loaded Ed448 cert verify failed")
+	}
+}
+
+// TestCSREd25519 验证 Ed25519 密钥可生成 CSR 并验签。
+func TestCSREd25519(t *testing.T) {
+	priv, err := ed25519.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := NewCertificateRequest(NewName().Add("CN", "csr-ed25519.example.com"),
+		asX509PubKey(priv.Key()), asX509PrivKey(priv.Key()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := req.Verify(); err != nil {
+		t.Fatalf("CSR Verify failed: %v", err)
+	}
+	if len(req.Signature()) != 64 {
+		t.Fatalf("CSR signature length = %d, want 64", len(req.Signature()))
+	}
+	if req.SignatureAlgorithm() != "ED25519" {
+		t.Fatalf("SignatureAlgorithm = %q, want ED25519", req.SignatureAlgorithm())
+	}
+	if req.SignatureAlgorithmOID() != "1.3.101.112" {
+		t.Fatalf("OID = %q, want 1.3.101.112", req.SignatureAlgorithmOID())
+	}
+
+	pem, err := req.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCertificateRequestPEM(pem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loaded.Verify(); err != nil {
+		t.Fatal("loaded CSR Verify failed")
+	}
+}
+
+// TestCSREd448 验证 Ed448 密钥可生成 CSR 并验签。
+func TestCSREd448(t *testing.T) {
+	priv, err := ed448.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := NewCertificateRequest(NewName().Add("CN", "csr-ed448.example.com"),
+		asX509PubKey(priv.Key()), asX509PrivKey(priv.Key()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := req.Verify(); err != nil {
+		t.Fatalf("CSR Verify failed: %v", err)
+	}
+	if len(req.Signature()) != 114 {
+		t.Fatalf("CSR signature length = %d, want 114", len(req.Signature()))
+	}
+}
+
+// TestCASignedCertEd25519 验证 Ed25519 CA 自签 + Ed25519 CA 签 Ed25519 叶证书。
+func TestCASignedCertEd25519(t *testing.T) {
+	caPriv, err := ed25519.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafPriv, err := ed25519.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	caSubject := NewName().Add("CN", "ED25519 Root CA")
+	caCert, err := CreateCertificate(caSubject, caSubject, 50,
+		now.Add(-time.Hour), now.Add(2*365*24*time.Hour), asX509PubKey(caPriv.Key()), asX509PrivKey(caPriv.Key()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.AddBasicConstraints(true); err != nil {
+		t.Fatal(err)
+	}
+
+	// 重新签发（AddBasicConstraints 后必须重签才能让扩展进入签名覆盖范围）
+	if err := caCert.Sign(asX509PrivKey(caPriv.Key())); err != nil {
+		t.Fatalf("CA re-sign: %v", err)
+	}
+	if err := caCert.Verify(asX509PubKey(caPriv.Key())); err != nil {
+		t.Fatal("CA self-verify failed")
+	}
+
+	leafCert, err := CreateCertificate(NewName().Add("CN", "leaf-ed25519.example.com"),
+		caSubject, 51, now.Add(-time.Hour), now.Add(365*24*time.Hour),
+		asX509PubKey(leafPriv.Key()), asX509PrivKey(caPriv.Key()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := leafCert.Verify(asX509PubKey(caPriv.Key())); err != nil {
+		t.Fatal("CA verify leaf failed")
+	}
+
+	// CA 链验证
+	roots := NewStore()
+	if err := roots.AddCert(caCert); err != nil {
+		t.Fatal(err)
+	}
+	chain, err := ChainVerify(leafCert, roots, nil)
+	if err != nil {
+		t.Fatalf("ChainVerify failed: %v", err)
+	}
+	if len(chain) != 2 {
+		t.Fatalf("chain length = %d, want 2", len(chain))
+	}
+}
+
+// TestCRLEd25519 验证 Ed25519 签发 CRL 的签发、加载、验签。
+func TestCRLEd25519(t *testing.T) {
+	caPriv, err := ed25519.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	caName := NewName().Add("CN", "ED25519 CRL CA")
+
+	coreCRL, err := core.NewCRL(caName.name, caPriv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer coreCRL.Close()
+
+	pem, err := coreCRL.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCRLPEM(pem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loaded.Close()
+
+	if loaded.SignatureAlgorithm() != "ED25519" {
+		t.Fatalf("CRL SignatureAlgorithm = %q, want ED25519", loaded.SignatureAlgorithm())
+	}
+	if loaded.SignatureAlgorithmOID() != "1.3.101.112" {
+		t.Fatalf("CRL SignatureAlgorithmOID = %q, want 1.3.101.112", loaded.SignatureAlgorithmOID())
+	}
+	if len(loaded.Signature()) != 64 {
+		t.Fatalf("CRL signature len = %d, want 64", len(loaded.Signature()))
 	}
 }

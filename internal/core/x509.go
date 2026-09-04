@@ -443,7 +443,7 @@ func (c *Certificate) AddBasicConstraints(isCA bool) error {
 
 // Sign 使用签名私钥对证书签名。
 //
-// 自签时签名密钥与公钥对应，CA 签发时使用 CA 私钥；md 传 nil 时按签名密钥类型自动选择（SM2→SM3，RSA/ECDSA→SHA256）；signer 必须是未关闭的有效 PKey；底层 X509_sign 调用错误以 OpError 包装。
+// 自签时签名密钥与公钥对应，CA 签发时使用 CA 私钥；md 传 nil 时按签名密钥类型自动选择（SM2→SM3，RSA/ECDSA→SHA256，EdDSA→无摘要走 X509_sign_ctx）；signer 必须是未关闭的有效 PKey；底层 X509_sign/X509_sign_ctx 调用错误以 OpError 包装。
 //
 // Sign signs the certificate with the given signing key.
 //
@@ -451,8 +451,8 @@ func (c *Certificate) AddBasicConstraints(isCA bool) error {
 // signing key matches the certificate's public key; for CA-issued
 // certificates the signing key is the CA's private key. When md is nil
 // the digest is selected automatically by signer type (SM2→SM3,
-// RSA/ECDSA→SHA256). Errors from the underlying X509_sign call are
-// wrapped as OpError.
+// RSA/ECDSA→SHA256, EdDSA→no-digest via X509_sign_ctx). Errors from the
+// underlying X509_sign / X509_sign_ctx calls are wrapped as OpError.
 func (c *Certificate) Sign(signer *PKey, md *Digest) error {
 	if signer == nil || signer.handle == nil || signer.handle.IsClosed() {
 		return fmt.Errorf("x509: invalid signer")
@@ -460,11 +460,78 @@ func (c *Certificate) Sign(signer *PKey, md *Digest) error {
 	if md == nil {
 		md = digestForSigner(signer)
 	}
-	if md == nil || md.handle == nil {
+	// digestForSigner 对 EdDSA 返回 nil：走 X509_sign_ctx 路径（无摘要 EdDSA 签名）。
+	if md == nil {
+		return signWithEdDSA(c.handle.Ptr(), signer.handle.Ptr(),
+			"x509: X509_sign_ctx")
+	}
+	if md.handle == nil {
 		return fmt.Errorf("x509: invalid digest")
 	}
 	if !native.X509_sign(c.handle.Ptr(), signer.handle.Ptr(), md.handle.Ptr()) {
 		return NewOpError("x509: X509_sign", native.PopError())
+	}
+	return nil
+}
+
+// signWithEdDSA 走 EVP_DigestSignInit(mctx, NULL, NULL, ed_key) + X509_sign_ctx 路径签证书。
+// 返回成功 nil；底层失败返回包装的 OpError。
+//
+// signWithEdDSA signs x509 using an EdDSA key (md=NULL) via the
+// EVP_DigestSignInit + X509_sign_ctx pattern (the only path supported
+// by the Tongsuo EdDSA provider). Returns nil on success or a wrapped
+// OpError on failure.
+func signWithEdDSA(x, pkey unsafe.Pointer, op string) error {
+	mdctx := native.EVP_MD_CTX_new()
+	if mdctx == nil {
+		return NewOpError("x509: "+op+" (EVP_MD_CTX_new)", native.PopError())
+	}
+	defer native.EVP_MD_CTX_free(mdctx)
+	ok, _ := native.EVP_DigestSignInit(mdctx, nil, nil, pkey)
+	if !ok {
+		return NewOpError("x509: "+op+" (DigestSignInit)", native.PopError())
+	}
+	if siglen := native.X509_sign_ctx(x, mdctx); siglen <= 0 {
+		return NewOpError("x509: "+op, native.PopError())
+	}
+	return nil
+}
+
+// signCSRWithEdDSA 走相同 EdDSA mctx 路径签 CSR（X509_REQ_sign_ctx）。
+//
+// signCSRWithEdDSA signs a CSR using an EdDSA key via X509_REQ_sign_ctx;
+// mirrors signWithEdDSA but targets the CSR API.
+func signCSRWithEdDSA(r, pkey unsafe.Pointer) error {
+	mdctx := native.EVP_MD_CTX_new()
+	if mdctx == nil {
+		return NewOpError("x509: X509_REQ_sign_ctx (EVP_MD_CTX_new)", native.PopError())
+	}
+	defer native.EVP_MD_CTX_free(mdctx)
+	ok, _ := native.EVP_DigestSignInit(mdctx, nil, nil, pkey)
+	if !ok {
+		return NewOpError("x509: X509_REQ_sign_ctx (DigestSignInit)", native.PopError())
+	}
+	if siglen := native.X509_REQ_sign_ctx(r, mdctx); siglen <= 0 {
+		return NewOpError("x509: X509_REQ_sign_ctx", native.PopError())
+	}
+	return nil
+}
+
+// signCRLWithEdDSA 走相同 EdDSA mctx 路径签 CRL（X509_CRL_sign_ctx）。
+//
+// signCRLWithEdDSA signs a CRL using an EdDSA key via X509_CRL_sign_ctx.
+func signCRLWithEdDSA(crl, pkey unsafe.Pointer) error {
+	mdctx := native.EVP_MD_CTX_new()
+	if mdctx == nil {
+		return NewOpError("x509: X509_CRL_sign_ctx (EVP_MD_CTX_new)", native.PopError())
+	}
+	defer native.EVP_MD_CTX_free(mdctx)
+	ok, _ := native.EVP_DigestSignInit(mdctx, nil, nil, pkey)
+	if !ok {
+		return NewOpError("x509: X509_CRL_sign_ctx (DigestSignInit)", native.PopError())
+	}
+	if siglen := native.X509_CRL_sign_ctx(crl, mdctx); siglen <= 0 {
+		return NewOpError("x509: X509_CRL_sign_ctx", native.PopError())
 	}
 	return nil
 }
@@ -1510,13 +1577,14 @@ func (r *CertificateRequest) SetPublicKey(k *PKey) error {
 
 // Sign 使用请求者私钥对 CSR 签名。
 //
-// priv 必须是未关闭的有效 PKey；md 传 nil 时按签名密钥类型自动选择（SM2→SM3，RSA/ECDSA→SHA256）；底层 X509_REQ_sign 调用错误以 OpError 包装。
+// priv 必须是未关闭的有效 PKey；md 传 nil 时按签名密钥类型自动选择（SM2→SM3，RSA/ECDSA→SHA256，EdDSA→无摘要走 X509_REQ_sign_ctx）；底层 X509_REQ_sign / X509_REQ_sign_ctx 调用错误以 OpError 包装。
 //
 // Sign signs the CSR with the requester's private key.
 //
 // priv must be a live, non-closed PKey. When md is nil the digest is
-// selected automatically by signer type (SM2→SM3, RSA/ECDSA→SHA256).
-// Errors from the underlying X509_REQ_sign call are wrapped as OpError.
+// selected automatically by signer type (SM2→SM3, RSA/ECDSA→SHA256,
+// EdDSA→no-digest via X509_REQ_sign_ctx). Errors from the underlying
+// X509_REQ_sign / X509_REQ_sign_ctx calls are wrapped as OpError.
 func (r *CertificateRequest) Sign(priv *PKey, md *Digest) error {
 	if priv == nil || priv.handle == nil || priv.handle.IsClosed() {
 		return fmt.Errorf("x509: invalid private key")
@@ -1524,7 +1592,10 @@ func (r *CertificateRequest) Sign(priv *PKey, md *Digest) error {
 	if md == nil {
 		md = digestForSigner(priv)
 	}
-	if md == nil || md.handle == nil {
+	if md == nil {
+		return signCSRWithEdDSA(r.handle.Ptr(), priv.handle.Ptr())
+	}
+	if md.handle == nil {
 		return fmt.Errorf("x509: invalid digest")
 	}
 	if !native.X509_REQ_sign(r.handle.Ptr(), priv.handle.Ptr(), md.handle.Ptr()) {
@@ -1537,15 +1608,17 @@ func (r *CertificateRequest) Sign(priv *PKey, md *Digest) error {
 //
 // 注意：Tongsuo 8.5-pre1 的 X509_REQ_verify 对 SM2 证书签名请求存在缺陷
 // （返回 -1），故此处手动重建 CertificationRequestInfo 的 DER 并按密钥
-// 类型选择摘要验签（结果与 openssl req -verify 一致）。
+// 类型选择验签路径（SM2→Verify 带 userId、RSA/ECDSA→VerifyDigest、EdDSA→
+// VerifyMessage 无摘要）。结果与 openssl req -verify 一致。
 //
 // Verify checks the CSR signature against its own embedded public key.
 //
 // Note: Tongsuo 8.5-pre1's X509_REQ_verify has a known defect for SM2
 // CSRs (it returns -1), so this implementation rebuilds the
 // CertificationRequestInfo DER manually and dispatches to the correct
-// signature path (SM2→Verify with empty user id, RSA/ECDSA→VerifyDigest
-// with digestForSigner). The result matches `openssl req -verify`.
+// verification path (SM2→Verify with empty user id, RSA/ECDSA→
+// VerifyDigest with digestForSigner, EdDSA→VerifyMessage with no
+// digest). The result matches `openssl req -verify`.
 func (r *CertificateRequest) Verify() error {
 	info, ok := native.I2d_X509_REQ_INFO(r.handle.Ptr())
 	if !ok {
@@ -1561,11 +1634,14 @@ func (r *CertificateRequest) Verify() error {
 	}
 	pkey := &PKey{handle: NewHandle(pub, true, native.EVP_PKEY_free)}
 	defer pkey.Close()
-	// SM2 走带 userId 的路径；RSA/ECDSA 按类型选摘要。
-	if pkey.TypeID() == native.EvpPkeySM2 {
+	switch {
+	case pkey.TypeID() == native.EvpPkeySM2:
 		return pkey.Verify(info, sig, nil)
+	case pkey.TypeID() == native.EvpPkeyED25519, pkey.TypeID() == native.EvpPkeyED448:
+		return pkey.VerifyMessage(info, sig)
+	default:
+		return pkey.VerifyDigest(info, sig, digestForSigner(pkey))
 	}
-	return pkey.VerifyDigest(info, sig, digestForSigner(pkey))
 }
 
 // PublicKey 以新 *PKey 返回 CSR 内嵌的公钥。
@@ -2066,7 +2142,14 @@ func NewCRL(issuer *Name, priv *PKey, thisUpdate, nextUpdate time.Time) (*CRL, e
 		return nil, NewOpError("x509: CRL Number extension", native.PopError())
 	}
 	md := digestForSigner(priv)
-	if md == nil || md.handle == nil {
+	if md == nil {
+		if err := signCRLWithEdDSA(c, priv.handle.Ptr()); err != nil {
+			crl.Close()
+			return nil, err
+		}
+		return crl, nil
+	}
+	if md.handle == nil {
 		crl.Close()
 		return nil, fmt.Errorf("x509: invalid digest for signer")
 	}

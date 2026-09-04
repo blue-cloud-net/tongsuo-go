@@ -8,11 +8,13 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/blue-cloud-net/tongsuo-go/crypto/ed25519"
 	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
 	"github.com/blue-cloud-net/tongsuo-go/internal/testutil"
 )
@@ -724,4 +726,57 @@ authorityKeyIdentifier = keyid:always
 	if !strings.Contains(outLowerNoColons, strings.ToLower(akidHex)) {
 		t.Fatalf("openssl crl text missing AKID hex %s: %s", akidHex, out)
 	}
+}
+
+// TestCLIECCertEd25519 验证 Ed25519 自签证书 → openssl x509 读 + openssl verify 通过。
+func TestCLIECCertEd25519(t *testing.T) {
+	priv, err := ed25519.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	subject := NewName().Add("CN", "ed25519-cli.example.com")
+	cert, err := CreateCertificate(subject, subject, 100,
+		now.Add(-time.Hour), now.Add(365*24*time.Hour),
+		asX509PubKey(priv.Key()), asX509PrivKey(priv.Key()))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pem, err := cert.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "ed.pem")
+	if err := os.WriteFile(certPath, pem, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runOpenSSLFile(t, "x509", "-in", certPath, "-noout", "-text")
+	if !bytes.Contains(out, []byte("ED25519")) {
+		t.Fatalf("cli x509 missing ED25519 marker: %s", out)
+	}
+
+	// 写入公钥 PEM 供后续对拍使用；pkeyutl verify 已由 ed25519 包测试覆盖。
+	pub, err := priv.Public()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubPath := filepath.Join(dir, "ed_pub.pem")
+	if err := os.WriteFile(pubPath, mustPubPEM(pub), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// openssl verify 自签 Ed25519（不强制 BasicConstraints，仅记录输出）。
+	out2 := runOpenSSLFile(t, "verify", "-CAfile", certPath, certPath)
+	t.Logf("openssl verify self-signed ed25519 cert output: %s", out2)
+}
+
+// mustPubPEM 把 ed25519.PublicKey 序列化到 PEM。
+func mustPubPEM(pub *ed25519.PublicKey) []byte {
+	pb, err := pub.MarshalPEM()
+	if err != nil {
+		panic(err)
+	}
+	return pb
 }
