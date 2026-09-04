@@ -161,3 +161,5 @@ go test -fuzz FuzzRoundTrip ./crypto/sm4
 | SM4 | GB/T 32907-2016 附录 A |
 | SM2 | GB/T 32918 系列 |
 | AES | NIST FIPS 197 附录 B/C |
+| Ed25519 / Ed448 | RFC 8032 §7.1 / §7.2 |
+| X25519 | RFC 7748 §5.2 / §6.1 |

@@ -24,8 +24,10 @@
 - 🧮 **HMAC 消息认证码**：HMAC-SM3 / MD5 / SHA1 / SHA256 / SHA512
 - 🔗 **更多哈希**：MD5、SHA1、SHA256、SHA512（`hash.Hash` + `Sum`）
 - 🔄 **AES 对称加密**：ECB / CBC / CTR / GCM（`cipher.Block` + `cipher.AEAD`）
+- � **Ed25519 / Ed448 签名算法**（RFC 8032）：纯 EdDSA（无预哈希），32B / 57B 原始种子与公钥字节可与 Go 标准库、WireGuard 互操作；通过 `X509_sign_ctx` 路径支持证书 / CSR / CRL 签发
+- 🤝 **X25519 ECDH 密钥交换**（RFC 7748）：32 字节共享密钥派生，可与 Go `crypto/ecdh`、WireGuard 互操作，支持证书 / CSR 公钥加载
 - 🎲 **安全随机数**：基于铜锁 `RAND_bytes`
-- 📜 **X.509 证书管理**：证书解析、创建、自签名 / CA 签发（SM2 + SM3）、CSR 生成与验证、BasicConstraints 扩展
+- 📜 **X.509 证书管理**：证书解析、创建、自签名 / CA 签发（SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448）、CSR 生成与验证、BasicConstraints 扩展
 - 🌐 **TLS / NTLS 传输层**：客户端 / 服务端封装，支持国密 NTLS 双证书（签名证书 + 加密证书）
 - 🧪 **标准向量测试**：每个算法包覆盖国标标准向量、往返、边界与错误路径，并与 openssl CLI 双向交叉验证
 

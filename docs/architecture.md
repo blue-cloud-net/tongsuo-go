@@ -73,7 +73,7 @@ API 层（crypto/）              ← 对外高层 API，仅此层可被外部 i
 - 对外暴露的公共 API 由两层组成：
   - **算法引擎层**：`crypto/aes`、`crypto/sm2`、`crypto/sm3`、`crypto/sm4`、
     `crypto/hmac`、`crypto/rand`、`crypto/md5`、`crypto/sha1/256/512`、`crypto/rsa`、
-    `crypto/ecdsa`
+    `crypto/ecdsa`、`crypto/ed25519`、`crypto/ed448`、`crypto/x25519`
   - **组合层（顶级）**：`x509/`（证书对象模型）、`key/`（密钥统合抽象：
     对称/非对称接口、PEM 解析、生命周期、KDF）、`asn1/`（DER viewer）、
     `pkcs/pkcs7/`、`pkcs/pkcs12/`、`ocsp/`（协议）、`tls/`（协议）、
@@ -114,8 +114,8 @@ tongsuo-go/
 ├── docs/                      # 设计文档（architecture / development-guide / roadmap / testing-guide）
 │
 ├── crypto/                    # 【算法引擎层】仅算法子包
-│   ├── aes/  ecdsa/  hmac/  md5/  rand/  rsa/
-│   ├── sha1/  sha256/  sha512/  sm2/  sm3/  sm4/
+│   ├── aes/  ecdsa/  ed25519/  ed448/  hmac/  md5/  rand/  rsa/
+│   ├── sha1/  sha256/  sha512/  sm2/  sm3/  sm4/  x25519/
 ├── key/                       # 【密钥统合抽象】跨算法统一密钥接口/解析/生命周期/KDF
 │   ├── key.go                 # Algorithm / Key 接口 / PEM / 错误 / Close
 │   ├── symmetric.go           # SymmetricKey / AESKey / SM4Key
