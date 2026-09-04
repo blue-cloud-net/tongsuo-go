@@ -1544,19 +1544,27 @@ func X509_CRL_get_ext(crl unsafe.Pointer, i int) unsafe.Pointer {
 }
 
 // X509_CRL_get0_authority_key_id 返回 CRL 的 AKID keyid 字节。
-// 通过 shim 函数 X_X509_CRL_get_akid_keyid 取出 AUTHORITY_KEYID.keyid 的内部指针，
-// 返回 keyid 字节的副本；无 AKID 或无 keyid 时返回 nil。
+// 通过 shim 函数 X_X509_CRL_get_akid_keyid 取出 AUTHORITY_KEYID.keyid，
+// 拷到独立 CRYPTO_malloc 缓冲返回；Go 侧用 C.GoBytes 拷贝后必须调
+// X_OPENSSL_free 释放该缓冲。无 AKID 或无 keyid 时返回 nil。
 //
 // X509_CRL_get0_authority_key_id returns a copy of the AuthorityKeyIdentifier
-// keyid bytes from crl, or nil when the AKID extension is absent or has
-// no keyid component.
+// keyid bytes from crl. The shim allocates the copy with CRYPTO_malloc and
+// the Go side must release it via X_OPENSSL_free after copying. The
+// function returns nil when the AKID extension is absent or has no keyid
+// component.
 func X509_CRL_get0_authority_key_id(crl unsafe.Pointer) []byte {
 	var length C.int
 	c := C.X_X509_CRL_get_akid_keyid((*C.X509_CRL)(crl), &length)
 	if c == nil || length <= 0 {
+		if c != nil {
+			C.X_OPENSSL_free(unsafe.Pointer(c))
+		}
 		return nil
 	}
-	return C.GoBytes(unsafe.Pointer(c), length)
+	out := C.GoBytes(unsafe.Pointer(c), length)
+	C.X_OPENSSL_free(unsafe.Pointer(c))
+	return out
 }
 
 // X509_CRL_get_crl_number 返回 CRL Number 扩展的 INTEGER（nil 表示无）。

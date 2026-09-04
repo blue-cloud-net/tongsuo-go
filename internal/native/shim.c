@@ -419,17 +419,50 @@ int X_PEM_write_bio_X509_CRL(BIO *bp, X509_CRL *x)
     return PEM_write_bio_X509_CRL(bp, x);
 }
 
+/*
+ * X_X509_CRL_get_akid_keyid 取出 CRL 的 AuthorityKeyIdentifier 扩展 keyid 字节。
+ *
+ * 实现要点（OpenSSL 3.x / Tongsuo 8.5+）：
+ *   X509_CRL_get_ext_d2i 返回的 AUTHORITY_KEYID 必须由 AUTHORITY_KEYID_free 释放；
+ *   而 AUTHORITY_KEYID.keyid 指向的 ASN1_OCTET_STRING 的 data 缓冲会被该 free 一并
+ *   释放，因此不能直接返回 akid->keyid 的内部指针（use-after-free）。
+ *   这里先 CRYPTO_malloc 一块独立缓冲 memcpy，再 AUTHORITY_KEYID_free，最后返回
+ *   CRYPTO_malloc 出来的指针——调用方必须通过 X_OPENSSL_free 释放。
+ *
+ * out_len 非 NULL 时写入 keyid 字节长度；crl 异常或提取失败返回 NULL。
+ */
 unsigned char *X_X509_CRL_get_akid_keyid(X509_CRL *crl, int *out_len)
 {
     if (crl == NULL || out_len == NULL)
         return NULL;
     AUTHORITY_KEYID *akid = (AUTHORITY_KEYID *)X509_CRL_get_ext_d2i(
         crl, NID_authority_key_identifier, NULL, NULL);
-    if (akid == NULL || akid->keyid == NULL)
+    if (akid == NULL) {
+        *out_len = 0;
         return NULL;
-    *out_len = ASN1_STRING_length((ASN1_STRING *)akid->keyid);
-    /* ASN1_STRING_get0_data 返回 const，强制丢弃 const 以匹配 Go 端的 []byte。 */
-    return (unsigned char *)ASN1_STRING_get0_data((ASN1_STRING *)akid->keyid);
+    }
+    if (akid->keyid == NULL) {
+        /* akid 结构本身已分配但无 keyid 字段，仍须释放以免泄漏。 */
+        AUTHORITY_KEYID_free(akid);
+        *out_len = 0;
+        return NULL;
+    }
+    int len = ASN1_STRING_length((ASN1_STRING *)akid->keyid);
+    const unsigned char *src = ASN1_STRING_get0_data((ASN1_STRING *)akid->keyid);
+    /* CRYPTO_malloc 与 X_OPENSSL_free 配对使用，绕过 AUTHORITY_KEYID_free 对
+     * akid->keyid 内部 data 缓冲的副作用（OpenSSL 3.x 中 ASN1_STRING_free 会
+     * 释放该缓冲，导致 memcpy 之后再返回原指针变为 use-after-free）。 */
+    unsigned char *buf = (unsigned char *)CRYPTO_malloc((size_t)len, NULL, 0);
+    if (buf == NULL) {
+        AUTHORITY_KEYID_free(akid);
+        *out_len = 0;
+        return NULL;
+    }
+    if (len > 0)
+        memcpy(buf, src, (size_t)len);
+    AUTHORITY_KEYID_free(akid);
+    *out_len = len;
+    return buf;
 }
 
 EVP_PKEY *X_EVP_PKEY_Q_keygen_rsa(int bits)
