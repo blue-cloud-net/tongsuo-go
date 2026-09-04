@@ -804,22 +804,39 @@ var keyUsageNames = map[int]string{
 // ("digitalSignature", "nonRepudiation", "keyEncipherment",
 // "dataEncipherment", "keyAgreement", "keyCertSign", "cRLSign",
 // "encipherOnly", "decipherOnly").
-func (c *Certificate) KeyUsage() []string {
+// KeyUsageBits 返回证书 KeyUsage 扩展的位图（RFC 5280 §4.2.1.3）。
+//
+// 低 9 位有定义（位 0 = digitalSignature，位 8 = decipherOnly）；其它位保留为 0。
+// 证书已关闭或无 KeyUsage 扩展时返回 0。
+//
+// KeyUsageBits returns the KeyUsage extension bitmask (RFC 5280 §4.2.1.3).
+//
+// The low 9 bits are defined (bit 0 = digitalSignature through bit 8 =
+// decipherOnly); higher bits are 0. Returns 0 for a nil receiver, a
+// closed certificate, or when the KeyUsage extension is absent.
+//
+// 本函数保留为 core 层的位图原语——公开层 x509.Certificate.KeyUsage
+// 在此基础上做位→名称映射，把命名映射（RFC 5280 固定 9 条）放在公开层。
+//
+// This is the bit-level core-layer primitive; the public
+// x509.Certificate.KeyUsage method performs the bit-to-name mapping
+// (the nine RFC 5280 fixed names live in the public layer).
+func (c *Certificate) KeyUsageBits() int {
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
-		return nil
+		return 0
 	}
 	bs := native.X509_get_key_usage(c.handle.Ptr())
 	if bs == nil {
-		return nil
+		return 0
 	}
 	defer native.X509_ASN1_BIT_STRING_free(bs)
-	var out []string
-	for bit := 0; bit <= 8; bit++ {
-		if native.ASN1_BIT_STRING_get_bit(bs, bit) {
-			out = append(out, keyUsageNames[bit])
+	var bits int
+	for b := 0; b <= 8; b++ {
+		if native.ASN1_BIT_STRING_get_bit(bs, b) {
+			bits |= 1 << uint(b)
 		}
 	}
-	return out
+	return bits
 }
 
 // ExtendedKeyUsage 返回证书 extendedKeyUsage 扩展声明的用途 OID 长名列表（如 ["serverAuth"]）。
@@ -1688,6 +1705,16 @@ type VerifyError struct {
 // VerifyOK is the success code (X509_V_OK == 0) returned by
 // SSL_get_verify_result and X509_verify_cert.
 const VerifyOK = 0
+
+// X509 存储验证标志位（位或组合）转出自 native.X509VFlag*，便于公开层
+// x509.Store.SetFlags 不直接依赖 internal/native。
+//
+// StoreFlag* mirror native.X509VFlag*, so the public x509.Store.SetFlags
+// does not have to import internal/native.
+const (
+	StoreFlagCRLCheck    = native.X509VFlagCRLCheck    // 仅检查叶证书链 CRL
+	StoreFlagCRLCheckAll = native.X509VFlagCRLCheckAll // 检查整条链 CRL
+)
 
 // VerifyErrorMessage 将 X509_V_ERR_* 错误码翻译为可读字符串。
 // 未知错误码返回空字符串。

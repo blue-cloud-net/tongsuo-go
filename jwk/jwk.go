@@ -290,7 +290,7 @@ func FromPEM(pemBytes []byte) (*Key, error) {
 		pk, err = core.LoadPublicKeyPEM(pemBytes)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("jwk: unsupported PEM: %v", err)
+		return nil, fmt.Errorf("jwk: unsupported PEM: %w", err)
 	}
 	defer pk.Close()
 	return Marshal(pk)

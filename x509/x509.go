@@ -175,7 +175,46 @@ func (c *Certificate) SAN() []string { return c.cert.SAN() }
 // KeyUsage 返回证书 KeyUsage 能力位名称列表（如 ["digitalSignature"]）；无则 nil。
 //
 // KeyUsage returns the certificate's KeyUsage bit names (for example ["digitalSignature"]). It returns nil when no KeyUsage extension is present.
-func (c *Certificate) KeyUsage() []string { return c.cert.KeyUsage() }
+//
+// 位→名称映射遵循 RFC 5280 §4.2.1.3（固定的 9 位）：位序低→高依次为
+// digitalSignature、nonRepudiation、keyEncipherment、dataEncipherment、
+// keyAgreement、keyCertSign、cRLSign、encipherOnly、decipherOnly。位图来自
+// core.Certificate.KeyUsageBits。
+//
+// The bit-to-name mapping follows RFC 5280 §4.2.1.3 (nine fixed bits):
+// digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment,
+// keyAgreement, keyCertSign, cRLSign, encipherOnly, decipherOnly (least to
+// most significant). The bitmask comes from core.Certificate.KeyUsageBits.
+func (c *Certificate) KeyUsage() []string {
+	bits := c.cert.KeyUsageBits()
+	if bits == 0 {
+		return nil
+	}
+	out := make([]string, 0, 9)
+	for b, name := range keyUsageNames {
+		if bits&(1<<uint(b)) != 0 {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// keyUsageNames 为 RFC 5280 §4.2.1.3 KeyUsage 位（0–8）到短名的映射，
+// 与 openssl x509 -text 输出一致。
+//
+// keyUsageNames maps the RFC 5280 §4.2.1.3 KeyUsage bits (0-8) to their
+// short names, matching the human-readable form of `openssl x509 -text`.
+var keyUsageNames = [...]string{
+	"digitalSignature",
+	"nonRepudiation",
+	"keyEncipherment",
+	"dataEncipherment",
+	"keyAgreement",
+	"keyCertSign",
+	"cRLSign",
+	"encipherOnly",
+	"decipherOnly",
+}
 
 // ExtendedKeyUsage 返回证书 EKU 条目（如 ["serverAuth"]）；无则 nil。
 //

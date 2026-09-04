@@ -22,6 +22,20 @@ import (
 // DefaultID is the default SM2 user identifier per GM/T 0003-2012.
 var DefaultID = []byte("1234567812345678")
 
+// SM2 密文格式常量（GB/T 32918.4-2016）。
+//
+// Coordinates are 32 bytes each on the sm2p256v1 curve; an uncompressed
+// C1 point is therefore 1 prefix byte + 2*32 = 65 bytes, a compressed
+// one is 1 + 32 = 33 bytes.
+const (
+	coordBytes         = 32   // 单坐标字节长度
+	c1UncompressedLen  = 65   // 未压缩 C1 点（0x04 前缀 + X + Y）
+	c1CompressedLen    = 33   // 压缩 C1 点（0x02/0x03 前缀 + X）
+	c1PrefixUncomp     = 0x04 // 未压缩点前缀
+	c1PrefixCompEven   = 0x02 // 压缩点偶数 Y 前缀
+	c1PrefixCompOdd    = 0x03 // 压缩点奇数 Y 前缀
+)
+
 // PrivateKey 表示 SM2 私钥。
 //
 // PrivateKey represents an SM2 private key.
@@ -309,15 +323,15 @@ func parseDER(ct []byte) (*sm2Cipher, error) {
 	}
 	x := s.X.Bytes()
 	y := s.Y.Bytes()
-	if len(x) > 32 || len(y) > 32 {
+	if len(x) > coordBytes || len(y) > coordBytes {
 		return nil, fmt.Errorf("sm2: invalid DER ciphertext: coordinate too large")
 	}
-	xb := make([]byte, 32)
-	yb := make([]byte, 32)
-	copy(xb[32-len(x):], x)
-	copy(yb[32-len(y):], y)
-	c1 := make([]byte, 0, 65)
-	c1 = append(c1, 0x04)
+	xb := make([]byte, coordBytes)
+	yb := make([]byte, coordBytes)
+	copy(xb[coordBytes-len(x):], x)
+	copy(yb[coordBytes-len(y):], y)
+	c1 := make([]byte, 0, c1UncompressedLen)
+	c1 = append(c1, c1PrefixUncomp)
 	c1 = append(c1, xb...)
 	c1 = append(c1, yb...)
 	return &sm2Cipher{c1: c1, hash: s.Hash, c2: s.CT, x: xb, y: yb}, nil
@@ -358,10 +372,10 @@ func c1Len(ct []byte) (int, error) {
 		return 0, fmt.Errorf("sm2: empty ciphertext")
 	}
 	switch ct[0] {
-	case 0x04:
-		return 65, nil
-	case 0x02, 0x03:
-		return 33, nil
+	case c1PrefixUncomp:
+		return c1UncompressedLen, nil
+	case c1PrefixCompEven, c1PrefixCompOdd:
+		return c1CompressedLen, nil
 	default:
 		return 0, fmt.Errorf("sm2: unsupported C1 point prefix 0x%02x", ct[0])
 	}

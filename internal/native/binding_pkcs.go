@@ -16,7 +16,6 @@ const NidPKCS7Signed = 22
 
 // X_PKCS12_create 打包证书、私钥与 CA 链为 PKCS12。
 // ca 为借用证书指针数组（长度与 ca 相同）。
-//
 // X_PKCS12_create (X_PKCS12_create shim) bundles pkey, cert, and an optional
 // CA chain into a PKCS#12 PFX. ca is a borrowed slice of X509 pointers and
 // must have the same length as the underlying array. The caller owns the
@@ -49,7 +48,6 @@ func X_PKCS12_create(pass, name string, pkey, cert unsafe.Pointer, ca []unsafe.P
 
 // X_PKCS12_parse 解析 PKCS12，返回私钥、主证书与 CA 栈。
 // ca 栈归调用方所有，须用 X509_sk_X509_EXTENSION_pop_free 类似方式释放（sk_X509_pop_free）。
-//
 // X_PKCS12_parse (X_PKCS12_parse shim) decrypts p12 with pass and returns
 // (pkey, cert, ca, ok). The returned pkey and cert are new references that
 // the caller must release with EVP_PKEY_free / X509_free; ca is an X509
@@ -65,7 +63,6 @@ func X_PKCS12_parse(p12 unsafe.Pointer, pass string) (pkey, cert, ca unsafe.Poin
 }
 
 // PKCS12_free 释放 PKCS12。
-//
 // PKCS12_free releases the PKCS12. Safe on NULL; the pointer must not be
 // used after free.
 func PKCS12_free(p12 unsafe.Pointer) {
@@ -73,7 +70,6 @@ func PKCS12_free(p12 unsafe.Pointer) {
 }
 
 // I2d_PKCS12 将 PKCS12 编码为 DER。
-//
 // I2d_PKCS12 serializes p12 to DER. Returns (bytes, true) on success or
 // (nil, false) when the encoder reports a non-positive length.
 func I2d_PKCS12(p12 unsafe.Pointer) ([]byte, bool) {
@@ -92,7 +88,6 @@ func I2d_PKCS12(p12 unsafe.Pointer) ([]byte, bool) {
 }
 
 // D2i_PKCS12 从 DER 解析 PKCS12。
-//
 // D2i_PKCS12 parses a PKCS12 PFX from the given DER bytes. Returns NULL on
 // empty input or parse failure. The caller owns the result and must free
 // it with PKCS12_free.
@@ -111,7 +106,6 @@ func D2i_PKCS12(der []byte) unsafe.Pointer {
 }
 
 // PKCS12_newpass 修改 PKCS12 口令。
-//
 // PKCS12_newpass re-encrypts p12 from oldPass to newPass. Returns true on
 // success; the original integrity MAC is replaced.
 func PKCS12_newpass(p12 unsafe.Pointer, oldPass, newPass string) bool {
@@ -123,7 +117,6 @@ func PKCS12_newpass(p12 unsafe.Pointer, oldPass, newPass string) bool {
 }
 
 // PKCS12_set_mac 为 PKCS12 重新计算 MAC（SHA-256，iter=2048）。
-//
 // PKCS12_set_mac recomputes the integrity MAC on p12 using SHA-256 with
 // 2048 PBKDF2 iterations. Returns true on success.
 func PKCS12_set_mac(p12 unsafe.Pointer, pass string) bool {
@@ -134,7 +127,6 @@ func PKCS12_set_mac(p12 unsafe.Pointer, pass string) bool {
 }
 
 // PKCS7_new 创建空的 PKCS7。
-//
 // PKCS7_new allocates and returns an empty PKCS7. The caller owns the
 // returned pointer and must release it with PKCS7_free.
 func PKCS7_new() unsafe.Pointer {
@@ -142,7 +134,6 @@ func PKCS7_new() unsafe.Pointer {
 }
 
 // PKCS7_free 释放 PKCS7。
-//
 // PKCS7_free releases the PKCS7. Safe on NULL; the pointer must not be used
 // after free.
 func PKCS7_free(p7 unsafe.Pointer) {
@@ -150,7 +141,6 @@ func PKCS7_free(p7 unsafe.Pointer) {
 }
 
 // PKCS7_set_type 设置 PKCS7 类型（如 NidPKCS7Signed）。
-//
 // PKCS7_set_type sets the type of p7 (e.g. NidPKCS7Signed). Returns true on
 // success.
 func PKCS7_set_type(p7 unsafe.Pointer, typ int) bool {
@@ -158,7 +148,6 @@ func PKCS7_set_type(p7 unsafe.Pointer, typ int) bool {
 }
 
 // PKCS7_content_new 设置 SignedData 的 content 类型（如 NID_pkcs7_data）。
-//
 // PKCS7_content_new assigns the inner content type (typically NID_pkcs7_data)
 // inside a SignedData PKCS7. Returns true on success.
 func PKCS7_content_new(p7 unsafe.Pointer, nid int) bool {
@@ -166,7 +155,6 @@ func PKCS7_content_new(p7 unsafe.Pointer, nid int) bool {
 }
 
 // PKCS7_add_certificate 向 SignedData 追加证书（内部复制）。
-//
 // PKCS7_add_certificate copies cert into the SignedData container; the caller
 // retains ownership of cert.
 func PKCS7_add_certificate(p7, cert unsafe.Pointer) bool {
@@ -174,7 +162,6 @@ func PKCS7_add_certificate(p7, cert unsafe.Pointer) bool {
 }
 
 // PKCS7_get0_certificates 返回 SignedData 的证书栈（内部指针，勿释放）。
-//
 // PKCS7_get0_certificates returns the internal cert stack of a SignedData
 // PKCS7. The pointer is owned by p7 and must NOT be freed.
 func PKCS7_get0_certificates(p7 unsafe.Pointer) unsafe.Pointer {
@@ -182,7 +169,6 @@ func PKCS7_get0_certificates(p7 unsafe.Pointer) unsafe.Pointer {
 }
 
 // I2d_PKCS7 将 PKCS7 编码为 DER。
-//
 // I2d_PKCS7 serializes p7 to DER. Returns (bytes, true) on success or
 // (nil, false) when the encoder reports a non-positive length.
 func I2d_PKCS7(p7 unsafe.Pointer) ([]byte, bool) {
@@ -201,7 +187,6 @@ func I2d_PKCS7(p7 unsafe.Pointer) ([]byte, bool) {
 }
 
 // D2i_PKCS7 从 DER 解析 PKCS7。
-//
 // D2i_PKCS7 parses a PKCS7 structure from the given DER bytes. Returns NULL
 // on empty input or parse failure. The caller owns the result and must free
 // it with PKCS7_free.

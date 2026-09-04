@@ -7,7 +7,6 @@ package native
 import "C"
 
 // PopError 从错误队列取出并返回一个错误码；队列为空返回 0。
-//
 // PopError wraps ERR_get_error; it pops the earliest error code from the
 // current thread's OpenSSL error queue. Returns 0 when the queue is empty.
 func PopError() uint64 {
@@ -16,7 +15,6 @@ func PopError() uint64 {
 
 // ErrorString 返回错误码对应的错误描述字符串。
 // 使用 ERR_error_string_n（线程安全，写入本地缓冲区）。
-//
 // ErrorString wraps the thread-safe ERR_error_string_n; the description is
 // written into a 256-byte stack buffer, so codes producing longer text are
 // truncated. Pass an error code from PopError.

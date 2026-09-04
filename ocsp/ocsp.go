@@ -13,8 +13,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/x509"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
+	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
 // 证书状态码（OCSP CertStatus）。

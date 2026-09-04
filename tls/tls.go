@@ -20,9 +20,8 @@ import (
 	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
-	"github.com/blue-cloud-net/tongsuo-go/x509"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
-	"github.com/blue-cloud-net/tongsuo-go/internal/native"
+	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
 // Config 表示 TLS / NTLS 配置。
@@ -73,7 +72,7 @@ type Config struct {
 
 	// RootCAs 为客户端用于信证书池（nil 表示不进行对端验证）；
 	// InsecureSkipVerify 为 true 时强制跳过验证（覆盖 RootCAs）。
-	RootCAs           []*x509.Certificate
+	RootCAs            []*x509.Certificate
 	InsecureSkipVerify bool
 	// ServerName 为对端主机名校验的预期值（空时 Dial 从 addr 推导 host）。
 	ServerName string
@@ -209,11 +208,11 @@ func (s *Server) Close() error {
 // and then releases the SSL handle. Subsequent Read/Write calls return
 // io.EOF / an error rather than passing nil across the cgo boundary.
 type Conn struct {
-	ssl      *core.SSLConn
-	raw      net.Conn
-	mu       sync.Mutex   // 序列化 Read/Write
-	closeOnce sync.Once    // 保证 Close 只执行一次（幂等）
-	closed    atomic.Bool  // Close 完成后置位，Read/Write 入口短路
+	ssl       *core.SSLConn
+	raw       net.Conn
+	mu        sync.Mutex  // 序列化 Read/Write
+	closeOnce sync.Once   // 保证 Close 只执行一次（幂等）
+	closed    atomic.Bool // Close 完成后置位，Read/Write 入口短路
 }
 
 func wrapConn(raw net.Conn, ctx *core.TLSContext, server bool) (net.Conn, error) {
@@ -524,9 +523,12 @@ func connFD(conn net.Conn) (int, error) {
 // 暴露协议版本常量，便于用户配置 MinVersion / MaxVersion。
 //
 // ProtocolVersion exposes TLS protocol version constants suitable for Config.MinVersion and Config.MaxVersion.
+//
+// Wire-format IANA TLS protocol version values (RFC 5246 / RFC 8446); also
+// consumed by core.TLSContext.SetMinProtoVersion / SetMaxProtoVersion.
 const (
-	TLS1Version   = native.TLS1Version
-	TLS1_1Version = native.TLS1_1Version
-	TLS1_2Version = native.TLS1_2Version
-	TLS1_3Version = native.TLS1_3Version
+	TLS1Version   uint16 = 0x0301
+	TLS1_1Version uint16 = 0x0302
+	TLS1_2Version uint16 = 0x0303
+	TLS1_3Version uint16 = 0x0304
 )

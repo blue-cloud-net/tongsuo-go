@@ -1,6 +1,10 @@
 package x509
 
-import "github.com/blue-cloud-net/tongsuo-go/internal/core"
+import (
+	"fmt"
+
+	"github.com/blue-cloud-net/tongsuo-go/internal/core"
+)
 
 // Name 表示证书主题/签发者名字，支持链式构建。
 //
@@ -37,12 +41,33 @@ func NewName() *Name {
 // Add 添加名字字段并返回自身（链式）。
 // field 取 "CN"、"C"、"O"、"OU"、"L"、"ST"、"serialNumber"、"emailAddress" 等。
 //
+// ⚠️ 本方法对**编程错误**会 panic：对来自用户的不可信输入请改用 TryAdd。
+// 由内部链式构造时（NewName().Add(...)）传入固定短名不应触发错误。
+//
 // Add appends a relative distinguished name attribute and returns the same Name for chaining. field accepts short names such as "CN", "C", "O", "OU", "L", "ST", "serialNumber", and "emailAddress".
+//
+// ⚠️ This method panics on PROGRAMMING errors (invalid field name,
+// overlong value). For untrusted user input use TryAdd instead; for
+// hard-coded builder chains (NewName().Add("CN", "...")) this branch
+// is not reached.
 func (n *Name) Add(field, value string) *Name {
 	if err := n.name.AddEntry(field, value); err != nil {
-		panic(err)
+		panic("x509: Name.Add: " + err.Error())
 	}
 	return n
+}
+
+// TryAdd 是 Add 的非 panic 版本：字段非法或值超长时返回 error，调用方
+// 可决定继续或回滚。
+//
+// TryAdd is the non-panicking variant of Add. It returns the underlying
+// error (invalid field name, overlong value, ...) so callers handling
+// untrusted input can react instead of crashing.
+func (n *Name) TryAdd(field, value string) error {
+	if n == nil || n.name == nil {
+		return fmt.Errorf("x509: nil Name")
+	}
+	return n.name.AddEntry(field, value)
 }
 
 // Entries 返回名字的全部 RDN 条目（保持证书中的顺序）。
