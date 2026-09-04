@@ -122,6 +122,9 @@ type aesBlock struct {
 // transforms with no padding and no IV; callers supply an IV themselves
 // when chaining it in a higher-level mode (CBC, CTR, ...). The same
 // Block is safe for concurrent use by multiple goroutines.
+//
+// 安全：key 仅在构造时使用一次并复制到底层 EVP_CIPHER_CTX；本函数不会持有明文副本。
+// 由于编译器允许消除看似无副作用的清零循环，**调用方有责任在使用完毕后清零 key 切片**。
 func NewCipher(key []byte) (cipher.Block, error) {
 	c, err := aesCipher(key, "ecb")
 	if err != nil {
@@ -387,6 +390,9 @@ type aesGCM struct {
 // (the tag is appended after ciphertext); the AEAD nonce length is NonceSize
 // and the authentication overhead is TagSize. The same nonce-reuse warning
 // as EncryptGCM applies.
+//
+// 安全：AEAD 实例保留对 key 切片的引用（每次 Seal/Open 都复用）；
+// **调用方有责任在使用完毕后清零 key 切片**（本函数不会拷贝 key 也不持有清零能力）。
 func NewGCM(key []byte) (cipher.AEAD, error) {
 	if len(key) != 16 && len(key) != 32 {
 		return nil, fmt.Errorf("aes: invalid key size %d, want 16 or 32", len(key))

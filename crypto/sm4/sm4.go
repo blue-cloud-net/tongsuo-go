@@ -69,6 +69,9 @@ type sm4Block struct {
 // It backs onto SM4-ECB with padding disabled. An error is returned
 // if key length is not exactly KeySize. The same Block is safe for
 // concurrent use by multiple goroutines.
+//
+// 安全：key 仅在构造时使用一次并复制到底层 EVP_CIPHER_CTX；本函数不会持有明文副本。
+// **调用方有责任在使用完毕后清零 key 切片**（Go 编译器允许消除看似无副作用的清零循环）。
 func NewCipher(key []byte) (cipher.Block, error) {
 	if len(key) != KeySize {
 		return nil, fmt.Errorf("sm4: invalid key size %d, want %d", len(key), KeySize)
@@ -452,6 +455,9 @@ type gcm struct {
 // The output format appends the tag to the ciphertext (ciphertext || tag),
 // matching the layout used by the standard library's AEAD interface.
 // An error is returned if key length is not exactly KeySize.
+//
+// 安全：AEAD 实例保留对 key 切片的引用（每次 Seal/Open 都复用）；
+// **调用方有责任在使用完毕后清零 key 切片**。
 func NewGCM(key []byte) (cipher.AEAD, error) {
 	if len(key) != KeySize {
 		return nil, fmt.Errorf("sm4: invalid key size %d, want %d", len(key), KeySize)

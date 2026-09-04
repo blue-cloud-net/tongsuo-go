@@ -119,6 +119,9 @@ func (k *PrivateKey) Public() *PublicKey { return &PublicKey{key: k.key} }
 // RSA: a PKCS#8 block that actually carries an EC / SM2 key returns an
 // error instead of silently being wrapped as RSA (avoiding a type-confusion
 // that would otherwise surface only at use time).
+//
+// 安全：解析后明文私钥仅存在于 Tongsuo C 端 EVP_PKEY 中，Go 侧不持有副本；
+// **调用方有责任在使用完毕后清零 PEM 源缓冲区**（PEM 块本身不含明文但与密钥来源同处）。
 func LoadPrivateKeyPEM(pem []byte) (*PrivateKey, error) {
 	k, err := core.LoadPrivateKeyPEM(pem)
 	if err == nil {
