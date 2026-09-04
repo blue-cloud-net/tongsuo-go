@@ -32,6 +32,22 @@ int X_EVP_Digest(const EVP_MD *md, const unsigned char *data, size_t count,
 EVP_PKEY *X_EVP_PKEY_Q_keygen_sm2(void);
 
 /*
+ * X_EVP_PKEY_Q_keygen_ed25519：生成 Ed25519 签名密钥对（RFC 8032）。
+ * EdDSA 算法同样为可变参数 EVP_PKEY_Q_keygen 的子例，封装以规避 cgo 限制。
+ */
+EVP_PKEY *X_EVP_PKEY_Q_keygen_ed25519(void);
+
+/*
+ * X_EVP_PKEY_Q_keygen_ed448：生成 Ed448 签名密钥对（RFC 8032）。
+ */
+EVP_PKEY *X_EVP_PKEY_Q_keygen_ed448(void);
+
+/*
+ * X_EVP_PKEY_Q_keygen_x25519：生成 X25519 ECDH 密钥对（RFC 7748）。
+ */
+EVP_PKEY *X_EVP_PKEY_Q_keygen_x25519(void);
+
+/*
  * PEM 读写（EVP_PKEY 层）。回调/口令等参数固定为 NULL，
  * 避免 cgo 对 pem_password_cb 函数指针类型的桥接问题。
  */

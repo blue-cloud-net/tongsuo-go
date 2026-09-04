@@ -96,6 +96,12 @@ func (k *PKey) Algorithm() string {
 		return "RSA"
 	case native.EvpPkeyDSA:
 		return "DSA"
+	case native.EvpPkeyED25519:
+		return "ED25519"
+	case native.EvpPkeyED448:
+		return "ED448"
+	case native.EvpPkeyX25519:
+		return "X25519"
 	default:
 		return fmt.Sprintf("id:%d", k.BaseID())
 	}
@@ -451,6 +457,65 @@ func GenerateECKey(curve string) (*PKey, error) {
 	p := native.X_EVP_PKEY_Q_keygen_ec(curve)
 	if p == nil {
 		return nil, NewOpError("pkey: EVP_PKEY_Q_keygen(EC)", native.PopError())
+	}
+	return &PKey{handle: NewHandle(p, true, native.EVP_PKEY_free)}, nil
+}
+
+// GenerateED25519Key 生成 Ed25519 签名密钥对（RFC 8032，64 字节签名 / 32 字节私钥种子）。
+//
+// 返回的 *PKey 持有底层 EVP_PKEY，使用完毕须调用 Close 释放；若底层原生调用失败，返回的错误包装 native.PopError 给出的 OpenSSL 错误码。
+// EdDSA 算法为 OpenSSL 3.x 默认 provider 提供；不需要额外配置。
+//
+// GenerateED25519Key generates a fresh Ed25519 signing key pair (RFC 8032,
+// 64-byte signatures, 32-byte private seed).
+//
+// The returned *PKey owns the underlying EVP_PKEY and the caller is
+// responsible for calling Close to release it. If the underlying native
+// call fails, the returned error wraps the OpenSSL error code from
+// native.PopError. EdDSA is provided by the OpenSSL 3.x default provider
+// and requires no additional configuration.
+func GenerateED25519Key() (*PKey, error) {
+	p := native.X_EVP_PKEY_Q_keygen_ed25519()
+	if p == nil {
+		return nil, NewOpError("pkey: EVP_PKEY_Q_keygen(ED25519)", native.PopError())
+	}
+	return &PKey{handle: NewHandle(p, true, native.EVP_PKEY_free)}, nil
+}
+
+// GenerateED448Key 生成 Ed448 签名密钥对（RFC 8032，114 字节签名 / 57 字节私钥种子）。
+//
+// 返回的 *PKey 持有底层 EVP_PKEY，使用完毕须调用 Close 释放；若底层原生调用失败，返回的错误包装 native.PopError 给出的 OpenSSL 错误码。
+//
+// GenerateED448Key generates a fresh Ed448 signing key pair (RFC 8032,
+// 114-byte signatures, 57-byte private seed).
+//
+// The returned *PKey owns the underlying EVP_PKEY and the caller is
+// responsible for calling Close to release it. If the underlying native
+// call fails, the returned error wraps the OpenSSL error code from
+// native.PopError.
+func GenerateED448Key() (*PKey, error) {
+	p := native.X_EVP_PKEY_Q_keygen_ed448()
+	if p == nil {
+		return nil, NewOpError("pkey: EVP_PKEY_Q_keygen(ED448)", native.PopError())
+	}
+	return &PKey{handle: NewHandle(p, true, native.EVP_PKEY_free)}, nil
+}
+
+// GenerateX25519Key 生成 X25519 ECDH 密钥对（RFC 7748，共享密钥 32 字节）。
+//
+// 返回的 *PKey 持有底层 EVP_PKEY，使用完毕须调用 Close 释放；若底层原生调用失败，返回的错误包装 native.PopError 给出的 OpenSSL 错误码。
+//
+// GenerateX25519Key generates a fresh X25519 ECDH key pair (RFC 7748,
+// 32-byte shared secret).
+//
+// The returned *PKey owns the underlying EVP_PKEY and the caller is
+// responsible for calling Close to release it. If the underlying native
+// call fails, the returned error wraps the OpenSSL error code from
+// native.PopError.
+func GenerateX25519Key() (*PKey, error) {
+	p := native.X_EVP_PKEY_Q_keygen_x25519()
+	if p == nil {
+		return nil, NewOpError("pkey: EVP_PKEY_Q_keygen(X25519)", native.PopError())
 	}
 	return &PKey{handle: NewHandle(p, true, native.EVP_PKEY_free)}, nil
 }
@@ -1020,11 +1085,272 @@ func (k *PKey) PublicEqual(other *PKey) bool {
 	return bytes.Equal(a, b)
 }
 
-// digestForSigner 按签名密钥类型选择摘要：SM2→SM3，RSA/ECDSA→SHA256。
+// SignMessage 使用 EdDSA 对 msg 进行"纯签名"（无摘要、一次性喂入消息）。
+//
+// 仅支持 Ed25519 / Ed448；其他算法密钥将返回 "pkey: algorithm not supported" 错误。
+// 由于铜锁 EdDSA provider 不支持 DigestSign* 多段调用，本实现使用 EVP_DigestSign oneshot：
+// Init(md=NULL, e=NULL, pkey) + DigestSign(mctx, sig, &siglen, msg, msgLen)。不需要 OS 线程锁
+// （EdDSA provider 非 SM2 那种 thread-sensitive 实现）。
+//
+// SignMessage produces an EdDSA "pure" signature (no digest, one-shot
+// message absorption) of msg.
+//
+// Only Ed25519 and Ed448 keys are accepted; all other algorithms return
+// the error "pkey: algorithm not supported". Because the Tongsuo EdDSA
+// provider does not implement the multi-shot DigestSign* interface, the
+// implementation uses the EVP_DigestSign oneshot pattern:
+// Init(md=NULL, e=NULL, pkey) + DigestSign(mctx, sig, &siglen, msg, msgLen).
+// No OS-thread lock is taken (the EdDSA provider is not thread-sensitive
+// the way the SM2 provider is).
+func (k *PKey) SignMessage(msg []byte) ([]byte, error) {
+	if k == nil || k.handle == nil || k.handle.IsClosed() {
+		return nil, fmt.Errorf("pkey: key closed")
+	}
+	switch k.TypeID() {
+	case native.EvpPkeyED25519, native.EvpPkeyED448:
+		// 算法正确，继续
+	default:
+		return nil, fmt.Errorf("pkey: algorithm not supported: %s", k.Algorithm())
+	}
+	mdctx := native.EVP_MD_CTX_new()
+	if mdctx == nil {
+		return nil, NewOpError("pkey: EVP_MD_CTX_new", native.PopError())
+	}
+	defer native.EVP_MD_CTX_free(mdctx)
+	ok, _ := native.EVP_DigestSignInit(mdctx, nil, nil, k.handle.Ptr())
+	if !ok {
+		return nil, NewOpError("pkey: EVP_DigestSignInit(EdDSA)", native.PopError())
+	}
+	// 用 EVP_PKEY_size 给一个稳定容量上界（Ed25519=64, Ed448=114），再以 DigestSign
+	// oneshot 写到 sig（铜锁 EdDSA provider 不支持 DigestSignFinal query 长度）。
+	maxlen := native.EVP_PKEY_size(k.handle.Ptr())
+	if maxlen <= 0 {
+		maxlen = 128
+	}
+	sig := make([]byte, maxlen)
+	realLen := maxlen
+	if !native.EVP_DigestSign(mdctx, sig, &realLen, msg, len(msg)) {
+		return nil, NewOpError("pkey: EVP_DigestSign", native.PopError())
+	}
+	return sig[:realLen], nil
+}
+
+// VerifyMessage 验证 EdDSA 纯签名 msg 与 sig 的匹配。
+//
+// 仅支持 Ed25519 / Ed448；其他算法密钥将返回 "pkey: algorithm not supported" 错误。
+// 验证失败时返回包装的 OpError；调用方需据此区分"签名格式错误"与"验签失败"。
+//
+// VerifyMessage validates an EdDSA "pure" signature (no digest) against sig.
+//
+// Only Ed25519 and Ed448 keys are accepted; all other algorithms return
+// the error "pkey: algorithm not supported". On verification failure a
+// wrapped OpError is returned; callers must inspect it to distinguish a
+// malformed signature from a verification failure.
+func (k *PKey) VerifyMessage(msg, sig []byte) error {
+	if k == nil || k.handle == nil || k.handle.IsClosed() {
+		return fmt.Errorf("pkey: key closed")
+	}
+	switch k.TypeID() {
+	case native.EvpPkeyED25519, native.EvpPkeyED448:
+		// 算法正确，继续
+	default:
+		return fmt.Errorf("pkey: algorithm not supported: %s", k.Algorithm())
+	}
+	if len(sig) == 0 {
+		return fmt.Errorf("pkey: empty signature")
+	}
+	mdctx := native.EVP_MD_CTX_new()
+	if mdctx == nil {
+		return NewOpError("pkey: EVP_MD_CTX_new", native.PopError())
+	}
+	defer native.EVP_MD_CTX_free(mdctx)
+	ok, _ := native.EVP_DigestVerifyInit(mdctx, nil, nil, k.handle.Ptr())
+	if !ok {
+		return NewOpError("pkey: EVP_DigestVerifyInit(EdDSA)", native.PopError())
+	}
+	if !native.EVP_DigestVerify(mdctx, sig, len(sig), msg, len(msg)) {
+		return NewOpError("pkey: EVP_DigestVerify(EdDSA)", native.PopError())
+	}
+	return nil
+}
+
+// RawPrivateKey 导出 EdDSA/X25519 的原始私钥字节。
+//
+// 仅支持 Ed25519（32B）/ Ed448（57B）/ X25519（32B）；其他算法密钥返回
+// "pkey: algorithm not supported" 错误。返回的字节直接来自 OpenSSL，
+// 敏感内存清理由调用方负责。
+//
+// RawPrivateKey exports the raw private key bytes for EdDSA / X25519 keys.
+//
+// Only Ed25519 (32B), Ed448 (57B) and X25519 (32B) are accepted; all
+// other algorithms return "pkey: algorithm not supported". The returned
+// bytes originate from OpenSSL; the caller is responsible for zeroising
+// sensitive memory.
+func (k *PKey) RawPrivateKey() ([]byte, error) {
+	if k == nil || k.handle == nil || k.handle.IsClosed() {
+		return nil, fmt.Errorf("pkey: key closed")
+	}
+	if _, ok := rawKeySize(k.TypeID()); !ok {
+		return nil, fmt.Errorf("pkey: algorithm not supported: %s", k.Algorithm())
+	}
+	// 先 query 长度（铜锁 EdDSA provider 不接受猜测容量；猜测过小直接报错）。
+	n, ok := native.EVP_PKEY_get_raw_private_key(k.handle.Ptr(), nil)
+	if !ok || n <= 0 {
+		return nil, NewOpError("pkey: EVP_PKEY_get_raw_private_key query", native.PopError())
+	}
+	buf := make([]byte, n)
+	got, ok := native.EVP_PKEY_get_raw_private_key(k.handle.Ptr(), buf)
+	if !ok || got != n {
+		return nil, NewOpError("pkey: EVP_PKEY_get_raw_private_key", native.PopError())
+	}
+	return buf, nil
+}
+
+// RawPublicKey 导出 EdDSA/X25519 的原始公钥字节。
+//
+// 容量与算法对应关系与 RawPrivateKey 相同；返回字节不敏感，不需要清零。
+//
+// RawPublicKey exports the raw public key bytes for EdDSA / X25519 keys.
+//
+// Sizes match RawPrivateKey; the returned bytes are not sensitive and
+// need not be zeroised.
+func (k *PKey) RawPublicKey() ([]byte, error) {
+	if k == nil || k.handle == nil || k.handle.IsClosed() {
+		return nil, fmt.Errorf("pkey: key closed")
+	}
+	if _, ok := rawKeySize(k.TypeID()); !ok {
+		return nil, fmt.Errorf("pkey: algorithm not supported: %s", k.Algorithm())
+	}
+	n, ok := native.EVP_PKEY_get_raw_public_key(k.handle.Ptr(), nil)
+	if !ok || n <= 0 {
+		return nil, NewOpError("pkey: EVP_PKEY_get_raw_public_key query", native.PopError())
+	}
+	buf := make([]byte, n)
+	got, ok := native.EVP_PKEY_get_raw_public_key(k.handle.Ptr(), buf)
+	if !ok || got != n {
+		return nil, NewOpError("pkey: EVP_PKEY_get_raw_public_key", native.PopError())
+	}
+	return buf, nil
+}
+
+// NewRawPrivateKey 从原始私钥字节构造 *PKey（typeID 指定 Ed25519 / Ed448 / X25519）。
+//
+// 调用方负责 raw 的清零；typeID 必须为 native.EvpPkeyED25519 / EvpPkeyED448 / EvpPkeyX25519 之一，
+// 否则返回错误包装的 OpError。
+//
+// NewRawPrivateKey constructs a *PKey from raw private key bytes; typeID
+// must be one of native.EvpPkeyED25519, native.EvpPkeyED448, or
+// native.EvpPkeyX25519. Callers are responsible for zeroising raw after
+// the call returns. Errors wrap OpError carrying the OpenSSL code.
+func NewRawPrivateKey(typeID int, raw []byte) (*PKey, error) {
+	switch typeID {
+	case native.EvpPkeyED25519, native.EvpPkeyED448, native.EvpPkeyX25519:
+	default:
+		return nil, fmt.Errorf("pkey: invalid raw key type: %d", typeID)
+	}
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("pkey: empty raw private key")
+	}
+	p := native.EVP_PKEY_new_raw_private_key(typeID, raw)
+	if p == nil {
+		return nil, NewOpError("pkey: EVP_PKEY_new_raw_private_key", native.PopError())
+	}
+	return &PKey{handle: NewHandle(p, true, native.EVP_PKEY_free)}, nil
+}
+
+// NewRawPublicKey 从原始公钥字节构造 *PKey，typeID 约定与 NewRawPrivateKey 一致。
+//
+// NewRawPublicKey constructs a *PKey from raw public key bytes; typeID
+// follows the same convention as NewRawPrivateKey.
+func NewRawPublicKey(typeID int, raw []byte) (*PKey, error) {
+	switch typeID {
+	case native.EvpPkeyED25519, native.EvpPkeyED448, native.EvpPkeyX25519:
+	default:
+		return nil, fmt.Errorf("pkey: invalid raw key type: %d", typeID)
+	}
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("pkey: empty raw public key")
+	}
+	p := native.EVP_PKEY_new_raw_public_key(typeID, raw)
+	if p == nil {
+		return nil, NewOpError("pkey: EVP_PKEY_new_raw_public_key", native.PopError())
+	}
+	return &PKey{handle: NewHandle(p, true, native.EVP_PKEY_free)}, nil
+}
+
+// rawKeySize 返回算法对应的原始密钥字节长度。typeID 不在支持集合内返回 (0, false)。
+//
+// rawKeySize returns the raw key byte length corresponding to typeID; an
+// unsupported typeID returns (0, false).
+func rawKeySize(typeID int) (int, bool) {
+	switch typeID {
+	case native.EvpPkeyED25519, native.EvpPkeyX25519:
+		return 32, true
+	case native.EvpPkeyED448:
+		return 57, true
+	default:
+		return 0, false
+	}
+}
+
+// Derive 计算与对端 peer 的共享密钥（当前实现支持 X25519 / ECDH 通用路径）。
+//
+// 当前实现仅在 X25519 上验证通过；通用 ECDH（如 EC/P-256）暂未覆盖（caller 应自行确保 peer
+// 是相同算法族的公钥）。失败时返回包装的 OpError；调用方负责对返回的 shared 字节做清零。
+//
+// Derive computes the shared secret with peer.
+//
+// Only X25519 has been tested end-to-end on Tongsuo; generic ECDH (e.g.
+// EC P-256) shares the same native dispatch but is not yet covered by
+// tests, so callers should restrict themselves to the X25519 key type.
+// On failure an OpError-wrapped error is returned; the caller is
+// responsible for zeroising the returned shared secret.
+func (k *PKey) Derive(peer *PKey) ([]byte, error) {
+	if k == nil || k.handle == nil || k.handle.IsClosed() {
+		return nil, fmt.Errorf("pkey: key closed")
+	}
+	if peer == nil || peer.handle == nil || peer.handle.IsClosed() {
+		return nil, fmt.Errorf("pkey: invalid peer key")
+	}
+	if k.Algorithm() != peer.Algorithm() {
+		return nil, fmt.Errorf("pkey: derive peer algorithm mismatch: %s vs %s",
+			k.Algorithm(), peer.Algorithm())
+	}
+	ctx := native.EVP_PKEY_CTX_new_from_pkey(k.handle.Ptr())
+	if ctx == nil {
+		return nil, NewOpError("pkey: EVP_PKEY_CTX_new_from_pkey(derive)", native.PopError())
+	}
+	defer native.EVP_PKEY_CTX_free(ctx)
+	if !native.EVP_PKEY_derive_init(ctx) {
+		return nil, NewOpError("pkey: EVP_PKEY_derive_init", native.PopError())
+	}
+	if !native.EVP_PKEY_derive_set_peer(ctx, peer.handle.Ptr()) {
+		return nil, NewOpError("pkey: EVP_PKEY_derive_set_peer", native.PopError())
+	}
+	// 两段式查询
+	outlen := 0
+	if !native.EVP_PKEY_derive(ctx, nil, &outlen) {
+		return nil, NewOpError("pkey: EVP_PKEY_derive query", native.PopError())
+	}
+	if outlen <= 0 {
+		return nil, fmt.Errorf("pkey: derive produced empty secret")
+	}
+	out := make([]byte, outlen)
+	if !native.EVP_PKEY_derive(ctx, out, &outlen) {
+		return nil, NewOpError("pkey: EVP_PKEY_derive", native.PopError())
+	}
+	return out[:outlen], nil
+}
+
+// digestForSigner 按签名密钥类型选择摘要：SM2→SM3，RSA/ECDSA→SHA256；
+// EdDSA（ED25519 / ED448）返回 nil 以提示调用方走无摘要路径（SignMessage/VerifyMessage
+// 或 EVP_MD_CTX-based 签名如 X509_sign_ctx）。
 //
 // digestForSigner picks the default digest for sign operations:
 // SM2 keys use SM3 (per GB/T 32918), RSA and ECDSA keys use SHA-256.
-// Other key types fall back to SHA-256.
+// EdDSA keys (ED25519 / ED448) return nil so callers route to the
+// digest-less SignMessage / VerifyMessage path (or use EVP_MD_CTX-based
+// signatures such as X509_sign_ctx). RSA / EC remain on SHA-256.
 func digestForSigner(k *PKey) *Digest {
 	if k != nil && k.TypeID() == native.EvpPkeySM2 {
 		return SM3()
@@ -1032,6 +1358,9 @@ func digestForSigner(k *PKey) *Digest {
 	switch k.BaseID() {
 	case native.EvpPkeyRSA, native.EvpPkeyEC:
 		return SHA256()
+	case native.EvpPkeyED25519, native.EvpPkeyED448:
+		// EdDSA 走无摘要签名（SignMessage/VerifyMessage 或 X509_sign_ctx）
+		return nil
 	default:
 		return SM3()
 	}

@@ -52,14 +52,20 @@ func EVP_PKEY_free(pkey unsafe.Pointer) {
 
 // EVP_PKEY 类型常量（来自 evp.h 宏，OpenSSL 3.x / 铜锁）。
 //
-// EvpPkeyRSA, EvpPkeyDSA, EvpPkeyEC and EvpPkeySM2 are the EVP_PKEY base IDs
-// returned by EVP_PKEY_get_base_id; use EvpPkeySM2 to detect SM2 keys (which
-// otherwise report as EvpPkeyEC via get_base_id but EvpPkeySM2 via get_id).
+// EvpPkeyRSA, EvpPkeyDSA, EvpPkeyEC, EvpPkeyED25519, EvpPkeyED448,
+// EvpPkeyX25519 and EvpPkeySM2 are the EVP_PKEY base IDs returned by
+// EVP_PKEY_get_base_id; use EvpPkeySM2 to detect SM2 keys (which otherwise
+// report as EvpPkeyEC via get_base_id but EvpPkeySM2 via get_id). The EdDSA
+// and X25519 IDs also come from obj_mac.h (Tongsuo/OpenSSL 3.x) and match
+// the numeric values exposed via OBJ_txt2nid.
 const (
-	EvpPkeyRSA = 6
-	EvpPkeyDSA = 116
-	EvpPkeyEC  = 408
-	EvpPkeySM2 = 1172
+	EvpPkeyRSA    = 6
+	EvpPkeyDSA    = 116
+	EvpPkeyEC     = 408
+	EvpPkeyX25519 = 1034
+	EvpPkeyED25519 = 1087
+	EvpPkeyED448  = 1088
+	EvpPkeySM2    = 1172
 )
 
 // EVP_PKEY_get_base_id 返回密钥底层类型 ID（如 EvpPkeyEC）。
@@ -292,6 +298,27 @@ func X_EVP_PKEY_Q_keygen_ec(curve string) unsafe.Pointer {
 	return unsafe.Pointer(C.X_EVP_PKEY_Q_keygen_ec(c))
 }
 
+// X_EVP_PKEY_Q_keygen_ed25519 生成 Ed25519 密钥对（RFC 8032）。
+// X_EVP_PKEY_Q_keygen_ed25519 (shim) generates an Ed25519 signing key pair.
+// The caller owns the returned EVP_PKEY and must release it with EVP_PKEY_free.
+func X_EVP_PKEY_Q_keygen_ed25519() unsafe.Pointer {
+	return unsafe.Pointer(C.X_EVP_PKEY_Q_keygen_ed25519())
+}
+
+// X_EVP_PKEY_Q_keygen_ed448 生成 Ed448 密钥对（RFC 8032）。
+// X_EVP_PKEY_Q_keygen_ed448 (shim) generates an Ed448 signing key pair.
+// The caller owns the returned EVP_PKEY and must release it with EVP_PKEY_free.
+func X_EVP_PKEY_Q_keygen_ed448() unsafe.Pointer {
+	return unsafe.Pointer(C.X_EVP_PKEY_Q_keygen_ed448())
+}
+
+// X_EVP_PKEY_Q_keygen_x25519 生成 X25519 密钥对（RFC 7748）。
+// X_EVP_PKEY_Q_keygen_x25519 (shim) generates an X25519 ECDH key pair.
+// The caller owns the returned EVP_PKEY and must release it with EVP_PKEY_free.
+func X_EVP_PKEY_Q_keygen_x25519() unsafe.Pointer {
+	return unsafe.Pointer(C.X_EVP_PKEY_Q_keygen_x25519())
+}
+
 // X_PEM_read_bio_PrivateKey_pass 从 BIO 读取用口令加密的 PEM 私钥。
 // X_PEM_read_bio_PrivateKey_pass (shim) reads an encrypted PEM private key
 // from bio using pass. Returns NULL on failure; caller owns the EVP_PKEY.
@@ -483,4 +510,109 @@ func D2i_PrivateKey(der []byte) unsafe.Pointer {
 	C.memcpy(buf, unsafe.Pointer(&der[0]), C.size_t(len(der)))
 	p := (*C.uchar)(buf)
 	return unsafe.Pointer(C.d2i_PrivateKey(0, nil, &p, C.long(len(der))))
+}
+
+// EVP_PKEY_new_raw_private_key 从原始私钥字节构造密钥（Ed25519=32B，Ed448=57B，X25519=32B）。
+// EVP_PKEY_new_raw_private_key wraps raw private-key bytes into an EVP_PKEY.
+// type must be one of EvpPkeyED25519 / EvpPkeyED448 / EvpPkeyX25519. The
+// caller owns the returned EVP_PKEY and must release it with EVP_PKEY_free.
+func EVP_PKEY_new_raw_private_key(typeID int, raw []byte) unsafe.Pointer {
+	if len(raw) == 0 {
+		return nil
+	}
+	return unsafe.Pointer(C.EVP_PKEY_new_raw_private_key(C.int(typeID), nil,
+		(*C.uchar)(unsafe.Pointer(&raw[0])), C.size_t(len(raw))))
+}
+
+// EVP_PKEY_new_raw_public_key 从原始公钥字节构造密钥（Ed25519=32B，Ed448=57B，X25519=32B）。
+// EVP_PKEY_new_raw_public_key wraps raw public-key bytes into an EVP_PKEY.
+// type must be one of EvpPkeyED25519 / EvpPkeyED448 / EvpPkeyX25519. The
+// caller owns the returned EVP_PKEY and must release it with EVP_PKEY_free.
+func EVP_PKEY_new_raw_public_key(typeID int, raw []byte) unsafe.Pointer {
+	if len(raw) == 0 {
+		return nil
+	}
+	return unsafe.Pointer(C.EVP_PKEY_new_raw_public_key(C.int(typeID), nil,
+		(*C.uchar)(unsafe.Pointer(&raw[0])), C.size_t(len(raw))))
+}
+
+// EVP_PKEY_get_raw_private_key 导出原始私钥字节。两段式：raw=nil 时查询所需长度；
+// raw 非 nil 时写入预分配缓冲。铜锁 EdDSA provider 在 buffer 过小时直接报错，因此调用方
+// 通常先 query 再按返回值分配写入（不允许猜容量）。
+// 返回 (length, true) 成功；失败返回 (0, false)。
+//
+// EVP_PKEY_get_raw_private_key exports raw private-key bytes using a
+// two-call pattern: pass raw=nil to query the required length, then call
+// again with a pre-sized buffer of that length. The Tongsuo EdDSA
+// provider rejects undersized buffers outright, so callers must not guess.
+// Returns (length, true) on success; on failure (0, false).
+func EVP_PKEY_get_raw_private_key(pkey unsafe.Pointer, raw []byte) (int, bool) {
+	var (
+		buf *C.uchar
+		n   C.size_t
+	)
+	if len(raw) > 0 {
+		buf = (*C.uchar)(unsafe.Pointer(&raw[0]))
+		n = C.size_t(len(raw))
+	}
+	if C.EVP_PKEY_get_raw_private_key((*C.EVP_PKEY)(pkey), buf, &n) != 1 {
+		return 0, false
+	}
+	return int(n), true
+}
+
+// EVP_PKEY_get_raw_public_key 导出原始公钥字节；语义同 EVP_PKEY_get_raw_private_key。
+// EVP_PKEY_get_raw_public_key exports raw public-key bytes; semantics
+// match EVP_PKEY_get_raw_private_key (two-call: query then fill).
+func EVP_PKEY_get_raw_public_key(pkey unsafe.Pointer, raw []byte) (int, bool) {
+	var (
+		buf *C.uchar
+		n   C.size_t
+	)
+	if len(raw) > 0 {
+		buf = (*C.uchar)(unsafe.Pointer(&raw[0]))
+		n = C.size_t(len(raw))
+	}
+	if C.EVP_PKEY_get_raw_public_key((*C.EVP_PKEY)(pkey), buf, &n) != 1 {
+		return 0, false
+	}
+	return int(n), true
+}
+
+// EVP_PKEY_derive_init 初始化密钥协商上下文。
+// EVP_PKEY_derive_init prepares ctx for a key-agreement (DH/KEM) operation.
+// Returns true on success.
+func EVP_PKEY_derive_init(ctx unsafe.Pointer) bool {
+	return C.EVP_PKEY_derive_init((*C.EVP_PKEY_CTX)(ctx)) == 1
+}
+
+// EVP_PKEY_derive_set_peer 设置对端公钥（用于 X25519 等 ECDH）。
+// EVP_PKEY_derive_set_peer attaches peer as the remote public key for the
+// upcoming derive; returns true on success.
+func EVP_PKEY_derive_set_peer(ctx, peer unsafe.Pointer) bool {
+	return C.EVP_PKEY_derive_set_peer((*C.EVP_PKEY_CTX)(ctx), (*C.EVP_PKEY)(peer)) == 1
+}
+
+// EVP_PKEY_derive 计算共享密钥（X25519 输出 32B）。out 容量足够时直接写入；out=nil 时
+// 通过 *keylen 返回所需容量。调用方按需预分配或两段式查询。
+// EVP_PKEY_derive computes the shared secret. When out is non-nil it must be
+// pre-sized; when out is nil *keylen returns the required capacity. Callers
+// typically call it twice: once with out=nil to query, once with a sized
+// buffer to fill.
+func EVP_PKEY_derive(ctx unsafe.Pointer, out []byte, keylen *int) bool {
+	var l C.size_t
+	if len(out) > 0 {
+		l = C.size_t(len(out))
+	}
+	var ok bool
+	if len(out) == 0 {
+		ok = C.EVP_PKEY_derive((*C.EVP_PKEY_CTX)(ctx), nil, &l) == 1
+	} else {
+		ok = C.EVP_PKEY_derive((*C.EVP_PKEY_CTX)(ctx),
+			(*C.uchar)(unsafe.Pointer(&out[0])), &l) == 1
+	}
+	if keylen != nil {
+		*keylen = int(l)
+	}
+	return ok
 }

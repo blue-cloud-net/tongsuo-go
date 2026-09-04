@@ -77,6 +77,64 @@ func EVP_MD_CTX_free(ctx unsafe.Pointer) {
 	C.EVP_MD_CTX_free((*C.EVP_MD_CTX)(ctx))
 }
 
+// EVP_DigestSign 一次性签名（铜锁 EdDSA provider 的唯一支持入口）。
+//
+// ctx 必须已经过 EVP_DigestSignInit 注入 key（md 传 NULL、e 传 NULL）。tbs 为待签消息；
+// sig 容量由调用方按 EVP_PKEY_size 预分配；调用后 *siglen 写入实际签名长度。
+//
+// EVP_DigestSign produces a one-shot signature; this is the only entry
+// point supported by the Tongsuo EdDSA provider for signing. ctx must
+// already be initialized via EVP_DigestSignInit with md=NULL, e=NULL.
+// sig must be pre-sized (typically with EVP_PKEY_size); *siglen returns
+// the actual signature length.
+func EVP_DigestSign(ctx unsafe.Pointer, sig []byte, siglen *int, tbs []byte, tbslen int) bool {
+	var sigP *C.uchar
+	var tbsP *C.uchar
+	var l C.size_t
+	if len(sig) > 0 {
+		sigP = (*C.uchar)(unsafe.Pointer(&sig[0]))
+		l = C.size_t(len(sig))
+	}
+	// tbslen 可为 0（EdDSA 允许签空消息）；tbs 长度小于 tbslen 时按切片实际长度裁剪。
+	if tbslen > len(tbs) {
+		tbslen = len(tbs)
+	}
+	if tbslen > 0 {
+		tbsP = (*C.uchar)(unsafe.Pointer(&tbs[0]))
+	}
+	ok := C.EVP_DigestSign((*C.EVP_MD_CTX)(ctx), sigP, &l,
+		tbsP, C.size_t(tbslen)) == 1
+	if siglen != nil {
+		*siglen = int(l)
+	}
+	return ok
+}
+
+// EVP_DigestVerify 一次性验签（EdDSA provider 唯一支持入口）。
+//
+// ctx 必须经过 EVP_DigestVerifyInit；sig 是签名；tbs 是原消息；返回 true=验签通过。
+//
+// EVP_DigestVerify performs a one-shot signature verification (the only
+// entry point supported by the Tongsuo EdDSA provider). ctx must already
+// be initialized via EVP_DigestVerifyInit. Returns true on valid signature.
+func EVP_DigestVerify(ctx unsafe.Pointer, sig []byte, siglen int, tbs []byte, tbslen int) bool {
+	if len(sig) == 0 {
+		return false
+	}
+	var tl C.size_t
+	var tbsP *C.uchar
+	if len(tbs) > 0 {
+		if tbslen > len(tbs) {
+			tbslen = len(tbs)
+		}
+		tl = C.size_t(tbslen)
+		tbsP = (*C.uchar)(unsafe.Pointer(&tbs[0]))
+	}
+	return C.EVP_DigestVerify((*C.EVP_MD_CTX)(ctx),
+		(*C.uchar)(unsafe.Pointer(&sig[0])), C.size_t(siglen),
+		tbsP, tl) == 1
+}
+
 // EVP_MD_CTX_copy_ex 复制摘要上下文（用于不改变原状态的 Sum）。
 // EVP_MD_CTX_copy_ex duplicates src into dst so the caller can finalize one
 // copy without consuming the state of the other. dst must already be allocated.
