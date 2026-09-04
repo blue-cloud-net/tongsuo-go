@@ -197,3 +197,33 @@ func TestInvalidKey(t *testing.T) {
 		t.Fatal("expected error for short key")
 	}
 }
+
+// TestBlockConcurrent 验证 cipher.Block 可被多 goroutine 并发复用（stdlib 契约）。
+// 启用 -race 时会捕获对共享原生 EVP_CIPHER_CTX 的数据竞争。
+func TestBlockConcurrent(t *testing.T) {
+	key := mustHex(t, "000102030405060708090a0b0c0d0e0f")
+	in := mustHex(t, "00112233445566778899aabbccddeeff")
+	want := mustHex(t, "69c4e0d86a7b0430d8cdb78070b4c55a")
+	blk, err := NewCipher(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const goroutines = 32
+	done := make(chan struct{}, goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer func() { done <- struct{}{} }()
+			var out [BlockSize]byte
+			for j := 0; j < 100; j++ {
+				blk.Encrypt(out[:], in)
+				if !bytes.Equal(out[:], want) {
+					t.Errorf("concurrent encrypt mismatch: got %x want %x", out[:], want)
+					return
+				}
+			}
+		}()
+	}
+	for i := 0; i < goroutines; i++ {
+		<-done
+	}
+}

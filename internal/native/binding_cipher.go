@@ -192,6 +192,19 @@ func EVP_CIPHER_CTX_free(ctx unsafe.Pointer) {
 	C.EVP_CIPHER_CTX_free((*C.EVP_CIPHER_CTX)(ctx))
 }
 
+// EVP_CIPHER_CTX_copy 将 src（含其算法/密钥/IV 状态）深拷贝到 dst。
+// 拷贝成功后 dst 与 src 独立，可独立 Update/Final；失败时 dst 必须视为未定义。
+// dst 必须是 EVP_CIPHER_CTX_new 分配但未初始化（或已初始化）的新上下文。
+//
+// EVP_CIPHER_CTX_copy deep-copies the state of src (cipher algorithm,
+// key, IV, padding flag, etc.) into dst. After a successful copy,
+// dst and src are fully independent and may be used concurrently for
+// Update/Final operations. On failure dst's contents are undefined.
+// dst must be allocated by EVP_CIPHER_CTX_new.
+func EVP_CIPHER_CTX_copy(dst, src unsafe.Pointer) bool {
+	return C.EVP_CIPHER_CTX_copy((*C.EVP_CIPHER_CTX)(dst), (*C.EVP_CIPHER_CTX)(src)) == 1
+}
+
 // EVP_CIPHER_CTX_set_padding 设置填充模式（1=PKCS7，0=无填充）。
 //
 // EVP_CIPHER_CTX_set_padding enables (PKCS#7) or disables padding: pad=1

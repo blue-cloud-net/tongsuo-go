@@ -366,3 +366,31 @@ func TestGCMBlockAligned(t *testing.T) {
 		}
 	}
 }
+
+// TestBlockConcurrent 验证 cipher.Block 可被多 goroutine 并发复用（stdlib 契约）。
+// 启用 -race 时会捕获对共享原生 EVP_CIPHER_CTX 的数据竞争。
+func TestBlockConcurrent(t *testing.T) {
+	blk, err := NewCipher(vectorKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := mustHex(t, "681edf34d206965e86b3e94f536e4246")
+	const goroutines = 32
+	done := make(chan struct{}, goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer func() { done <- struct{}{} }()
+			var out [BlockSize]byte
+			for j := 0; j < 100; j++ {
+				blk.Encrypt(out[:], vectorIn)
+				if !bytes.Equal(out[:], want) {
+					t.Errorf("concurrent encrypt mismatch: got %x want %x", out[:], want)
+					return
+				}
+			}
+		}()
+	}
+	for i := 0; i < goroutines; i++ {
+		<-done
+	}
+}
