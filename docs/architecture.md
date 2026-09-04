@@ -258,7 +258,7 @@ go build ./...
 | 实现可见性 | 原生指针暴露到公开 API | `internal/` 隐藏 cgo 与原生句柄 | Native 层 internal |
 | 生命周期 | 主要依赖 finalizer | `handle` 基类：Close() + finalizer + owned | `BaseWapper`：IDisposable + 析构器 |
 | API 命名 | 自身风格 | 按 C# 语义命名 | BCL 风格 |
-| 传输层 | 顶层包 `tongsuogo`（TLCP/TLS） | 顶层包 `tls`（Phase 6 已完成：`Dial`/`Server`/`Conn`） | 独立 Ssl 层 |
+| 传输层 | 顶层包 `tongsuogo`（TLCP/TLS） | 顶层包 `tls`（`Dial`/`Server`/`Conn`） | 独立 Ssl 层 |
 
 ---
 

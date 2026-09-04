@@ -1,8 +1,8 @@
 # 路线图
 
-本文档描述 `tongsuo-go` 的版本与开发阶段规划。当前所有规划功能均属于 **v0.1.0**，
-内部按开发阶段拆分实施。架构说明见 [architecture.md](architecture.md)，开发规范见
-[development-guide.md](development-guide.md)，测试规范见 [testing-guide.md](testing-guide.md)。
+本文档描述 `tongsuo-go` 的版本与开发阶段规划。架构说明见
+[architecture.md](architecture.md)，开发规范见 [development-guide.md](development-guide.md)，
+测试规范见 [testing-guide.md](testing-guide.md)。
 
 **优先级原则**：核心国密（SM3 / SM4 / SM2）优先，后续阶段再补齐 AES、X.509、TLS/NTLS。
 
@@ -10,7 +10,7 @@
 
 ## v0.1.0
 
-### Phase 1 — 基础框架与核心国密（已完成）
+### Phase 1 — 基础框架与核心国密
 
 **框架基础**
 - [x] 三层目录结构搭建（`internal/native` / `internal/core` / `crypto/*`）
@@ -60,7 +60,7 @@
 
 ---
 
-### Phase 3 — SM2 非对称算法（已完成）
+### Phase 3 — SM2 非对称算法
 
 **SM2 密钥管理**
 - [x] SM2 密钥对生成（`crypto/sm2.GenerateKey`，基于 `EVP_PKEY_Q_keygen`）
@@ -83,7 +83,7 @@
 
 ---
 
-### Phase 4 — HMAC、更多哈希与 AES（已完成）
+### Phase 4 — HMAC、更多哈希与 AES
 
 **HMAC 消息认证码**
 - [x] 绑定层：`HMAC_CTX` 系列（`HMAC_CTX_new/free/copy`、`HMAC_Init_ex/Update/Final`）
@@ -102,7 +102,7 @@
 
 ---
 
-### Phase 5 — X.509 证书管理（已完成）
+### Phase 5 — X.509 证书管理
 
 **证书解析**
 - [x] PEM 加载/导出（`LoadCertificatePEM` / `MarshalPEM`）
@@ -121,7 +121,7 @@
   CertificationRequestInfo 并走 SM2 验签路径（结果与 `openssl req -verify` 一致）
 
 **CRL（证书吊销列表）**
-- [ ] 已移至 Phase 9 统一规划（CRL 解析 + 吊销检查）
+- [x] 已与证书链验证统一规划落地（CRL 解析 + 吊销检查）
 
 **测试**
 - [x] 自签/CA 链/CSR 单元测试 + openssl CLI 交叉验证（verify / x509 / req -verify）
@@ -137,7 +137,7 @@
 
 ---
 
-### Phase 7 — 加密层补全（P0，已完成）
+### Phase 7 — 加密层补全（P0）
 
 **SM2 密文顺序转换（C1C2C3 ↔ C1C3C2 ↔ DER）**
 - [x] `crypto/sm2` 新增 `Format(ct, from, to)`：DER / C1C2C3 / C1C3C2 三种密文格式互转
@@ -156,7 +156,7 @@
 
 ---
 
-### Phase 8 — 证书结构化解析与交换（对应需求 2.2 P0/P1 主干，已完成）
+### Phase 8 — 证书结构化解析与交换（对应需求 2.2 P0/P1 主干）
 
 **证书结构化解析**
 - [x] 绑定层：`X509_NAME_get_entry_count/get_entry`、`X509_NAME_ENTRY_get_object/data`、
@@ -193,7 +193,7 @@
 
 ---
 
-### Phase 9 — 证书链验证与吊销（对应需求 2.2，P1，已完成）
+### Phase 9 — 证书链验证与吊销（对应需求 2.2，P1）
 
 **证书链验证（X509_STORE）**
 - [x] 绑定层：`X509_STORE_new/free/add_cert/add_crl/set_flags`、`X509_STORE_CTX_new/free/init/set0_untrusted`
@@ -219,11 +219,11 @@
 
 ---
 
-### Phase 10 — 密钥体系扩展（RSA / EC，对应需求 2.3，P1，已完成）
+### Phase 10 — 密钥体系扩展（RSA / EC，对应需求 2.3，P1）
 
 **RSA / EC 密钥类型支持**
 - [x] 绑定层：通用 keygen（shim `X_EVP_PKEY_Q_keygen_rsa(bits)` / `X_EVP_PKEY_Q_keygen_ec(curve)`）
-- [x] 绑定层：`EVP_PKEY_get_base_id` / `EVP_PKEY_get_id`（密钥类型识别，Phase 8 已完成）
+- [x] 绑定层：`EVP_PKEY_get_base_id` / `EVP_PKEY_get_id`（密钥类型识别）
 - [x] 绑定层：参数提取 `EVP_PKEY_get_bn_param`（RSA n/e/d/rsa-factor1/rsa-factor2；EC priv）、
   `EVP_PKEY_get_utf8_string_param`（curve/group）、`EVP_PKEY_get_octet_string_param`（EC pub 点）
 - [x] 核心层：`PKey` 泛化（RSA Sign/Verify PKCS1v15/PSS、RSA Encrypt/Decrypt PKCS1v15/OAEP、
@@ -252,7 +252,7 @@
 
 ---
 
-### Phase 11 — 容器格式（对应需求 2.4，P2，依赖 Phase 10，已完成）
+### Phase 11 — 容器格式（对应需求 2.4，P2，依赖 Phase 10）
 
 **PKCS#12（PFX）**
 - [x] 绑定层：补 `BIO_write`；核心层新增 `MemBIO` 封装
@@ -269,14 +269,14 @@
 
 ---
 
-### Phase 12 — 在线与格式工具（对应需求 2.5/2.6，P2；OCSP 依赖 Phase 9，JWK/XML 依赖 Phase 10，已完成）
+### Phase 12 — 在线与格式工具（对应需求 2.5/2.6，P2；OCSP 依赖 Phase 9，JWK/XML 依赖 Phase 10）
 
 **OCSP（在线证书状态协议）**
 - [x] 绑定层：`OCSP_cert_to_id` / `OCSP_REQUEST_new` / `OCSP_request_add0_id` / `i2d_OCSP_REQUEST`、
   `d2i_OCSP_RESPONSE` / `OCSP_response_get1_basic` / `OCSP_resp_find_status` / `OCSP_basic_verify`
   （shim 桥接证书栈）、`OCSP_resp_get0_produced_at/certs`
 - [x] API 层：`crypto/ocsp` 的 `CreateRequest` / `ParseResponse` / `Verify`（响应验证经 `OCSP_basic_verify`
-  配合 Phase 9 的 `Store` 信任锚）
+  配合 `Store` 信任锚）
 - [x] 测试：本地 `openssl ocsp` 离线 responder 互通（good / revoked 含原因与时间）
 
 **ASN.1 树 / DER dump**
@@ -294,7 +294,7 @@
 
 **背景**：借鉴 BouncyCastle C# 的命名空间分层——`crypto/` 仅装算法引擎；
 ASN.1、PKCS、OCSP、TLS、JWK、XML 与 `crypto/` 平级，不作为其子包。
-本 Phase 把 Phase 1 搭建的 `crypto/*` 平铺结构，重新整理为：
+本 Phase 把初始搭建的 `crypto/*` 平铺结构，重新整理为：
 "算法引擎层（`crypto/`）+ 组合层（顶级）"两个职责边界清晰的层级。
 
 **两件事同时做**
@@ -357,16 +357,16 @@ tongsuo-go/
 **说明**
 
 - 本 Phase 仅重构（路径变化 + 文件拆分），**API 行为不变**
-- 不打 tag（Phase 14 处理）
+- 不打 tag（由发布收尾统一处理）
 - 不引入新算法、新协议、新 binding
 - jwk/rsaxml 中 stdlib `crypto/x509.MarshalPKCS*PrivateKey` /
   `crypto/rsa.PrivateKey` 类型 bridge 属于 DER 序列化中间件（不做密码运算），
   属 idiomatic Go 引用，未来若完全消除需新增 Tongsuo `EVP_PKEY_fromdata` /
   `i2d_PrivateKey` 绑定，列入后续 Phase
 - `crypto/rand` 命名与 stdlib `crypto/rand` 同名，**保留路径**但加文档警示
-- 说明：Phase 5 中延后的 CRL 解析与吊销检查已并入 Phase 9 统一规划；
-  `CreateCertificate` / CSR 已泛化支持 SM2 / RSA / ECDSA（Phase 10 落地）
-- 核心国密优先：Phase 1–3 是重点；Phase 4–12 顺序可根据实际需求调整
+- 说明：CRL 解析与吊销检查已与证书链验证统一规划；
+  `CreateCertificate` / CSR 已泛化支持 SM2 / RSA / ECDSA
+- 核心国密优先：SM3 / SM4 / SM2 优先；后续阶段顺序可根据实际需求调整
 - 如需提出新功能需求，请提交 Issue
 
 ---

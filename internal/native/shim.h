@@ -46,7 +46,7 @@ X509_REQ *X_PEM_read_bio_X509_REQ(BIO *bp);
 int X_PEM_write_bio_X509_REQ(BIO *bp, X509_REQ *x);
 
 /*
- * Phase 8：X.509 结构化解析与交换。
+ * X.509 结构化解析与交换。
  * 所有返回 malloc（OPENSSL_malloc）字符串的函数，调用方必须用 X_OPENSSL_free 释放；
  * 栈/扩展等对象统一以 void * 传递，规避 cgo 对 STACK_OF 宏类型的限制。
  */
@@ -107,7 +107,7 @@ int X_X509_REQ_set_challenge_password(X509_REQ *r, const char *pwd);
 char *X_X509_REQ_get_challenge_password(X509_REQ *r);      /* 调用方 free */
 
 /*
- * Phase 9：证书链验证与吊销。
+ * 证书链验证与吊销。
  * X509_STORE_CTX_set0_untrusted 的 STACK_OF(X509) 以 void * 传递。
  */
 
@@ -138,7 +138,7 @@ int X_PEM_write_bio_X509_CRL(BIO *bp, X509_CRL *x);
 unsigned char *X_X509_CRL_get_akid_keyid(X509_CRL *crl, int *out_len);
 
 /*
- * Phase 10：RSA / EC 密钥体系。
+ * RSA / EC 密钥体系。
  * EVP_PKEY_Q_keygen 为可变参数函数，分别包装 RSA（size_t bits）与 EC（char *curve）。
  * 口令回调经 void* 上下文（u）传递，规避 cgo 对函数指针类型的限制。
  */
@@ -150,7 +150,7 @@ RSA *X_PEM_read_bio_RSAPrivateKey(BIO *bp);
 int X_PEM_write_bio_RSAPrivateKey(BIO *bp, RSA *rsa);
 
 /*
- * Phase 11：PKCS#12 / PKCS#7 容器格式。
+ * PKCS#12 / PKCS#7 容器格式。
  * STACK_OF(X509) 以 void* / 数组形式传递，规避 cgo 类型限制；
  * PKCS7 证书提取经公开结构体 p7->d.sign->cert 访问（铜锁无 PKCS7_get_certificates）。
  */
@@ -160,12 +160,12 @@ int X_PKCS12_parse(PKCS12 *p12, const char *pass, EVP_PKEY **pkey,
                    X509 **cert, void **ca);
 void *X_PKCS7_get0_certificates(PKCS7 *p7); /* STACK_OF(X509)* 内部指针，勿释放 */
 
-/* Phase 12：OCSP 响应签名验证（STACK_OF(X509) 以 void* 传递）。 */
+/* OCSP 响应签名验证（STACK_OF(X509) 以 void* 传递）。 */
 int X_OCSP_basic_verify(OCSP_BASICRESP *bs, void *certs, X509_STORE *st,
                         unsigned long flags);
 
 /*
- * Phase 13：KDF（EVP_KDF）。
+ * KDF（EVP_KDF）。
  * HKDF / PBKDF2 的 OSSL_PARAM 数组在 C 侧构造，规避 cgo 对 OSSL_PARAM 结构体
  * 数组的限制；digest 以算法名（如 "SHA256"）传入，由 provider 解析。
  * 返回值遵循 OpenSSL 惯例：成功 1，失败 0（错误入队列，经 ERR_get_error 读取）。

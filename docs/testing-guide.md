@@ -160,4 +160,4 @@ go test -fuzz FuzzRoundTrip ./crypto/sm4
 | SM3 | GB/T 32905-2016 附录 A |
 | SM4 | GB/T 32907-2016 附录 A |
 | SM2 | GB/T 32918 系列 |
-| AES | NIST FIPS 197 附录 B/C（Phase 4） |
+| AES | NIST FIPS 197 附录 B/C |

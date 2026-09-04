@@ -58,7 +58,7 @@ make install_sw
 - 通过 [actions/cache](https://github.com/actions/cache) 按 `runner.os + Tongsuo 版本
   + workflow hash` 缓存，重复运行通常**秒级命中**
 - 关键配置标志（与 [architecture.md §6.2](architecture.md) 对齐）：
-  - `enable-ntls` — 国密 NTLS 支持（Phase 6 必需）
+  - `enable-ntls` — 国密 NTLS 支持
   - `enable-export-sm4` — 导出 SM4 算法符号
   - `enable-ssl-trace` — 调试用 trace 回调
   - `no-shared` — 编译静态库，CI 容器内统一管理
