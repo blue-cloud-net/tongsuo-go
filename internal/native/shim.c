@@ -58,6 +58,39 @@ void X_OPENSSL_free(void *ptr)
     OPENSSL_free(ptr);
 }
 
+/*
+ * X_SSL_CTX_set_verify 包装 SSL_CTX_set_verify，固定 callback 为 NULL。
+ *
+ * cgo 不允许 Go 端把 untyped nil 当作 SSL_verify_cb 函数指针传入 C 函
+ * 数（callback 参数为函数指针，类型系统不接受 nil 字面量），所以必须
+ * 由 C shim 把 NULL 显式传入。
+ */
+void X_SSL_CTX_set_verify(SSL_CTX *ctx, int mode)
+{
+    SSL_CTX_set_verify(ctx, mode, NULL);
+}
+
+char *X_X509_verify_cert_error_string(long err)
+{
+    /* X509_verify_cert_error_string 在不同 OpenSSL 版本签名不同；为
+     * 兼容 Tongsuo 8.5 与 OpenSSL 3.x，均返回 const char*，统一返回
+     * 字符串副本（OPENSSL_strdup 由 OPENSSL_free 释放）。 */
+    const char *msg = X509_verify_cert_error_string(err);
+    if (msg == NULL)
+        return NULL;
+    return OPENSSL_strdup(msg);
+}
+
+void X_SSL_CTX_set_verify_depth(SSL_CTX *ctx, int depth)
+{
+    SSL_CTX_set_verify_depth(ctx, depth);
+}
+
+int X_SSL_CTX_set_default_verify_paths(SSL_CTX *ctx)
+{
+    return SSL_CTX_set_default_verify_paths(ctx);
+}
+
 int X_X509_NAME_entry_count(const X509_NAME *n)
 {
     return X509_NAME_entry_count(n);

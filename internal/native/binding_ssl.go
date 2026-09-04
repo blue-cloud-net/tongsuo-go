@@ -3,6 +3,7 @@ package native
 /*
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include "shim.h"
 */
 import "C"
 import "unsafe"
@@ -20,6 +21,24 @@ const (
 	SSLErrorSyscall    = 5
 	SSLErrorZeroReturn = 6
 )
+
+// SSL 验证模式常量（ssl.h SSL_VERIFY_*），与 SSL_CTX_set_verify 配合使用。
+//
+// SSL_VERIFY_* mirror the OpenSSL ssl.h verification mode flags used with
+// SSL_CTX_set_verify. They are bitwise-OR-able; pass them through to the
+// underlying binding via integer cast.
+const (
+	SSL_VERIFY_NONE                 = 0x00
+	SSL_VERIFY_PEER                 = 0x01
+	SSL_VERIFY_FAIL_IF_NO_PEER_CERT = 0x02
+	SSL_VERIFY_CLIENT_ONCE          = 0x04
+)
+
+// X509_V_OK 为对端验证成功码（0）。其它 X509_V_ERR_* 大量代码未导出，
+// 调用方可通过 X509_verify_cert_error_string 取出错误描述。
+//
+// X509_V_OK is the success code returned by SSL_get_verify_result.
+const X509_V_OK = 0
 
 // SSL_CTX_ctrl 控制类型常量。
 //
@@ -286,3 +305,94 @@ func SSL_get_current_cipher_name(ssl unsafe.Pointer) string {
 	}
 	return C.GoString(C.SSL_CIPHER_get_name(cipher))
 }
+
+/*
+ * 对端证书验证（Phase 1.8）：SSL_VERIFY_* 模式常量与相关绑定。
+ *
+ * 模式取值（来自 OpenSSL ssl.h，与 Tongsuo 兼容）：
+ *   SSL_VERIFY_NONE                 = 0x00  // 不验证对端
+ *   SSL_VERIFY_PEER                 = 0x01  // 验证对端证书
+ *   SSL_VERIFY_FAIL_IF_NO_PEER_CERT = 0x02  // 对端无证书则握手失败（用于服务端）
+ *   SSL_VERIFY_CLIENT_ONCE          = 0x04  // 仅对第一次重协商请求客户端证书
+ *
+ * X509_V_OK = 0 表示验证成功；其它值见 OpenSSL x509_vfy.h。本库不对
+ * 所有 X509_V_ERR_* 暴露常量；调用方需要详细诊断时可借助
+ * X509_verify_cert_error_string（在 binding_x509.go 中已绑定）。
+ */
+
+// SSL_CTX_set_verify 设置对端证书验证模式（callback 固定为 NULL，使用 Tongsuo 内建验证）。
+//
+// 经 shim 函数 X_SSL_CTX_set_verify 间接调用：cgo 不允许把 untyped nil
+// 当作 SSL_verify_cb 函数指针传入 C 函数，所以 callback 由 C 侧固定为 NULL。
+//
+// SSL_CTX_set_verify sets the peer verification mode for ctx. The verify
+// callback is fixed to NULL inside the C shim (cgo disallows passing a
+// nil function pointer across the boundary); Tongsuo performs its
+// built-in chain validation.
+func SSL_CTX_set_verify(ctx unsafe.Pointer, mode int) bool {
+	C.X_SSL_CTX_set_verify((*C.SSL_CTX)(ctx), C.int(mode))
+	return true
+}
+
+// SSL_CTX_set_verify_depth 设置对端证书链验证最大深度（经 shim 函数 X_SSL_CTX_set_verify_depth 包装）。
+//
+// SSL_CTX_set_verify_depth sets the chain validation depth limit for ctx
+// (the number of CA certificates that may follow the peer certificate).
+func SSL_CTX_set_verify_depth(ctx unsafe.Pointer, depth int) bool {
+	C.X_SSL_CTX_set_verify_depth((*C.SSL_CTX)(ctx), C.int(depth))
+	return true
+}
+
+// SSL_CTX_set_default_verify_paths 加载系统/编译期配置的默认 CA 证书路径（经 shim 函数 X_SSL_CTX_set_default_verify_paths 包装）。
+//
+// SSL_CTX_set_default_verify_paths loads the system (or OpenSSL-configured)
+// default CA certificate locations onto ctx's trust store.
+func SSL_CTX_set_default_verify_paths(ctx unsafe.Pointer) bool {
+	return C.X_SSL_CTX_set_default_verify_paths((*C.SSL_CTX)(ctx)) == 1
+}
+
+// SSL_CTX_get_cert_store 获取 ctx 自带的证书信任库（首次调用自动创建）。
+// 返回的 X509_STORE 由 ctx 拥有，调用方不得 free。
+//
+// SSL_CTX_get_cert_store returns the X509_STORE owned by ctx. The store is
+// created on first use and is owned by ctx; the caller must NOT free it.
+func SSL_CTX_get_cert_store(ctx unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.SSL_CTX_get_cert_store((*C.SSL_CTX)(ctx)))
+}
+
+// SSL_set1_host 在 SSL 句柄上设置 SNI/主机名（用于主机名校验；指针被 SSL_set1_host 内部复制）。
+// 调用方传入空字符串或 nil 不报错但无效果。
+//
+// SSL_set1_host sets the expected peer hostname on ssl (used for hostname
+// verification). The hostname is copied internally; passing "" or nil is
+// accepted but has no effect.
+func SSL_set1_host(ssl unsafe.Pointer, hostname string) bool {
+	if hostname == "" {
+		return true
+	}
+	c := C.CString(hostname)
+	defer C.free(unsafe.Pointer(c))
+	return C.SSL_set1_host((*C.SSL)(ssl), c) == 1
+}
+
+// SSL_get_verify_result 返回最近一次对端验证的结果码（X509_V_OK=0 表示成功）。
+// 仅在 SSL_VERIFY_PEER 模式下有意义；握手未完成或模式关闭时返回 -1。
+//
+// SSL_get_verify_result returns the result code of the most recent peer
+// certificate validation (X509_V_OK == 0 on success). Returns -1 when no
+// validation has been performed or the mode is disabled.
+func SSL_get_verify_result(ssl unsafe.Pointer) int {
+	return int(C.SSL_get_verify_result((*C.SSL)(ssl)))
+}
+
+// SSL_get_peer_certificate 返回对端证书副本（owned），调用方负责 X509_free。
+// 无对端证书时返回 nil。
+//
+// SSL_get_peer_certificate returns a copy of the peer's certificate (the
+// caller owns it and must X509_free). Returns nil when no peer cert was
+// presented.
+func SSL_get_peer_certificate(ssl unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.SSL_get_peer_certificate((*C.SSL)(ssl)))
+}
+
+// X509_free 由 binding_x509.go 导出，PeerCertificate 直接复用。

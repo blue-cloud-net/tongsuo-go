@@ -6,6 +6,7 @@
 #include <openssl/err.h>
 #include <openssl/crypto.h>
 #include <openssl/pem.h>
+#include <openssl/ssl.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 #include <openssl/rsa.h>
@@ -53,6 +54,16 @@ int X_PEM_write_bio_X509_REQ(BIO *bp, X509_REQ *x);
 
 /* 通用释放 */
 void X_OPENSSL_free(void *ptr);
+
+/*
+ * X_SSL_CTX_set_verify 包装 SSL_CTX_set_verify，固定 callback 为 NULL。
+ * cgo 不允许 Go 端把 untyped nil 当作 SSL_verify_cb 函数指针传入 C 函
+ * 数，所以必须由 C shim 把 NULL 显式传入。
+ */
+void X_SSL_CTX_set_verify(SSL_CTX *ctx, int mode);
+void X_SSL_CTX_set_verify_depth(SSL_CTX *ctx, int depth);
+int  X_SSL_CTX_set_default_verify_paths(SSL_CTX *ctx);
+char *X_X509_verify_cert_error_string(long err);
 
 /* X509_NAME 条目枚举 */
 int X_X509_NAME_entry_count(const X509_NAME *n);

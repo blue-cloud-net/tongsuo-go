@@ -1682,6 +1682,23 @@ type VerifyError struct {
 	Message string // 错误描述
 }
 
+// VerifyOK 表示 X509 验证成功（X509_V_OK=0）。tls/tls.go 等模块用此
+// 常量与 SSL_get_verify_result 返回值比较。
+//
+// VerifyOK is the success code (X509_V_OK == 0) returned by
+// SSL_get_verify_result and X509_verify_cert.
+const VerifyOK = 0
+
+// VerifyErrorMessage 将 X509_V_ERR_* 错误码翻译为可读字符串。
+// 未知错误码返回空字符串。
+//
+// VerifyErrorMessage translates an X509_V_ERR_* code into a
+// human-readable string via native.X509_verify_cert_error_string.
+// Returns the empty string for unknown codes.
+func VerifyErrorMessage(code int) string {
+	return native.X509_verify_cert_error_string(code)
+}
+
 // Error 实现 error 接口。
 //
 // Error formats the VerifyError as "x509: certificate verify failed:
