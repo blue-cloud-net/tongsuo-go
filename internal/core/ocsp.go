@@ -176,6 +176,10 @@ type CertStatus struct {
 // 未找到匹配的 CertID 返回 "ocsp: no status for certificate"；底层 OpenSSL 调用失败包装为 OpError。
 // 返回的 CertStatus 从响应填充 StatusText、ReasonText、ThisUpdate、NextUpdate；RevocationTime 仅在 Status == revoked 时设置。
 //
+// 匹配采用自适应策略（D3）：依次尝试 sha1 / sha256 / sm3 三种摘要重算
+// CertID（请求支持集），因此与 CreateOCSPRequest 任一所选 hash 构造的请求
+// 都能匹配其响应；离线解析（无请求上下文）同样成立。
+//
 // Check decodes the per-certificate entry matching cert / issuer in the
 // response. The response-level Status MUST be 0 (successful); any other
 // value yields "ocsp: response status <n> (<text>)". Returns
@@ -186,6 +190,11 @@ type CertStatus struct {
 // returned CertStatus has StatusText, ReasonText, ThisUpdate and
 // NextUpdate populated from the response; RevocationTime is set only
 // when Status == revoked.
+//
+// Matching is adaptive (D3): sha1 / sha256 / sm3 are tried in turn to
+// rebuild the CertID, so responses to any hash accepted by
+// CreateOCSPRequest match, and offline parsing (without the request
+// context) works too.
 func (r *OCSPResponse) Check(cert, issuer *Certificate) (*CertStatus, error) {
 	if r == nil || r.handle == nil || r.handle.IsClosed() {
 		return nil, fmt.Errorf("ocsp: response closed")
@@ -201,27 +210,34 @@ func (r *OCSPResponse) Check(cert, issuer *Certificate) (*CertStatus, error) {
 		return nil, NewOpError("ocsp: OCSP_response_get1_basic", native.PopError())
 	}
 	defer native.OCSP_BASICRESP_free(basic)
-	cid := native.OCSP_cert_to_id(native.EVP_sha1(), cert.handle.Ptr(), issuer.handle.Ptr())
-	if cid == nil {
-		return nil, NewOpError("ocsp: OCSP_cert_to_id", native.PopError())
+	// 自适应 CertID 匹配（D3）：请求支持 sha1/sha256/sm3（CreateOCSPRequest），
+	// 响应中的 CertID 由请求所用 hash 决定。这里依次用三种摘要重算
+	// issuerNameHash/issuerKeyHash 尝试匹配，任何命中即视为找到该证书状态。
+	// 这样既支持离线解析（无请求上下文），也消除 sha256/sm3 请求的"死路"。
+	for _, md := range []*Digest{SHA1(), SHA256(), SM3()} {
+		cid := native.OCSP_cert_to_id(md.handle.Ptr(), cert.handle.Ptr(), issuer.handle.Ptr())
+		if cid == nil {
+			continue
+		}
+		found, status, reason, revTime, thisUpdate, nextUpdate := native.OCSP_resp_find_status(basic, cid)
+		native.OCSP_CERTID_free(cid)
+		if !found {
+			continue
+		}
+		st := &CertStatus{
+			Status:     status,
+			StatusText: native.OCSP_cert_status_str(status),
+			ReasonCode: reason,
+			ReasonText: native.OCSP_crl_reason_str(reason),
+			ThisUpdate: time.Unix(thisUpdate, 0).UTC(),
+			NextUpdate: time.Unix(nextUpdate, 0).UTC(),
+		}
+		if status == 1 && revTime != 0 {
+			st.RevocationTime = time.Unix(revTime, 0).UTC()
+		}
+		return st, nil
 	}
-	defer native.OCSP_CERTID_free(cid)
-	found, status, reason, revTime, thisUpdate, nextUpdate := native.OCSP_resp_find_status(basic, cid)
-	if !found {
-		return nil, fmt.Errorf("ocsp: no status for certificate")
-	}
-	st := &CertStatus{
-		Status:     status,
-		StatusText: native.OCSP_cert_status_str(status),
-		ReasonCode: reason,
-		ReasonText: native.OCSP_crl_reason_str(reason),
-		ThisUpdate: time.Unix(thisUpdate, 0).UTC(),
-		NextUpdate: time.Unix(nextUpdate, 0).UTC(),
-	}
-	if status == 1 && revTime != 0 {
-		st.RevocationTime = time.Unix(revTime, 0).UTC()
-	}
-	return st, nil
+	return nil, fmt.Errorf("ocsp: no status for certificate")
 }
 
 // ProducedAt 返回响应产生时间（RFC 6960 producedAt，响应方对响应签名的时间）。
