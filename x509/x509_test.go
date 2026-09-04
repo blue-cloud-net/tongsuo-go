@@ -1529,3 +1529,87 @@ func TestCRLIssuerEntries(t *testing.T) {
 		t.Fatalf("CRL IssuerText missing CN: %q", text)
 	}
 }
+
+// TestCRLVerify 验证 CRL.Verify：正确签发者验证成功，错误公钥验证失败。
+func TestCRLVerify(t *testing.T) {
+	caPriv, _ := sm2.GenerateKey()
+	now := time.Now()
+	caName := NewName().Add("CN", "CRL Verify CA")
+
+	// 构造 CA 自签证书（供 Verify 取签发者公钥）。
+	caCert := NewCertificate()
+	if err := caCert.SetVersion(2); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetSerial(7); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetIssuer(caName); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetSubject(caName); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetValidity(now.Add(-time.Hour), now.Add(365*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetPublicKey(caPriv.Public()); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.AddBasicConstraints(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.Sign(caPriv); err != nil {
+		t.Fatal(err)
+	}
+
+	// 签发 CRL 并通过 PEM 加载为公开 CRL。
+	coreCRL, err := core.NewCRL(caName.name, caPriv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	if err != nil {
+		t.Fatalf("core.NewCRL: %v", err)
+	}
+	defer coreCRL.Close()
+	pem, err := coreCRL.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	crl, err := LoadCRLPEM(pem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer crl.Close()
+
+	// 正确签发者验证成功。
+	if err := crl.Verify(caCert); err != nil {
+		t.Fatalf("CRL.Verify with correct issuer should succeed: %v", err)
+	}
+
+	// 错误公钥验证失败。
+	wrongPriv, _ := sm2.GenerateKey()
+	wrongName := NewName().Add("CN", "Wrong CA")
+	wrongCert := NewCertificate()
+	if err := wrongCert.SetVersion(2); err != nil {
+		t.Fatal(err)
+	}
+	if err := wrongCert.SetSerial(8); err != nil {
+		t.Fatal(err)
+	}
+	if err := wrongCert.SetIssuer(wrongName); err != nil {
+		t.Fatal(err)
+	}
+	if err := wrongCert.SetSubject(wrongName); err != nil {
+		t.Fatal(err)
+	}
+	if err := wrongCert.SetValidity(now.Add(-time.Hour), now.Add(365*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wrongCert.SetPublicKey(wrongPriv.Public()); err != nil {
+		t.Fatal(err)
+	}
+	if err := wrongCert.Sign(wrongPriv); err != nil {
+		t.Fatal(err)
+	}
+	if err := crl.Verify(wrongCert); err == nil {
+		t.Fatal("CRL.Verify with wrong key should fail")
+	}
+}

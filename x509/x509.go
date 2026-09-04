@@ -534,7 +534,7 @@ type PrivateKey interface {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func CreateCertificate(subject, issuer *Name, serial int64, notBefore, notAfter time.Time,
-	pub PublicKey, signer PrivateKey) (*Certificate, error) {
+	pub PublicKey, signer PrivateKey) (ret *Certificate, retErr error) {
 	if subject == nil || issuer == nil || pub == nil || signer == nil {
 		return nil, fmt.Errorf("x509: nil parameter")
 	}
@@ -542,6 +542,12 @@ func CreateCertificate(subject, issuer *Name, serial int64, notBefore, notAfter 
 	if err != nil {
 		return nil, err
 	}
+	// 任何中间步骤失败都要释放已创建的原生对象，避免泄漏（依赖 finalizer 兜底）。
+	defer func() {
+		if retErr != nil {
+			_ = cert.Close()
+		}
+	}()
 	if err := cert.SetVersion(2); err != nil { // v3
 		return nil, err
 	}

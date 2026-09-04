@@ -2357,6 +2357,35 @@ func (c *CRL) Extensions() []Extension {
 	return out
 }
 
+// Verify 校验 CRL 的签名（以签发者公钥 pub），供调用方在信任一张 CRL
+// 之前验证其真实性（见 x509.RevocationCheck 的使用前提）。
+//
+// 使用 CRL 内声明的签名算法与摘要对 TBSCertList 验签：RSA / ECDSA / SM2
+// 均由铜锁原生处理（SM2 使用默认用户标识 DefaultSM2ID）。验签失败返回
+// 包装为 OpError 的错误；nil 或已关闭的接收者/密钥返回相应错误。
+//
+// Verify checks the CRL signature against the issuer public key pub,
+// letting callers establish trust in a CRL before using it (see the
+// usage precondition on RevocationCheck).
+//
+// The signature algorithm and digest recorded in the CRL are used to
+// verify the TBSCertList; RSA / ECDSA / SM2 are handled by Tongsuo
+// (SM2 uses the default user identifier DefaultSM2ID). A failed
+// verification returns an error wrapped as OpError; nil / closed
+// receivers or keys return explicit errors.
+func (c *CRL) Verify(pub *PKey) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: CRL closed")
+	}
+	if pub == nil || pub.handle == nil || pub.handle.IsClosed() {
+		return fmt.Errorf("x509: invalid verification key")
+	}
+	if !native.X509_CRL_verify(c.handle.Ptr(), pub.handle.Ptr()) {
+		return NewOpError("x509: X509_CRL_verify", native.PopError())
+	}
+	return nil
+}
+
 // Close 释放底层 X509_CRL 句柄。
 //
 // 调用是幂等的：对 nil 接收者或已关闭的 CRL 调用返回 nil，不产生副作用；Close 返回后，

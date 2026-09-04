@@ -22,7 +22,7 @@ type CertificateRequest struct {
 // NewCertificateRequest creates a CSR for subject and signs it with priv. pub is the requester's public key and priv is the corresponding private key; SM2 / RSA / ECDSA are supported.
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
-func NewCertificateRequest(subject *Name, pub PublicKey, priv PrivateKey) (*CertificateRequest, error) {
+func NewCertificateRequest(subject *Name, pub PublicKey, priv PrivateKey) (ret *CertificateRequest, retErr error) {
 	if subject == nil || pub == nil || priv == nil {
 		return nil, fmt.Errorf("x509: nil parameter")
 	}
@@ -30,6 +30,12 @@ func NewCertificateRequest(subject *Name, pub PublicKey, priv PrivateKey) (*Cert
 	if err != nil {
 		return nil, err
 	}
+	// 任何中间步骤失败都要释放已创建的原生对象，避免泄漏。
+	defer func() {
+		if retErr != nil {
+			_ = req.Close()
+		}
+	}()
 	if err := req.SetSubject(subject.name); err != nil {
 		return nil, err
 	}

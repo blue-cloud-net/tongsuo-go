@@ -257,11 +257,19 @@ func (c *CRL) AddAuthorityKeyID(issuer *Certificate) error {
 // 仅当 CRL 的签发者与证书签发者一致且序列号匹配时判定为已吊销。
 // 未吊销返回 nil；已吊销返回描述性错误。
 //
-// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+// ⚠️ 信任前提：本函数**不校验 CRL 的签名/有效期**——它只做 issuer 名 +
+// serial 的匹配。调用方必须先通过 CRL.Verify（或证书链验证流程）确认每张
+// CRL 由可信签发者签名且未过期，再把该 CRL 传入；对不可信/被篡改的 CRL，
+// 任何能伪造同名签发者的输入都可能让任意序列号被误报为已吊销。
 //
 // RevocationCheck reports whether cert is revoked by any of the supplied CRLs. A CRL is only considered when its issuer matches the certificate's issuer and the serial number matches; an unrevoked certificate yields nil, while a revoked one produces a descriptive error.
 //
-// On failure, it returns an error wrapping an OpError describing the operation.
+// ⚠️ Trust precondition: this function does NOT verify the CRL's signature
+// or validity window — it only matches issuer name + serial. Callers MUST
+// first confirm each CRL is signed by a trusted issuer and still in
+// force (via CRL.Verify or a chain-validation flow) before passing it
+// in; an untrusted / tampered CRL with a forged same-name issuer could
+// otherwise make any serial number appear revoked.
 func RevocationCheck(cert *Certificate, crls []*CRL) error {
 	if cert == nil {
 		return fmt.Errorf("x509: nil certificate")
@@ -274,4 +282,33 @@ func RevocationCheck(cert *Certificate, crls []*CRL) error {
 		ccrls = append(ccrls, c.crl)
 	}
 	return core.RevocationCheck(cert.cert, ccrls)
+}
+
+// Verify 校验 CRL 的签名（以签发者证书 issuer 的公钥），用于在把 CRL 交给
+// RevocationCheck 之前确认其真实性。
+//
+// issuer 支持 SM2 / RSA / ECDSA 证书；验签使用 CRL 内声明的签名算法与摘要。
+// 验签失败返回错误（含底层 OpError）；nil 接收者/签发者返回相应错误。
+//
+// Verify checks the CRL signature against the public key of the issuer
+// certificate, letting callers establish trust before handing the CRL
+// to RevocationCheck.
+//
+// issuer supports SM2 / RSA / ECDSA certificates; verification uses the
+// signature algorithm and digest recorded in the CRL. A failed check
+// returns an error (including the wrapped OpError); nil receivers /
+// issuers return explicit errors.
+func (c *CRL) Verify(issuer *Certificate) error {
+	if c == nil || c.crl == nil {
+		return fmt.Errorf("x509: nil CRL")
+	}
+	if issuer == nil {
+		return fmt.Errorf("x509: nil issuer certificate")
+	}
+	pub, err := issuer.PublicKeyPKey()
+	if err != nil {
+		return err
+	}
+	defer pub.Close()
+	return c.crl.Verify(pub)
 }

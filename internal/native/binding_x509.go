@@ -1393,6 +1393,18 @@ func X509_CRL_new() unsafe.Pointer {
 	return unsafe.Pointer(C.X509_CRL_new())
 }
 
+// X509_CRL_verify 用公钥验 CRL 签名（X509_CRL_verify，沿用 CRL 内声明
+// 的签名算法与摘要）。返回 true 表示签名有效，false 表示签名不匹配或
+// 底层错误（错误码可经 PopError 取）。
+//
+// X509_CRL_verify verifies the CRL signature against the given public
+// key (using the signature algorithm / digest recorded in the CRL).
+// Returns true when the signature is valid, false otherwise (details
+// via PopError).
+func X509_CRL_verify(crl, pub unsafe.Pointer) bool {
+	return C.X509_CRL_verify((*C.X509_CRL)(crl), (*C.EVP_PKEY)(pub)) == 1
+}
+
 // X509_CRL_set_version 设置 CRL 版本（0=v1，1=v2）。
 //
 // X509_CRL_set_version sets the CRL version (0 for v1, 1 for v2).
