@@ -320,10 +320,11 @@ func (k *PublicKey) Marshal() ([]byte, error) {
 }
 
 // algorithmOf 依据底层 core.PKey 的算法名推导 Algorithm。
-// 未知算法返回包装 ErrUnknownAlgorithm 的错误。
+// 未知算法返回包装 ErrUnknownAlgorithm 的错误；当前支持的算法：RSA / SM2 / ECDSA / ED25519 / ED448 / X25519。
 //
 // algorithmOf derives an Algorithm from the underlying core.PKey algorithm
-// name. Unknown algorithms return an error wrapping ErrUnknownAlgorithm.
+// name. Unknown algorithms return an error wrapping ErrUnknownAlgorithm;
+// supported algorithms are RSA, SM2, ECDSA, ED25519, ED448 and X25519.
 func algorithmOf(p *core.PKey) (Algorithm, error) {
 	if p == nil {
 		return "", ErrUnknownAlgorithm
@@ -335,6 +336,12 @@ func algorithmOf(p *core.PKey) (Algorithm, error) {
 		return AlgSM2, nil
 	case "EC", "ECDSA":
 		return AlgECDSA, nil
+	case "ED25519":
+		return AlgED25519, nil
+	case "ED448":
+		return AlgED448, nil
+	case "X25519":
+		return AlgX25519, nil
 	default:
 		return "", fmt.Errorf("%w: %s", ErrUnknownAlgorithm, p.Algorithm())
 	}

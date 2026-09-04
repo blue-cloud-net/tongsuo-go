@@ -64,3 +64,47 @@ func GenerateECKey(curve string) (AsymmetricPrivateKey, error) {
 	}
 	return wrapPrivate(pk)
 }
+
+// GenerateEd25519Key 生成 Ed25519 签名密钥对（RFC 8032，AlgED25519）并返回私钥包装。
+// 调用方使用完毕应经 key.Close 释放底层句柄。
+//
+// GenerateEd25519Key generates a fresh Ed25519 signing key pair (RFC 8032,
+// AlgED25519) and returns the private-key wrapper.
+// Callers should release the underlying handle through key.Close when done.
+func GenerateEd25519Key() (AsymmetricPrivateKey, error) {
+	pk, err := core.GenerateED25519Key()
+	if err != nil {
+		return nil, err
+	}
+	return wrapPrivate(pk)
+}
+
+// GenerateEd448Key 生成 Ed448 签名密钥对（RFC 8032，AlgED448）并返回私钥包装。
+// 调用方使用完毕应经 key.Close 释放底层句柄。
+//
+// GenerateEd448Key generates a fresh Ed448 signing key pair (RFC 8032,
+// AlgED448) and returns the private-key wrapper.
+// Callers should release the underlying handle through key.Close when done.
+func GenerateEd448Key() (AsymmetricPrivateKey, error) {
+	pk, err := core.GenerateED448Key()
+	if err != nil {
+		return nil, err
+	}
+	return wrapPrivate(pk)
+}
+
+// GenerateX25519Key 生成 X25519 ECDH 密钥对（RFC 7748，AlgX25519）并返回私钥包装。
+// 调用方使用完毕应经 key.Close 释放底层句柄；密钥交换由各 crypto/* 包的 SharedSecret 方法完成。
+//
+// GenerateX25519Key generates a fresh X25519 ECDH key pair (RFC 7748,
+// AlgX25519) and returns the private-key wrapper.
+// Callers should release the underlying handle through key.Close when
+// done; the actual shared-secret computation lives in the per-package
+// SharedSecret method.
+func GenerateX25519Key() (AsymmetricPrivateKey, error) {
+	pk, err := core.GenerateX25519Key()
+	if err != nil {
+		return nil, err
+	}
+	return wrapPrivate(pk)
+}

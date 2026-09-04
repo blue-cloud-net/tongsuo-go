@@ -49,6 +49,18 @@ const (
 	//
 	// AlgECDSA identifies the ECDSA asymmetric algorithm.
 	AlgECDSA Algorithm = "ECDSA"
+	// AlgED25519 标识 Ed25519 签名算法（RFC 8032）。
+	//
+	// AlgED25519 identifies the Ed25519 signature algorithm (RFC 8032).
+	AlgED25519 Algorithm = "ED25519"
+	// AlgED448 标识 Ed448 签名算法（RFC 8032）。
+	//
+	// AlgED448 identifies the Ed448 signature algorithm (RFC 8032).
+	AlgED448 Algorithm = "ED448"
+	// AlgX25519 标识 X25519 ECDH 密钥交换（RFC 7748）。
+	//
+	// AlgX25519 identifies the X25519 ECDH key-agreement algorithm (RFC 7748).
+	AlgX25519 Algorithm = "X25519"
 	// AlgAES128 标识 AES-128 对称算法（16 字节密钥）。
 	//
 	// AlgAES128 identifies the AES-128 symmetric algorithm (16-byte key).
