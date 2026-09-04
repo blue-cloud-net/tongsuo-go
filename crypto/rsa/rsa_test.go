@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
@@ -201,5 +202,67 @@ func TestMatch(t *testing.T) {
 	}
 	if priv1.Match(priv2.Public().Key()) {
 		t.Fatal("priv1 should NOT match priv2 public key")
+	}
+}
+
+// TestEncryptEmptyPlaintext 验证 RSA 空明文加解密往返可用（对齐 Go stdlib
+// rsa.EncryptPKCS1v15 / EncryptOAEP 允许空明文语义）。
+func TestEncryptEmptyPlaintext(t *testing.T) {
+	priv, _ := GenerateKey(2048)
+	pub := priv.Public()
+
+	ct, err := EncryptPKCS1v15(pub, nil)
+	if err != nil {
+		t.Fatalf("PKCS1v15 empty plaintext should be allowed: %v", err)
+	}
+	pt, err := DecryptPKCS1v15(priv, ct)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pt) != 0 {
+		t.Fatalf("PKCS1v15 empty decrypt returned %q", pt)
+	}
+
+	ct2, err := EncryptOAEP(pub, nil, core.SHA256())
+	if err != nil {
+		t.Fatalf("OAEP empty plaintext should be allowed: %v", err)
+	}
+	pt2, err := DecryptOAEP(priv, ct2, core.SHA256())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pt2) != 0 {
+		t.Fatalf("OAEP empty decrypt returned %q", pt2)
+	}
+}
+
+// TestLoadPrivateKeyTypeMismatch 验证把 SM2 私钥 PKCS#8 PEM 传给 rsa 加载器
+// 会返回明确类型错误（而非静默包装成 RSA）。
+func TestLoadPrivateKeyTypeMismatch(t *testing.T) {
+	sm2priv, err := sm2.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sm2pem, err := sm2priv.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadPrivateKeyPEM(sm2pem); err == nil {
+		t.Fatal("expected type-mismatch error for SM2 PEM loaded as RSA")
+	} else if !bytes.Contains([]byte(err.Error()), []byte("not RSA")) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestLoadPrivateKeyDoubleFailure 验证既非 PKCS#8 也非 PKCS#1 的输入返回
+// 同时说明两条路径的合并错误。
+func TestLoadPrivateKeyDoubleFailure(t *testing.T) {
+	_, err := LoadPrivateKeyPEM([]byte("garbage"))
+	if err == nil {
+		t.Fatal("expected error for garbage input")
+	}
+	msg := err.Error()
+	if !bytes.Contains([]byte(msg), []byte("pkcs8")) || !bytes.Contains([]byte(msg), []byte("pkcs1")) {
+		t.Fatalf("expected combined pkcs8+pkcs1 error, got: %v", err)
 	}
 }

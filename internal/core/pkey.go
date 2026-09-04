@@ -228,21 +228,22 @@ func (k *PKey) marshalPEM(op string, write func(bio, pkey unsafe.Pointer) bool) 
 // Encrypt 使用公钥加密数据。
 //
 // 注意：Tongsuo 8.x（OpenSSL 3.x）SM2 加密输出为 ASN.1 DER 编码（内含 C1C3C2），
-// 与 openssl pkeyutl 输出一致；SM2 不支持空明文，data 必须非空，否则不会调用底层 EVP_PKEY_CTX，
-// 直接返回错误。方法会锁定当前 OS 线程（Tongsuo SM2 provider 对线程敏感）。
+// 与 openssl pkeyutl 输出一致；方法会锁定当前 OS 线程（Tongsuo SM2 provider 对线程敏感）。
+// 空明文支持由各算法决定：SM2 不支持空明文（见 crypto/sm2.Encrypt 的公开层检查），
+// RSA PKCS#1 v1.5 / OAEP 允许空明文（与 Go 标准库 rsa 一致）——本通用路径不做
+// 空明文拒绝，交由底层 EVP_PKEY_CTX 与上层算法封装决定。
 //
 // Encrypt encrypts data using the public key.
 //
 // Note: on Tongsuo 8.x (OpenSSL 3.x) the SM2 ciphertext is encoded as ASN.1
 // DER (with the inner C1C3C2 layout), which is identical to the output of
-// `openssl pkeyutl -encrypt`. SM2 does not support an empty plaintext, so
-// data must be non-empty; otherwise the call returns an error without
-// invoking the underlying EVP_PKEY_CTX. The method locks the current OS
-// thread because the Tongsuo SM2 provider is thread-sensitive.
+// `openssl pkeyutl -encrypt`. The method locks the current OS thread
+// because the Tongsuo SM2 provider is thread-sensitive. Empty-plaintext
+// policy is left to each algorithm: SM2 rejects it (see the check in
+// crypto/sm2.Encrypt), while RSA PKCS#1 v1.5 / OAEP accept it (matching
+// the Go stdlib rsa package). This shared path does not reject empty
+// input; the underlying EVP_PKEY_CTX and the algorithm wrapper decide.
 func (k *PKey) Encrypt(data []byte) ([]byte, error) {
-	if len(data) == 0 {
-		return nil, fmt.Errorf("pkey: SM2 encryption requires non-empty plaintext")
-	}
 	// 同一密钥上下文的多次 cgo 调用需固定到同一 OS 线程（Tongsuo SM2 provider 对线程敏感）。
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -330,7 +331,11 @@ func (k *PKey) Sign(data, id []byte) ([]byte, error) {
 	if !ok {
 		return nil, NewOpError("pkey: EVP_DigestSignInit", native.PopError())
 	}
-	if len(id) > 0 && !native.EVP_PKEY_CTX_set1_id(pctx, id) {
+	// id 为空时显式设置 DefaultSM2ID，落实文档契约且不依赖 provider 隐式默认值。
+	if len(id) == 0 {
+		id = DefaultSM2ID
+	}
+	if !native.EVP_PKEY_CTX_set1_id(pctx, id) {
 		return nil, NewOpError("pkey: EVP_PKEY_CTX_set1_id", native.PopError())
 	}
 	if !native.EVP_DigestSignUpdate(mdctx, data) {
@@ -375,7 +380,11 @@ func (k *PKey) Verify(data, sig, id []byte) error {
 	if !ok {
 		return NewOpError("pkey: EVP_DigestVerifyInit", native.PopError())
 	}
-	if len(id) > 0 && !native.EVP_PKEY_CTX_set1_id(pctx, id) {
+	// id 为空时显式设置 DefaultSM2ID，落实文档契约且不依赖 provider 隐式默认值。
+	if len(id) == 0 {
+		id = DefaultSM2ID
+	}
+	if !native.EVP_PKEY_CTX_set1_id(pctx, id) {
 		return NewOpError("pkey: EVP_PKEY_CTX_set1_id", native.PopError())
 	}
 	if !native.EVP_DigestVerifyUpdate(mdctx, data) {
@@ -617,12 +626,12 @@ func (k *PKey) verifyDigest(data, sig []byte, md *Digest, setOpts func(unsafe.Po
 // EncryptPKCS1v15 使用 RSA PKCS#1 v1.5 填充加密。
 //
 // 该方法是对 Encrypt 的薄包装，因此同样要求非空明文与 RSA 公钥；非 RSA 密钥将从底层 EVP_PKEY_CTX 返回错误；失败时返回包装的 OpError。
-//
 // EncryptPKCS1v15 encrypts data with RSA PKCS#1 v1.5 padding.
 //
-// This is a thin wrapper around Encrypt and therefore requires a non-empty
-// plaintext and an RSA public key; non-RSA keys return an error from the
-// underlying EVP_PKEY_CTX. Returns the wrapped OpError on failure.
+// This is a thin wrapper around Encrypt and therefore requires an RSA
+// public key; non-RSA keys return an error from the underlying
+// EVP_PKEY_CTX. Empty plaintext is accepted (matching the Go stdlib
+// rsa.EncryptPKCS1v15). Returns the wrapped OpError on failure.
 func (k *PKey) EncryptPKCS1v15(data []byte) ([]byte, error) {
 	return k.Encrypt(data)
 }
@@ -643,16 +652,16 @@ func (k *PKey) DecryptPKCS1v15(data []byte) ([]byte, error) {
 // EncryptOAEP 使用 RSA-OAEP 填充加密。md 指定 OAEP/MGF1 摘要（如 SHA256）。
 //
 // 摘要 md 同时用于 OAEP 编码（EVP_PKEY_CTX_set_rsa_oaep_md）与 MGF1 掩码生成（EVP_PKEY_CTX_set_rsa_mgf1_md）；
-// 传入 md = nil 时使用 OpenSSL 默认的 SHA-1。与其他加密路径一致：明文必须非空且密钥必须为 RSA 公钥；
-// 失败时返回包装的 OpError。
+// 传入 md = nil 时使用 OpenSSL 默认的 SHA-1。密钥必须为 RSA 公钥；空明文允许（与
+// Go 标准库 rsa.EncryptOAEP 一致）；失败时返回包装的 OpError。
 //
 // EncryptOAEP encrypts data with RSA-OAEP padding.
 //
 // The digest md is used for both the OAEP encoding (EVP_PKEY_CTX_set_rsa_oaep_md)
 // and the MGF1 mask-generation function (EVP_PKEY_CTX_set_rsa_mgf1_md);
-// pass md = nil to let OpenSSL use its default SHA-1. As with the other
-// encrypt paths, the plaintext must be non-empty and the key must be an
-// RSA public key. Returns the wrapped OpError on failure.
+// pass md = nil to let OpenSSL use its default SHA-1. The key must be an
+// RSA public key. Empty plaintext is accepted (matching the Go stdlib
+// rsa.EncryptOAEP). Returns the wrapped OpError on failure.
 func (k *PKey) EncryptOAEP(data []byte, md *Digest) ([]byte, error) {
 	return k.encryptWithOpts(data, func(ctx unsafe.Pointer) error {
 		if !native.EVP_PKEY_CTX_set_rsa_padding(ctx, native.RsaPaddingOAEP) {
@@ -701,12 +710,10 @@ func (k *PKey) DecryptOAEP(data []byte, md *Digest) ([]byte, error) {
 // encryptWithOpts 带选项的 EVP_PKEY_encrypt 封装。
 //
 // encryptWithOpts wraps EVP_PKEY_encrypt, allowing the caller to apply
-// algorithm-specific options (e.g. padding) via setOpts. SM2 does not
-// support an empty plaintext; data must be non-empty.
+// algorithm-specific options (e.g. padding) via setOpts. Empty plaintext
+// policy is left to the algorithm wrapper (RSA PKCS#1 v1.5 / OAEP accept
+// it, matching stdlib).
 func (k *PKey) encryptWithOpts(data []byte, setOpts func(unsafe.Pointer) error) ([]byte, error) {
-	if len(data) == 0 {
-		return nil, fmt.Errorf("pkey: encryption requires non-empty plaintext")
-	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	ctx := native.EVP_PKEY_CTX_new_from_pkey(k.handle.Ptr())

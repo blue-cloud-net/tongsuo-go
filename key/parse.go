@@ -27,7 +27,8 @@ func LoadPrivateKeyPEM(p []byte) (AsymmetricPrivateKey, error) {
 	}
 	pk2, err2 := core.LoadPrivateKeyPKCS1PEM(p)
 	if err2 != nil {
-		return nil, err
+		// 两条路径均失败：返回同时说明 PKCS#8 与 PKCS#1 原因的合并错误。
+		return nil, fmt.Errorf("key: LoadPrivateKeyPEM: pkcs8: %v; pkcs1: %v", err, err2)
 	}
 	return wrapPrivate(pk2)
 }

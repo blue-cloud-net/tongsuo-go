@@ -129,6 +129,11 @@ func Encrypt(pub *PublicKey, data []byte) ([]byte, error) {
 	if pub == nil || pub.key == nil {
 		return nil, fmt.Errorf("sm2: nil public key")
 	}
+	// SM2 算法不支持空明文（GB/T 32918.4 无空消息约定）。此检查放在公开层
+	//（而非 core 的通用 Encrypt），以免误伤允许空明文的 RSA 路径。
+	if len(data) == 0 {
+		return nil, fmt.Errorf("sm2: empty plaintext not supported")
+	}
 	return pub.key.Encrypt(data)
 }
 

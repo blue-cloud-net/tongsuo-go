@@ -35,6 +35,30 @@ type PublicKey struct {
 	key *core.PKey
 }
 
+// PSS 盐长哨兵常量，供 SignPSS / VerifyPSS 的 saltLen 参数使用。
+//
+// 负值遵循 OpenSSL EVP_PKEY_CTX_set_rsa_pss_saltlen 约定：
+//
+//	PSSSaltLenDigest 盐长 = 摘要长度（本库默认摘要为 SHA-256，故为 32）
+//	PSSSaltLenAuto   由底层自动选择（provider 决定）
+//	PSSSaltLenMax    取模数允许的最大盐长
+//
+// 也可直接传正整数指定盐长字节数；SignPSS 与 VerifyPSS 必须使用相同取值。
+//
+// PSS salt-length sentinel constants for the saltLen argument of
+// SignPSS / VerifyPSS. Negative values follow the OpenSSL
+// EVP_PKEY_CTX_set_rsa_pss_saltlen convention: PSSSaltLenDigest means
+// the salt equals the digest length (32 for the default SHA-256),
+// PSSSaltLenAuto leaves the choice to the underlying provider, and
+// PSSSaltLenMax selects the largest salt the modulus allows. Positive
+// integers are also accepted as an explicit salt length in bytes;
+// SignPSS and VerifyPSS must use the same value.
+const (
+	PSSSaltLenDigest = -1
+	PSSSaltLenAuto   = -2
+	PSSSaltLenMax    = -3
+)
+
 // GenerateKey 生成 bits 位 RSA 密钥对（如 2048）。
 // bits 须 >= 1024，否则返回错误。
 //
@@ -82,34 +106,72 @@ func (k *PrivateKey) Public() *PublicKey { return &PublicKey{key: k.key} }
 // 传统 PKCS#1（"-----BEGIN RSA PRIVATE KEY-----"）RSA 私钥。优先尝试 PKCS#8，
 // 失败后再尝试 PKCS#1；均失败时返回错误。
 //
+// 无论从哪条路径加载成功，都会校验底层密钥算法确为 RSA——若 PKCS#8 实际携带
+// EC / SM2 密钥，返回错误而不是静默包装成 RSA（避免把类型混淆延迟到使用期）。
+//
 // LoadPrivateKeyPEM parses an unencrypted PEM block carrying either a
 // PKCS#8 ("-----BEGIN PRIVATE KEY-----") or a legacy PKCS#1
 // ("-----BEGIN RSA PRIVATE KEY-----") RSA private key. PKCS#8 is tried
 // first; on PKCS#8 failure PKCS#1 is attempted. On total failure it
 // returns an error.
+//
+// Whichever path succeeds, the underlying key algorithm is verified to be
+// RSA: a PKCS#8 block that actually carries an EC / SM2 key returns an
+// error instead of silently being wrapped as RSA (avoiding a type-confusion
+// that would otherwise surface only at use time).
 func LoadPrivateKeyPEM(pem []byte) (*PrivateKey, error) {
 	k, err := core.LoadPrivateKeyPEM(pem)
 	if err == nil {
+		if !isRSA(k) {
+			alg := k.Algorithm() // 先读算法名再释放句柄
+			k.Close()
+			return nil, fmt.Errorf("rsa: PEM private key is not RSA (got %s)", alg)
+		}
 		return &PrivateKey{key: k}, nil
 	}
 	k2, err2 := core.LoadPrivateKeyPKCS1PEM(pem)
 	if err2 != nil {
-		return nil, err
+		// 两条路径均失败：返回同时说明 PKCS#8 与 PKCS#1 原因的合并错误，
+		// 避免只暴露首个（对 PKCS#1 形状的输入，PKCS#8 失败属预期，PKCS#1
+		// 失败才是真实原因）。
+		return nil, fmt.Errorf("rsa: LoadPrivateKeyPEM: pkcs8: %v; pkcs1: %v", err, err2)
+	}
+	if !isRSA(k2) {
+		alg := k2.Algorithm()
+		k2.Close()
+		return nil, fmt.Errorf("rsa: PEM private key is not RSA (got %s)", alg)
 	}
 	return &PrivateKey{key: k2}, nil
+}
+
+// isRSA 报告 *core.PKey 的底层算法是否为 RSA。
+//
+// isRSA reports whether the underlying key algorithm is RSA, by
+// comparing core.PKey.Algorithm with the "RSA" algorithm name.
+func isRSA(k *core.PKey) bool {
+	return k != nil && k.Algorithm() == "RSA"
 }
 
 // LoadPublicKeyPEM 从 PEM（SubjectPublicKeyInfo）加载 RSA 公钥。
 // 解析非加密 PEM 块，携带 SubjectPublicKeyInfo（"-----BEGIN PUBLIC KEY-----"）
 // RSA 公钥；失败时返回包装 OpError 的错误。
 //
+// 与 LoadPrivateKeyPEM 相同，会校验算法确为 RSA 再包装。
+//
 // LoadPublicKeyPEM parses an unencrypted PEM block carrying a
 // SubjectPublicKeyInfo ("-----BEGIN PUBLIC KEY-----") RSA public key.
-// On failure it returns an error wrapping an OpError.
+// On failure it returns an error wrapping an OpError. As with
+// LoadPrivateKeyPEM, the algorithm is verified to be RSA before
+// wrapping.
 func LoadPublicKeyPEM(pem []byte) (*PublicKey, error) {
 	k, err := core.LoadPublicKeyPEM(pem)
 	if err != nil {
 		return nil, err
+	}
+	if !isRSA(k) {
+		alg := k.Algorithm()
+		k.Close()
+		return nil, fmt.Errorf("rsa: PEM public key is not RSA (got %s)", alg)
 	}
 	return &PublicKey{key: k}, nil
 }
@@ -117,16 +179,22 @@ func LoadPublicKeyPEM(pem []byte) (*PublicKey, error) {
 // LoadEncryptedPEM 从加密 PEM 加载 RSA 私钥。
 // 解析加密 PEM 块（AES-256-CBC + PBKDF2 派生密钥，
 // "-----BEGIN ENCRYPTED PRIVATE KEY-----"），使用给定口令；口令错误或任意
-// 解密错误返回错误。
+// 解密错误返回错误。与 LoadPrivateKeyPEM 相同，加载后校验算法确为 RSA。
 //
 // LoadEncryptedPEM parses an encrypted PEM block (AES-256-CBC +
 // PBKDF2-derived key, "-----BEGIN ENCRYPTED PRIVATE KEY-----") using the
 // given passphrase and returns the underlying RSA private key. An
-// incorrect passphrase or any decryption error returns an error.
+// incorrect passphrase or any decryption error returns an error. As
+// with LoadPrivateKeyPEM, the algorithm is verified to be RSA.
 func LoadEncryptedPEM(pem []byte, pass string) (*PrivateKey, error) {
 	k, err := core.LoadPrivateKeyPEMEncrypted(pem, pass)
 	if err != nil {
 		return nil, err
+	}
+	if !isRSA(k) {
+		alg := k.Algorithm()
+		k.Close()
+		return nil, fmt.Errorf("rsa: encrypted PEM private key is not RSA (got %s)", alg)
 	}
 	return &PrivateKey{key: k}, nil
 }
@@ -225,30 +293,30 @@ func (k *PublicKey) VerifyPKCS1v15(data, sig []byte) error {
 }
 
 // SignPSS 使用 RSA-PSS 对 data 签名（SHA-256 摘要）。
-// saltLen 为盐长字节数；可用 core 包常量（-1=digest 长、-2=auto、-3=max）。
+// saltLen 为盐长：正整数 = 盐长字节数，或使用本包 PSS 哨兵常量
+// （PSSSaltLenDigest / PSSSaltLenAuto / PSSSaltLenMax）。
 //
-// 以 RSA-PSS（RFC 8017）签名 data，摘要使用 SHA-256。saltLen 为盐字节数；
-// 负值遵循 OpenSSL 约定（-1=摘要长度、-2=auto、-3=最大）。VerifyPSS 须使用相同值。
+// 以 RSA-PSS（RFC 8017）签名 data，摘要使用 SHA-256。VerifyPSS 须使用相同值。
 //
 // SignPSS signs data with RSA-PSS (RFC 8017) using SHA-256 as the digest.
 //
-// saltLen is the salt length in bytes; the underlying pipeline follows
-// the OpenSSL conventions for negative values (-1 = digest length, -2 =
-// auto, -3 = maximum). VerifyPSS must use the same value.
+// saltLen is the salt length: a positive integer in bytes, or one of the
+// package's PSS sentinel constants (PSSSaltLenDigest / PSSSaltLenAuto /
+// PSSSaltLenMax). VerifyPSS must use the same value.
 func (k *PrivateKey) SignPSS(data []byte, saltLen int) ([]byte, error) {
 	return k.key.SignDigestPSS(data, core.SHA256(), saltLen)
 }
 
 // VerifyPSS 使用 RSA-PSS 验签（SHA-256 摘要）。
-// 以 RSA-PSS 验签 data，摘要使用 SHA-256；saltLen 必须与签名时一致（同样适用
-// OpenSSL 负值约定）。验签失败返回错误（不返回布尔值）；调用方须将任意非 nil
+// saltLen 必须与签名时一致（正整数或本包 PSS 哨兵常量）。
+// 验签失败返回错误（不返回布尔值）；调用方须将任意非 nil
 // 错误视为认证失败。
 //
 // VerifyPSS checks an RSA-PSS signature over data using SHA-256 as the
-// digest; saltLen must equal the value used at sign time (same OpenSSL
-// negative-value conventions apply). Returns an error (no boolean) on
-// verification failure; callers must treat any non-nil error as
-// authentication failure.
+// digest; saltLen must equal the value used at sign time (a positive
+// integer or one of the package's PSS sentinel constants). Returns an
+// error (no boolean) on verification failure; callers must treat any
+// non-nil error as authentication failure.
 func (k *PublicKey) VerifyPSS(data, sig []byte, saltLen int) error {
 	return k.key.VerifyDigestPSS(data, sig, core.SHA256(), saltLen)
 }
