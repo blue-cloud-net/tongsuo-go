@@ -380,10 +380,15 @@ func (s *SSLConn) retry(op string, ret int) error {
 //
 // The call is idempotent: invoking it on a nil receiver or on a
 // connection that has already been closed returns nil without further
-// side effects. The underlying socket fd is NOT closed by this method;
-// the caller is responsible for closing it.
+// side effects and does NOT invoke SSL_shutdown again. The underlying
+// socket fd is NOT closed by this method; the caller is responsible for
+// closing it.
 func (s *SSLConn) Close() error {
 	if s == nil {
+		return nil
+	}
+	// 幂等：closed 时直接返回；避免二次 Close 时 SSL_shutdown(NULL) 崩溃。
+	if s.handle == nil || s.handle.IsClosed() {
 		return nil
 	}
 	native.SSL_shutdown(s.handle.Ptr())
@@ -392,17 +397,29 @@ func (s *SSLConn) Close() error {
 
 // Version 返回协商后的协议版本字符串。
 //
+// 对 nil 接收者或已关闭的连接返回空字符串。
+//
 // Version returns the negotiated protocol version as a human-readable
-// string (for example "TLSv1.2" or "NTLSv1.1").
+// string (for example "TLSv1.2" or "NTLSv1.1"). Returns the empty
+// string for a nil or closed connection.
 func (s *SSLConn) Version() string {
+	if s == nil || s.handle == nil || s.handle.IsClosed() {
+		return ""
+	}
 	return native.SSL_get_version(s.handle.Ptr())
 }
 
 // CipherName 返回协商后的密码套件名。
 //
+// 对 nil 接收者或已关闭的连接返回空字符串。
+//
 // CipherName returns the name of the negotiated cipher suite
-// (for example "ECDHE-ECDSA-SM2-WITH-SM4-SM3").
+// (for example "ECDHE-ECDSA-SM2-WITH-SM4-SM3"). Returns the empty
+// string for a nil or closed connection.
 func (s *SSLConn) CipherName() string {
+	if s == nil || s.handle == nil || s.handle.IsClosed() {
+		return ""
+	}
 	return native.SSL_get_current_cipher_name(s.handle.Ptr())
 }
 

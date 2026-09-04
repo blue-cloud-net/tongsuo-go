@@ -555,6 +555,9 @@ func (c *Certificate) SignatureAlgorithmOID() string {
 // the underlying X509; the caller must NOT call Close on it. The pointer
 // remains valid for the lifetime of the certificate.
 func (c *Certificate) SubjectName() *Name {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil
+	}
 	n := native.X509_get_subject_name(c.handle.Ptr())
 	if n == nil {
 		return nil
@@ -572,6 +575,9 @@ func (c *Certificate) SubjectName() *Name {
 // the underlying X509; the caller must NOT call Close on it. The pointer
 // remains valid for the lifetime of the certificate.
 func (c *Certificate) IssuerName() *Name {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil
+	}
 	n := native.X509_get_issuer_name(c.handle.Ptr())
 	if n == nil {
 		return nil
@@ -605,22 +611,40 @@ func (c *Certificate) Issuer() string {
 
 // NotBefore 返回生效时间。
 //
+// 对 nil 接收者或已关闭的证书返回零值时间。
+//
 // NotBefore returns the certificate "not before" validity time in UTC.
+// Returns the zero Time for a nil or closed certificate.
 func (c *Certificate) NotBefore() time.Time {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return time.Time{}
+	}
 	return time.Unix(native.X509_get_not_before(c.handle.Ptr()), 0).UTC()
 }
 
 // NotAfter 返回过期时间。
 //
+// 对 nil 接收者或已关闭的证书返回零值时间。
+//
 // NotAfter returns the certificate "not after" validity time in UTC.
+// Returns the zero Time for a nil or closed certificate.
 func (c *Certificate) NotAfter() time.Time {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return time.Time{}
+	}
 	return time.Unix(native.X509_get_not_after(c.handle.Ptr()), 0).UTC()
 }
 
 // Serial 返回证书序列号。
 //
+// 对 nil 接收者或已关闭的证书返回 0。
+//
 // Serial returns the certificate serial number as a signed 64-bit integer.
+// Returns 0 for a nil or closed certificate.
 func (c *Certificate) Serial() int64 {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return 0
+	}
 	return native.X509_get_serial_int(c.handle.Ptr())
 }
 
@@ -1823,6 +1847,10 @@ func ChainVerify(cert *Certificate, store *Store, intermediates []*Certificate) 
 		if sk == nil {
 			return nil, NewOpError("x509: sk_X509_new_null", native.PopError())
 		}
+		// 注意：X509_STORE_CTX_set0_untrusted 仅借用该栈，OpenSSL 的
+		// X509_STORE_CTX_cleanup 不释放 ctx->untrusted（只 free ctx->chain），
+		// 因此必须在验证结束后自行 X509_sk_X509_free 释放栈容器。
+		// 栈内元素是借用调用方的 intermediate 证书指针，不在此释放。
 		ok := true
 		for _, ic := range intermediates {
 			if ic == nil || ic.handle == nil || ic.handle.IsClosed() {
@@ -1838,8 +1866,8 @@ func ChainVerify(cert *Certificate, store *Store, intermediates []*Certificate) 
 			native.X509_sk_X509_free(sk)
 			return nil, fmt.Errorf("x509: invalid intermediate certificate")
 		}
-		// 所有权转移给 ctx，ctx 释放时一并释放栈（不释放元素）。
 		native.X509_STORE_CTX_set0_untrusted(ctx, sk)
+		defer native.X509_sk_X509_free(sk)
 	}
 	ret := native.X509_verify_cert(ctx)
 	if ret != 1 {
@@ -2101,7 +2129,21 @@ func (c *CRL) AddAuthorityKeyID(issuer *Certificate) error {
 // The returned *Name wraps an internal X509_NAME pointer borrowed from
 // the underlying X509_CRL; the caller must NOT call Close on it. The
 // pointer remains valid for the lifetime of the CRL.
+// Issuer 返回 CRL 的签发者名字。
+//
+// 返回的 *Name 包装了底层 X509_CRL 借用的内部 X509_NAME 指针；调用方不得对其调用 Close，指针在 CRL 生命周期内有效。
+// 对 nil 接收者或已关闭的 CRL 返回 nil。
+//
+// Issuer returns the issuer Name of the CRL.
+//
+// The returned *Name wraps an internal X509_NAME pointer borrowed from
+// the underlying X509_CRL; the caller must NOT call Close on it. The
+// pointer remains valid for the lifetime of the CRL. Returns nil for a
+// nil or closed CRL.
 func (c *CRL) Issuer() *Name {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil
+	}
 	n := native.X509_CRL_get_issuer(c.handle.Ptr())
 	if n == nil {
 		return nil
@@ -2111,22 +2153,40 @@ func (c *CRL) Issuer() *Name {
 
 // Version 返回 CRL 版本字段值（0=v1，1=v2）。
 //
+// 对 nil 接收者或已关闭的 CRL 返回 0。
+//
 // Version returns the CRL version field: 0 for v1, 1 for v2.
+// Returns 0 for a nil or closed CRL.
 func (c *CRL) Version() int {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return 0
+	}
 	return native.X509_CRL_get_version(c.handle.Ptr())
 }
 
 // LastUpdate 返回 CRL 生效时间。
 //
-// LastUpdate returns the CRL "lastUpdate" time in UTC.
+// 对 nil 接收者或已关闭的 CRL 返回零值时间。
+//
+// LastUpdate returns the CRL "lastUpdate" time in UTC. Returns the zero
+// Time for a nil or closed CRL.
 func (c *CRL) LastUpdate() time.Time {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return time.Time{}
+	}
 	return time.Unix(native.X509_CRL_get0_lastUpdate(c.handle.Ptr()), 0).UTC()
 }
 
 // NextUpdate 返回 CRL 过期时间。
 //
-// NextUpdate returns the CRL "nextUpdate" time in UTC.
+// 对 nil 接收者或已关闭的 CRL 返回零值时间。
+//
+// NextUpdate returns the CRL "nextUpdate" time in UTC. Returns the zero
+// Time for a nil or closed CRL.
 func (c *CRL) NextUpdate() time.Time {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return time.Time{}
+	}
 	return time.Unix(native.X509_CRL_get0_nextUpdate(c.handle.Ptr()), 0).UTC()
 }
 
