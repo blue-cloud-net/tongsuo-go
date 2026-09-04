@@ -38,3 +38,19 @@ NTLS 双证书（签名 + 加密）握手 + 多轮回显读写。
 ```bash
 go run ./examples/ntls-loopback
 ```
+
+### [ed25519](./ed25519) — Ed25519 签名 / 验签与 PEM 序列化
+
+Ed25519（RFC 8032）密钥生成、32B 原始种子 / 公钥互操作、64B 签名、PKCS#8 / SPKI PEM 往返。
+
+```bash
+go run ./examples/ed25519
+```
+
+### [x25519](./x25519) — X25519 ECDH 共享密钥派生
+
+X25519（RFC 7748）密钥对生成、双向共享密钥派生一致性、32B 原始字节与 PKCS#8 / SPKI PEM 互操作。
+
+```bash
+go run ./examples/x25519
+```
