@@ -314,10 +314,18 @@ func TestGCMTamper(t *testing.T) {
 	}
 }
 
-// TestGCMInvalidNonce 验证空 nonce 返回错误。
+// TestGCMInvalidNonce 验证空 nonce 与非 12 字节 nonce 返回错误（对齐 stdlib AEAD）。
 func TestGCMInvalidNonce(t *testing.T) {
 	if _, _, err := EncryptGCM(vectorKey, nil, []byte("x"), nil); err == nil {
 		t.Fatal("expected error for empty nonce")
+	}
+	short := bytes.Repeat([]byte{0x01}, NonceSize-1)
+	if _, _, err := EncryptGCM(vectorKey, short, []byte("x"), nil); err == nil {
+		t.Fatal("expected error for short nonce")
+	}
+	long := bytes.Repeat([]byte{0x01}, NonceSize+1)
+	if _, err := DecryptGCM(vectorKey, long, []byte("x"), []byte("tag"), nil); err == nil {
+		t.Fatal("expected error for long nonce")
 	}
 }
 

@@ -227,3 +227,19 @@ func TestBlockConcurrent(t *testing.T) {
 		<-done
 	}
 }
+
+// TestGCMInvalidNonce 验证空/短/长 nonce 返回错误（对齐 stdlib AEAD）。
+func TestGCMInvalidNonce(t *testing.T) {
+	key := mustHex(t, "000102030405060708090a0b0c0d0e0f")
+	if _, _, err := EncryptGCM(key, nil, []byte("x"), nil); err == nil {
+		t.Fatal("expected error for empty nonce")
+	}
+	short := bytes.Repeat([]byte{0x01}, NonceSize-1)
+	if _, _, err := EncryptGCM(key, short, []byte("x"), nil); err == nil {
+		t.Fatal("expected error for short nonce")
+	}
+	long := bytes.Repeat([]byte{0x01}, NonceSize+1)
+	if _, err := DecryptGCM(key, long, []byte("x"), []byte("0123456789abcdef"), nil); err == nil {
+		t.Fatal("expected error for long nonce")
+	}
+}

@@ -301,6 +301,9 @@ func DecryptCTR(key, iv, data []byte) ([]byte, error) {
 // breaks both confidentiality and authenticity. key must be 16 (AES-128)
 // or 32 (AES-256) bytes. tag is always TagSize (16) bytes.
 func EncryptGCM(key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, err error) {
+	if len(nonce) != NonceSize {
+		return nil, nil, fmt.Errorf("aes: invalid nonce size %d, want %d", len(nonce), NonceSize)
+	}
 	c, err := aesCipher(key, "gcm")
 	if err != nil {
 		return nil, nil, err
@@ -338,6 +341,9 @@ func EncryptGCM(key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, err 
 // must treat the error as an authentication failure and discard the
 // returned plaintext rather than act on it.
 func DecryptGCM(key, nonce, ciphertext, tag, aad []byte) ([]byte, error) {
+	if len(nonce) != NonceSize {
+		return nil, fmt.Errorf("aes: invalid nonce size %d, want %d", len(nonce), NonceSize)
+	}
 	c, err := aesCipher(key, "gcm")
 	if err != nil {
 		return nil, err

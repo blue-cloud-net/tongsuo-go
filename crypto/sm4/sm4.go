@@ -376,12 +376,15 @@ func DecryptCFB(key, iv, data []byte) ([]byte, error) {
 //
 // EncryptGCM authenticates and encrypts plaintext with SM4-GCM (AEAD).
 // It returns the ciphertext and authentication tag separately; DecryptGCM
-// requires the same nonce, aad, and tag. The nonce should be NonceSize (12)
-// bytes and must be unique per key. aad may be nil and is authenticated
-// but not encrypted.
+// requires the same nonce, aad, and tag. The nonce must be exactly
+// NonceSize (12) bytes and must be unique per key. aad may be nil and is
+// authenticated but not encrypted.
 func EncryptGCM(key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, err error) {
 	if len(key) != KeySize {
 		return nil, nil, fmt.Errorf("sm4: invalid key size %d, want %d", len(key), KeySize)
+	}
+	if len(nonce) != NonceSize {
+		return nil, nil, fmt.Errorf("sm4: invalid nonce size %d, want %d", len(nonce), NonceSize)
 	}
 	ctx, err := core.NewGcmCtx(core.SM4GCM(), key, nonce, true)
 	if err != nil {
@@ -411,6 +414,9 @@ func EncryptGCM(key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, err 
 func DecryptGCM(key, nonce, ciphertext, tag, aad []byte) ([]byte, error) {
 	if len(key) != KeySize {
 		return nil, fmt.Errorf("sm4: invalid key size %d, want %d", len(key), KeySize)
+	}
+	if len(nonce) != NonceSize {
+		return nil, fmt.Errorf("sm4: invalid nonce size %d, want %d", len(nonce), NonceSize)
 	}
 	if len(tag) != TagSize {
 		return nil, fmt.Errorf("sm4: invalid tag size %d, want %d", len(tag), TagSize)
