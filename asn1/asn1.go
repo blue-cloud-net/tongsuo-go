@@ -71,7 +71,7 @@ func Parse(der []byte) (*Node, error) {
 	if len(der) == 0 {
 		return nil, fmt.Errorf("asn1: empty DER")
 	}
-	n, used, err := parseNode(der, 0)
+	n, used, err := parseNode(der, 0, maxDERDepth)
 	if err != nil {
 		return nil, err
 	}
@@ -81,12 +81,29 @@ func Parse(der []byte) (*Node, error) {
 	return n, nil
 }
 
-// parseNode 解析一个 TLV 节点，返回节点与消费的字节数。
+// maxDERDepth 为构造类型允许的最大嵌套深度。
+//
+// DER 本身无深度上限；攻击者可构造接近输入一半长度的嵌套 SEQUENCE，让递归
+// 解析逼近 Go 栈上限前触发栈溢出 DoS。这里设上限（128 覆盖合法证书 / CRL /
+// PKCS 结构的典型嵌套），超限返回错误而非继续递归。
+//
+// maxDERDepth caps the nesting depth of constructed (SEQUENCE / SET /
+// etc.) types during parsing. DER itself imposes no depth limit; an
+// attacker can craft near-half-length nested SEQUENCEs that exhaust the
+// Go stack before the input runs out. The cap (128, well beyond typical
+// certificate / CRL / PKCS nesting) rejects such input with an error
+// instead of recursing further.
+const maxDERDepth = 128
+
+// parseNode 解析一个 TLV 节点，返回节点与消费的字节数。depth 为剩余允许的
+// 构造嵌套深度；降至 0 时若仍需向下解析则返回 "asn1: DER nesting too deep"。
 //
 // parseNode parses one TLV (tag / length / value) element from der at the
 // given absolute base offset. It returns the parsed *Node and the number
-// of bytes consumed from the input slice.
-func parseNode(der []byte, base int) (*Node, int, error) {
+// of bytes consumed from the input slice. depth is the remaining allowed
+// nesting budget for constructed types; once it reaches 0 and further
+// descent is needed, "asn1: DER nesting too deep" is returned.
+func parseNode(der []byte, base, depth int) (*Node, int, error) {
 	if len(der) == 0 {
 		return nil, 0, fmt.Errorf("asn1: truncated")
 	}
@@ -124,9 +141,12 @@ func parseNode(der []byte, base int) (*Node, int, error) {
 		Constructed: constructed, Length: length, Value: value,
 	}
 	if constructed {
+		if depth <= 0 {
+			return nil, 0, fmt.Errorf("asn1: DER nesting too deep at offset %d", start)
+		}
 		cur := off
 		for cur < off+length {
-			child, used, err := parseNode(value[cur-off:], start+cur)
+			child, used, err := parseNode(value[cur-off:], start+cur, depth-1)
 			if err != nil {
 				return nil, 0, err
 			}

@@ -77,3 +77,20 @@ func TestParseErrors(t *testing.T) {
 		t.Fatal("indefinite length should error")
 	}
 }
+
+// TestParseDeepNestingLimit 验证构造类型嵌套深度受限（防栈溢出 DoS）：
+// 200 层嵌套 SEQUENCE 应返回错误而非崩溃/无限递归。
+func TestParseDeepNestingLimit(t *testing.T) {
+	// 构造 200 层嵌套 SEQUENCE：最内为 SEQUENCE{} (30 00)；每层把当前
+	// 完整 TLV 包进新 SEQUENCE 的内容（30 <len> inner）。
+	inner := []byte{0x30, 0x00}
+	for i := 0; i < 200; i++ {
+		wrapped := []byte{0x30, byte(len(inner))}
+		wrapped = append(wrapped, inner...)
+		inner = wrapped
+	}
+	_, err := Parse(inner)
+	if err == nil {
+		t.Fatal("expected nesting-too-deep error for 200-level SEQUENCE")
+	}
+}
