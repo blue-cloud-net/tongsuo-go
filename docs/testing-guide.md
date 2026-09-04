@@ -2,7 +2,7 @@
 
 本文档规定 `tongsuo-go` 的测试组织、命名以及各类算法**必须覆盖**的用例。
 整体开发规范见 [development-guide.md](development-guide.md)，架构说明见
-[architecture.md](architecture.md)，实施计划见 [roadmap.md](roadmap.md)。
+[architecture.md](architecture.md)。
 
 ---
 

@@ -11,5 +11,3 @@ description: "Use when discussing the tongsuo-go project overview, architecture,
 - [architecture.md](../../docs/architecture.md) — 整体架构、目录结构、构建依赖
 - [development-guide.md](../../docs/development-guide.md) — 开发规范
 - [testing-guide.md](../../docs/testing-guide.md) — 测试规范
-- [ci-cd.md](../../docs/ci-cd.md) — CI/CD 与发版流程
-- [roadmap.md](../../docs/roadmap.md) — 阶段实施计划

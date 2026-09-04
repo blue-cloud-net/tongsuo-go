@@ -1,8 +1,7 @@
 # 项目架构
 
 本文档描述 `tongsuo-go` 的整体架构、目录结构、构建依赖与运行模型。开发规范见
-[development-guide.md](development-guide.md)，测试规范见 [testing-guide.md](testing-guide.md)，
-实施计划见 [roadmap.md](roadmap.md)。
+[development-guide.md](development-guide.md)，测试规范见 [testing-guide.md](testing-guide.md)。
 
 ---
 
@@ -268,4 +267,4 @@ go build ./...
 - [铜锁 GitHub](https://github.com/Tongsuo-Project/Tongsuo)
 - [参考项目（C# 封装）](https://github.com/blue-cloud-net/tongsuo-csharp)
 - [官方 Go SDK](https://github.com/tongsuo-project/tongsuo-go-sdk)
-- [开发规范](development-guide.md) · [测试规范](testing-guide.md) · [路线图](roadmap.md)
+- [开发规范](development-guide.md) · [测试规范](testing-guide.md)
