@@ -16,7 +16,7 @@
 - **定位**：**全新独立实现**，与官方
   [tongsuo-project/tongsuo-go-sdk](https://github.com/tongsuo-project/tongsuo-go-sdk)
   并存，不复用其代码；但其 cgo/shim 构建思路、子包划分、线程锁与静态链接约定作为实现参考
-- **底层依赖**：铜锁 (Tongsuo) **8.4.0+**（Apache-2.0）
+- **底层依赖**：铜锁 (Tongsuo) **8.5.0+**（Apache-2.0；已在 8.5.0-pre1 验证）
 - **授权**：Apache-2.0（工作区 `LICENSE`）
 
 ### 1.1 API 设计取向
@@ -54,7 +54,9 @@ API 层（crypto/）              ← 对外高层 API，仅此层可被外部 i
   （如 BIO 读写、TLS 回调），shim 包装函数统一加 `X_` 前缀（如 `X_EVP_Digest`）
 - 按功能域拆分 Go 绑定文件（对应 C# `partial class` 按功能拆文件的思路，Go 用文件名拆分）：
   `binding_digest.go` / `binding_cipher.go` / `binding_pkey.go` / `binding_bio.go` /
-  `binding_pem.go` / `binding_rand.go` / `binding_version.go`
+  `binding_ssl.go` / `binding_x509.go` / `binding_pkcs.go` / `binding_ocsp.go` /
+  `binding_hmac.go` / `binding_kdf.go` / `binding_rand.go` / `binding_error.go` /
+  `binding_version.go`（共 13 个；PEM/DER 相关函数聚合在 `binding_x509.go`）
 - 原生调用失败由**核心层**通过 `ERR_get_error()` 捕获错误码，本层不处理错误语义
 
 ### 3.2 核心层（`internal/core/`）
@@ -144,25 +146,47 @@ tongsuo-go/
 ├── internal/                  # 【内部实现】外部不可 import
 │   ├── native/                # 【绑定层】cgo + shim（C 桥接）
 │   │   ├── shim.h  shim.c     # C shim：宏/可变参/回调桥接
+│   │   ├── build.go           # #cgo LDFLAGS（动态库）
+│   │   ├── build_static.go    # #cgo LDFLAGS（-tags static 静态链接）
+│   │   ├── init.go            # Tongsuo 线程锁注册
 │   │   ├── binding_digest.go  # EVP_MD / EVP_Digest* 系列
 │   │   ├── binding_cipher.go  # EVP_CIPHER / EVP_CIPHER_CTX 系列
 │   │   ├── binding_pkey.go    # EVP_PKEY / EVP_PKEY_CTX 系列（SM2/RSA/EC）
+│   │   ├── binding_hmac.go    # EVP_MAC / HMAC 系列
+│   │   ├── binding_kdf.go     # EVP_KDF（HKDF / PBKDF2 / Argon2ID）
+│   │   ├── binding_rand.go    # RAND_bytes 系列
 │   │   ├── binding_bio.go     # BIO 系列
-│   │   ├── binding_pem.go     # PEM / DER 系列
-│   │   ├── binding_rand.go    # RAND_* 系列
-│   │   ├── binding_kdf.go     # EVP_KDF（HKDF / PBKDF2 / 可用性探测）
+│   │   ├── binding_ssl.go     # SSL_CTX / SSL / TLS 会话
+│   │   ├── binding_x509.go    # X509 / X509_CRL / X509_STORE / PEM / DER 系列
+│   │   ├── binding_pkcs.go    # PKCS#7 / PKCS#12 系列
+│   │   ├── binding_ocsp.go    # OCSP_REQ / OCSP_RES 系列
+│   │   ├── binding_error.go   # ERR_get_error / 错误码
 │   │   └── binding_version.go # OpenSSL_version / Tongsuo_version_num
-│   └── core/                  # 【核心层】句柄包装 + 生命周期 + 错误
-│       ├── handle.go          # 句柄基类：owned 所有权 + Close() + SetFinalizer
-│       ├── error.go           # OpError（携带 ERR_get_error 错误码）
-│       ├── version.go         # 版本查询
-│       ├── digest.go  cipher.go  pkey.go  kdf.go  bio.go …
-│       └── testutil/          # 测试共享工具（openssl CLI 封装、向量加载）
+│   ├── core/                  # 【核心层】句柄包装 + 生命周期 + 错误
+│   │   ├── handle.go          # 句柄基类：owned 所有权 + Close() + SetFinalizer
+│   │   ├── error.go           # OpError（携带 ERR_get_error 错误码）
+│   │   ├── doc.go             # 包级 GoDoc 概览
+│   │   ├── version.go         # 版本查询
+│   │   ├── digest.go          # Digest / DigestCtx 包装
+│   │   ├── cipher.go          # Cipher / CipherCtx 包装（含 Clone）
+│   │   ├── hmac.go            # HMAC 包装
+│   │   ├── kdf.go             # KDF（HKDF / PBKDF2 / Argon2ID）
+│   │   ├── pkey.go            # PKey 包装（SM2/RSA/EC + 默认 ID）
+│   │   ├── pkcs.go            # PKCS#7 / PKCS#12 包装
+│   │   ├── ocsp.go            # OCSP 自适应 CertID 匹配
+│   │   ├── x509.go            # X509 证书 / CRL / Store 包装
+│   │   ├── ssl.go             # SSL_CTX / SSL 会话 + Close 幂等
+│   │   ├── rand.go            # RandomBytes 包装（绑定层转发）
+│   │   ├── waitfd_linux.go    # epoll 等待 fd 可读（cgo syscall）
+│   │   └── waitfd_darwin.go   # kqueue 等待 fd 可读（cgo syscall）
+│   ├── digest/           # 【共享抽象】纯 Go hash.Hash 实现
+│   │   └── digest.go    # sm3/md5/sha1/256/512 共用 hash.Hash 工厂
+│   └── testutil/        # 【测试共享】openssl CLI 包装、向量加载（_test.go 编译）
+│       └── openssl.go   # Tongsuo CLI 测试钩子
 │
 ├── examples/                  # 示例（对应 C# Demo/）
 │   ├── sm3/main.go  sm4/main.go  sm2/main.go …
-└── testdata/                  # 测试数据（标准向量、证书等）
-```
+└── testdata/                  # 测试数据（标准向量、证书等；不提交，CI 临时生成）
 
 > **内部实现隐藏**：`internal/` 目录使绑定层与核心层对库外部不可见，公开 API 由
 > `crypto/*` 与顶级 `key/`、`asn1/`、`pkcs/*`、`ocsp/`、`tls/`、`jwk/`、`xml/*` 共同构成。
@@ -177,8 +201,8 @@ tongsuo-go/
 
 ### 6.1 环境要求
 
-- Go 1.21+（启用 CGO）
-- 铜锁 8.4.0+，安装路径 `/opt/tongsuo`（可通过环境变量覆盖）
+- Go 1.21+（启用 CGO；已在 Go 1.26 验证）
+- 铜锁 8.5.0+（已在 8.5.0-pre1 验证），安装路径 `/opt/tongsuo`（可通过环境变量覆盖）
 - 平台：**Linux 优先，macOS 兼容，Windows 后置**
 
 ### 6.2 安装铜锁
@@ -223,7 +247,9 @@ go build ./...
 - **finalizer 注意**：Go 不保证 finalizer 一定执行（程序退出、对象无法触碰时不会执行），
   **不得依赖 finalizer 作为唯一释放途径**；资源敏感场景（如 TLS 连接）必须显式 `Close()`
 - **防双重释放**：`Close()` 幂等；释放后句柄置空，后续使用返回明确错误
-- **敏感内存**：密钥、明文等敏感缓冲区使用后清零
+- **敏感内存**：本库 Go 侧不在持有方主动清零（Go 编译器允许消除看似无副作用的清零循环）；
+  密钥/明文由调用方负责在使用后清零源切片；C 端由 Tongsuo 自身（OPENSSL_cleanse）
+  处理会话级密钥缓冲。详见 `crypto/aes.NewCipher` / `crypto/sm4.NewCipher` 等入口文档
 - **防悬垂指针**：句柄释放后不得再调用绑定层函数
 
 ---
