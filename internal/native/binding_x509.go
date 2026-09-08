@@ -88,6 +88,35 @@ func OBJ_txt2nid(s string) int {
 	return int(C.OBJ_txt2nid(c))
 }
 
+// OBJ_obj2txt 返回 ASN1_OBJECT 的文本表示。
+//
+// no_name=1 时强制输出点分 OID（如 "1.2.840.113549.1.1.11"），便于无 OID 库解析时使用；
+// no_name=0 时优先返回长名（如 "sha256WithRSAEncryption"），未知再回退点分 OID。
+// 对象为空或 OpenSSL 调用失败时返回空串。
+//
+// OBJ_obj2txt returns the textual form of an ASN1_OBJECT.
+//
+// With no_name=1 the dotted OID is always returned (for example
+// "1.2.840.113549.1.1.11"), useful when an OID-library lookup is not
+// available. With no_name=0 the long name (for example
+// "sha256WithRSAEncryption") is preferred and the dotted OID is used as
+// a fallback when the object is unrecognized. Returns "" when o is nil
+// or the underlying OpenSSL call fails.
+func OBJ_obj2txt(o unsafe.Pointer, noName int) string {
+	if o == nil {
+		return ""
+	}
+	n := C.OBJ_obj2txt(nil, 0, (*C.ASN1_OBJECT)(o), C.int(noName))
+	if n <= 0 {
+		return ""
+	}
+	buf := make([]C.char, n+1)
+	if C.OBJ_obj2txt(&buf[0], n+1, (*C.ASN1_OBJECT)(o), C.int(noName)) <= 0 {
+		return ""
+	}
+	return C.GoString(&buf[0])
+}
+
 // X509_NAME_get_entry_count 返回名字条目数。
 // X509_NAME_get_entry_count returns the number of RDN entries in n.
 func X509_NAME_get_entry_count(n unsafe.Pointer) int {

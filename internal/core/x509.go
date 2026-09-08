@@ -1054,6 +1054,7 @@ func (c *Certificate) Fingerprint(md *Digest) (string, error) {
 type Extension struct {
 	Nid      int    // 扩展 NID（如 native.NidSubjectAltName）
 	Field    string // 扩展短名（读取时填充，如 "subjectAltName"）
+	OID      string // 扩展点分 OID（如 "2.5.29.17"；读取时填充；OBJ_obj2txt(_,_,_,1)）
 	Critical bool   // critical 标志（读取时填充）
 	Value    string // X509V3_EXT_conf 配置串（构建时使用，如 "DNS:example.com"）
 	Data     []byte // DER 编码的扩展值（读取时填充）
@@ -1061,13 +1062,13 @@ type Extension struct {
 
 // Extensions 按出现顺序返回证书的全部扩展。
 //
-// 对 nil 或已关闭的证书返回 nil；每条包含扩展 NID、短名、critical 标志及 DER 字节。
+// 对 nil 或已关闭的证书返回 nil；每条包含扩展 NID、短名、点分 OID、critical 标志及 DER 字节。
 //
 // Extensions returns every extension of the certificate in their original
 // order.
 //
 // The result is nil for a nil or closed certificate. Each entry contains
-// the extension NID, short name, critical flag and DER bytes.
+// the extension NID, short name, dotted OID, critical flag and DER bytes.
 func (c *Certificate) Extensions() []Extension {
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return nil
@@ -1079,10 +1080,12 @@ func (c *Certificate) Extensions() []Extension {
 		if e == nil {
 			continue
 		}
-		nid := native.OBJ_obj2nid(native.X509_EXTENSION_get_object(e))
+		obj := native.X509_EXTENSION_get_object(e)
+		nid := native.OBJ_obj2nid(obj)
 		out = append(out, Extension{
 			Nid:      nid,
 			Field:    native.OBJ_nid2sn(nid),
+			OID:      native.OBJ_obj2txt(obj, 1),
 			Critical: native.X509_EXTENSION_get_critical(e) != 0,
 			Data:     native.ASN1_STRING_data_bytes(native.X509_EXTENSION_get_data(e)),
 		})
@@ -1526,10 +1529,12 @@ func (r *CertificateRequest) Extensions() []Extension {
 		if e == nil {
 			continue
 		}
-		nid := native.OBJ_obj2nid(native.X509_EXTENSION_get_object(e))
+		obj := native.X509_EXTENSION_get_object(e)
+		nid := native.OBJ_obj2nid(obj)
 		out = append(out, Extension{
 			Nid:      nid,
 			Field:    native.OBJ_nid2sn(nid),
+			OID:      native.OBJ_obj2txt(obj, 1),
 			Critical: native.X509_EXTENSION_get_critical(e) != 0,
 			Data:     native.ASN1_STRING_data_bytes(native.X509_EXTENSION_get_data(e)),
 		})

@@ -18,6 +18,7 @@ func convertExtensions(es []core.Extension) []Extension {
 		out = append(out, Extension{
 			Nid:      e.Nid,
 			Field:    e.Field,
+			OID:      e.OID,
 			Critical: e.Critical,
 			Value:    e.Value,
 			Data:     e.Data,

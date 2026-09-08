@@ -248,18 +248,19 @@ func (c *Certificate) CertificateType() string { return c.cert.CertificateType()
 
 // Extension 表示证书/CSR 中的一个 X.509 扩展。
 //
-// Nid 为扩展 NID；Field 与 Critical 在读取时填充；
+// Nid 为扩展 NID；Field、OID 与 Critical 在读取时填充；
 // Value 为构建时使用的 X509V3_EXT_conf 配置串；
 // Data 为 DER 编码的扩展值（读取时填充）。
 //
 // Extension represents a single X.509 extension on a certificate or CSR.
 //
-// Nid is the extension NID. Field and Critical are populated on read.
+// Nid is the extension NID. Field, OID and Critical are populated on read.
 // Value holds an X509V3_EXT_conf configuration string used while building.
 // Data holds the DER-encoded extension value (populated on read).
 type Extension struct {
 	Nid      int    // 扩展 NID
 	Field    string // 扩展短名（读取时填充，如 "subjectAltName"）
+	OID      string // 扩展点分 OID（读取时填充，如 "2.5.29.17"；OBJ_obj2txt(_,_,_,1)）
 	Critical bool   // critical 标志（读取时填充）
 	Value    string // X509V3_EXT_conf 配置串（构建时使用，如 "DNS:example.com"）
 	Data     []byte // DER 编码的扩展值（读取时填充）
