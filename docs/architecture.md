@@ -173,7 +173,7 @@ tongsuo-go/
 ```bash
 git clone https://github.com/Tongsuo-Project/Tongsuo.git
 cd Tongsuo
-./config --prefix=/opt/tongsuo --libdir=/opt/tongsuo/lib enable-ntls enable-export-sm4
+./config --prefix=/opt/tongsuo --libdir=/opt/tongsuo/lib enable-ntls enable-trace no-shared
 make -j$(nproc)
 sudo make install
 # 配置动态库路径
