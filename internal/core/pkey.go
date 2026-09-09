@@ -807,17 +807,18 @@ func bnParam(k *PKey, name string) *big.Int {
 // Params 返回密钥参数。
 //
 // 方法在 nil 接收者或已关闭的密钥上调用时返回 nil；RSA 密钥通过 EVP_PKEY_get_bn_param 读取
-// provider 参数 "n"、"e"、"d"、"rsa-factor1"、"rsa-factor2"；EC / SM2 密钥使用 "group"、"priv"、"pub"
-// 参数以恢复曲线名、私钥标量与仿射公钥坐标；填充字段请参见 KeyParams。
+// provider 参数 "n"、"e"、"d"、"rsa-factor1"、"rsa-factor2"；EC / SM2 密钥使用 "group"、"priv"
+// 以及仿射坐标 "qx"、"qy" 参数以恢复曲线名、私钥标量与公钥坐标；填充字段请参见 KeyParams。
 //
 // Params returns the algorithm-specific parameters of the key.
 //
 // The method returns nil when called on a nil receiver or on a key that
 // has already been closed. For RSA keys the provider parameter names
 // "n", "e", "d", "rsa-factor1" and "rsa-factor2" are read via
-// EVP_PKEY_get_bn_param; for EC / SM2 keys the "group", "priv" and "pub"
-// parameters are used to recover the curve name, the private scalar and
-// the affine public coordinates. See KeyParams for the populated fields.
+// EVP_PKEY_get_bn_param; for EC / SM2 keys the "group", "priv", "qx"
+// and "qy" parameters are used to recover the curve name, the private
+// scalar and the public affine coordinates. See KeyParams for the populated
+// fields.
 func (k *PKey) Params() *KeyParams {
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil
@@ -837,13 +838,16 @@ func (k *PKey) Params() *KeyParams {
 		p.Curve = curve
 	}
 	p.D = bnParam(k, "priv")
-	if pub, ok := native.EVP_PKEY_get_octet_string_param(k.handle.Ptr(), "pub"); ok && len(pub) > 0 && pub[0] == 0x04 {
-		coord := (len(pub) - 1) / 2
-		if coord > 0 && len(pub)-1 == 2*coord {
-			p.X = new(big.Int).SetBytes(pub[1 : 1+coord])
-			p.Y = new(big.Int).SetBytes(pub[1+coord:])
-		}
-	}
+	// 公钥仿射坐标直接以 BIGNUM 参数 qx/qy 读取（OSSL_PKEY_PARAM_EC_PUB_X/PUB_Y），
+	// 兼容不同 Tongsuo 版本：8.4 的 EC/SM2 provider 以压缩点（0x02/0x03）导出 "pub"
+	// 参数、8.5 起以未压缩点（0x04）导出；而 qx/qy 仿射坐标在两个版本下均可取到，
+	// 因此这里不解析编码点，直接读仿射坐标。
+	// X/Y come straight from the affine-coordinate params "qx"/"qy"
+	// (OSSL_PKEY_PARAM_EC_PUB_X/PUB_Y), which are available in both Tongsuo 8.4
+	// (compressed "pub") and 8.5 (uncompressed "pub"), so no point-encoding
+	// assumption is needed.
+	p.X = bnParam(k, "qx")
+	p.Y = bnParam(k, "qy")
 	return p
 }
 
