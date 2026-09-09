@@ -16,7 +16,7 @@
 - **定位**：**全新独立实现**，与官方
   [tongsuo-project/tongsuo-go-sdk](https://github.com/tongsuo-project/tongsuo-go-sdk)
   并存，不复用其代码；但其 cgo/shim 构建思路、子包划分、线程锁与静态链接约定作为实现参考
-- **底层依赖**：铜锁 (Tongsuo) **8.5.0+**（Apache-2.0；已在 8.5.0-pre1 验证）
+- **底层依赖**：铜锁 (Tongsuo) **8.4.0+**（Apache-2.0；已在 8.4.0 验证）
 - **授权**：Apache-2.0（工作区 `LICENSE`）
 
 ### 1.1 API 设计取向
@@ -101,7 +101,7 @@ API 层（crypto/）              ← 对外高层 API，仅此层可被外部 i
 
 ---
 
-## 5. 目录结构（v0.2.0 后）
+## 5. 目录结构
 
 **顶层布局原则**：借鉴 BouncyCastle C# 命名空间分层——`crypto/` 仅装算法引擎；
 ASN.1、PKCS、OCSP、TLS、JWK、XML 与 `crypto/` 平级，不作为其子包。
@@ -111,7 +111,7 @@ tongsuo-go/
 ├── go.mod / go.sum            # module github.com/blue-cloud-net/tongsuo-go
 ├── LICENSE                    # Apache-2.0
 ├── README.md  CHANGELOG.md
-├── docs/                      # 设计文档（architecture / development-guide / roadmap / testing-guide）
+│   docs/                      # 设计文档（architecture / development-guide / testing-guide）
 │
 ├── crypto/                    # 【算法引擎层】仅算法子包
 │   ├── aes/  ecdsa/  ed25519/  ed448/  hmac/  md5/  rand/  rsa/
@@ -202,7 +202,7 @@ tongsuo-go/
 ### 6.1 环境要求
 
 - Go 1.21+（启用 CGO；已在 Go 1.26 验证）
-- 铜锁 8.5.0+（已在 8.5.0-pre1 验证），安装路径 `/opt/tongsuo`（可通过环境变量覆盖）
+- 铜锁 8.4.0+（已在 8.4.0 验证），安装路径 `/opt/tongsuo`（可通过环境变量覆盖）
 - 平台：**Linux 优先，macOS 兼容，Windows 后置**
 
 ### 6.2 安装铜锁
@@ -210,7 +210,7 @@ tongsuo-go/
 ```bash
 git clone https://github.com/Tongsuo-Project/Tongsuo.git
 cd Tongsuo
-./config --prefix=/opt/tongsuo --libdir=/opt/tongsuo/lib enable-ntls enable-export-sm4
+./config --prefix=/opt/tongsuo --libdir=/opt/tongsuo/lib enable-ntls enable-trace no-shared
 make -j$(nproc)
 sudo make install
 # 配置动态库路径
