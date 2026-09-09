@@ -26,7 +26,8 @@ permissions:
 
 env:
   TONGSUO_REPO: Tongsuo-Project/Tongsuo
-  TONGSUO_REF: master
+  # 固定到稳定 tag 以保证可复现；升级 Tongsuo 时同步修改 TONGSUO_REF 并 bump 下方缓存键前缀
+  TONGSUO_REF: 8.4.0
 
 concurrency:
   group: release-${{ github.ref }}
@@ -65,9 +66,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.tongsuo-install
-          key: tongsuo-${{ runner.os }}-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/release.yml') }}
+          key: tongsuo-v2-${{ runner.os }}-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/release.yml') }}
           restore-keys: |
-            tongsuo-${{ runner.os }}-${{ env.TONGSUO_REF }}-
+            tongsuo-v2-${{ runner.os }}-${{ env.TONGSUO_REF }}-
 
       - name: Build Tongsuo from source
         if: steps.cache-tongsuo.outputs.cache-hit != 'true'
@@ -96,29 +97,23 @@ jobs:
         run: go test -count=1 ./...
 
   # ---------------------------------------------------------------------------
-  # 2. 交叉构建示例二进制（examples/），生成产物清单与校验和
+  # 2. 构建并发布示例二进制（examples/），生成产物清单与校验和
   # ---------------------------------------------------------------------------
   build:
     name: Build examples (${{ matrix.target }})
     needs: test
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
+        # v0.1.0 起仅发布 linux-amd64（原生，cgo 直接链接本机 Tongsuo）。
+        # arm64/darwin 产物需在对应 runner 原生构建、或各自交叉编译目标架构的
+        # Tongsuo 后再加入；避免发布在 amd64 头文件下交叉出的不可用骨架二进制。
         include:
           - target: linux-amd64
             goos: linux
             goarch: amd64
-          - target: linux-arm64
-            goos: linux
-            goarch: arm64
-          - target: darwin-amd64
-            goos: darwin
-            goarch: amd64
-          - target: darwin-arm64
-            goos: darwin
-            goarch: arm64
     env:
       LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
       CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
@@ -135,30 +130,41 @@ jobs:
           cache: true
           cache-dependency-path: go.mod
 
-      # Linux 交叉编译到其他 arch 需要 C 交叉工具链
-      - name: Install cross compilers (non-native arch)
-        if: matrix.goarch == 'arm64' && matrix.goos == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-          echo "CXX=aarch64-linux-gnu-g++" >> $GITHUB_ENV
-      - name: Install cross compilers (darwin)
-        if: matrix.goos == 'darwin'
-        uses: nick-fields/retry@v3
+      # build job 同样需要编译/缓存 Tongsuo：examples 经 cgo 链接 Tongsuo。
+      # 若缺失会回落到 runner 系统 OpenSSL 头文件——系统 vanilla OpenSSL 不含
+      # EVP_sm4_gcm 等 Tongsuo 特有符号，导致 cgo 报 could not determine kind of name。
+      - name: Cache Tongsuo
+        id: cache-tongsuo
+        uses: actions/cache@v5
         with:
-          timeout_minutes: 10
-          max_attempts: 3
-          command: |
-            sudo apt-get update
-            sudo apt-get install -y clang
-            # osxcross 由 ghcr.io/setup-osxcross 提供；这里用最简路径：
-            # macOS 交叉工具链由 ossl-cross 提供（仅用于 openssl 二进制）。
-            # Go 端用 clang + macOS SDK；为简化，本 job 仅在 ubuntu 上交叉编译二进制骨架，
-            # macOS 真实产物由 darwin runner 单独产出（matrix 拆分）。
-            echo "使用 setup-osxcross action"
+          path: ${{ github.workspace }}/.tongsuo-install
+          key: tongsuo-v2-${{ runner.os }}-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/release.yml') }}
+          restore-keys: |
+            tongsuo-v2-${{ runner.os }}-${{ env.TONGSUO_REF }}-
 
-      # 简单交叉构建示例工程（examples/sm2），实际 release 可按需替换
+      - name: Build Tongsuo from source
+        if: steps.cache-tongsuo.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "${{ env.TONGSUO_REF }}" \
+            "https://github.com/${{ env.TONGSUO_REPO }}.git" tongsuo
+          cd tongsuo
+          ./config --prefix=${{ github.workspace }}/.tongsuo-install \
+                   --libdir=${{ github.workspace }}/.tongsuo-install/lib \
+                   enable-ntls enable-trace no-shared
+          make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
+          make install_sw
+
+      # 运行产物需从 .tongsuo-install/lib 加载动态库
+      - name: Configure dynamic linker (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          echo "${{ github.workspace }}/.tongsuo-install/lib" \
+            | sudo tee /etc/ld.so.conf.d/tongsuo.conf > /dev/null
+          sudo ldconfig
+
+      # 构建可运行示例（examples/sm2），实际 release 可按需替换
       - name: Build examples
         shell: bash
         run: |
