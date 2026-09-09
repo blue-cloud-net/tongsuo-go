@@ -69,7 +69,7 @@ func TestCLISignVerify(t *testing.T) {
 	os.WriteFile(pubFile, pubPEM, 0o600)
 
 	// 本库签名 → openssl dgst -sha256 -verify 通过
-	ourSig, err := priv.SignPKCS1v15(data)
+	ourSig, err := priv.SignPKCS1v15(data, "sha256")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,8 +84,49 @@ func TestCLISignVerify(t *testing.T) {
 	osslSigFile := filepath.Join(dir, "ossl.sig")
 	runOpenSSL(t, "dgst", "-sha256", "-sign", privFile, "-out", osslSigFile, dataFile)
 	osslSig, _ := os.ReadFile(osslSigFile)
-	if err := priv.Public().VerifyPKCS1v15(data, osslSig); err != nil {
+	if err := priv.Public().VerifyPKCS1v15(data, osslSig, "sha256"); err != nil {
 		t.Fatalf("verify openssl sig failed: %v", err)
+	}
+}
+
+// TestCLISignVerifyMultiHash 本库 sha384/sha512 PKCS#1 v1.5 签名 ↔
+// openssl dgst -sha384 / -sha512 双向验签，验证多摘要互通。
+func TestCLISignVerifyMultiHash(t *testing.T) {
+	priv, _ := GenerateKey(2048)
+	dir := t.TempDir()
+	data := []byte("interop multi-hash data")
+	dataFile := filepath.Join(dir, "data.bin")
+	if err := os.WriteFile(dataFile, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	privPEM, _ := priv.MarshalPEM()
+	pubPEM, _ := priv.Public().MarshalPEM()
+	privFile := filepath.Join(dir, "priv.pem")
+	pubFile := filepath.Join(dir, "pub.pem")
+	os.WriteFile(privFile, privPEM, 0o600)
+	os.WriteFile(pubFile, pubPEM, 0o600)
+
+	for _, hash := range []string{"sha384", "sha512"} {
+		// 本库签名 → openssl dgst -<hash> -verify 通过
+		ourSig, err := priv.SignPKCS1v15(data, hash)
+		if err != nil {
+			t.Fatalf("sign(%s): %v", hash, err)
+		}
+		sigFile := filepath.Join(dir, hash+".sig")
+		os.WriteFile(sigFile, ourSig, 0o600)
+		out := runOpenSSL(t, "dgst", "-"+hash, "-verify", pubFile, "-signature", sigFile, dataFile)
+		if !bytes.Contains(out, []byte("Verified OK")) {
+			t.Fatalf("openssl verify our %s sig failed: %s", hash, out)
+		}
+
+		// openssl dgst -sign → 本库验签通过
+		osslSigFile := filepath.Join(dir, hash+".ossl.sig")
+		runOpenSSL(t, "dgst", "-"+hash, "-sign", privFile, "-out", osslSigFile, dataFile)
+		osslSig, _ := os.ReadFile(osslSigFile)
+		if err := priv.Public().VerifyPKCS1v15(data, osslSig, hash); err != nil {
+			t.Fatalf("verify openssl %s sig failed: %v", hash, err)
+		}
 	}
 }
 

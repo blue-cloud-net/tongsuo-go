@@ -5,6 +5,7 @@ import (
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
 )
+
 // ExampleGenerateKey 演示生成 2048 位 RSA 私钥。
 //
 // 推荐密钥长度 ≥ 2048 位；4096 位更安全但运算更慢。
@@ -26,6 +27,7 @@ func ExampleGenerateKey() {
 	fmt.Println(string(pem[:27]))
 	// Output: -----BEGIN PRIVATE KEY-----
 }
+
 // ExamplePrivateKey_SignPKCS1v15 演示 RSA PKCS#1 v1.5 签名与验签。
 //
 // PKCS#1 v1.5 是兼容性最广的签名方案；新协议推荐使用 PSS。
@@ -39,13 +41,14 @@ func ExamplePrivateKey_SignPKCS1v15() {
 	priv, _ := rsa.GenerateKey(2048)
 	msg := []byte("hello RSA")
 
-	sig, err := priv.SignPKCS1v15(msg)
+	sig, err := priv.SignPKCS1v15(msg, "sha256")
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(priv.Public().VerifyPKCS1v15(msg, sig))
+	fmt.Println(priv.Public().VerifyPKCS1v15(msg, sig, "sha256"))
 	// Output: <nil>
 }
+
 // ExamplePrivateKey_SignPSS 演示 RSA-PSS 签名与验签。
 //
 // saltLen 为盐长字节数；推荐 ≥ 32。
@@ -60,13 +63,14 @@ func ExamplePrivateKey_SignPSS() {
 	priv, _ := rsa.GenerateKey(2048)
 	msg := []byte("hello RSA-PSS")
 
-	sig, err := priv.SignPSS(msg, 32)
+	sig, err := priv.SignPSS(msg, 32, "sha256")
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(priv.Public().VerifyPSS(msg, sig, 32))
+	fmt.Println(priv.Public().VerifyPSS(msg, sig, 32, "sha256"))
 	// Output: <nil>
 }
+
 // ExampleEncryptOAEP 演示 RSA-OAEP 加密与解密。
 //
 // OAEP 是 PKCS#1 v2 中定义的安全填充，优于 PKCS#1 v1.5 加密。
@@ -93,6 +97,7 @@ func ExampleEncryptOAEP() {
 	fmt.Println(string(pt))
 	// Output: secret payload
 }
+
 // ExamplePrivateKey_MarshalPKCS1PEM 演示导出 PKCS#1 传统格式 PEM。
 // 将 RSA 私钥导出为传统 PKCS#1 PEM 块（"-----BEGIN RSA PRIVATE KEY-----"）。
 // 新协议应优先使用 MarshalPEM（PKCS#8）——本函数仅用于兼容只接受传统格式的工具。

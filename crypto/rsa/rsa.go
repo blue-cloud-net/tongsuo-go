@@ -1,8 +1,9 @@
 // Package rsa 基于铜锁原生实现实现 RSA 非对称算法。
 // 提供密钥生成、PEM 序列化（PKCS#8 / PKCS#1 / 加密）、签名（PKCS#1 v1.5 / PSS）、
-// 加解密（PKCS#1 v1.5 / OAEP）与参数提取。签名默认使用 SHA-256 摘要。
-// 密钥长度可控，最小 1024 位。所有 Sign / Verify 默认使用 SHA-256（RFC 8017）。
-// PSS 调用方须自行提供 salt 长度（负值遵循 OpenSSL 约定：-1=摘要长度、-2=auto、-3=最大）。
+// 加解密（PKCS#1 v1.5 / OAEP）与参数提取。签名摘要由 hash 参数选择：
+// "sha1" / "sha224" / "sha256" / "sha384" / "sha512"（空串默认 SHA-256）。
+// 密钥长度可控，最小 1024 位。PSS 调用方须自行提供 salt 长度
+// （负值遵循 OpenSSL 约定：-1=摘要长度、-2=auto、-3=最大）。
 //
 // Package rsa provides RSA primitives backed by the Tongsuo native
 // library. It exposes key generation (key size controllable, with a
@@ -10,9 +11,11 @@
 // RSA PRIVATE KEY") and encrypted private keys plus SubjectPublicKeyInfo
 // public keys, PKCS#1 v1.5 signatures, PSS signatures, PKCS#1 v1.5 public
 // encryption and OAEP public encryption, and RSA parameter extraction.
-// All Sign / Verify helpers below default to SHA-256 (RFC 8017); PSS
-// callers supply their own salt length (negative values follow the
-// OpenSSL conventions -1=digest length, -2=auto, -3=maximum).
+// The sign / verify helpers select the digest via the hash parameter:
+// "sha1" / "sha224" / "sha256" / "sha384" / "sha512" (an empty string
+// defaults to SHA-256). PSS callers supply their own salt length
+// (negative values follow the OpenSSL conventions -1=digest length,
+// -2=auto, -3=maximum).
 package rsa
 
 import (
@@ -271,57 +274,97 @@ func (k *PrivateKey) Params() *core.KeyParams { return k.key.Params() }
 // the public exponent E.
 func (k *PublicKey) Params() *core.KeyParams { return k.key.Params() }
 
-// SignPKCS1v15 使用 RSA-PKCS#1 v1.5 对 data 签名（SHA-256 摘要）。
-// 以 RSA-PKCS#1 v1.5（RFC 8017）签名 data，底层摘要使用 SHA-256。
-// PKCS#1 v1.5 兼容性最广；新协议推荐使用 SignPSS。
+// SignPKCS1v15 使用 RSA-PKCS#1 v1.5 对 data 签名，摘要由 hash 指定。
+// hash 可为 "sha1" / "sha224" / "sha256" / "sha384" / "sha512"，空串
+// 默认 "sha256"；不支持的名称返回错误。PKCS#1 v1.5 兼容性最广；
+// 新协议推荐使用 SignPSS。
 //
-// SignPKCS1v15 signs data with RSA-PKCS#1 v1.5 (RFC 8017) using SHA-256
-// as the underlying digest. PKCS#1 v1.5 has the broadest compatibility;
-// new protocols should prefer SignPSS.
-func (k *PrivateKey) SignPKCS1v15(data []byte) ([]byte, error) {
-	return k.key.SignDigest(data, core.SHA256())
+// SignPKCS1v15 signs data with RSA-PKCS#1 v1.5 (RFC 8017) using the
+// digest selected by hash. hash accepts "sha1" / "sha224" / "sha256" /
+// "sha384" / "sha512"; an empty string defaults to "sha256" and any
+// other value returns an error. PKCS#1 v1.5 has the broadest
+// compatibility; new protocols should prefer SignPSS.
+func (k *PrivateKey) SignPKCS1v15(data []byte, hash string) ([]byte, error) {
+	md, err := digestForHash(hash)
+	if err != nil {
+		return nil, err
+	}
+	return k.key.SignDigest(data, md)
 }
 
-// VerifyPKCS1v15 使用 RSA-PKCS#1 v1.5 验签（SHA-256 摘要）。
-// 以 RSA-PKCS#1 v1.5（RFC 8017）验签，摘要使用 SHA-256。sig 必须为 SignPKCS1v15
-// 的输出；验签失败时返回错误（不返回布尔值），调用方须将任意非 nil 错误视为
-// 认证失败。
+// VerifyPKCS1v15 使用 RSA-PKCS#1 v1.5 验签，摘要由 hash 指定。
+// hash 取值同 SignPKCS1v15；sig 必须为 SignPKCS1v15（相同 hash）的输出；
+// 验签失败时返回错误（不返回布尔值），调用方须将任意非 nil 错误视为认证失败。
 //
 // VerifyPKCS1v15 checks an RSA-PKCS#1 v1.5 (RFC 8017) signature over
-// data using SHA-256 as the digest. sig must be exactly the output of
-// SignPKCS1v15. Returns an error (no boolean) on verification failure.
-// Callers must treat any non-nil error as authentication failure.
-func (k *PublicKey) VerifyPKCS1v15(data, sig []byte) error {
-	return k.key.VerifyDigest(data, sig, core.SHA256())
+// data using the digest selected by hash (same values as SignPKCS1v15).
+// sig must be exactly the output of SignPKCS1v15 with the same hash.
+// Returns an error (no boolean) on verification failure. Callers must
+// treat any non-nil error as authentication failure.
+func (k *PublicKey) VerifyPKCS1v15(data, sig []byte, hash string) error {
+	md, err := digestForHash(hash)
+	if err != nil {
+		return err
+	}
+	return k.key.VerifyDigest(data, sig, md)
 }
 
-// SignPSS 使用 RSA-PSS 对 data 签名（SHA-256 摘要）。
-// saltLen 为盐长：正整数 = 盐长字节数，或使用本包 PSS 哨兵常量
-// （PSSSaltLenDigest / PSSSaltLenAuto / PSSSaltLenMax）。
+// SignPSS 使用 RSA-PSS 对 data 签名，摘要由 hash 指定。
+// hash 取值同 SignPKCS1v15；saltLen 为盐长：正整数 = 盐长字节数，
+// 或使用本包 PSS 哨兵常量（PSSSaltLenDigest / PSSSaltLenAuto /
+// PSSSaltLenMax）。VerifyPSS 须使用相同的 hash 与 saltLen。
 //
-// 以 RSA-PSS（RFC 8017）签名 data，摘要使用 SHA-256。VerifyPSS 须使用相同值。
-//
-// SignPSS signs data with RSA-PSS (RFC 8017) using SHA-256 as the digest.
+// SignPSS signs data with RSA-PSS (RFC 8017) using the digest selected
+// by hash (same values as SignPKCS1v15).
 //
 // saltLen is the salt length: a positive integer in bytes, or one of the
 // package's PSS sentinel constants (PSSSaltLenDigest / PSSSaltLenAuto /
-// PSSSaltLenMax). VerifyPSS must use the same value.
-func (k *PrivateKey) SignPSS(data []byte, saltLen int) ([]byte, error) {
-	return k.key.SignDigestPSS(data, core.SHA256(), saltLen)
+// PSSSaltLenMax). VerifyPSS must use the same hash and saltLen.
+func (k *PrivateKey) SignPSS(data []byte, saltLen int, hash string) ([]byte, error) {
+	md, err := digestForHash(hash)
+	if err != nil {
+		return nil, err
+	}
+	return k.key.SignDigestPSS(data, md, saltLen)
 }
 
-// VerifyPSS 使用 RSA-PSS 验签（SHA-256 摘要）。
-// saltLen 必须与签名时一致（正整数或本包 PSS 哨兵常量）。
+// VerifyPSS 使用 RSA-PSS 验签，摘要由 hash 指定。
+// hash 与 saltLen 必须与签名时一致（正整数或本包 PSS 哨兵常量）。
 // 验签失败返回错误（不返回布尔值）；调用方须将任意非 nil
 // 错误视为认证失败。
 //
-// VerifyPSS checks an RSA-PSS signature over data using SHA-256 as the
-// digest; saltLen must equal the value used at sign time (a positive
-// integer or one of the package's PSS sentinel constants). Returns an
-// error (no boolean) on verification failure; callers must treat any
-// non-nil error as authentication failure.
-func (k *PublicKey) VerifyPSS(data, sig []byte, saltLen int) error {
-	return k.key.VerifyDigestPSS(data, sig, core.SHA256(), saltLen)
+// VerifyPSS checks an RSA-PSS signature over data using the digest
+// selected by hash; hash and saltLen must equal the values used at sign
+// time (a positive integer or one of the package's PSS sentinel
+// constants). Returns an error (no boolean) on verification failure;
+// callers must treat any non-nil error as authentication failure.
+func (k *PublicKey) VerifyPSS(data, sig []byte, saltLen int, hash string) error {
+	md, err := digestForHash(hash)
+	if err != nil {
+		return err
+	}
+	return k.key.VerifyDigestPSS(data, sig, md, saltLen)
+}
+
+// digestForHash 按名称解析 RSA 签名摘要；空串默认 SHA-256。
+//
+// digestForHash resolves an RSA signature digest by name; an empty name
+// defaults to SHA-256. It returns an error for unsupported names.
+func digestForHash(hash string) (*core.Digest, error) {
+	switch hash {
+	case "", "sha256":
+		return core.SHA256(), nil
+	case "sha1":
+		return core.SHA1(), nil
+	case "sha224":
+		return core.SHA224(), nil
+	case "sha384":
+		return core.SHA384(), nil
+	case "sha512":
+		return core.SHA512(), nil
+	default:
+		return nil, fmt.Errorf("rsa: unsupported hash %q", hash)
+	}
 }
 
 // EncryptPKCS1v15 使用 RSA-PKCS#1 v1.5 填充加密（明文须短于模数）。
