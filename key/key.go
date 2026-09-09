@@ -1,25 +1,25 @@
 // Package key 提供算法无关的统合密钥抽象与密钥管理能力。
 //
-// 本包定义密钥根接口 Key 以及对称密钥抽象（SymmetricKey、AESKey、SM4Key）。
-// 非对称密钥接口（AsymmetricKey 等）、PEM 自动嗅探解析、密钥生命周期管理
-// （Handle/Store）与 KDF 派生将随后续阶段加入。算法包（crypto/rsa、
-// crypto/sm2、crypto/ecdsa 等）通过实现本包接口向调用方提供统一入口；本包
-// 自身只依赖 internal/core 与 crypto/rand，绝不反向 import 任何算法包，从而
-// 避免与算法包的接口实现形成循环依赖。
+// 本包定义密钥根接口 Key 以及对称密钥抽象（SymmetricKey、AESKey、SM4Key）；
+// 非对称密钥接口（AsymmetricKey 与 PrivateKey/PublicKey）、PEM 自动嗅探解析、
+// 密钥生命周期管理（Handle/Store）与 KDF 派生已引入。算法包
+// （crypto/rsa、crypto/sm2、crypto/ecdsa 等）通过实现本包接口向调用方提供统一
+// 入口；本包自身只依赖 internal/core 与 crypto/rand，绝不反向 import 任何算法包，
+// 从而避免与算法包的接口实现形成循环依赖。
 //
 // Package key provides an algorithm-agnostic unified key abstraction and
 // key-management capabilities.
 //
 // It defines the root Key interface together with the symmetric-key
 // abstractions (SymmetricKey, AESKey, SM4Key). The asymmetric-key
-// interfaces (AsymmetricKey and friends), automatic PEM sniffing/parsing,
-// key-lifecycle management (Handle/Store) and KDF derivation are added in
-// later stages. Algorithm packages (crypto/rsa, crypto/sm2, crypto/ecdsa,
-// ...) implement these interfaces to expose a single entry point to
-// callers; this package itself depends only on internal/core and
-// crypto/rand and never imports any algorithm package in return, which
-// avoids a dependency cycle with the algorithm packages implementing its
-// interfaces.
+// interfaces (AsymmetricKey, PrivateKey, PublicKey), automatic PEM
+// sniffing/parsing, key-lifecycle management (Handle/Store) and KDF
+// derivation were introduced. Algorithm packages (crypto/rsa,
+// crypto/sm2, crypto/ecdsa, ...) implement these interfaces to expose a
+// single entry point to callers; this package itself depends only on
+// internal/core and crypto/rand and never imports any algorithm package
+// in return, which avoids a dependency cycle with the algorithm packages
+// implementing its interfaces.
 package key
 
 import (
@@ -78,14 +78,14 @@ const (
 // Key 是所有密钥的根接口。
 //
 // 任何密钥（对称或非对称）通过 Algorithm 报告算法、通过 Equal 比较相等性；
-// 更丰富的操作由 SymmetricKey 与后续阶段的非对称接口扩展提供。
+// 更丰富的操作由 SymmetricKey、AsymmetricKey 与 PrivateKey/PublicKey（均已提供）扩展支持。
 //
 // Key is the root interface satisfied by every key.
 //
 // Any key (symmetric or asymmetric) reports its algorithm through
 // Algorithm and compares for equality through Equal; richer operations are
-// layered on by SymmetricKey and the asymmetric interfaces introduced in a
-// later stage.
+// layered on by SymmetricKey, AsymmetricKey, PrivateKey and PublicKey,
+// all of which are provided.
 type Key interface {
 	// Algorithm 返回密钥算法。
 	//

@@ -24,14 +24,13 @@ var DefaultSM2ID = []byte("1234567812345678")
 
 // PKey 表示一个非对称密钥对象（EVP_PKEY 的包装）。
 //
-// 当前用于 SM2，后续阶段会扩展到 RSA / EC；通过内部 Handle 持有底层 EVP_PKEY，使用完毕须调用 Close 释放。
+// 已支持 SM2、RSA、EC、Ed25519、Ed448、X25519；通过内部 Handle 持有底层 EVP_PKEY，使用完毕须调用 Close 释放。
 //
 // PKey is the Go wrapper around an OpenSSL EVP_PKEY asymmetric key.
 //
-// The type is currently used for SM2 and will be extended to RSA / EC in
-// later stages. It owns the underlying EVP_PKEY handle through an internal
-// Handle value; callers must invoke Close to release the key once they are
-// done using it.
+// The type supports SM2, RSA, EC, Ed25519, Ed448 and X25519. It owns the underlying EVP_PKEY handle through
+// an internal Handle value; callers must invoke Close to release the key
+// once they are done using it.
 type PKey struct {
 	handle *Handle
 }
