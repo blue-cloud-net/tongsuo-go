@@ -947,7 +947,7 @@ func (k *PKey) Params() *KeyParams {
 // MarshalEncryptedPEM 用口令加密导出私钥为 PEM（AES-256-CBC，PKCS#8）。
 //
 // 加密算法为 OpenSSL 默认的 AES-256-CBC + PBKDF2 派生密钥；若密钥已通过 Close 释放，或底层 OpenSSL 写失败，
-// 均返回包装为 OpError 的错误。
+// 均返回包装为 OpError 的错误。需要不同 cipher（如 AES-128-CBC / 3DES）请用 MarshalEncryptedPEMWithCipher。
 //
 // MarshalEncryptedPEM serializes the private key to an encrypted PKCS#8
 // PEM block ("-----BEGIN ENCRYPTED PRIVATE KEY-----") using the given
@@ -956,8 +956,34 @@ func (k *PKey) Params() *KeyParams {
 // The encryption algorithm is the OpenSSL default of AES-256-CBC with
 // PBKDF2-derived keys. Returns an error if the key has been closed via
 // Close, or if the underlying OpenSSL write fails (errors are wrapped as
-// OpError).
+// OpError). For non-default ciphers use MarshalEncryptedPEMWithCipher.
 func (k *PKey) MarshalEncryptedPEM(pass string) ([]byte, error) {
+	return k.MarshalEncryptedPEMWithCipher("", pass)
+}
+
+// MarshalEncryptedPEMWithCipher 用指定 cipher 加密导出私钥为 PEM（PKCS#8）。
+//
+// cipher 为空串时与 MarshalEncryptedPEM 等价（AES-256-CBC 兜底）；常见可选项：
+//
+//	aes-128-cbc / aes-192-cbc / aes-256-cbc
+//	des-ede3-cbc (3DES)
+//	des-cbc (单 DES，弱）
+//
+// cipher 名称由 OpenSSL EVP_get_cipherbyname 解析，非法名称 / AEAD cipher（如 AES-GCM，
+// 不适用于 PKCS#8 PBES2）会导致底层写失败；错误以 OpError 形式包装。同一 cipher 在加密/解
+// 密往返时必须使用 OpenSSL 通用命名（含 -cbc 后缀）。
+//
+// MarshalEncryptedPEMWithCipher serializes the private key to an encrypted
+// PKCS#8 PEM block using the cipher named by cipher (e.g. "aes-128-cbc",
+// "des-ede3-cbc"); cipher == "" falls back to AES-256-CBC and matches
+// MarshalEncryptedPEM.
+//
+// The cipher name is resolved via OpenSSL's EVP_get_cipherbyname;
+// invalid names or AEAD ciphers (such as AES-GCM, which is not suitable
+// for PKCS#8 PBES2) cause the underlying write to fail. Returns an error
+// if the key has been closed via Close, or if the underlying OpenSSL
+// write fails (errors are wrapped as OpError).
+func (k *PKey) MarshalEncryptedPEMWithCipher(cipher, pass string) ([]byte, error) {
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil, fmt.Errorf("pkey: key closed")
 	}
@@ -966,8 +992,8 @@ func (k *PKey) MarshalEncryptedPEM(pass string) ([]byte, error) {
 		return nil, NewOpError("pkey: BIO_new", native.PopError())
 	}
 	defer native.BIO_free(bio)
-	if !native.X_PEM_write_bio_PrivateKey_enc(bio, k.handle.Ptr(), pass) {
-		return nil, NewOpError("pkey: PEM_write_bio_PrivateKey(enc)", native.PopError())
+	if !native.X_PEM_write_bio_PrivateKey_enc_cipher(bio, k.handle.Ptr(), cipher, pass) {
+		return nil, NewOpError("pkey: PEM_write_bio_PrivateKey(enc,cipher)", native.PopError())
 	}
 	return readAllBIO(bio)
 }
@@ -1002,6 +1028,7 @@ func LoadPrivateKeyPEMEncrypted(pemBytes []byte, pass string) (*PKey, error) {
 //
 // 内部使用 LoadPrivateKeyPEMEncrypted + oldPass 加载密钥，再以 MarshalEncryptedPEM + newPass 重新导出；
 // 加载或导出步骤中的错误原样向上传递（来自 native 层时包装为 OpError）；中间 PKey 在函数返回前已释放。
+// 需要改 cipher 请用 ChangePrivateKeyPasswordWithCipher。
 //
 // ChangePrivateKeyPassword reads a private key from an old-password
 // encrypted PEM block and returns a new-password encrypted PEM block.
@@ -1011,13 +1038,25 @@ func LoadPrivateKeyPEMEncrypted(pemBytes []byte, pass string) (*PKey, error) {
 // newPass. Any error from the load or export step is propagated to the
 // caller verbatim (wrapped as OpError when it originates in the native
 // layer). The intermediate PKey is released before the function returns.
+// To switch cipher simultaneously use ChangePrivateKeyPasswordWithCipher.
 func ChangePrivateKeyPassword(pemBytes []byte, oldPass, newPass string) ([]byte, error) {
+	return ChangePrivateKeyPasswordWithCipher(pemBytes, "", oldPass, newPass)
+}
+
+// ChangePrivateKeyPasswordWithCipher 同 ChangePrivateKeyPassword，但可指定 newPass 的 cipher。
+//
+// newCipher 为空串时与 ChangePrivateKeyPassword 等价（AES-256-CBC 兜底）；旧口令仍按原 PEM cipher 解密。
+//
+// ChangePrivateKeyPasswordWithCipher is the same as ChangePrivateKeyPassword
+// but lets the caller choose the cipher used to encrypt the output. Passing
+// newCipher == "" matches ChangePrivateKeyPassword (AES-256-CBC).
+func ChangePrivateKeyPasswordWithCipher(pemBytes []byte, newCipher, oldPass, newPass string) ([]byte, error) {
 	k, err := LoadPrivateKeyPEMEncrypted(pemBytes, oldPass)
 	if err != nil {
 		return nil, err
 	}
 	defer k.Close()
-	return k.MarshalEncryptedPEM(newPass)
+	return k.MarshalEncryptedPEMWithCipher(newCipher, newPass)
 }
 
 // MarshalPrivateKeyPKCS1PEM 导出 RSA 私钥为 PKCS#1 PEM（"BEGIN RSA PRIVATE KEY"）。

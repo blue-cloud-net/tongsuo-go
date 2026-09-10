@@ -563,6 +563,32 @@ int X_PEM_write_bio_PrivateKey_enc(BIO *bp, EVP_PKEY *x, const char *pass)
                                     X_PEM_pass_cb, (void *)pass);
 }
 
+/*
+ * X_PEM_write_bio_PrivateKey_enc_cipher 与 X_PEM_write_bio_PrivateKey_enc
+ * 同义，多带一个 cipher 名称参数（NULL 兜底 EVP_aes_256_cbc()，保持向后兼容）。
+ *
+ * 可 cipher 由 OpenSSL EVP_get_cipherbyname 解析，常见名：
+ *   aes-128-cbc / aes-192-cbc / aes-256-cbc / des-ede3-cbc / des-cbc 等。
+ * 不识别的 cipher 名直接拒绝（NULL 由 EVP_get_cipherbyname 返回 → 返回 0）。
+ *
+ * 注意：仅适用于 PKCS#8 PBES2 支持的传统 / AEAD cipher。当前依赖 OpenSSL
+ * 默认 provider；AES-GCM 等不适用 PBES2 的 cipher 会返回 0，由调用方捕获。
+ */
+int X_PEM_write_bio_PrivateKey_enc_cipher(BIO *bp, EVP_PKEY *x,
+                                          const char *cipher, const char *pass)
+{
+    const EVP_CIPHER *c = NULL;
+    if (cipher != NULL && cipher[0] != '\0') {
+        c = EVP_get_cipherbyname(cipher);
+        if (c == NULL)
+            return 0;
+    }
+    if (c == NULL)
+        c = EVP_aes_256_cbc();
+    return PEM_write_bio_PrivateKey(bp, x, c, NULL, 0,
+                                    X_PEM_pass_cb, (void *)pass);
+}
+
 RSA *X_PEM_read_bio_RSAPrivateKey(BIO *bp)
 {
     return PEM_read_bio_RSAPrivateKey(bp, NULL, NULL, NULL);

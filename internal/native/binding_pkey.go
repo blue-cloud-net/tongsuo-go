@@ -346,6 +346,21 @@ func X_PEM_write_bio_PrivateKey_enc(bio, pkey unsafe.Pointer, pass string) bool 
 	return C.X_PEM_write_bio_PrivateKey_enc((*C.BIO)(bio), (*C.EVP_PKEY)(pkey), c) == 1
 }
 
+// X_PEM_write_bio_PrivateKey_enc_cipher 同 enc，多带 cipher 名称（NULL/"" 兜底 AES-256-CBC）。
+// X_PEM_write_bio_PrivateKey_enc_cipher writes pkey to bio as a password-
+// protected PEM using the given cipher (e.g. "aes-128-cbc"); NULL or ""
+// fall back to AES-256-CBC. Returns false if cipher is unknown.
+func X_PEM_write_bio_PrivateKey_enc_cipher(bio, pkey unsafe.Pointer, cipher, pass string) bool {
+	var cCipher *C.char
+	if cipher != "" {
+		cCipher = C.CString(cipher)
+		defer C.free(unsafe.Pointer(cCipher))
+	}
+	cPass := C.CString(pass)
+	defer C.free(unsafe.Pointer(cPass))
+	return C.X_PEM_write_bio_PrivateKey_enc_cipher((*C.BIO)(bio), (*C.EVP_PKEY)(pkey), cCipher, cPass) == 1
+}
+
 // X_PEM_read_bio_RSAPrivateKey 从 BIO 读取 PKCS#1 PEM 私钥（返回 RSA*）。
 // X_PEM_read_bio_RSAPrivateKey (shim) reads a PKCS#1 PEM-encoded RSA private
 // key from bio and returns a legacy RSA* pointer. Caller owns it and must
