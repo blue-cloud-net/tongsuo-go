@@ -1,0 +1,145 @@
+# 更新日志
+
+[English](CHANGELOG.md) | [简体中文](CHANGELOG.zh.md)
+
+本文件记录 `tongsuo-go` 的所有显著变更。格式遵循
+[Keep a Changelog 1.1.0](https://keepachangelog.com/zh-CN/1.1.0/)，
+版本号遵循 [语义化版本 2.0.0](https://semver.org/lang/zh-CN/)。
+
+> 本项目主版本号为 `0`，期间 API 视不预稳定，下游升级前请阅读本文件。分类
+> 标题（`新增功能` / `行为变化与重构` / `Bug 修复` / `文档` /
+> `BREAKING / 已知限制` 等）取 Keep a Changelog 约定。术语（SM2 / SM3 /
+> SM4 / PEM / DER / PKCS#7 / PKCS#8 / PKCS#12 / openssl / CRL / CSR / OCSP /
+> NTLS / JWK / RFC xxxx 等）保留英文原文，不做翻译。
+>
+> 英文版位于 [CHANGELOG.md](CHANGELOG.md)。
+
+---
+
+## [0.1.1] - 2026-09-09
+
+### 新增功能
+
+- 新增 EdDSA 算法包 `crypto/ed25519` 与 `crypto/ed448`（RFC 8032）：32B / 57B
+  种子与公钥字节与 Go 标准库、WireGuard 互通。
+- 新增 X25519 ECDH 包 `crypto/x25519`（RFC 7748）：32 字节共享密钥，与 Go
+  `crypto/ecdh`、WireGuard 互通。
+- 新增 ECDH 包 `crypto/ecdh`：曲线密钥协商。
+- 新增 KDF 包 `crypto/kdf`：HKDF / PBKDF2 派生与可用性探测。
+- 新增统一 `key/` 包：跨算法密钥接口（对称 / 非对称）、PEM 自动嗅探解析、
+  密钥生命周期管理（`Handle` / `Store`）、KDF 派生 — **v0.1.1 已交付**，非
+  路线图。
+- `crypto/rsa` 新增按 hash 选择摘要的签名 API。
+- `x509` 新增 `CRL.Verify` 验签；`Extension` 增加 OID 字段返回扩展点分 OID；
+  EdDSA 密钥支持证书 / CSR / CRL 无摘要签名与验签。
+- `tls` 客户端对端证书验证与超时语义。
+- 新增内部辅助包 `internal/digest`、`internal/testutil`。
+
+### 行为变化与重构
+
+- `internal/core` 引入 `core.RandomBytes`，解除 `crypto/rand` 对
+  `internal/native` 的依赖。
+- `internal/core` 编码规范与核心层瘦身。
+- AES / SM4 分组加密 `Block` 改为模板 + 副本以支持并发复用。
+
+### Bug 修复
+
+- `internal/core`：访问器添加 nil / closed 防御性检查；修复 `ChainVerify`
+  栈容器泄漏。
+- `internal/native`：修复 `X509_CRL_get0_authority_key_id` 的 use-after-free。
+- AES / SM4-GCM 强制 nonce 长度为 12 字节。
+- RSA / SM2 / `key` 包非对称加解密语义与 PEM 加载的类型安全修正。
+- `asn1` DER 解析增加嵌套深度上限。
+- `ocsp.Check` 自适应匹配证书状态哈希。
+
+### 文档
+
+- 补充 `key` 包架构说明（v0.1.1 已合入）。
+- 清理路线图与注释中的 Phase 阶段标记。
+- 删除 `ci-cd.md` 与 `roadmap.md`，同步其他文档引用。
+- `docs/architecture.md` 同步目录结构与版本号。
+- 落实敏感缓冲区清零的务实说明。
+- 同步 Ed25519 / Ed448 / X25519 支持文档。
+- 将 `README.md` 改造为中英双语版本。
+
+---
+
+## [0.1.0] - 2026-09-03
+
+### 新增功能
+
+#### 算法引擎（`crypto/`）
+
+- SM3 哈希算法。
+- SM4 对称加密（ECB / CBC / CTR / OFB / CFB / GCM），含 Zero 填充便捷函数。
+- SM2 非对称（GenerateKey / Encrypt / Decrypt / Sign / Verify），新增 SM2
+  密文格式互转 DER ↔ C1C3C2 ↔ C1C2C3 及 `EncryptWithOrder` /
+  `DecryptWithOrder`。
+- AES（ECB / CBC / CTR / GCM，含 `cipher.AEAD` 接口）。
+- HMAC（SM3 / SHA256 / SHA384，含 `SumSM3` / `SumSHA256` / `SumSHA384`
+  便捷函数）。
+- 哈希：MD5 / SHA1 / SHA256 / SHA512。
+- 安全随机数生成（`Read` / `Bytes`）。
+
+#### 密钥体系
+
+- RSA：GenerateKey / Load / Marshal（PKCS#8 / PKCS#1 / 加密 PEM）/ Sign
+  （PKCS1v15 / PSS）/ Verify / Encrypt+Decrypt（PKCS1v15 / OAEP）/ Params /
+  ChangePassword / Match。
+- ECDSA：GenerateKey / Load / Marshal / Sign / Verify / Params。
+- `CreateCertificate` / CSR 泛化为 `PublicKey` / `PrivateKey` 接口，SM2 /
+  RSA / ECDSA 均可签发，摘要按密钥类型自动选择。
+- 私钥加密 PEM / 改密 / 提公钥 / 密钥匹配。
+
+#### 证书与协议
+
+- X.509 证书解析 / 创建 / 自签 / CA 签发（SM2 + SM3 + RSA + ECDSA）。
+- 证书结构化解析：完整 RDN / SAN / KeyUsage / EKU / SKID / AKID。
+- 证书指纹：sha1 / sha256 / sm3 / md5 / sha384 / sha512。
+- PEM ↔ DER 交换（证书 / CSR）。
+- CSR 构建（`NewEmptyCertificateRequest`：SetSubject / SetPublicKey /
+  SetChallengePassword / AddExtensions / Sign）。
+- 证书链验证（Store / `ChainVerify`，失败映射 `*VerifyError`）。
+- CRL 解析（吊销条目含原因）与 `RevocationCheck`。
+- TLS / NTLS 传输层（`Dial` / Server / Conn / Config，NTLS 双证书
+  `Config.SignCert` / `EncCert`）。
+
+#### 容器与格式
+
+- PKCS#12（Pack / Parse / `ChangePassword`）。
+- PKCS#7（Build / Extract / `MarshalPEM`）。
+- OCSP（`CreateRequest` / `ParseResponse` / `Verify`）。
+- ASN.1 DER 解析树与 hex dump。
+- JWK ↔ PEM（RSA / EC）。
+- RSA XML ↔ PEM（.NET `RSAKeyValue`）。
+
+#### 工程化
+
+- 顶层包结构重组（BC 命名空间分层）：
+  - `crypto/*` 仅装算法引擎（`aes` / `ecdsa` / `hmac` / `md5` / `rand` /
+    `rsa` / `sha1` / `sha256` / `sha512` / `sm2` / `sm3` / `sm4`）。
+  - 6 个非算法包顶级化：`asn1` / `jwk` / `ocsp` / `tls` / `x509`；`pkcs`
+    （`pkcs7`, `pkcs12`）与 `xml`（`rsa`）子命名空间。
+  - `crypto/x509` 按职责拆为 `x509` / `name` / `csr` / `store` / `crl` /
+    `helpers` 共 6 个文件并顶级化为 `x509/`。
+- 3 个可运行最小示例：`examples/{sm2, self-signed-cert, ntls-loopback}`。
+- 56 个公开 API `Example*` 测试函数（godoc 友好）。
+- 段式双语 GoDoc 注释覆盖公共 API。
+- 设计文档：架构 / 开发指南 / 测试指南 / 双语 GoDoc 规范 / 路线图。
+
+### Bug 修复
+
+- 首次公开发版前累计的稳定性改进，未在此处逐条列出，详见 git 历史。
+
+### BREAKING / 已知限制
+
+- **BREAKING**：MAJOR=0 期间 API 不稳定，下游升级需阅读 CHANGELOG。
+- `crypto/rand` 与标准库 `crypto/rand` 同名（保留路径，文档已警示）。
+- 假定 Tongsuo 8.4 ABI。
+- `-tags tongsuocli` 集成测试依赖 `/opt/tongsuo`。
+
+---
+
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/blue-cloud-net/tongsuo-go/releases/tag/v0.1.0
