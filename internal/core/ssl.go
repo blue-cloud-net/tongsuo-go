@@ -271,7 +271,9 @@ func (c *TLSContext) SetVerifyDepth(depth int) error {
 // 证书为 nil 或已关闭会被静默跳过；至少需要一个有效证书；底层失败包装为 OpError。
 //
 // nil / closed *Certificate entries are silently skipped; at least one
-// valid cert is required.
+// valid cert is required. On failure the returned error names the
+// failing certificate's subject so the caller can identify the bad
+// trust anchor.
 func (c *TLSContext) AddVerifyRoots(certs []*Certificate) error {
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return fmt.Errorf("tls: SSL_CTX closed")
@@ -281,6 +283,8 @@ func (c *TLSContext) AddVerifyRoots(certs []*Certificate) error {
 		return NewOpError("tls: SSL_CTX_get_cert_store", native.PopError())
 	}
 	added := 0
+	var firstErr error
+	var firstFailingSubject string
 	for _, cert := range certs {
 		if cert == nil || cert.handle == nil || cert.handle.IsClosed() {
 			continue
@@ -288,10 +292,31 @@ func (c *TLSContext) AddVerifyRoots(certs []*Certificate) error {
 		// SSL_CTX_get_cert_store 首次调用会自动建 store，复制 cert 内部 X509 指针。
 		if native.X509_STORE_add_cert(store, cert.handle.Ptr()) {
 			added++
+			continue
+		}
+		// 记录第一次失败及首个失败证书的 subject，便于定位错误源（典型的重复证书）。
+		if firstErr == nil {
+			firstErr = NewOpError("tls: X509_STORE_add_cert", native.PopError())
+			if subj := cert.SubjectName(); subj != nil {
+				firstFailingSubject = subj.String()
+			}
 		}
 	}
 	if added == 0 {
+		if firstErr != nil {
+			if firstFailingSubject != "" {
+				return fmt.Errorf("tls: AddVerifyRoots: no valid root certificate, first failure subject=%q: %w", firstFailingSubject, firstErr)
+			}
+			return fmt.Errorf("tls: AddVerifyRoots: no valid root certificate: %w", firstErr)
+		}
 		return fmt.Errorf("tls: AddVerifyRoots: no valid root certificate")
+	}
+	// 至少一个成功；若同时存在失败，附带警告信息（仍视为成功，因为部分证书已加入）。
+	if firstErr != nil {
+		if firstFailingSubject != "" {
+			return fmt.Errorf("tls: AddVerifyRoots: %d added, first failure subject=%q: %w", added, firstFailingSubject, firstErr)
+		}
+		return fmt.Errorf("tls: AddVerifyRoots: %d added, first failure: %w", added, firstErr)
 	}
 	return nil
 }
@@ -595,18 +620,37 @@ func (s *SSLConn) SetHostname(host string) error {
 	return nil
 }
 
-// VerifyResult 返回握手结束后对端证书链验证的结果（X509_V_OK=0 表示成功）。
+// VerifyResultClosed 是 VerifyResult 在已关闭连接上返回的哨兵值。
+//
+// VerifyResultClosed is the sentinel returned by VerifyResult when the
+// underlying SSL connection has been closed (so callers can distinguish
+// "no verification was performed" from a real failure code).
+const VerifyResultClosed = -2
+
+// VerifyResult 返回握手结束后对端证书链验证的结果。
 //
 // VerifyResult returns the result code of the peer certificate chain
-// validation performed during handshake (X509_V_OK == 0 means success).
+// validation performed during handshake.
 //
-// 已关闭连接返回 -1；调用方应配合 x509.VerifyError.ErrorString 解析错误码。
+// 返回值约定：
+//   - VerifyResultClosed (-2): 句柄已关闭，未执行验证；
+//   - x509.VerifyOK (0): X509_V_OK，验证通过；
+//   - > 0: X509 错误码（X509_V_ERR_*），与 x509.VerifyErrorMessage(code) 配合解析。
 //
-// Returns -1 on a closed connection; combine with x509.VerifyError for
-// human-readable error strings.
+// 已关闭连接返回哨兵 VerifyResultClosed（区别于 X509_V_OK=0 与真实错误码），
+// 避免调用方把"未验证"误判为"成功"。
+//
+// Return value contract:
+//   - VerifyResultClosed (-2): handle is closed, no verification was run;
+//   - x509.VerifyOK (0): X509_V_OK, verification passed;
+//   - > 0: X509 error code (X509_V_ERR_*); pair with
+//     x509.VerifyErrorMessage(code) for human-readable text.
+//
+// The closed-handle case returns the explicit VerifyResultClosed sentinel
+// to prevent callers from confusing "not yet verified" with "successful".
 func (s *SSLConn) VerifyResult() int {
 	if s == nil || s.handle == nil || s.handle.IsClosed() {
-		return -1
+		return VerifyResultClosed
 	}
 	return native.SSL_get_verify_result(s.handle.Ptr())
 }
