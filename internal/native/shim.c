@@ -28,6 +28,11 @@ EVP_PKEY *X_EVP_PKEY_Q_keygen_x25519(void)
     return EVP_PKEY_Q_keygen(NULL, NULL, "X25519");
 }
 
+EVP_PKEY *X_EVP_PKEY_Q_keygen_x448(void)
+{
+    return EVP_PKEY_Q_keygen(NULL, NULL, "X448");
+}
+
 EVP_PKEY *X_PEM_read_bio_PrivateKey(BIO *bp)
 {
     return PEM_read_bio_PrivateKey(bp, NULL, NULL, NULL);

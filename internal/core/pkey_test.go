@@ -11,26 +11,41 @@ import (
 // 在生产代码中请用 k.BaseID()/TypeID() 直接判断返回值。
 const nidUndef = native.NidUndef
 
+// TestX448TypeIDMatchesNID 验证 EvpPkeyX448 常量与铜锁 obj_mac.h 中 NID_x448
+// 的数值一致（不依赖绑定层硬编码的数字）。
+//
+// TestX448TypeIDMatchesNID verifies that the EvpPkeyX448 constant matches
+// the NID_x448 value exposed by Tongsuo (obj_mac.h), so the hard-coded
+// number in the binding layer is not taken on faith.
+func TestX448TypeIDMatchesNID(t *testing.T) {
+	nid := native.OBJ_txt2nid("X448")
+	if nid == nidUndef {
+		t.Skip("this Tongsuo build exposes no X448 short name")
+	}
+	if native.EvpPkeyX448 != nid {
+		t.Fatalf("EvpPkeyX448 = %d, want NID_x448 = %d", native.EvpPkeyX448, nid)
+	}
+}
+
 // TestGenerateKeys 验证各种算法的密钥生成。
 func TestGenerateKeys(t *testing.T) {
 	tests := []struct {
-		name string
-		fn   func() (*PKey, error)
+		name     string
+		fn       func() (*PKey, error)
+		optional bool // provider 可能不支持的算法：生成失败时跳过而非失败
 	}{
-		{"SM2", GenerateSM2Key},
-		{"RSA-2048", func() (*PKey, error) { return GenerateRSAKey(2048) }},
-		{"RSA-3072", func() (*PKey, error) { return GenerateRSAKey(3072) }},
-		{"EC-P256", func() (*PKey, error) { return GenerateECKey("P-256") }},
-		{"ED25519", GenerateED25519Key},
-		{"ED448", GenerateED448Key},
-		{"X25519", GenerateX25519Key},
+		{"SM2", GenerateSM2Key, false},
+		{"RSA-2048", func() (*PKey, error) { return GenerateRSAKey(2048) }, false},
+		{"RSA-3072", func() (*PKey, error) { return GenerateRSAKey(3072) }, false},
+		{"EC-P256", func() (*PKey, error) { return GenerateECKey("P-256") }, false},
+		{"ED25519", GenerateED25519Key, false},
+		{"ED448", GenerateED448Key, false},
+		{"X25519", GenerateX25519Key, false},
+		{"X448", GenerateX448Key, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			k, err := tt.fn()
-			if err != nil {
-				t.Fatalf("generate: %v", err)
-			}
+			k := mustGenerate(t, tt.name, tt.optional, tt.fn)
 			defer k.Close()
 			if k.BaseID() == nidUndef {
 				t.Error("BaseID should be defined")
@@ -39,23 +54,38 @@ func TestGenerateKeys(t *testing.T) {
 	}
 }
 
+// mustGenerate 生成密钥；optional 为 true 时把“provider 不支持该算法”转为跳过。
+//
+// mustGenerate generates a key, turning a “provider does not support this
+// algorithm” failure into a skip when optional is true.
+func mustGenerate(t *testing.T, name string, optional bool, fn func() (*PKey, error)) *PKey {
+	t.Helper()
+	k, err := fn()
+	if err != nil {
+		if optional {
+			t.Skipf("%s unsupported by this Tongsuo build: %v", name, err)
+		}
+		t.Fatalf("generate: %v", err)
+	}
+	return k
+}
+
 // TestPKeyAlgorithm 验证 Algorithm() 字符串识别各类密钥。
 func TestPKeyAlgorithm(t *testing.T) {
 	tests := []struct {
-		name string
-		gen  func() (*PKey, error)
-		want string // 期望包含
+		name     string
+		gen      func() (*PKey, error)
+		want     string // 期望包含
+		optional bool
 	}{
-		{"RSA", func() (*PKey, error) { return GenerateRSAKey(2048) }, "RSA"},
-		{"ED25519", GenerateED25519Key, "ED25519"},
-		{"X25519", GenerateX25519Key, "X25519"},
+		{"RSA", func() (*PKey, error) { return GenerateRSAKey(2048) }, "RSA", false},
+		{"ED25519", GenerateED25519Key, "ED25519", false},
+		{"X25519", GenerateX25519Key, "X25519", false},
+		{"X448", GenerateX448Key, "X448", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			k, err := tt.gen()
-			if err != nil {
-				t.Fatalf("generate: %v", err)
-			}
+			k := mustGenerate(t, tt.name, tt.optional, tt.gen)
 			defer k.Close()
 			alg := k.Algorithm()
 			if !contains(alg, tt.want) {

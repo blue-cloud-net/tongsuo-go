@@ -61,6 +61,10 @@ const (
 	//
 	// AlgX25519 identifies the X25519 ECDH key-agreement algorithm (RFC 7748).
 	AlgX25519 Algorithm = "X25519"
+	// AlgX448 标识 X448 ECDH 密钥交换（RFC 7748）。
+	//
+	// AlgX448 identifies the X448 ECDH key-agreement algorithm (RFC 7748).
+	AlgX448 Algorithm = "X448"
 	// AlgAES128 标识 AES-128 对称算法（16 字节密钥）。
 	//
 	// AlgAES128 identifies the AES-128 symmetric algorithm (16-byte key).

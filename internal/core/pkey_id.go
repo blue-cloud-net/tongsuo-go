@@ -18,10 +18,11 @@ import "github.com/blue-cloud-net/tongsuo-go/internal/native"
 // algorithm IDs without importing internal/native, preserving the
 // three-layer architecture documented in docs/architecture.md §3.
 const (
-	PKeyAlgoRSA    = native.EvpPkeyRSA
-	PKeyAlgoDSA    = native.EvpPkeyDSA
-	PKeyAlgoEC     = native.EvpPkeyEC
-	PKeyAlgoX25519 = native.EvpPkeyX25519
+	PKeyAlgoRSA     = native.EvpPkeyRSA
+	PKeyAlgoDSA     = native.EvpPkeyDSA
+	PKeyAlgoEC      = native.EvpPkeyEC
+	PKeyAlgoX25519  = native.EvpPkeyX25519
+	PKeyAlgoX448    = native.EvpPkeyX448
 	PKeyAlgoED25519 = native.EvpPkeyED25519
 	PKeyAlgoED448   = native.EvpPkeyED448
 	PKeyAlgoSM2     = native.EvpPkeySM2

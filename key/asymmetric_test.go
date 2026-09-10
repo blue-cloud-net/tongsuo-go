@@ -117,6 +117,37 @@ func TestGenerateECKeySM2Curve(t *testing.T) {
 	}
 }
 
+// TestGenerateX448KeyAlgorithm 验证 X448 密钥在 key 层被识别为 AlgX448，且 PEM
+// 往返后算法标识不变（覆盖 algorithmOf 的 X448 分支）。运行时 provider 不支持
+// X448 时跳过。
+//
+// TestGenerateX448KeyAlgorithm verifies X448 keys are classified as AlgX448 by
+// the key package and keep that classification across a PEM round-trip
+// (covering the X448 branch of algorithmOf). It skips when the runtime
+// provider does not support X448.
+func TestGenerateX448KeyAlgorithm(t *testing.T) {
+	priv, err := key.GenerateX448Key()
+	if err != nil {
+		t.Skipf("X448 unavailable in this Tongsuo build: %v", err)
+	}
+	defer priv.Close()
+	if priv.Algorithm() != key.AlgX448 {
+		t.Fatalf("Algorithm() = %s, want %s", priv.Algorithm(), key.AlgX448)
+	}
+	pemBytes, err := priv.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	parsed, err := key.LoadPrivateKeyPEM(pemBytes)
+	if err != nil {
+		t.Fatalf("LoadPrivateKeyPEM: %v", err)
+	}
+	defer parsed.Close()
+	if parsed.Algorithm() != key.AlgX448 {
+		t.Fatalf("reloaded Algorithm() = %s, want %s", parsed.Algorithm(), key.AlgX448)
+	}
+}
+
 func TestGenerateRSAKeySmallBits(t *testing.T) {
 	if _, err := key.GenerateRSAKey(512); err == nil {
 		t.Fatal("512-bit RSA: want error")
