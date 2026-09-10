@@ -1439,3 +1439,93 @@ func unlockOSThreadForKey(k *PKey) {
 		runtime.UnlockOSThread()
 	}
 }
+
+// RawPrivate 返回 Ed25519 / Ed448 / X25519 / X448 等 OKP 算法的原始私钥字节（私钥种子）。
+//
+// 仅对 EVP_PKEY_get_raw_private_key 接受的 OKP 算法有效；非 OKP（如 RSA/EC）调用
+// 返回 (nil, false)。Tongsuo EdDSA provider 在 buffer 过小时直接报错，因此实现走
+// native 的两段式 query + fill 模式，先查长度再按需分配写入。
+//
+// 返回的字节即可直接喂给 JWK OKP "d" 字段（Ed25519 32 / Ed448 57 / X25519 32 / X448 56）。
+//
+// RawPrivate returns the raw private-key bytes for OKP algorithms
+// (Ed25519 / Ed448 / X25519 / X448). For non-OKP keys (e.g. RSA / EC) it
+// returns (nil, false); the Tongsuo EdDSA provider rejects undersized
+// buffers, so we follow the two-call query-then-fill pattern of
+// EVP_PKEY_get_raw_private_key.
+func (k *PKey) RawPrivate() ([]byte, bool) {
+	if k == nil || k.handle == nil || k.handle.IsClosed() {
+		return nil, false
+	}
+	n, ok := native.EVP_PKEY_get_raw_private_key(k.handle.Ptr(), nil)
+	if !ok || n <= 0 {
+		return nil, false
+	}
+	buf := make([]byte, n)
+	got, ok := native.EVP_PKEY_get_raw_private_key(k.handle.Ptr(), buf)
+	if !ok || got != n {
+		return nil, false
+	}
+	return buf, true
+}
+
+// RawPublic 返回 Ed25519 / Ed448 / X25519 / X448 等 OKP 算法的原始公钥字节（压缩点/共享）。
+//
+// 仅对 EVP_PKEY_get_raw_public_key 接受的 OKP 算法有效；非 OKP 调用返回 (nil, false)。
+// 实现走 native 的两段式 query + fill 模式，避免猜测容量导致 provider 报错。
+//
+// 返回的字节即可直接喂给 JWK OKP "x" 字段（Ed25519 32 / Ed448 57 / X25519 32 / X448 56）。
+//
+// RawPublic returns the raw public-key bytes for OKP algorithms
+// (Ed25519 / Ed448 / X25519 / X448). For non-OKP keys it returns (nil, false);
+// the implementation follows the two-call query-then-fill pattern of
+// EVP_PKEY_get_raw_public_key to avoid guessing the buffer size.
+func (k *PKey) RawPublic() ([]byte, bool) {
+	if k == nil || k.handle == nil || k.handle.IsClosed() {
+		return nil, false
+	}
+	n, ok := native.EVP_PKEY_get_raw_public_key(k.handle.Ptr(), nil)
+	if !ok || n <= 0 {
+		return nil, false
+	}
+	buf := make([]byte, n)
+	got, ok := native.EVP_PKEY_get_raw_public_key(k.handle.Ptr(), buf)
+	if !ok || got != n {
+		return nil, false
+	}
+	return buf, true
+}
+
+// NewOKPPrivate 从原始私钥字节构造 OKP 密钥（Ed25519 / Ed448 / X25519 / X448）。
+//
+// typeID 必须是 native.EvpPkeyED25519 / native.EvpPkeyED448 / native.EvpPkeyX25519 / native.EvpPkeyX448 之一；
+// raw 长度必须与算法一致（Ed25519/X25519 = 32、X448 = 56、Ed448 = 57）。底层走 OpenSSL
+// EVP_PKEY_new_raw_private_key；返回的 *PKey 持有底层 EVP_PKEY，使用完毕须调用 Close。
+//
+// NewOKPPrivate wraps a raw private-key byte slice (Ed25519 / Ed448 / X25519
+// / X448 seed) into a *PKey. typeID must be one of native.EvpPkeyED25519 /
+// native.EvpPkeyED448 / native.EvpPkeyX25519 / native.EvpPkeyX448 and
+// len(raw) must match the algorithm (32 for Ed25519/X25519, 56 for X448,
+// 57 for Ed448). The returned *PKey
+// owns the underlying EVP_PKEY; the caller must Close it.
+func NewOKPPrivate(typeID int, raw []byte) (*PKey, error) {
+	p := native.EVP_PKEY_new_raw_private_key(typeID, raw)
+	if p == nil {
+		return nil, NewOpError("pkey: EVP_PKEY_new_raw_private_key", native.PopError())
+	}
+	return &PKey{handle: NewHandle(p, true, native.EVP_PKEY_free)}, nil
+}
+
+// NewOKPPublic 从原始公钥字节构造 OKP 密钥（Ed25519 / Ed448 / X25519）。
+//
+// typeID 与长度约束同 NewOKPPrivate；用于构造无对应私钥材的公钥 OKP（如 JWK 仅 x）。
+//
+// NewOKPPublic wraps raw public-key bytes into a *PKey. The same typeID
+// and length constraints as NewOKPPrivate apply.
+func NewOKPPublic(typeID int, raw []byte) (*PKey, error) {
+	p := native.EVP_PKEY_new_raw_public_key(typeID, raw)
+	if p == nil {
+		return nil, NewOpError("pkey: EVP_PKEY_new_raw_public_key", native.PopError())
+	}
+	return &PKey{handle: NewHandle(p, true, native.EVP_PKEY_free)}, nil
+}
