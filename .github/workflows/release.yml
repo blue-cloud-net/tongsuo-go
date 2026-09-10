@@ -2,13 +2,14 @@
 #
 # 触发：推送 v* 标签时（如 v0.1.0、v0.2.0-rc1）
 # 流程：
-#   1. 跑完整测试矩阵（与 ci.yml 一致）
-#   2. 交叉构建多平台产物（Linux/macOS × amd64/arm64）
-#   3. 生成 SHA256SUMS
-#   4. 创建 GitHub Release 并附带产物 + 自动生成的 CHANGELOG
+#   1. 复用 CI 工作流跑测试（workflow_call，与 CI 完全同源，杜绝 CI 与 Release 分歧）
+#   2. 从 CHANGELOG.md (英文) + CHANGELOG.zh.md (中文) 抽取当前 tag 对应版本说明
+#      - 任一文件缺失对应版本条目 → 立即失败（不发布）
+#      - 格式：英文在前，中文在后，中间空 3 行
+#   3. 创建 GitHub Release，仅附"版本说明"body，不上传任何二进制产物
 #
-# 注意：本仓库无第三方 Go 依赖，构建产物仅作为可执行示例（如 examples/sm2）
-# 如果项目后期引入 CLI 命令，可在此扩展 release 逻辑。
+# 注意：本仓库发布物仅为 CHANGELOG 文本，不附 examples 二进制。
+# 若未来需要再发二进制产物，在 release job 增加上传步骤即可，测试仍走 CI。
 
 name: Release
 
@@ -24,192 +25,84 @@ on:
 permissions:
   contents: write   # 创建 release 需要写权限
 
-env:
-  TONGSUO_REPO: Tongsuo-Project/Tongsuo
-  # 固定到稳定 tag 以保证可复现；升级 Tongsuo 时同步修改 TONGSUO_REF 并 bump 下方缓存键前缀
-  TONGSUO_REF: 8.4.0
-
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false  # release 不取消已运行的
 
 jobs:
   # ---------------------------------------------------------------------------
-  # 1. 测试：与 CI 同样的完整矩阵
+  # 1. 测试：复用 CI 工作流（ubuntu + macOS × amd64/arm64）
+  #    - 与 CI 完全同源：从同一 workflow 文件读矩阵 / Tongsuo 配置 / 缓存键
+  #    - 任何 CI 与 Release 的"测试分歧"在结构上不可能发生
   # ---------------------------------------------------------------------------
   test:
-    name: Test (${{ matrix.os }} / Go ${{ matrix.go-version }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        go-version: ["1.21", "1.23"]
-    env:
-      LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
-      DYLD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
-      CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
-      CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
-      TONGSUO_HOME: ${{ github.workspace }}/.tongsuo-install
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: ${{ matrix.go-version }}
-          cache: true
-          cache-dependency-path: go.mod
-
-      - name: Cache Tongsuo
-        id: cache-tongsuo
-        uses: actions/cache@v5
-        with:
-          path: ${{ github.workspace }}/.tongsuo-install
-          key: tongsuo-v2-${{ runner.os }}-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/release.yml') }}
-          restore-keys: |
-            tongsuo-v2-${{ runner.os }}-${{ env.TONGSUO_REF }}-
-
-      - name: Build Tongsuo from source
-        if: steps.cache-tongsuo.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git clone --depth 1 --branch "${{ env.TONGSUO_REF }}" \
-            "https://github.com/${{ env.TONGSUO_REPO }}.git" tongsuo
-          cd tongsuo
-          ./config --prefix=${{ github.workspace }}/.tongsuo-install \
-                   --libdir=${{ github.workspace }}/.tongsuo-install/lib \
-                   enable-ntls enable-trace no-shared
-          make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
-          make install_sw
-
-      # GitHub Actions hosted runner 默认以 `runner` 用户运行（非 root），
-      # 写入 /etc 需要 sudo；runner 用户已具备免密 sudo 权限。
-      - name: Configure dynamic linker (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          echo "${{ github.workspace }}/.tongsuo-install/lib" \
-            | sudo tee /etc/ld.so.conf.d/tongsuo.conf > /dev/null
-          sudo ldconfig
-
-      - name: go test
-        run: go test -count=1 ./...
+    name: CI
+    uses: ./.github/workflows/ci.yml
 
   # ---------------------------------------------------------------------------
-  # 2. 构建并发布示例二进制（examples/），生成产物清单与校验和
+  # 2. 抽取 CHANGELOG 当前 tag 版本说明（中英两份），任一缺失即失败
+  #    实现：scripts/extract_release_notes.py
+  #      - 从 CHANGELOG.md (英文) / CHANGELOG.zh.md (中文) 抽取对应版本段落
+  #      - 拼接格式：英文在前，3 空行，中文在后
+  #      - 任一缺失：exit 1（带 ::error:: 日志），release job 因此被阻断
+  #    输出：release-notes.md（位于 step 工作目录）
   # ---------------------------------------------------------------------------
-  build:
-    name: Build examples (${{ matrix.target }})
+  extract-notes:
+    name: Extract release notes
     needs: test
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        # v0.1.0 起仅发布 linux-amd64（原生，cgo 直接链接本机 Tongsuo）。
-        # arm64/darwin 产物需在对应 runner 原生构建、或各自交叉编译目标架构的
-        # Tongsuo 后再加入；避免发布在 amd64 头文件下交叉出的不可用骨架二进制。
-        include:
-          - target: linux-amd64
-            goos: linux
-            goarch: amd64
-    env:
-      LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
-      CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
-      CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
-      CGO_ENABLED: "1"
-      GOOS: ${{ matrix.goos }}
-      GOARCH: ${{ matrix.goarch }}
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v6
-        with:
-          go-version: "1.23"
-          cache: true
-          cache-dependency-path: go.mod
-
-      # build job 同样需要编译/缓存 Tongsuo：examples 经 cgo 链接 Tongsuo。
-      # 若缺失会回落到 runner 系统 OpenSSL 头文件——系统 vanilla OpenSSL 不含
-      # EVP_sm4_gcm 等 Tongsuo 特有符号，导致 cgo 报 could not determine kind of name。
-      - name: Cache Tongsuo
-        id: cache-tongsuo
-        uses: actions/cache@v5
-        with:
-          path: ${{ github.workspace }}/.tongsuo-install
-          key: tongsuo-v2-${{ runner.os }}-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/release.yml') }}
-          restore-keys: |
-            tongsuo-v2-${{ runner.os }}-${{ env.TONGSUO_REF }}-
-
-      - name: Build Tongsuo from source
-        if: steps.cache-tongsuo.outputs.cache-hit != 'true'
+      - name: Determine version (without leading "v")
+        id: ver
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch "${{ env.TONGSUO_REF }}" \
-            "https://github.com/${{ env.TONGSUO_REPO }}.git" tongsuo
-          cd tongsuo
-          ./config --prefix=${{ github.workspace }}/.tongsuo-install \
-                   --libdir=${{ github.workspace }}/.tongsuo-install/lib \
-                   enable-ntls enable-trace no-shared
-          make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
-          make install_sw
+          REF="${GITHUB_REF_NAME:-}"
+          # workflow_dispatch 时取输入的 tag；push tag 时 REF 即为 tag
+          if [ -z "$REF" ] || [ "$REF" = "refs/heads/main" ]; then
+            REF="${{ github.event.inputs.tag }}"
+          fi
+          VERSION="${REF#v}"   # 去掉前缀 v，CHANGELOG 标题里没有 v
+          echo "version=$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      # 运行产物需从 .tongsuo-install/lib 加载动态库
-      - name: Configure dynamic linker (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          echo "${{ github.workspace }}/.tongsuo-install/lib" \
-            | sudo tee /etc/ld.so.conf.d/tongsuo.conf > /dev/null
-          sudo ldconfig
-
-      # 构建可运行示例（examples/sm2），实际 release 可按需替换
-      - name: Build examples
+      - name: Extract CHANGELOG sections (en + zh)
+        id: extract
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist
-          # 仅验证 examples/sm2 可构建；后续可扩展为全量 examples
-          cd examples/sm2
-          go build -trimpath -o "../../dist/sm2-${{ matrix.target }}" .
-          cd ../..
-          file "dist/sm2-${{ matrix.target }}" || true
-          ls -la dist/
+          python3 scripts/extract_release_notes.py "${{ steps.ver.outputs.version }}"
 
-      - name: Upload artifacts
+      - name: Upload release-notes artifact
         uses: actions/upload-artifact@v5
         with:
-          name: example-${{ matrix.target }}
-          path: dist/sm2-${{ matrix.target }}
-          retention-days: 14
+          name: release-notes
+          path: release-notes.md
+          retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # 3. 创建 GitHub Release（仅在 tag 触发时）
+  # 3. 创建 GitHub Release：仅附 release-notes.md 作为 body，不上传二进制
+  #    - disable 自动生成 release notes（避免与 CHANGELOG 重复）
   # ---------------------------------------------------------------------------
   release:
     name: Create Release
-    needs: build
+    needs: extract-notes
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Download all artifacts
+      - name: Download release-notes artifact
         uses: actions/download-artifact@v5
         with:
-          path: artifacts
-
-      - name: Generate checksums
-        working-directory: artifacts
-        run: |
-          find . -type f -name "sm2-*" -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
-          cat SHA256SUMS
+          name: release-notes
+          path: notes
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
-          files: |
-            artifacts/**/sm2-*
-            artifacts/**/SHA256SUMS
-          fail_on_unmatched_files: true
+          generate_release_notes: false
+          body_path: notes/release-notes.md
+          fail_on_unmatched_files: false
