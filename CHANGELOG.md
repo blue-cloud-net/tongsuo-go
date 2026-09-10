@@ -17,7 +17,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-## [0.1.1] - 2026-09-09
+## [0.1.1] - 2026-09-10
 
 ### Added
 
@@ -39,6 +39,10 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   for certificates, CSRs, and CRLs.
 - `tls` client gained peer certificate validation and timeout semantics.
 - Added internal helper packages `internal/digest` and `internal/testutil`.
+- Added standalone examples for the new algorithms: `examples/ed25519` and
+  `examples/x25519`.
+- `x509`: added signature introspection to certificates, CSRs, and CRLs
+  (`Signature` / `SignatureAlgorithm` / `SignatureAlgorithmOID`).
 
 ### Changed
 
@@ -48,6 +52,18 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   layer.
 - AES / SM4 block-cipher `Block` switched to a template-plus-copy pattern
   to support safe concurrent reuse.
+- `internal/core`: added `ZeroBytes` (backed by `OPENSSL_cleanse`) for
+  zeroing sensitive buffers; `TLSContext.AddVerifyRoots` no longer
+  swallows errors and a `VerifyResultClosed` sentinel was introduced.
+- Sunk `EvpPkey` constants down into `internal/core` to restore the
+  three-layer architecture.
+- SM2 sign / verify now locks the OS thread only for SM2 keys, improving
+  concurrency for other key types.
+- CI: triggers narrowed to `main`; the test matrix now covers ubuntu +
+  macOS × amd64 / arm64 on Go 1.21; Tongsuo is pinned to 8.4.0.
+- Release: now reuses the CI workflow via `workflow_call` and derives the
+  release notes from the English / Chinese CHANGELOG; binary artifacts are
+  no longer uploaded.
 
 ### Fixed
 
@@ -60,6 +76,15 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   in the RSA, SM2, and `key` packages.
 - `asn1` DER parsing gained a nesting-depth limit.
 - `ocsp.Check` now adaptively matches certificate status hashes.
+- EC / SM2 public-key parameters now read the provider affine coordinates
+  `qx` / `qy`, fixing empty X / Y when Tongsuo 8.4 exports `pub` as a
+  compressed point.
+- OCSP: fixed a `defer` loop-variable capture in `Verify`.
+- `internal/core`: added closure guards to `signDigest` / `verifyDigest`.
+- `tls`: `SplitHostPort` IPv6 tolerance; `SetReadDeadline` and
+  `SetWriteDeadline` are now cleared as a pair.
+- `x509`: `ChainVerify` intermediate-certificate handling made portable
+  across OpenSSL versions.
 
 ### Documentation
 
