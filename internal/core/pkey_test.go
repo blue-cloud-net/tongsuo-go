@@ -375,3 +375,107 @@ func contains(s, substr string) bool {
 	}
 	return false
 }
+
+// TestMarshalEncryptedPEMWithCipher 验证 MarshalEncryptedPEMWithCipher 的 cipher 选择能力：
+//   - 不同 cipher 生成的密文必须不同（同一密钥 + 同一口令 + 不同 cipher）
+//   - 任一 cipher 导出的 PEM 都应能被 LoadPrivateKeyPEMEncrypted 正确还原
+//   - 不被 OpenSSL 识别的 cipher 应返回 OpError（而非静默兜底）
+//   - ChangePrivateKeyPasswordWithCipher 的 newCipher 应被生效
+func TestMarshalEncryptedPEMWithCipher(t *testing.T) {
+	k, err := GenerateECKey("P-256")
+	if err != nil {
+		t.Fatalf("GenerateECKey: %v", err)
+	}
+	defer k.Close()
+
+	// 公钥导出用来反序列化（仅作 sanity check，不参与 cipher 验证）。
+	pub, err := k.MarshalPublicKeyPEM()
+	if err != nil {
+		t.Fatalf("MarshalPublicKeyPEM: %v", err)
+	}
+	if !contains(string(pub), "BEGIN PUBLIC KEY") {
+		t.Fatalf("public PEM missing header: %q", pub)
+	}
+
+	pass := "test-pass-123"
+	ciphers := []string{
+		"aes-256-cbc",
+		"aes-128-cbc",
+		"aes-192-cbc",
+		"des-ede3-cbc",
+	}
+	seen := make(map[string][]byte, len(ciphers))
+	for _, c := range ciphers {
+		out, err := k.MarshalEncryptedPEMWithCipher(c, pass)
+		if err != nil {
+			t.Fatalf("MarshalEncryptedPEMWithCipher(%q): %v", c, err)
+		}
+		if !contains(string(out), "BEGIN ENCRYPTED PRIVATE KEY") {
+			t.Fatalf("cipher=%s: missing encrypted PEM header: %q", c, out)
+		}
+		seen[c] = out
+	}
+
+	// 任何两个不同 cipher 的输出不应完全相同。
+	for i := 0; i < len(ciphers); i++ {
+		for j := i + 1; j < len(ciphers); j++ {
+			if bytes.Equal(seen[ciphers[i]], seen[ciphers[j]]) {
+				t.Fatalf("cipher %s and %s produced identical output (salt-only collision?)",
+					ciphers[i], ciphers[j])
+			}
+		}
+	}
+
+	// 每个 cipher 导出都应能正确解密回原密钥。
+	for _, c := range ciphers {
+		loaded, err := LoadPrivateKeyPEMEncrypted(seen[c], pass)
+		if err != nil {
+			t.Fatalf("LoadPrivateKeyPEMEncrypted(cipher=%s): %v", c, err)
+		}
+		// 算法应回为 EC。
+		if loaded.Algorithm() != "EC" {
+			t.Fatalf("cipher=%s: roundtrip algorithm = %s, want EC", c, loaded.Algorithm())
+		}
+		loaded.Close()
+	}
+
+	// 未知 cipher 必须报错（不得静默兜底为 AES-256-CBC）。
+	if _, err := k.MarshalEncryptedPEMWithCipher("totally-bogus-cipher", pass); err == nil {
+		t.Fatalf("MarshalEncryptedPEMWithCipher(bogus): expected error, got nil")
+	}
+
+	// ChangePrivateKeyPasswordWithCipher：新 cipher 生效，旧口令解密 + 新 cipher 重加密。
+	out1, err := k.MarshalEncryptedPEMWithCipher("aes-128-cbc", pass)
+	if err != nil {
+		t.Fatalf("MarshalEncryptedPEMWithCipher(aes-128-cbc): %v", err)
+	}
+	out2, err := ChangePrivateKeyPasswordWithCipher(out1, "des-ede3-cbc", pass, pass)
+	if err != nil {
+		t.Fatalf("ChangePrivateKeyPasswordWithCipher: %v", err)
+	}
+	if bytes.Equal(out1, out2) {
+		t.Fatalf("ChangePrivateKeyPasswordWithCipher: cipher change had no effect (identical bytes)")
+	}
+	loaded, err := LoadPrivateKeyPEMEncrypted(out2, pass)
+	if err != nil {
+		t.Fatalf("LoadPrivateKeyPEMEncrypted(re-encrypted): %v", err)
+	}
+	if loaded.Algorithm() != "EC" {
+		t.Fatalf("re-encrypted algorithm = %s, want EC", loaded.Algorithm())
+	}
+	loaded.Close()
+
+	// ChangePrivateKeyPassword（不带 cipher）应仍正常工作，向后兼容。
+	out3, err := ChangePrivateKeyPassword(out2, pass, pass)
+	if err != nil {
+		t.Fatalf("ChangePrivateKeyPassword: %v", err)
+	}
+	loaded3, err := LoadPrivateKeyPEMEncrypted(out3, pass)
+	if err != nil {
+		t.Fatalf("LoadPrivateKeyPEMEncrypted(legacy): %v", err)
+	}
+	if loaded3.Algorithm() != "EC" {
+		t.Fatalf("legacy re-encrypted algorithm = %s, want EC", loaded3.Algorithm())
+	}
+	loaded3.Close()
+}

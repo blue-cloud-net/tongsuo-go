@@ -136,13 +136,27 @@ func (k *PrivateKey) MarshalPEM() ([]byte, error) {
 // MarshalEncryptedPEM 用口令加密导出私钥为 PEM（AES-256-CBC）。
 // 以加密 PEM 块（"-----BEGIN ENCRYPTED PRIVATE KEY-----"）编码私钥，
 // 口令作为 AES-256-CBC + PBKDF2 密钥派生基础；空口令或任意底层失败返回错误。
+// 需要不同 cipher 请改用 MarshalEncryptedPEMWithCipher。
 //
 // MarshalEncryptedPEM encodes the private key as an encrypted PEM block
 // ("-----BEGIN ENCRYPTED PRIVATE KEY-----") using the given passphrase
 // as the basis for an AES-256-CBC + PBKDF2 key. An empty passphrase or
-// any underlying failure returns an error.
+// any underlying failure returns an error. For non-default ciphers use
+// MarshalEncryptedPEMWithCipher.
 func (k *PrivateKey) MarshalEncryptedPEM(pass string) ([]byte, error) {
 	return k.key.MarshalEncryptedPEM(pass)
+}
+
+// MarshalEncryptedPEMWithCipher 用指定 cipher 加密导出私钥为 PEM。
+//
+// cipher 取 OpenSSL 通用名（如 "aes-128-cbc"、"aes-256-cbc"、"des-ede3-cbc"）；
+// cipher == "" 与 MarshalEncryptedPEM 等价（AES-256-CBC 兜底）。失败时返回包装 OpError 的错误。
+//
+// MarshalEncryptedPEMWithCipher encodes the private key as an encrypted
+// PEM block using cipher (OpenSSL generic name, e.g. "aes-128-cbc",
+// "aes-256-cbc", "des-ede3-cbc"); cipher == "" matches MarshalEncryptedPEM.
+func (k *PrivateKey) MarshalEncryptedPEMWithCipher(cipher, pass string) ([]byte, error) {
+	return k.key.MarshalEncryptedPEMWithCipher(cipher, pass)
 }
 
 // MarshalPEM 导出公钥为 PEM（SubjectPublicKeyInfo）。
