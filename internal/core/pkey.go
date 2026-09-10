@@ -1323,18 +1323,22 @@ func rawKeySize(typeID int) (int, bool) {
 	}
 }
 
-// Derive 计算与对端 peer 的共享密钥（当前实现支持 X25519 / ECDH 通用路径）。
+// Derive 计算与对端 peer 的共享密钥（EC / X25519 / X448 通用 EVP_PKEY_derive 路径）。
 //
-// 当前实现仅在 X25519 上验证通过；通用 ECDH（如 EC/P-256）暂未覆盖（caller 应自行确保 peer
-// 是相同算法族的公钥）。失败时返回包装的 OpError；调用方负责对返回的 shared 字节做清零。
+// 双方密钥必须属于同一算法族（Algorithm() 相同），否则返回错误；跨曲线（如 P-256 与 P-384）
+// 的配对由上层（crypto/ecdh）负责拦截。X25519 / X448 的派生结果若为全零（RFC 7748 §6.1
+// 低阶点），按 Go 标准库 crypto/ecdh 的语义返回错误。失败时返回包装的 OpError；
+// 调用方负责对返回的 shared 字节做清零。
 //
-// Derive computes the shared secret with peer.
+// Derive computes the shared secret with peer through the generic
+// EVP_PKEY_derive path (EC, X25519 and X448).
 //
-// Only X25519 has been tested end-to-end on Tongsuo; generic ECDH (e.g.
-// EC P-256) shares the same native dispatch but is not yet covered by
-// tests, so callers should restrict themselves to the X25519 key type.
-// On failure an OpError-wrapped error is returned; the caller is
-// responsible for zeroising the returned shared secret.
+// Both keys must belong to the same algorithm family (identical
+// Algorithm() strings); cross-curve pairs (e.g. P-256 with P-384) are
+// expected to be rejected by the caller (crypto/ecdh). For X25519 / X448
+// an all-zero result (low-order point, RFC 7748 §6.1) is rejected, matching
+// Go's crypto/ecdh semantics. On failure an OpError-wrapped error is
+// returned; the caller is responsible for zeroising the returned secret.
 func (k *PKey) Derive(peer *PKey) ([]byte, error) {
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil, fmt.Errorf("pkey: key closed")
@@ -1369,7 +1373,38 @@ func (k *PKey) Derive(peer *PKey) ([]byte, error) {
 	if !native.EVP_PKEY_derive(ctx, out, &outlen) {
 		return nil, NewOpError("pkey: EVP_PKEY_derive", native.PopError())
 	}
+	// X25519 / X448 对低阶点（RFC 7748 §6.1）会派生出全零共享密钥。上游对全零
+	// 结果的行为因 provider 而异，这里与 Go 标准库 crypto/ecdh 对齐，显式拒绝。
+	if isOKPAlgorithm(k.Algorithm()) && isAllZero(out[:outlen]) {
+		return nil, fmt.Errorf(
+			"pkey: derive produced all-zero shared secret for %s (low order point)",
+			k.Algorithm())
+	}
 	return out[:outlen], nil
+}
+
+// isOKPAlgorithm 报告 alg 是否为 OKP 密钥交换算法（X25519 / X448）。
+//
+// isOKPAlgorithm reports whether alg denotes an OKP key-agreement
+// algorithm (X25519 or X448).
+func isOKPAlgorithm(alg string) bool {
+	return alg == "X25519" || alg == "X448"
+}
+
+// isAllZero 报告 b 是否非空且全部字节为 0。
+//
+// isAllZero reports whether b is non-empty and consists solely of zero
+// bytes.
+func isAllZero(b []byte) bool {
+	if len(b) == 0 {
+		return false
+	}
+	for _, v := range b {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // digestForSigner 按签名密钥类型选择摘要：SM2→SM3，RSA/ECDSA→SHA256；

@@ -265,6 +265,42 @@ func TestX25519ECDH(t *testing.T) {
 	}
 }
 
+// TestDeriveLowOrderPointRejected 验证 OKP 低阶点（全零公钥，RFC 7748 §6.1）派生的全零
+// 共享密钥被拒绝，而不是静默返回；同时顺便锁定 rawKeySize 对 X25519 / X448 的长度。
+//
+// TestDeriveLowOrderPointRejected verifies the all-zero shared secret produced by
+// an OKP low-order point (all-zero public key, RFC 7748 §6.1) is rejected instead
+// of being returned silently, and pins the rawKeySize lengths for X25519 / X448.
+func TestDeriveLowOrderPointRejected(t *testing.T) {
+	tests := []struct {
+		name     string
+		algo     int
+		keySize  int
+		optional bool
+		gen      func() (*PKey, error)
+	}{
+		{"X25519", PKeyAlgoX25519, 32, false, GenerateX25519Key},
+		{"X448", PKeyAlgoX448, 56, true, GenerateX448Key},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if n, ok := rawKeySize(tt.algo); !ok || n != tt.keySize {
+				t.Errorf("rawKeySize(%s) = (%d, %v), want (%d, true)", tt.name, n, ok, tt.keySize)
+			}
+			priv := mustGenerate(t, tt.name, tt.optional, tt.gen)
+			defer priv.Close()
+			lowOrder, err := NewRawPublicKey(tt.algo, make([]byte, tt.keySize))
+			if err != nil {
+				t.Skipf("provider rejects an all-zero %s public key up front: %v", tt.name, err)
+			}
+			defer lowOrder.Close()
+			if shared, err := priv.Derive(lowOrder); err == nil {
+				t.Fatalf("low-order point accepted, shared = %x", shared)
+			}
+		})
+	}
+}
+
 // TestPEMRoundtrip 验证 PEM 序列化往返。
 func TestPEMRoundtrip(t *testing.T) {
 	k, err := GenerateRSAKey(2048)
