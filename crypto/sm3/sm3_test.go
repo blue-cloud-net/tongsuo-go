@@ -110,3 +110,23 @@ func TestEmptyViaHash(t *testing.T) {
 		t.Fatalf("empty = %x, want %x", got, want)
 	}
 }
+
+// BenchmarkSM3 测量 SM3 流式摘要吞吐。
+func BenchmarkSM3(b *testing.B) {
+	data := bytes.Repeat([]byte("a"), 1024)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = Sum(data)
+	}
+}
+
+// BenchmarkSM3HashStream 测量 hash.Hash 接口吞吐。
+func BenchmarkSM3HashStream(b *testing.B) {
+	data := bytes.Repeat([]byte("a"), 1024)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		h := New()
+		_, _ = h.Write(data)
+		_ = h.Sum(nil)
+	}
+}
