@@ -15,10 +15,7 @@ import (
 )
 
 func TestCLIKeyInterop(t *testing.T) {
-	bin := testutil.OpenSSLBin()
-	if bin == "" {
-		t.Skip("TONGSUO_OPENSSL_BIN not set; skipping tongsuocli test")
-	}
+	bin := testutil.SkipIfNoOpenSSL(t)
 	dir := t.TempDir()
 	priv, err := GenerateKey()
 	if err != nil {
@@ -65,10 +62,7 @@ func TestCLIKeyInterop(t *testing.T) {
 }
 
 func TestCLISignVerify(t *testing.T) {
-	bin := testutil.OpenSSLBin()
-	if bin == "" {
-		t.Skip("TONGSUO_OPENSSL_BIN not set; skipping tongsuocli test")
-	}
+	bin := testutil.SkipIfNoOpenSSL(t)
 	dir := t.TempDir()
 	priv, err := GenerateKey()
 	if err != nil {

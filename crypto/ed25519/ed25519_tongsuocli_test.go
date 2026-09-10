@@ -24,10 +24,7 @@ import (
 // TestCLIKeyInterop verifies that PKCS#8 / SPKI PEM produced by the library
 // round-trips through the Tongsuo openssl CLI, and vice versa.
 func TestCLIKeyInterop(t *testing.T) {
-	bin := testutil.OpenSSLBin()
-	if bin == "" {
-		t.Skip("TONGSUO_OPENSSL_BIN not set; skipping tongsuocli test")
-	}
+	bin := testutil.SkipIfNoOpenSSL(t)
 	dir := t.TempDir()
 	priv, err := GenerateKey()
 	if err != nil {
@@ -95,10 +92,7 @@ func TestCLIKeyInterop(t *testing.T) {
 // TestCLISignVerify checks that library-generated Ed25519 signatures are
 // accepted by the Tongsuo openssl CLI and vice versa.
 func TestCLISignVerify(t *testing.T) {
-	bin := testutil.OpenSSLBin()
-	if bin == "" {
-		t.Skip("TONGSUO_OPENSSL_BIN not set; skipping tongsuocli test")
-	}
+	bin := testutil.SkipIfNoOpenSSL(t)
 	dir := t.TempDir()
 	priv, err := GenerateKey()
 	if err != nil {
@@ -161,10 +155,7 @@ func TestCLISignVerify(t *testing.T) {
 // TestCLIEncryptedPEM checks encrypted-PEM round-trip between the library
 // and the Tongsuo CLI (AES-256-CBC + PBKDF2).
 func TestCLIEncryptedPEM(t *testing.T) {
-	bin := testutil.OpenSSLBin()
-	if bin == "" {
-		t.Skip("TONGSUO_OPENSSL_BIN not set; skipping tongsuocli test")
-	}
+	bin := testutil.SkipIfNoOpenSSL(t)
 	dir := t.TempDir()
 	priv, err := GenerateKey()
 	if err != nil {
