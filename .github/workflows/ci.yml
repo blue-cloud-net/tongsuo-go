@@ -1,18 +1,19 @@
 # GitHub Actions CI for tongsuo-go
 #
-# 触发：push 到 main/dev、PR 到 main/dev、手动触发
-# 矩阵：Linux + macOS × Go 1.21 / 1.23
-# 阶段：lint → test → build(static)
+# 触发：push / PR 到 main（dev 不触发）、手动触发
+# 复用：release.yml 通过 workflow_call 调用本工作流，保证发布测试与 CI 完全一致
+# 矩阵：ubuntu + macOS × amd64 / arm64（Go 1.21）
+# 阶段：lint → test
 # Tongsuo 来源：源码编译 + actions/cache，避免每次拉取与重复编译
 
 name: CI
 
 on:
   push:
-    branches: [main, dev]
-    tags: ["v*"]
+    branches: [main]
   pull_request:
-    branches: [main, dev]
+    branches: [main]
+  workflow_call:      # 供 release.yml 复用（发布测试与 CI 完全同源）
   workflow_dispatch:
 
 # 最小权限：仅读仓库内容
@@ -39,7 +40,7 @@ jobs:
   #    如未来要重新启用 lint，先建立 .golangci.yml 并收敛规则范围。
   # ---------------------------------------------------------------------------
   lint:
-    name: Lint (ubuntu / Go 1.23)
+    name: Lint (ubuntu / Go 1.21)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -55,7 +56,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.23"
+          go-version: "1.21"
           cache: true
           cache-dependency-path: go.mod
 
@@ -65,9 +66,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.tongsuo-install
-          key: tongsuo-v2-${{ runner.os }}-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          key: tongsuo-v3-${{ runner.os }}-amd64-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/ci.yml') }}
           restore-keys: |
-            tongsuo-v2-${{ runner.os }}-${{ env.TONGSUO_REF }}-
+            tongsuo-v3-${{ runner.os }}-amd64-${{ env.TONGSUO_REF }}-
 
       - name: Build Tongsuo from source
         if: steps.cache-tongsuo.outputs.cache-hit != 'true'
@@ -91,23 +92,31 @@ jobs:
         run: go vet ./...
 
   # ---------------------------------------------------------------------------
-  # 2. 编译与测试：动态链接 + 静态链接
+  # 2. 编译与测试：ubuntu + macOS × amd64 / arm64（原生 runner，Go 1.21）
+  #    - arm64 使用原生 arm64 runner，真实执行 go build / go test（非交叉编译）
+  #    - 缓存键含架构：Linux/macOS 上 amd64/arm64 二进制互不兼容，必须区分
   # ---------------------------------------------------------------------------
   test:
-    name: Test (${{ matrix.os }} / Go ${{ matrix.go-version }})
+    name: Test (${{ matrix.os }} / ${{ matrix.arch }})
     needs: lint
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        # macOS 暂时下线：Tongsuo 的 cgo 绑定在 darwin 上的 Build-Options 还会产生
-        # 链接问题（例如 .pc 文件、cgo toolchain 等），目前阶段优先稳定 Linux。
-        # 待 cgo/Platform 支持完善后再加回 macos-latest。
-        os: [ubuntu-latest]
-        go-version: ["1.21", "1.23"]
+        include:
+          - os: ubuntu-latest
+            arch: amd64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+          - os: macos-15-intel
+            arch: amd64
+          - os: macos-latest
+            arch: arm64
     env:
+      GOARCH: ${{ matrix.arch }}
       LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
+      DYLD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
       CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
       CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
       TONGSUO_HOME: ${{ github.workspace }}/.tongsuo-install
@@ -120,19 +129,19 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: "1.21"
           cache: true
           cache-dependency-path: go.mod
 
-      # 缓存 Tongsuo 编译/安装产物，按 OS + 版本号区分 key
+      # 缓存 Tongsuo 编译/安装产物，按 OS + 架构 + 版本号区分 key
       - name: Cache Tongsuo
         id: cache-tongsuo
         uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.tongsuo-install
-          key: tongsuo-v2-${{ runner.os }}-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          key: tongsuo-v3-${{ runner.os }}-${{ matrix.arch }}-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/ci.yml') }}
           restore-keys: |
-            tongsuo-v2-${{ runner.os }}-${{ env.TONGSUO_REF }}-
+            tongsuo-v3-${{ runner.os }}-${{ matrix.arch }}-${{ env.TONGSUO_REF }}-
 
       - name: Build Tongsuo from source
         if: steps.cache-tongsuo.outputs.cache-hit != 'true'
@@ -152,7 +161,7 @@ jobs:
           make install_sw
           echo "==> Tongsuo installed to ${{ github.workspace }}/.tongsuo-install"
 
-      # Linux：写入 ld.so.conf 并 ldconfig
+      # Linux：写入 ld.so.conf 并 ldconfig；macOS 通过 DYLD_LIBRARY_PATH 生效
       # GitHub Actions hosted runner 默认以 `runner` 用户运行（非 root），
       # 写入 /etc 需要 sudo；runner 用户已具备免密 sudo 权限。
       - name: Configure dynamic linker (Linux)
@@ -167,7 +176,10 @@ jobs:
         run: go build ./...
 
       # 静态链接构建（验证 internal/native/build_static.go 路径）
+      # 说明：build_static.go 目前仅提供 linux LDFLAGS，macOS 静态链接未接线，
+      # 故该步骤仅在 Linux 上执行。
       - name: go build (static tag)
+        if: runner.os == 'Linux'
         run: go build -tags static ./...
 
       # 单元测试（默认不含 CLI 对比测试；tongsuocli tag 需要 openssl CLI，
