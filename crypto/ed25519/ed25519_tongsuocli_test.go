@@ -1,3 +1,5 @@
+//go:build tongsuocli
+
 // Package ed25519 的 tongsuocli 对拍测试：用铜锁原生 openssl 命令行校验本库
 // 生成 / 签名 / 验签结果与 openssl 完全一致。
 //
