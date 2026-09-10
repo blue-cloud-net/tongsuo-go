@@ -72,6 +72,16 @@ int X_PEM_write_bio_X509_REQ(BIO *bp, X509_REQ *x);
 void X_OPENSSL_free(void *ptr);
 
 /*
+ * X_OPENSSL_cleanse 安全清零一段内存（OPENSSL_cleanse 的 shim 包装）。
+ *
+ * 用于清空 PEM/PKCS12 口令回调的临时缓冲以及其它承载密钥材料或口令的
+ * C 侧栈缓冲；编译器对 memset 的"未引用"消除在 release 构建里是合法的，
+ * 而 OPENSSL_cleanse 通过 volatile 函数指针抹除阻止这种优化，确保数据
+ * 在函数返回前被实际覆写。调用方负责在用毕敏感缓冲后尽快调用。
+ */
+void X_OPENSSL_cleanse(void *ptr, size_t len);
+
+/*
  * X_SSL_CTX_set_verify 包装 SSL_CTX_set_verify，固定 callback 为 NULL。
  * cgo 不允许 Go 端把 untyped nil 当作 SSL_verify_cb 函数指针传入 C 函
  * 数，所以必须由 C shim 把 NULL 显式传入。

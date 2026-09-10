@@ -48,6 +48,13 @@ int X_PEM_write_bio_PUBKEY(BIO *bp, EVP_PKEY *x)
     return PEM_write_bio_PUBKEY(bp, x);
 }
 
+void X_OPENSSL_cleanse(void *ptr, size_t len)
+{
+    if (ptr == NULL || len == 0)
+        return;
+    OPENSSL_cleanse(ptr, len);
+}
+
 X509 *X_PEM_read_bio_X509(BIO *bp)
 {
     return PEM_read_bio_X509(bp, NULL, NULL, NULL);
@@ -532,6 +539,11 @@ static int X_PEM_pass_cb(char *buf, int size, int rwflag, void *u)
     if (n > size)
         n = size;
     memcpy(buf, pass, n);
+    /* 注意：不要 cleanse buf——OpenSSL 在 cb 返回后还会读取 buf 的前 n 字节
+     * 用作解密口令，立即清零会让 OpenSSL 解密失败。
+     * OpenSSL 自身负责 buf 的生命周期（其内部的 umem / stack 缓冲会随
+     * PEM 解析结束被覆盖或释放）；本回调专注于"复制口令"，不干预后续。
+     * 对 Go 侧 C.CString 拷贝的清零应在调用方控制，参见 native.Cleanse。 */
     return n;
 }
 
