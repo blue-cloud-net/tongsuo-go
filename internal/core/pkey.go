@@ -249,9 +249,10 @@ func (k *PKey) marshalPEM(op string, write func(bio, pkey unsafe.Pointer) bool) 
 // the Go stdlib rsa package). This shared path does not reject empty
 // input; the underlying EVP_PKEY_CTX and the algorithm wrapper decide.
 func (k *PKey) Encrypt(data []byte) ([]byte, error) {
-	// 同一密钥上下文的多次 cgo 调用需固定到同一 OS 线程（Tongsuo SM2 provider 对线程敏感）。
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
+	// 同一密钥上下文的多次 cgo 调用需固定到同一 OS 线程（Tongsuo SM2 provider 对线程敏感）；
+	// 仅 SM2 真正需要加锁，其他算法 (RSA/ECDSA/EdDSA/X25519) 的 provider 已是线程安全。
+	lockOSThreadForKey(k)
+	defer unlockOSThreadForKey(k)
 	ctx := native.EVP_PKEY_CTX_new_from_pkey(k.handle.Ptr())
 	if ctx == nil {
 		return nil, NewOpError("pkey: EVP_PKEY_CTX_new_from_pkey", native.PopError())
@@ -287,8 +288,8 @@ func (k *PKey) Encrypt(data []byte) ([]byte, error) {
 // is thread-sensitive. Errors from the underlying EVP_PKEY_CTX are wrapped
 // as OpError.
 func (k *PKey) Decrypt(data []byte) ([]byte, error) {
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
+	lockOSThreadForKey(k)
+	defer unlockOSThreadForKey(k)
 	ctx := native.EVP_PKEY_CTX_new_from_pkey(k.handle.Ptr())
 	if ctx == nil {
 		return nil, NewOpError("pkey: EVP_PKEY_CTX_new_from_pkey", native.PopError())
@@ -325,8 +326,8 @@ func (k *PKey) Decrypt(data []byte) ([]byte, error) {
 // digest sign fails, the returned error is wrapped as OpError carrying
 // the OpenSSL error code.
 func (k *PKey) Sign(data, id []byte) ([]byte, error) {
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
+	lockOSThreadForKey(k)
+	defer unlockOSThreadForKey(k)
 	mdctx := native.EVP_MD_CTX_new()
 	if mdctx == nil {
 		return nil, NewOpError("pkey: EVP_MD_CTX_new", native.PopError())
@@ -374,8 +375,8 @@ func (k *PKey) Sign(data, id []byte) ([]byte, error) {
 // must therefore inspect the error to distinguish a malformed signature
 // from a verification failure).
 func (k *PKey) Verify(data, sig, id []byte) error {
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
+	lockOSThreadForKey(k)
+	defer unlockOSThreadForKey(k)
 	mdctx := native.EVP_MD_CTX_new()
 	if mdctx == nil {
 		return NewOpError("pkey: EVP_MD_CTX_new", native.PopError())
@@ -576,8 +577,8 @@ func (k *PKey) signDigest(data []byte, md *Digest, setOpts func(unsafe.Pointer) 
 	if md == nil || md.handle == nil || md.handle.IsClosed() {
 		return nil, fmt.Errorf("pkey: invalid digest")
 	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
+	lockOSThreadForKey(k)
+	defer unlockOSThreadForKey(k)
 	mdctx := native.EVP_MD_CTX_new()
 	if mdctx == nil {
 		return nil, NewOpError("pkey: EVP_MD_CTX_new", native.PopError())
@@ -662,8 +663,8 @@ func (k *PKey) verifyDigest(data, sig []byte, md *Digest, setOpts func(unsafe.Po
 	if md == nil || md.handle == nil || md.handle.IsClosed() {
 		return fmt.Errorf("pkey: invalid digest")
 	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
+	lockOSThreadForKey(k)
+	defer unlockOSThreadForKey(k)
 	mdctx := native.EVP_MD_CTX_new()
 	if mdctx == nil {
 		return NewOpError("pkey: EVP_MD_CTX_new", native.PopError())
@@ -778,8 +779,8 @@ func (k *PKey) DecryptOAEP(data []byte, md *Digest) ([]byte, error) {
 // policy is left to the algorithm wrapper (RSA PKCS#1 v1.5 / OAEP accept
 // it, matching stdlib).
 func (k *PKey) encryptWithOpts(data []byte, setOpts func(unsafe.Pointer) error) ([]byte, error) {
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
+	lockOSThreadForKey(k)
+	defer unlockOSThreadForKey(k)
 	ctx := native.EVP_PKEY_CTX_new_from_pkey(k.handle.Ptr())
 	if ctx == nil {
 		return nil, NewOpError("pkey: EVP_PKEY_CTX_new_from_pkey", native.PopError())
@@ -809,8 +810,8 @@ func (k *PKey) encryptWithOpts(data []byte, setOpts func(unsafe.Pointer) error) 
 // decryptWithOpts wraps EVP_PKEY_decrypt, allowing the caller to apply
 // algorithm-specific options (e.g. padding) via setOpts.
 func (k *PKey) decryptWithOpts(data []byte, setOpts func(unsafe.Pointer) error) ([]byte, error) {
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
+	lockOSThreadForKey(k)
+	defer unlockOSThreadForKey(k)
 	ctx := native.EVP_PKEY_CTX_new_from_pkey(k.handle.Ptr())
 	if ctx == nil {
 		return nil, NewOpError("pkey: EVP_PKEY_CTX_new_from_pkey", native.PopError())
@@ -1366,5 +1367,49 @@ func digestForSigner(k *PKey) *Digest {
 		return nil
 	default:
 		return SM3()
+	}
+}
+
+// lockOSThreadForKey 在调用 Tongsuo 算法前锁定当前 OS 线程。
+//
+// Tongsuo SM2 provider 的全局状态对 OS 线程敏感，跨线程调用会导致
+// `internal state error` 等不可恢复错误；其他算法（RSA / ECDSA / EdDSA /
+// X25519）的 provider 已是线程安全，无需加锁。
+//
+// 本函数仅在 *PKey 为 SM2 时执行 runtime.LockOSThread，其它情况为 no-op，
+// 避免对非 SM2 工作负载造成不必要的 goroutine→OS-thread 1:1 序列化。
+//
+// 调用方必须配对调用 unlockOSThreadForKey（通常用 defer）。
+//
+// lockOSThreadForKey locks the current OS thread before invoking Tongsuo
+// algorithms that are thread-sensitive.
+//
+// Only the SM2 provider in Tongsuo retains OS-thread-scoped state; the
+// other providers (RSA / ECDSA / EdDSA / X25519) are thread-safe and do
+// not require the lock. This helper is a no-op for non-SM2 keys, avoiding
+// the goroutine-to-OS-thread serialization cost that would otherwise
+// cripple concurrency for the common RSA / Ed25519 paths.
+//
+// Callers must pair each call with unlockOSThreadForKey (typically via
+// defer).
+func lockOSThreadForKey(k *PKey) {
+	if k == nil {
+		return
+	}
+	if k.TypeID() == native.EvpPkeySM2 {
+		runtime.LockOSThread()
+	}
+}
+
+// unlockOSThreadForKey 释放 lockOSThreadForKey 加的锁。
+//
+// unlockOSThreadForKey releases the lock taken by lockOSThreadForKey.
+// Safe to call when no lock was taken (no-op for non-SM2 keys).
+func unlockOSThreadForKey(k *PKey) {
+	if k == nil {
+		return
+	}
+	if k.TypeID() == native.EvpPkeySM2 {
+		runtime.UnlockOSThread()
 	}
 }
