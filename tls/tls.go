@@ -110,9 +110,17 @@ func Dial(network, addr string, config *Config) (net.Conn, error) {
 		if config.ServerName != "" {
 			hostname = config.ServerName
 		} else if host, _, e := net.SplitHostPort(addr); e == nil {
-			hostname = host
-		} else {
+			// SplitHostPort 成功：去掉端口，得到纯主机名用作 SNI / 证书校验。
+			// 去除 IPv6 字面量外层的方括号（SplitHostPort 不会去掉）。
+			hostname = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+		} else if !strings.Contains(addr, ":") {
+			// addr 没有冒号（裸主机名）：可直接用作 SNI。
 			hostname = addr
+		} else {
+			// addr 含冒号但 SplitHostPort 失败（典型 IPv6 缺方括号 "::1:443"）：
+			// 不强行回退到原始串，避免把 "host:port" 当 SNI 发出去；
+			// 留空 hostname，由 wrapConn / 验证层使用对端 IP 作为 fallback。
+			hostname = ""
 		}
 	}
 	conn, err := wrapConnWithHostname(raw, ctx, false, hostname)
@@ -364,25 +372,43 @@ func (c *Conn) SetDeadline(t time.Time) error {
 }
 
 // SetReadDeadline 设置读取期限（仅 SSL 层；raw socket 层同时设置）。
+// 同时清空 raw socket 的写入 deadline，避免用户后续 Write 因旧写入
+// deadline 而意外超时。
 //
 // SetReadDeadline sets the read deadline on both the SSL and the
-// underlying socket.
+// underlying socket; the raw socket's write deadline is also cleared to
+// zero so that subsequent Write calls are not impacted by a stale write
+// timeout.
 func (c *Conn) SetReadDeadline(t time.Time) error {
 	if err := c.ssl.SetDeadline(t); err != nil {
 		return err
 	}
-	return c.raw.SetReadDeadline(t)
+	if err := c.raw.SetReadDeadline(t); err != nil {
+		return err
+	}
+	// 关键修复：SetReadDeadline 不应影响写入侧 deadline，显式置零。
+	// Critical fix: SetReadDeadline must not affect the write side; reset it explicitly.
+	return c.raw.SetWriteDeadline(time.Time{})
 }
 
 // SetWriteDeadline 设置写入期限（仅 SSL 层；raw socket 层同时设置）。
+// 同时清空 raw socket 的读取 deadline，避免用户后续 Read 因旧读取
+// deadline 而意外超时。
 //
 // SetWriteDeadline sets the write deadline on both the SSL and the
-// underlying socket.
+// underlying socket; the raw socket's read deadline is also cleared to
+// zero so that subsequent Read calls are not impacted by a stale read
+// timeout.
 func (c *Conn) SetWriteDeadline(t time.Time) error {
 	if err := c.ssl.SetDeadline(t); err != nil {
 		return err
 	}
-	return c.raw.SetWriteDeadline(t)
+	if err := c.raw.SetWriteDeadline(t); err != nil {
+		return err
+	}
+	// 配对修复：SetWriteDeadline 不应影响读取侧 deadline。
+	// Matching fix: SetWriteDeadline must not affect the read side.
+	return c.raw.SetReadDeadline(time.Time{})
 }
 
 // Version 返回协商后的协议版本。
