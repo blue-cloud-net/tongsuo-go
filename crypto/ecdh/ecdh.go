@@ -1,20 +1,21 @@
-// Package ecdh 基于铜锁原生实现 NIST 椭圆曲线 ECDH 密钥协商（X9.63）。
-// 提供 P-256 / P-384 / P-521 三套曲线的密钥生成、PEM（PKCS#8 / SPKI）加载与
-// 序列化，以及共享密钥计算。共享密钥为原始 X 坐标（定长，与 Go 标准库
-// crypto/ecdh、`openssl pkeyutl -derive` 一致）。曲线抽象为 Curve，风格对齐
-// Go 标准库 crypto/ecdh；后续可平滑扩展 X25519 等曲线而不破坏既有 API。
-// 调用方应把共享密钥视为敏感数据，使用完毕后自行清零。
+// Package ecdh 基于铜锁原生实现 ECDH 密钥协商。
+// 提供 NIST 曲线（P-256 / P-384 / P-521 / secp256k1，X9.63）与 OKP 曲线
+// （X25519 / X448，RFC 7748）的密钥生成、PEM（PKCS#8 / SPKI）加载与序列化，
+// 以及共享密钥计算。NIST 曲线的共享密钥为原始 X 坐标（定长），X25519 / X448
+// 为标量乘输出（32 / 56 字节），均与 Go 标准库 crypto/ecdh、
+// `openssl pkeyutl -derive` 一致。曲线抽象为 Curve，风格对齐 Go 标准库
+// crypto/ecdh。调用方应把共享密钥视为敏感数据，使用完毕后自行清零。
 //
-// Package ecdh implements NIST elliptic-curve ECDH key agreement
-// (X9.63) backed by the Tongsuo native library. It exposes key
-// generation, PEM (PKCS#8 / SPKI) loading and serialization, and
-// shared-secret derivation for the P-256 / P-384 / P-521 curves. The
-// shared secret is the raw X coordinate at fixed field length, matching
-// Go's crypto/ecdh and `openssl pkeyutl -derive`. Curves are abstracted
-// behind Curve in the style of the Go standard crypto/ecdh package, so
-// additional curves such as X25519 can be added later without breaking
-// the API. Callers should treat the shared secret as sensitive data and
-// zeroise it after use.
+// Package ecdh implements ECDH key agreement backed by the Tongsuo native
+// library. It exposes key generation, PEM (PKCS#8 / SPKI) loading and
+// serialization, and shared-secret derivation for the NIST curves
+// (P-256 / P-384 / P-521 / secp256k1, X9.63) and the OKP curves
+// (X25519 / X448, RFC 7748). The shared secret is the raw X coordinate at
+// fixed field length for NIST curves and the raw scalar-multiplication
+// output (32 / 56 bytes) for X25519 / X448, matching Go's crypto/ecdh and
+// `openssl pkeyutl -derive`. Curves are abstracted behind Curve in the
+// style of the Go standard crypto/ecdh package. Callers should treat the
+// shared secret as sensitive data and zeroise it after use.
 package ecdh
 
 import (
@@ -23,15 +24,36 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
-// Curve 表示一条 ECDH 椭圆曲线（当前为 NIST prime256v1 / secp384r1 /
-// secp521r1，即 P-256 / P-384 / P-521）。
+// curveKind 区分曲线的实现族：NIST 曲线走 EC keygen 与通用 derive，
+// X25519 / X448 走 OKP（EVP_PKEY_Q_keygen + 原始字节）路径。
 //
-// Curve represents an ECDH elliptic curve. The current set covers the
-// NIST prime256v1 / secp384r1 / secp521r1 curves (P-256 / P-384 /
-// P-521).
+// curveKind distinguishes the curve implementation families: NIST curves
+// use the EC keygen / generic derive path, while X25519 and X448 use the
+// OKP path (EVP_PKEY_Q_keygen plus raw key bytes).
+type curveKind uint8
+
+const (
+	kindNIST   curveKind = iota // P-256 / P-384 / P-521 / secp256k1
+	kindX25519                  // RFC 7748 X25519
+	kindX448                    // RFC 7748 X448
+)
+
+// isOKP 报告该曲线是否属于 OKP（X25519 / X448）实现族。
+//
+// isOKP reports whether the curve belongs to the OKP family (X25519 / X448).
+func (k curveKind) isOKP() bool { return k == kindX25519 || k == kindX448 }
+
+// Curve 表示一条 ECDH 曲线（NIST prime256v1 / secp384r1 / secp521r1 /
+// secp256k1，即 P-256 / P-384 / P-521 / secp256k1，以及 RFC 7748 的
+// X25519 / X448）。
+//
+// Curve represents an ECDH curve. The current set covers the NIST curves
+// prime256v1 / secp384r1 / secp521r1 / secp256k1 (P-256 / P-384 / P-521 /
+// secp256k1) and the RFC 7748 curves X25519 / X448.
 type Curve struct {
-	name string // 展示名：P-256 / P-384 / P-521
-	ossl string // 铜锁曲线名：prime256v1 / secp384r1 / secp521r1
+	kind curveKind // 实现族：NIST 或 OKP
+	name string    // 展示名：P-256 / P-384 / P-521 / secp256k1 / X25519 / X448
+	ossl string    // 铜锁曲线名（仅 NIST 使用）：prime256v1 / secp384r1 / ...
 }
 
 // P256 返回 P-256（prime256v1）曲线。
@@ -48,6 +70,43 @@ func P384() *Curve { return &Curve{name: "P-384", ossl: "secp384r1"} }
 //
 // P521 returns the P-521 (secp521r1) curve.
 func P521() *Curve { return &Curve{name: "P-521", ossl: "secp521r1"} }
+
+// Secp256k1 返回 secp256k1 曲线（非 NIST 标准曲线，比特币等生态常用）。
+//
+// 曲线可用性取决于运行时铜锁 provider；provider 不支持时 GenerateKey 会返回
+// 包装 OpError 的错误。
+//
+// Secp256k1 returns the secp256k1 curve (not a NIST curve; widely used in
+// the Bitcoin ecosystem).
+//
+// Availability depends on the runtime Tongsuo provider; when the curve is
+// unsupported, GenerateKey returns an OpError-wrapped error.
+func Secp256k1() *Curve { return &Curve{name: "secp256k1", ossl: "secp256k1"} }
+
+// X25519 返回 X25519 曲线（RFC 7748，32 字节共享密钥，非 NIST 椭圆曲线）。
+//
+// 与 NIST 曲线不同，X25519 的密钥由 core.GenerateX25519Key 生成，加载后的
+// 校验走 Algorithm() == "X25519"，共享密钥长度固定为 32 字节。
+//
+// X25519 returns the X25519 curve (RFC 7748, 32-byte shared secret, not a
+// NIST elliptic curve).
+//
+// Unlike the NIST curves, X25519 keys are produced by
+// core.GenerateX25519Key; loaded keys are validated through
+// Algorithm() == "X25519" and the shared secret is always 32 bytes.
+func X25519() *Curve { return &Curve{kind: kindX25519, name: "X25519"} }
+
+// X448 返回 X448 曲线（RFC 7748，56 字节共享密钥，非 NIST 椭圆曲线）。
+//
+// 实现路径与 X25519 相同（OKP 族），差异仅在密钥 / 共享密钥长度（56 字节）
+// 与 Algorithm() == "X448" 校验。
+//
+// X448 returns the X448 curve (RFC 7748, 56-byte shared secret, not a NIST
+// elliptic curve).
+//
+// It follows the same OKP path as X25519; only the key / shared-secret
+// length (56 bytes) and the Algorithm() == "X448" check differ.
+func X448() *Curve { return &Curve{kind: kindX448, name: "X448"} }
 
 // Name 返回曲线展示名（如 "P-256"）。nil 接收者返回空字符串。
 //
@@ -70,6 +129,22 @@ func (c *Curve) Name() string {
 func (c *Curve) GenerateKey() (*PrivateKey, error) {
 	if c == nil {
 		return nil, fmt.Errorf("ecdh: nil curve")
+	}
+	// OKP 曲线（X25519 / X448）在 OpenSSL 中经 EVP_PKEY_Q_keygen 单独生成，
+	// 不走 EC keygen 路径。
+	switch c.kind {
+	case kindX25519:
+		k, err := core.GenerateX25519Key()
+		if err != nil {
+			return nil, err
+		}
+		return &PrivateKey{key: k}, nil
+	case kindX448:
+		k, err := core.GenerateX448Key()
+		if err != nil {
+			return nil, err
+		}
+		return &PrivateKey{key: k}, nil
 	}
 	k, err := core.GenerateECKey(c.ossl)
 	if err != nil {
@@ -121,16 +196,18 @@ func (k *PrivateKey) Public() *PublicKey {
 //
 // 接受 PKCS#8（"-----BEGIN PRIVATE KEY-----"）与传统 SEC1
 // （"-----BEGIN EC PRIVATE KEY-----"）两种 PEM 块；底层走 OpenSSL 通用
-// EVP 读取路径自动识别。加载后校验密钥确为请求曲线的 EC 私钥（非 SM2/RSA、
-// 曲线不匹配均报错）。失败时返回包装 OpError 的错误。
+// EVP 读取路径自动识别。加载后校验密钥确为请求曲线上的密钥：NIST 曲线要求
+// EC 类型且曲线名匹配，X25519 / X448 要求 Algorithm() 匹配（SM2/RSA 与不
+// 匹配的曲线均报错）。失败时返回包装 OpError 的错误。
 //
 // LoadPrivateKeyPEM parses an unencrypted PEM block carrying an ECDH
 // private key on the given curve. Both PKCS#8 ("-----BEGIN PRIVATE
 // KEY-----") and traditional SEC1 ("-----BEGIN EC PRIVATE KEY-----")
 // blocks are accepted via the OpenSSL EVP auto-detection path. After
-// loading, the key is validated to be an EC private key on the requested
-// curve (SM2/RSA keys and curve mismatches return an error). On failure
-// it returns an error wrapping an OpError.
+// loading, the key is validated against the requested curve: NIST curves
+// require an EC key with a matching curve name, while X25519 / X448
+// require a matching Algorithm() (SM2/RSA keys and curve mismatches
+// return an error). On failure it returns an error wrapping an OpError.
 func LoadPrivateKeyPEM(c *Curve, pemBytes []byte) (*PrivateKey, error) {
 	if c == nil {
 		return nil, fmt.Errorf("ecdh: nil curve")
@@ -148,14 +225,17 @@ func LoadPrivateKeyPEM(c *Curve, pemBytes []byte) (*PrivateKey, error) {
 
 // LoadPublicKeyPEM 从 PEM（SubjectPublicKeyInfo）加载指定曲线上的 ECDH 公钥。
 //
-// 解析 SPKI（"-----BEGIN PUBLIC KEY-----"）PEM 块；加载后校验密钥确为请求
-// 曲线的 EC 公钥（SM2/RSA 与曲线不匹配均报错）。失败时返回包装 OpError 的错误。
+// 解析 SPKI（"-----BEGIN PUBLIC KEY-----"）PEM 块；加载后校验密钥属于请求
+// 曲线（NIST 曲线要求 EC 类型且曲线名匹配，X25519 / X448 要求 Algorithm()
+// 匹配；SM2/RSA 与不匹配的曲线均报错）。失败时返回包装 OpError 的错误。
 //
 // LoadPublicKeyPEM parses an unencrypted PEM block carrying a
 // SubjectPublicKeyInfo ("-----BEGIN PUBLIC KEY-----") ECDH public key on
-// the given curve. After loading, the key is validated to be an EC public
-// key on the requested curve (SM2/RSA keys and curve mismatches return an
-// error). On failure it returns an error wrapping an OpError.
+// the given curve. After loading, the key is validated against the
+// requested curve (NIST curves require an EC key with a matching curve
+// name; X25519 / X448 require a matching Algorithm(); SM2/RSA keys and
+// curve mismatches return an error). On failure it returns an error
+// wrapping an OpError.
 func LoadPublicKeyPEM(c *Curve, pemBytes []byte) (*PublicKey, error) {
 	if c == nil {
 		return nil, fmt.Errorf("ecdh: nil curve")
@@ -253,18 +333,22 @@ func ChangePassword(pemBytes []byte, oldPass, newPass string) ([]byte, error) {
 	return core.ChangePrivateKeyPassword(pemBytes, oldPass, newPass)
 }
 
-// ECDH 计算本地私钥与对端公钥之间的 ECDH 共享密钥（原始 X 坐标，定长）。
+// ECDH 计算本地私钥与对端公钥之间的 ECDH 共享密钥。
 //
-// 本地私钥与对端公钥必须在同一曲线上；算法族或曲线不一致、底层 derive 失败时
-// 返回包装 OpError 的错误。调用方应把返回的 shared 视为敏感数据并在使用后清零。
+// NIST 曲线返回原始 X 坐标（定长），X25519 / X448 返回 32 / 56 字节的标量乘
+// 输出。本地私钥与对端公钥必须属于同一曲线；算法族或曲线不一致、底层 derive
+// 失败（含 OKP 低阶点导致的全零结果）时返回错误。调用方应把返回的 shared
+// 视为敏感数据并在使用后清零。
 //
-// ECDH computes the ECDH shared secret between k and peer, returned as
-// the raw X coordinate at fixed field length.
+// ECDH computes the ECDH shared secret between k and peer.
 //
-// The local private key and the peer public key must be on the same
-// curve; algorithm-family or curve mismatch, or an underlying derive
-// failure, returns a wrapped OpError. Callers should treat the returned
-// shared secret as sensitive and zeroise it after use.
+// NIST curves return the raw X coordinate at fixed field length; X25519 and
+// X448 return the 32 / 56-byte scalar-multiplication output. The local
+// private key and the peer public key must be on the same curve; an
+// algorithm-family or curve mismatch, or an underlying derive failure
+// (including the all-zero result produced by OKP low-order points), returns
+// an error. Callers should treat the returned shared secret as sensitive
+// and zeroise it after use.
 func (k *PrivateKey) ECDH(peer *PublicKey) ([]byte, error) {
 	if k == nil || k.key == nil {
 		return nil, fmt.Errorf("ecdh: nil private key")
@@ -272,17 +356,41 @@ func (k *PrivateKey) ECDH(peer *PublicKey) ([]byte, error) {
 	if peer == nil || peer.key == nil {
 		return nil, fmt.Errorf("ecdh: nil public key")
 	}
+	algA, algB := k.key.Algorithm(), peer.key.Algorithm()
+	// OKP 曲线（X25519 / X448）不是 EC：KeyParams 不带曲线名，改走 Algorithm 校验；
+	// 同时显式拒绝 Ed25519 / Ed448 等其它非 EC 算法，不再依赖 Params 的偶然结果。
+	if isOKPAlgorithm(algA) || isOKPAlgorithm(algB) {
+		if algA != algB {
+			return nil, fmt.Errorf("ecdh: curve mismatch: %q vs %q", algA, algB)
+		}
+		return k.key.Derive(peer.key)
+	}
 	a, b := k.key.Params(), peer.key.Params()
-	if a == nil || b == nil || a.Curve == "" || a.Curve != b.Curve {
-		return nil, fmt.Errorf("ecdh: curve mismatch: %q vs %q", curveName(a), curveName(b))
+	if a == nil || b == nil || a.Type != "EC" || b.Type != "EC" ||
+		a.Curve == "" || a.Curve != b.Curve {
+		return nil, fmt.Errorf("ecdh: curve mismatch: %q vs %q", curveName(a, algA), curveName(b, algB))
 	}
 	return k.key.Derive(peer.key)
 }
 
-// match 校验加载的 *core.PKey 是 c 曲线上的普通 EC 密钥（非 SM2/RSA）。
+// match 校验加载的 *core.PKey 属于 c 曲线（EC 或 OKP，而非 SM2 / RSA / 其它）。
 //
-// match validates that k is a plain EC key on curve c (not SM2/RSA).
+// OKP 曲线（X25519 / X448）走 Algorithm() 相等校验，不参与 EC 曲线名校验；
+// 其余曲线要求 Type == "EC" 且曲线名与构造曲线一致。
+//
+// match validates that k belongs to curve c (EC or OKP, not SM2 / RSA / any
+// other algorithm).
+//
+// OKP curves (X25519 / X448) are validated through Algorithm() equality and
+// skip the EC curve-name check; all other curves require Type == "EC" and a
+// curve name matching the constructed curve.
 func (c *Curve) match(k *core.PKey) error {
+	if c.kind.isOKP() {
+		if k.Algorithm() != c.name {
+			return fmt.Errorf("ecdh: key is not %s (got %s)", c.name, k.Algorithm())
+		}
+		return nil
+	}
 	p := k.Params()
 	if p == nil || p.Type != "EC" {
 		return fmt.Errorf("ecdh: key is not an EC key on %s", c.name)
@@ -293,11 +401,22 @@ func (c *Curve) match(k *core.PKey) error {
 	return nil
 }
 
-// curveName 取参数中的曲线名，nil 时返回 "<unknown>"。
+// isOKPAlgorithm 报告算法名是否为 OKP 密钥交换算法（X25519 / X448）。
 //
-// curveName returns the curve name from params, or "<unknown>" when
-// params is nil.
-func curveName(p *core.KeyParams) string {
+// isOKPAlgorithm reports whether alg denotes an OKP key-agreement algorithm
+// (X25519 or X448).
+func isOKPAlgorithm(alg string) bool {
+	return alg == "X25519" || alg == "X448"
+}
+
+// curveName 取参数中的曲线名；OKP 曲线返回算法名，params 为 nil 时返回 "<unknown>"。
+//
+// curveName returns the curve name from params; OKP curves report their
+// algorithm name and a nil params returns "<unknown>".
+func curveName(p *core.KeyParams, alg string) string {
+	if isOKPAlgorithm(alg) {
+		return alg
+	}
 	if p == nil {
 		return "<unknown>"
 	}

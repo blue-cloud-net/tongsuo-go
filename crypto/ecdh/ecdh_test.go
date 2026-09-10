@@ -13,6 +13,7 @@ import (
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/ecdh"
 	"github.com/blue-cloud-net/tongsuo-go/crypto/x25519"
+	"github.com/blue-cloud-net/tongsuo-go/crypto/x448"
 )
 
 type curveCase struct {
@@ -233,5 +234,359 @@ func TestLoadRejectsNonEC(t *testing.T) {
 	_, err = ecdh.LoadPublicKeyPEM(ecdh.P256(), pemBytes)
 	if err == nil || !strings.Contains(err.Error(), "not an EC key") {
 		t.Fatalf("want non-EC rejection, got %v", err)
+	}
+}
+
+// TestX25519Roundtrip 验证 ecdh.X25519() 生成的密钥对能正确 derive，
+// 且与 Go 标准库 crypto/ecdh X25519 完全一致。
+func TestX25519Roundtrip(t *testing.T) {
+	curve := ecdh.X25519()
+	if curve == nil || curve.Name() != "X25519" {
+		t.Fatalf("X25519() curve = %v, want X25519", curve)
+	}
+
+	priv, err := curve.GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	privPEM, err := priv.MarshalPEM()
+	if err != nil {
+		t.Fatalf("MarshalPEM: %v", err)
+	}
+	pubPEM, err := priv.Public().MarshalPEM()
+	if err != nil {
+		t.Fatalf("Public MarshalPEM: %v", err)
+	}
+
+	// 重新加载（验证 Load{Public,Private}KeyPEM 路径对 X25519 也走得通）。
+	priv2, err := ecdh.LoadPrivateKeyPEM(curve, privPEM)
+	if err != nil {
+		t.Fatalf("LoadPrivateKeyPEM: %v", err)
+	}
+	pub2, err := ecdh.LoadPublicKeyPEM(curve, pubPEM)
+	if err != nil {
+		t.Fatalf("LoadPublicKeyPEM: %v", err)
+	}
+
+	// derive 路径：同侧对端协商。
+	sharedA, err := priv2.ECDH(pub2)
+	if err != nil {
+		t.Fatalf("ECDH(priv2, pub2): %v", err)
+	}
+	if len(sharedA) != 32 {
+		t.Fatalf("X25519 shared length = %d, want 32", len(sharedA))
+	}
+
+	// 与标准库 crypto/ecdh X25519 比对：通过 x25519.{Private,Public}KeyFromBytes
+	// 加载 PEM → raw 32 字节 → 喂给 stdlib。
+	xPriv, err := x25519.LoadPrivateKeyPEM(privPEM)
+	if err != nil {
+		t.Fatalf("x25519 LoadPrivateKeyPEM: %v", err)
+	}
+	xPub, err := x25519.LoadPublicKeyPEM(pubPEM)
+	if err != nil {
+		t.Fatalf("x25519 LoadPublicKeyPEM: %v", err)
+	}
+	xPrivBytes, err := xPriv.Bytes()
+	if err != nil {
+		t.Fatalf("x25519 Bytes: %v", err)
+	}
+	xPubBytes, err := xPub.Bytes()
+	if err != nil {
+		t.Fatalf("x25519 pub Bytes: %v", err)
+	}
+	stdPriv, err := stdEcdh.X25519().NewPrivateKey(xPrivBytes)
+	if err != nil {
+		t.Fatalf("stdlib NewPrivateKey: %v", err)
+	}
+	stdPub, err := stdEcdh.X25519().NewPublicKey(xPubBytes)
+	if err != nil {
+		t.Fatalf("stdlib NewPublicKey: %v", err)
+	}
+	stdShared, err := stdPriv.ECDH(stdPub)
+	if err != nil {
+		t.Fatalf("stdlib ECDH: %v", err)
+	}
+	if !bytes.Equal(sharedA, stdShared) {
+		t.Fatalf("X25519 mismatch:\n  ours  = %x\n  std   = %x", sharedA, stdShared)
+	}
+
+	// 第二对密钥：ours privC + ours pub2 与 stdlib privC + stdlib pub2 应一致（同一组密钥，
+	// 配对 privC ↔ pub2 + privC ↔ pub2，两端结果应相等）。
+	privC, err := curve.GenerateKey()
+	if err != nil {
+		t.Fatalf("second GenerateKey: %v", err)
+	}
+	pubC := privC.Public()
+	privCPEM, err := privC.MarshalPEM()
+	if err != nil {
+		t.Fatalf("privC MarshalPEM: %v", err)
+	}
+	xPrivC, err := x25519.LoadPrivateKeyPEM(privCPEM)
+	if err != nil {
+		t.Fatalf("x25519 LoadPrivateKeyPEM C: %v", err)
+	}
+	xPub2, err := x25519.LoadPublicKeyPEM(pubPEM)
+	if err != nil {
+		t.Fatalf("x25519 LoadPublicKeyPEM pub2: %v", err)
+	}
+	xPrivCBytes, _ := xPrivC.Bytes()
+	xPub2Bytes, _ := xPub2.Bytes()
+	stdPrivC, err := stdEcdh.X25519().NewPrivateKey(xPrivCBytes)
+	if err != nil {
+		t.Fatalf("stdlib NewPrivateKey C: %v", err)
+	}
+	stdPub2, err := stdEcdh.X25519().NewPublicKey(xPub2Bytes)
+	if err != nil {
+		t.Fatalf("stdlib NewPublicKey 2: %v", err)
+	}
+	sharedC, err := privC.ECDH(pub2)
+	if err != nil {
+		t.Fatalf("ECDH(privC, pub2): %v", err)
+	}
+	stdSharedC, err := stdPrivC.ECDH(stdPub2)
+	if err != nil {
+		t.Fatalf("stdlib ECDH C: %v", err)
+	}
+	if !bytes.Equal(sharedC, stdSharedC) {
+		t.Fatalf("X25519 second pair mismatch:\n  ours = %x\n  std  = %x", sharedC, stdSharedC)
+	}
+
+	// 加密导出 + 回环也走通。
+	enc, err := priv.MarshalEncryptedPEM("test-pass-1234")
+	if err != nil {
+		t.Fatalf("MarshalEncryptedPEM: %v", err)
+	}
+	privLoaded, err := ecdh.LoadEncryptedPEM(curve, enc, "test-pass-1234")
+	if err != nil {
+		t.Fatalf("LoadEncryptedPEM: %v", err)
+	}
+	loadedShared, err := privLoaded.ECDH(pubC)
+	if err != nil {
+		t.Fatalf("loaded ECDH: %v", err)
+	}
+	if !bytes.Equal(loadedShared, sharedC) {
+		t.Fatalf("loaded ECDH diverges from fresh key: %x vs %x", loadedShared, sharedC)
+	}
+}
+
+// TestOKPRejectsECKeys 验证用 OKP 曲线（X25519 / X448）加载 EC 密钥会被拒绝。
+//
+// TestOKPRejectsECKeys verifies that EC keys are rejected when loaded
+// through an OKP curve (X25519 / X448).
+func TestOKPRejectsECKeys(t *testing.T) {
+	priv, err := ecdh.P256().GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	privPEM, err := priv.MarshalPEM()
+	if err != nil {
+		t.Fatalf("MarshalPEM: %v", err)
+	}
+	pubPEM, err := priv.Public().MarshalPEM()
+	if err != nil {
+		t.Fatalf("Public MarshalPEM: %v", err)
+	}
+	for _, curve := range []*ecdh.Curve{ecdh.X25519(), ecdh.X448()} {
+		want := "not " + curve.Name()
+		if _, err := ecdh.LoadPrivateKeyPEM(curve, privPEM); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("%s: load EC private key err = %v, want substring %q", curve.Name(), err, want)
+		}
+		if _, err := ecdh.LoadPublicKeyPEM(curve, pubPEM); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("%s: load EC public key err = %v, want substring %q", curve.Name(), err, want)
+		}
+	}
+}
+
+// TestOKPMismatch 验证 EC 与 OKP 密钥混用会被拒绝（双向）。
+//
+// TestOKPMismatch verifies that mixing an EC key with an OKP key is
+// rejected in both directions.
+func TestOKPMismatch(t *testing.T) {
+	x, err := ecdh.X25519().GenerateKey()
+	if err != nil {
+		t.Fatalf("X25519 GenerateKey: %v", err)
+	}
+	ec, err := ecdh.P256().GenerateKey()
+	if err != nil {
+		t.Fatalf("P256 GenerateKey: %v", err)
+	}
+	if _, err := x.ECDH(ec.Public()); err == nil || !strings.Contains(err.Error(), "curve mismatch") {
+		t.Fatalf("X25519 vs EC: err = %v, want curve mismatch", err)
+	}
+	if _, err := ec.ECDH(x.Public()); err == nil || !strings.Contains(err.Error(), "curve mismatch") {
+		t.Fatalf("EC vs X25519: err = %v, want curve mismatch", err)
+	}
+}
+
+// TestOKPLowOrderPoint 验证低阶点（全零公钥，RFC 7748 §6.1）不会静默产出全零共享密钥。
+//
+// TestOKPLowOrderPoint verifies that a low-order point (all-zero public key,
+// RFC 7748 §6.1) never silently yields an all-zero shared secret, on both OKP
+// curves.
+func TestOKPLowOrderPoint(t *testing.T) {
+	tests := []struct {
+		name     string
+		curve    *ecdh.Curve
+		optional bool
+		lowOrder func() ([]byte, error) // 全零公钥的 SPKI PEM
+	}{
+		{
+			name:  "X25519",
+			curve: ecdh.X25519(),
+			lowOrder: func() ([]byte, error) {
+				k, err := x25519.PublicKeyFromBytes(make([]byte, 32))
+				if err != nil {
+					return nil, err
+				}
+				return k.MarshalPEM()
+			},
+		},
+		{
+			name:     "X448",
+			curve:    ecdh.X448(),
+			optional: true,
+			lowOrder: func() ([]byte, error) {
+				k, err := x448.PublicKeyFromBytes(make([]byte, 56))
+				if err != nil {
+					return nil, err
+				}
+				return k.MarshalPEM()
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			priv, err := tt.curve.GenerateKey()
+			if err != nil {
+				if tt.optional {
+					t.Skipf("%s unavailable in this Tongsuo build: %v", tt.name, err)
+				}
+				t.Fatalf("GenerateKey: %v", err)
+			}
+			pemBytes, err := tt.lowOrder()
+			if err != nil {
+				t.Skipf("provider rejects an all-zero %s public key up front: %v", tt.name, err)
+			}
+			pub, err := ecdh.LoadPublicKeyPEM(tt.curve, pemBytes)
+			if err != nil {
+				t.Fatalf("LoadPublicKeyPEM: %v", err)
+			}
+			if shared, err := priv.ECDH(pub); err == nil {
+				t.Fatalf("low-order point accepted, shared = %x", shared)
+			}
+		})
+	}
+}
+
+// TestX448Roundtrip 验证 ecdh.X448() 的生成、PEM 往返、加密 PEM 回环与 56 字节派生，
+// 并与 crypto/x448 包就同一份 PEM 的密钥对象达成一致。
+//
+// TestX448Roundtrip covers ecdh.X448() keygen, PEM / encrypted-PEM
+// roundtrips and the 56-byte shared secret, and cross-checks that the
+// crypto/x448 package sees the same keys for the same PEM input.
+func TestX448Roundtrip(t *testing.T) {
+	curve := ecdh.X448()
+	if curve == nil || curve.Name() != "X448" {
+		t.Fatalf("X448() curve = %v, want X448", curve)
+	}
+	priv, err := curve.GenerateKey()
+	if err != nil {
+		t.Skipf("X448 unavailable in this Tongsuo build: %v", err)
+	}
+	privPEM, err := priv.MarshalPEM()
+	if err != nil {
+		t.Fatalf("MarshalPEM: %v", err)
+	}
+	pubPEM, err := priv.Public().MarshalPEM()
+	if err != nil {
+		t.Fatalf("Public MarshalPEM: %v", err)
+	}
+	priv2, err := ecdh.LoadPrivateKeyPEM(curve, privPEM)
+	if err != nil {
+		t.Fatalf("LoadPrivateKeyPEM: %v", err)
+	}
+	pub2, err := ecdh.LoadPublicKeyPEM(curve, pubPEM)
+	if err != nil {
+		t.Fatalf("LoadPublicKeyPEM: %v", err)
+	}
+	shared, err := priv2.ECDH(pub2)
+	if err != nil {
+		t.Fatalf("ECDH: %v", err)
+	}
+	if len(shared) != 56 {
+		t.Fatalf("X448 shared length = %d, want 56", len(shared))
+	}
+
+	// crypto/x448 包就同一份 PEM 应得到同一对密钥。
+	xPriv, err := x448.LoadPrivateKeyPEM(privPEM)
+	if err != nil {
+		t.Fatalf("x448 LoadPrivateKeyPEM: %v", err)
+	}
+	xPub, err := x448.LoadPublicKeyPEM(pubPEM)
+	if err != nil {
+		t.Fatalf("x448 LoadPublicKeyPEM: %v", err)
+	}
+	if !priv2.Key().Equal(xPriv.Key()) {
+		t.Fatal("ecdh and crypto/x448 disagree on the private key")
+	}
+	if !pub2.Key().PublicEqual(xPub.Key()) {
+		t.Fatal("ecdh and crypto/x448 disagree on the public key")
+	}
+
+	// 加密 PEM 回环：重新加载后派生结果应不变。
+	enc, err := priv.MarshalEncryptedPEM("test-pass-1234")
+	if err != nil {
+		t.Fatalf("MarshalEncryptedPEM: %v", err)
+	}
+	loaded, err := ecdh.LoadEncryptedPEM(curve, enc, "test-pass-1234")
+	if err != nil {
+		t.Fatalf("LoadEncryptedPEM: %v", err)
+	}
+	loadedShared, err := loaded.ECDH(pub2)
+	if err != nil {
+		t.Fatalf("loaded ECDH: %v", err)
+	}
+	if !bytes.Equal(loadedShared, shared) {
+		t.Fatalf("encrypted PEM roundtrip diverges: %x vs %x", loadedShared, shared)
+	}
+}
+
+// TestSecp256k1Roundtrip 验证 secp256k1 曲线的生成、派生与 PEM 往返；
+// 运行时 provider 不支持该曲线时跳过。
+//
+// TestSecp256k1Roundtrip covers keygen, derivation and PEM roundtrip on
+// secp256k1; it skips when the runtime provider does not support the curve.
+func TestSecp256k1Roundtrip(t *testing.T) {
+	curve := ecdh.Secp256k1()
+	if curve == nil || curve.Name() != "secp256k1" {
+		t.Fatalf("Secp256k1() curve = %v, want secp256k1", curve)
+	}
+	alice, err := curve.GenerateKey()
+	if err != nil {
+		t.Skipf("secp256k1 unsupported by this Tongsuo build: %v", err)
+	}
+	bob, err := curve.GenerateKey()
+	if err != nil {
+		t.Fatalf("second GenerateKey: %v", err)
+	}
+	sa, err := alice.ECDH(bob.Public())
+	if err != nil {
+		t.Fatalf("alice ECDH: %v", err)
+	}
+	sb, err := bob.ECDH(alice.Public())
+	if err != nil {
+		t.Fatalf("bob ECDH: %v", err)
+	}
+	if len(sa) != 32 || !bytes.Equal(sa, sb) {
+		t.Fatalf("secp256k1 shared mismatch (len=%d):\n  %x\n  %x", len(sa), sa, sb)
+	}
+	privPEM, err := alice.MarshalPEM()
+	if err != nil {
+		t.Fatalf("MarshalPEM: %v", err)
+	}
+	if _, err := ecdh.LoadPrivateKeyPEM(curve, privPEM); err != nil {
+		t.Fatalf("LoadPrivateKeyPEM: %v", err)
 	}
 }
