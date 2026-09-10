@@ -2,7 +2,7 @@
 
 本文档规定 `tongsuo-go` 的测试组织、命名以及各类算法**必须覆盖**的用例。
 整体开发规范见 [development-guide.md](development-guide.md)，架构说明见
-[architecture.md](architecture.md)，实施计划见 [roadmap.md](roadmap.md)。
+[architecture.md](architecture.md)。
 
 ---
 
@@ -160,4 +160,6 @@ go test -fuzz FuzzRoundTrip ./crypto/sm4
 | SM3 | GB/T 32905-2016 附录 A |
 | SM4 | GB/T 32907-2016 附录 A |
 | SM2 | GB/T 32918 系列 |
-| AES | NIST FIPS 197 附录 B/C（Phase 4） |
+| AES | NIST FIPS 197 附录 B/C |
+| Ed25519 / Ed448 | RFC 8032 §7.1 / §7.2 |
+| X25519 | RFC 7748 §5.2 / §6.1 |

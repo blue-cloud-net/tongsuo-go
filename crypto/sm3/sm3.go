@@ -10,6 +10,7 @@ import (
 	"hash"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
+	extdigest "github.com/blue-cloud-net/tongsuo-go/internal/digest"
 )
 
 const (
@@ -24,67 +25,26 @@ const (
 )
 
 // New 返回新的 SM3 哈希（hash.Hash），支持流式写入与 Reset。
+// 实际实现委托 internal/digest.NewHash（与 crypto/{md5,sha*} 共用同一实现）。
 // 仅当底层铜锁初始化失败（正常使用不会发生）时 panic。
 //
 // New returns a new SM3 hash implementing the standard hash.Hash interface.
 // It supports streaming writes and reuse via Reset. It panics only if the
 // underlying Tongsuo initialization fails, which does not occur in normal use.
+//
+// The actual implementation delegates to internal/digest.NewHash, sharing
+// the same digest.Hash type with crypto/{md5,sha1,sha256,sha512}.
 func New() hash.Hash {
-	ctx, err := core.NewDigestCtx(core.SM3())
-	if err != nil {
-		panic(err)
-	}
-	return &digest{ctx: ctx}
+	return extdigest.NewHash(core.SM3(), Size, BlockSize)
 }
 
-// digest 是 SM3 的 hash.Hash 实现。
+// digest 复用 internal/digest.Hash；保留同名类型以维持文档与既有调用方
+// 引用（crypto/sm3 的 example 与测试通过 *digest 构造 SM3 New）。
 //
-// digest implements the standard hash.Hash interface for SM3.
-type digest struct {
-	ctx *core.DigestCtx
-}
-
-// Write 追加数据，实现 io.Writer 与 hash.Hash，返回写入字节数；底层铜锁 update 失败时返回错误。
-//
-// Write appends p to the digest state. It returns the number of bytes written
-// and an error if the underlying Tongsuo update fails.
-func (d *digest) Write(p []byte) (n int, err error) {
-	if err := d.ctx.Update(p); err != nil {
-		return 0, err
-	}
-	return len(p), nil
-}
-
-// Sum 返回当前数据的 SM3 摘要追加到 in 后，不改变内部状态。
-//
-// Sum appends the current SM3 digest to in and returns the resulting slice
-// without altering the internal state.
-func (d *digest) Sum(in []byte) []byte {
-	sum, err := d.ctx.Sum()
-	if err != nil {
-		panic(err)
-	}
-	return append(in, sum...)
-}
-
-// Reset 重置哈希状态。
-//
-// Reset clears the digest state so the receiver can be reused.
-func (d *digest) Reset() {
-	if err := d.ctx.Reset(); err != nil {
-		panic(err)
-	}
-}
-
-// Size 返回摘要字节长度。
-//
-// Size returns the byte length of an SM3 digest.
-func (d *digest) Size() int { return Size }
-
-// BlockSize 返回内部分组字节长度。
-//
-// BlockSize returns the internal block size in bytes of the SM3 compression function.
-func (d *digest) BlockSize() int { return BlockSize }
+// digest reuses internal/digest.Hash; the local type alias preserves
+// existing references in package docs and tests that construct *digest
+// directly.
+type digest = extdigest.Hash
 
 // Sum 返回 data 的 SM3 摘要（GB/T 32905-2016）。
 // 仅当底层铜锁操作失败（正常使用不会发生）时 panic。

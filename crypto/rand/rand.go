@@ -32,7 +32,6 @@ import (
 	"fmt"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
-	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
 
 // Read 使用铜锁 RAND_bytes 将加密安全随机字节填充到 b。
@@ -42,6 +41,9 @@ import (
 // 当 len(b) == 0 时返回 (0, nil) 且不调用底层 CSPRNG。CSPRNG 失败时返回 (0, error)，
 // 错误为铜锁 OpError。输出适用于密钥材料、nonce、salt 与 IV。
 //
+// 实现细节：本包不直接依赖 internal/native（保持三层架构依赖方向），而
+// 是通过 core.RandomBytes 这个 core 层薄包装转发到底层 RAND_bytes。
+//
 // Read fills b with cryptographically secure random bytes sourced from
 // Tongsuo RAND_bytes.
 //
@@ -50,12 +52,16 @@ import (
 // or, when len(b) == 0, returns (0, nil) without invoking the underlying
 // CSPRNG. On CSPRNG failure it returns (0, error) wrapping a Tongsuo
 // OpError. The output is suitable for key material, nonces, salts and IVs.
+//
+// Implementation note: to preserve the three-layer dependency direction
+// (API → core → native) the package forwards RAND_bytes calls via the
+// core.RandomBytes thin wrapper rather than importing internal/native.
 func Read(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
 	}
-	if !native.RAND_bytes(b) {
-		return 0, core.NewOpError("rand: RAND_bytes", native.PopError())
+	if err := core.RandomBytes(b); err != nil {
+		return 0, err
 	}
 	return len(b), nil
 }

@@ -11,8 +11,8 @@ import (
 	"encoding/pem"
 	"fmt"
 
-	tx509 "github.com/blue-cloud-net/tongsuo-go/x509"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
+	tx509 "github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
 // Build 构建包含证书集合的 PKCS#7（SignedData，无签名者，仅证书），返回 DER。

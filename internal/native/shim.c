@@ -13,6 +13,21 @@ EVP_PKEY *X_EVP_PKEY_Q_keygen_sm2(void)
     return EVP_PKEY_Q_keygen(NULL, NULL, "SM2");
 }
 
+EVP_PKEY *X_EVP_PKEY_Q_keygen_ed25519(void)
+{
+    return EVP_PKEY_Q_keygen(NULL, NULL, "ED25519");
+}
+
+EVP_PKEY *X_EVP_PKEY_Q_keygen_ed448(void)
+{
+    return EVP_PKEY_Q_keygen(NULL, NULL, "ED448");
+}
+
+EVP_PKEY *X_EVP_PKEY_Q_keygen_x25519(void)
+{
+    return EVP_PKEY_Q_keygen(NULL, NULL, "X25519");
+}
+
 EVP_PKEY *X_PEM_read_bio_PrivateKey(BIO *bp)
 {
     return PEM_read_bio_PrivateKey(bp, NULL, NULL, NULL);
@@ -31,6 +46,13 @@ EVP_PKEY *X_PEM_read_bio_PUBKEY(BIO *bp)
 int X_PEM_write_bio_PUBKEY(BIO *bp, EVP_PKEY *x)
 {
     return PEM_write_bio_PUBKEY(bp, x);
+}
+
+void X_OPENSSL_cleanse(void *ptr, size_t len)
+{
+    if (ptr == NULL || len == 0)
+        return;
+    OPENSSL_cleanse(ptr, len);
 }
 
 X509 *X_PEM_read_bio_X509(BIO *bp)
@@ -56,6 +78,39 @@ int X_PEM_write_bio_X509_REQ(BIO *bp, X509_REQ *x)
 void X_OPENSSL_free(void *ptr)
 {
     OPENSSL_free(ptr);
+}
+
+/*
+ * X_SSL_CTX_set_verify 包装 SSL_CTX_set_verify，固定 callback 为 NULL。
+ *
+ * cgo 不允许 Go 端把 untyped nil 当作 SSL_verify_cb 函数指针传入 C 函
+ * 数（callback 参数为函数指针，类型系统不接受 nil 字面量），所以必须
+ * 由 C shim 把 NULL 显式传入。
+ */
+void X_SSL_CTX_set_verify(SSL_CTX *ctx, int mode)
+{
+    SSL_CTX_set_verify(ctx, mode, NULL);
+}
+
+char *X_X509_verify_cert_error_string(long err)
+{
+    /* X509_verify_cert_error_string 在不同 OpenSSL 版本签名不同；为
+     * 兼容 Tongsuo 8.5 与 OpenSSL 3.x，均返回 const char*，统一返回
+     * 字符串副本（OPENSSL_strdup 由 OPENSSL_free 释放）。 */
+    const char *msg = X509_verify_cert_error_string(err);
+    if (msg == NULL)
+        return NULL;
+    return OPENSSL_strdup(msg);
+}
+
+void X_SSL_CTX_set_verify_depth(SSL_CTX *ctx, int depth)
+{
+    SSL_CTX_set_verify_depth(ctx, depth);
+}
+
+int X_SSL_CTX_set_default_verify_paths(SSL_CTX *ctx)
+{
+    return SSL_CTX_set_default_verify_paths(ctx);
 }
 
 int X_X509_NAME_entry_count(const X509_NAME *n)
@@ -107,6 +162,19 @@ int X_X509V3_EXT_conf_nid_ctx(X509 *target, X509 *subject, X509 *issuer,
     if (ext == NULL)
         return 0;
     int ok = X509_add_ext(target, ext, -1);
+    X509_EXTENSION_free(ext);
+    return ok;
+}
+
+int X_X509V3_EXT_conf_nid_ctx_crl(X509_CRL *target, X509 *issuer,
+                                   int nid, const char *value)
+{
+    X509V3_CTX ctx;
+    X509V3_set_ctx(&ctx, issuer, NULL, NULL, NULL, 0);
+    X509_EXTENSION *ext = X509V3_EXT_conf_nid(NULL, &ctx, nid, value);
+    if (ext == NULL)
+        return 0;
+    int ok = X509_CRL_add_ext(target, ext, -1);
     X509_EXTENSION_free(ext);
     return ok;
 }
@@ -406,6 +474,52 @@ int X_PEM_write_bio_X509_CRL(BIO *bp, X509_CRL *x)
     return PEM_write_bio_X509_CRL(bp, x);
 }
 
+/*
+ * X_X509_CRL_get_akid_keyid 取出 CRL 的 AuthorityKeyIdentifier 扩展 keyid 字节。
+ *
+ * 实现要点（OpenSSL 3.x / Tongsuo 8.5+）：
+ *   X509_CRL_get_ext_d2i 返回的 AUTHORITY_KEYID 必须由 AUTHORITY_KEYID_free 释放；
+ *   而 AUTHORITY_KEYID.keyid 指向的 ASN1_OCTET_STRING 的 data 缓冲会被该 free 一并
+ *   释放，因此不能直接返回 akid->keyid 的内部指针（use-after-free）。
+ *   这里先 CRYPTO_malloc 一块独立缓冲 memcpy，再 AUTHORITY_KEYID_free，最后返回
+ *   CRYPTO_malloc 出来的指针——调用方必须通过 X_OPENSSL_free 释放。
+ *
+ * out_len 非 NULL 时写入 keyid 字节长度；crl 异常或提取失败返回 NULL。
+ */
+unsigned char *X_X509_CRL_get_akid_keyid(X509_CRL *crl, int *out_len)
+{
+    if (crl == NULL || out_len == NULL)
+        return NULL;
+    AUTHORITY_KEYID *akid = (AUTHORITY_KEYID *)X509_CRL_get_ext_d2i(
+        crl, NID_authority_key_identifier, NULL, NULL);
+    if (akid == NULL) {
+        *out_len = 0;
+        return NULL;
+    }
+    if (akid->keyid == NULL) {
+        /* akid 结构本身已分配但无 keyid 字段，仍须释放以免泄漏。 */
+        AUTHORITY_KEYID_free(akid);
+        *out_len = 0;
+        return NULL;
+    }
+    int len = ASN1_STRING_length((ASN1_STRING *)akid->keyid);
+    const unsigned char *src = ASN1_STRING_get0_data((ASN1_STRING *)akid->keyid);
+    /* CRYPTO_malloc 与 X_OPENSSL_free 配对使用，绕过 AUTHORITY_KEYID_free 对
+     * akid->keyid 内部 data 缓冲的副作用（OpenSSL 3.x 中 ASN1_STRING_free 会
+     * 释放该缓冲，导致 memcpy 之后再返回原指针变为 use-after-free）。 */
+    unsigned char *buf = (unsigned char *)CRYPTO_malloc((size_t)len, NULL, 0);
+    if (buf == NULL) {
+        AUTHORITY_KEYID_free(akid);
+        *out_len = 0;
+        return NULL;
+    }
+    if (len > 0)
+        memcpy(buf, src, (size_t)len);
+    AUTHORITY_KEYID_free(akid);
+    *out_len = len;
+    return buf;
+}
+
 EVP_PKEY *X_EVP_PKEY_Q_keygen_rsa(int bits)
 {
     return EVP_PKEY_Q_keygen(NULL, NULL, "RSA", (size_t)bits);
@@ -425,6 +539,11 @@ static int X_PEM_pass_cb(char *buf, int size, int rwflag, void *u)
     if (n > size)
         n = size;
     memcpy(buf, pass, n);
+    /* 注意：不要 cleanse buf——OpenSSL 在 cb 返回后还会读取 buf 的前 n 字节
+     * 用作解密口令，立即清零会让 OpenSSL 解密失败。
+     * OpenSSL 自身负责 buf 的生命周期（其内部的 umem / stack 缓冲会随
+     * PEM 解析结束被覆盖或释放）；本回调专注于"复制口令"，不干预后续。
+     * 对 Go 侧 C.CString 拷贝的清零应在调用方控制，参见 native.Cleanse。 */
     return n;
 }
 
@@ -495,4 +614,99 @@ int X_OCSP_basic_verify(OCSP_BASICRESP *bs, void *certs, X509_STORE *st,
                         unsigned long flags)
 {
     return OCSP_basic_verify(bs, (STACK_OF(X509) *)certs, st, flags);
+}
+
+/*
+ * X_EVP_KDF_HKDF：一次性 HKDF（RFC 5869）派生。
+ * mode 取 EVP_KDF_HKDF_MODE_*（0=extract-and-expand）。key/salt/info 为空时
+ * 对应参数不设置（extract-and-expand 缺 salt 视为全零盐）。
+ */
+int X_EVP_KDF_HKDF(const char *digest, int mode,
+                   const unsigned char *key, size_t key_len,
+                   const unsigned char *salt, size_t salt_len,
+                   const unsigned char *info, size_t info_len,
+                   unsigned char *out, size_t out_len)
+{
+    EVP_KDF *kdf = NULL;
+    EVP_KDF_CTX *ctx = NULL;
+    OSSL_PARAM params[6];
+    int idx = 0;
+    int ok = 0;
+
+    kdf = EVP_KDF_fetch(NULL, "HKDF", NULL);
+    if (kdf == NULL)
+        goto end;
+    ctx = EVP_KDF_CTX_new(kdf);
+    if (ctx == NULL)
+        goto end;
+    if (digest != NULL)
+        params[idx++] = OSSL_PARAM_construct_utf8_string(
+            OSSL_KDF_PARAM_DIGEST, (char *)digest, 0);
+    params[idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_MODE, &mode);
+    if (key != NULL)
+        params[idx++] = OSSL_PARAM_construct_octet_string(
+            OSSL_KDF_PARAM_KEY, (void *)key, key_len);
+    if (salt != NULL)
+        params[idx++] = OSSL_PARAM_construct_octet_string(
+            OSSL_KDF_PARAM_SALT, (void *)salt, salt_len);
+    if (info != NULL)
+        params[idx++] = OSSL_PARAM_construct_octet_string(
+            OSSL_KDF_PARAM_INFO, (void *)info, info_len);
+    params[idx] = OSSL_PARAM_construct_end();
+    ok = EVP_KDF_derive(ctx, out, out_len, params) == 1;
+end:
+    EVP_KDF_CTX_free(ctx);
+    EVP_KDF_free(kdf);
+    return ok;
+}
+
+/*
+ * X_EVP_KDF_PBKDF2：一次性 PBKDF2（RFC 8018）派生。
+ * iter 为迭代次数；pass 为空时参数不设置（provider 侧将报错）。
+ */
+int X_EVP_KDF_PBKDF2(const char *digest,
+                     const unsigned char *pass, size_t pass_len,
+                     const unsigned char *salt, size_t salt_len,
+                     int iter,
+                     unsigned char *out, size_t out_len)
+{
+    EVP_KDF *kdf = NULL;
+    EVP_KDF_CTX *ctx = NULL;
+    OSSL_PARAM params[5];
+    int idx = 0;
+    int ok = 0;
+
+    kdf = EVP_KDF_fetch(NULL, "PBKDF2", NULL);
+    if (kdf == NULL)
+        goto end;
+    ctx = EVP_KDF_CTX_new(kdf);
+    if (ctx == NULL)
+        goto end;
+    if (digest != NULL)
+        params[idx++] = OSSL_PARAM_construct_utf8_string(
+            OSSL_KDF_PARAM_DIGEST, (char *)digest, 0);
+    if (pass != NULL)
+        params[idx++] = OSSL_PARAM_construct_octet_string(
+            OSSL_KDF_PARAM_PASSWORD, (void *)pass, pass_len);
+    if (salt != NULL)
+        params[idx++] = OSSL_PARAM_construct_octet_string(
+            OSSL_KDF_PARAM_SALT, (void *)salt, salt_len);
+    params[idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_ITER, &iter);
+    params[idx] = OSSL_PARAM_construct_end();
+    ok = EVP_KDF_derive(ctx, out, out_len, params) == 1;
+end:
+    EVP_KDF_CTX_free(ctx);
+    EVP_KDF_free(kdf);
+    return ok;
+}
+
+int X_EVP_KDF_available(const char *algorithm)
+{
+    EVP_KDF *kdf = EVP_KDF_fetch(NULL, algorithm, NULL);
+    if (kdf == NULL) {
+        ERR_clear_error();
+        return 0;
+    }
+    EVP_KDF_free(kdf);
+    return 1;
 }

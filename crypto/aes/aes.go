@@ -91,11 +91,21 @@ func newNoPadCtx(key []byte, c *core.Cipher, enc bool) (*core.CipherCtx, error) 
 
 // aesBlock 是基于铜锁 EVP 的 AES 单块加密封装，实现 cipher.Block。
 //
-// aesBlock implements cipher.Block for AES by wrapping two Tongsuo EVP
-// cipher contexts (encryption and decryption) with padding disabled.
+// aesBlock 持有两个不可变的"模板"上下文（encTpl/decTpl），从未调用 Update；
+// 每次 Encrypt/Decrypt 都通过 EVP_CIPHER_CTX_copy 复制模板得到独立的副
+// 本，并在副本上调 Update——这样 Block 实例可被多个 goroutine 并发复用，
+// 与 Go 标准库 cipher.Block 的并发安全契约对齐。
+//
+// aesBlock implements cipher.Block for AES.
+//
+// The type keeps two untouched "template" contexts (encTpl/decTpl)
+// built from the original key. Every Encrypt/Decrypt call deep-copies
+// the template via EVP_CIPHER_CTX_copy and operates on the copy, so
+// the same Block can be safely shared across goroutines — matching
+// the concurrency contract of Go's stdlib cipher.Block.
 type aesBlock struct {
-	enc *core.CipherCtx // ECB、无填充
-	dec *core.CipherCtx
+	encTpl *core.CipherCtx // ECB / 无填充，加密模板（永不在其上调 Update）
+	decTpl *core.CipherCtx // ECB / 无填充，解密模板（永不在其上调 Update）
 }
 
 // NewCipher 返回使用给定密钥的 AES 分组加密器（cipher.Block）。
@@ -103,45 +113,62 @@ type aesBlock struct {
 //
 // 返回的 Block 仅执行裸 16 字节分组变换，不做填充、不使用 IV；在上层链式模式
 // （CBC、CTR ...）中由调用方自行提供 IV。
+// 同一 Block 实例可被多个 goroutine 并发复用（与 stdlib 一致）。
 //
 // NewCipher returns an AES cipher.Block configured with the given key.
 //
 // key must be exactly 16 bytes (AES-128) or 32 bytes (AES-256); any other
 // length returns an error. The returned Block performs raw 16-byte block
 // transforms with no padding and no IV; callers supply an IV themselves
-// when chaining it in a higher-level mode (CBC, CTR, ...).
+// when chaining it in a higher-level mode (CBC, CTR, ...). The same
+// Block is safe for concurrent use by multiple goroutines.
+//
+// 安全：key 仅在构造时使用一次并复制到底层 EVP_CIPHER_CTX；本函数不会持有明文副本。
+// 由于编译器允许消除看似无副作用的清零循环，**调用方有责任在使用完毕后清零 key 切片**。
 func NewCipher(key []byte) (cipher.Block, error) {
 	c, err := aesCipher(key, "ecb")
 	if err != nil {
 		return nil, err
 	}
-	enc, err := newNoPadCtx(key, c, true)
+	encTpl, err := newNoPadCtx(key, c, true)
 	if err != nil {
 		return nil, err
 	}
-	dec, err := newNoPadCtx(key, c, false)
+	decTpl, err := newNoPadCtx(key, c, false)
 	if err != nil {
-		_ = enc.Close()
+		_ = encTpl.Close()
 		return nil, err
 	}
-	return &aesBlock{enc: enc, dec: dec}, nil
+	return &aesBlock{encTpl: encTpl, decTpl: decTpl}, nil
 }
 
 // Encrypt 加密一个分组（16 字节）。
 // 若 dst 或 src 长度不足 16 字节，或底层 EVP 计算失败，会 panic。
+//
+// 内部从加密模板 EVP_CIPHER_CTX_copy 一份独立副本并立即调 Update+Close，
+// 保证模板不被并发调用方共享。
 //
 // 分组密码本身不提供完整性保护；需要认证加密时请使用 AEAD 模式（GCM）。
 //
 // Encrypt encrypts a single AES block (16 bytes) from src into dst.
 //
 // It panics if len(dst) < 16, len(src) < 16, or the underlying EVP call
-// fails. The block cipher does not provide integrity protection on its
-// own; prefer an AEAD mode (GCM) for authenticated encryption.
+// fails. Internally the call copies the encryption template via
+// EVP_CIPHER_CTX_copy and runs Update on the independent copy, so
+// concurrent goroutines each see their own context.
+//
+// The block cipher does not provide integrity protection on its own;
+// prefer an AEAD mode (GCM) for authenticated encryption.
 func (b *aesBlock) Encrypt(dst, src []byte) {
 	if len(dst) < BlockSize || len(src) < BlockSize {
 		panic("aes: invalid block size")
 	}
-	out, err := b.enc.Update(src[:BlockSize])
+	ctx, err := b.encTpl.Clone()
+	if err != nil {
+		panic(err)
+	}
+	defer ctx.Close()
+	out, err := ctx.Update(src[:BlockSize])
 	if err != nil {
 		panic(err)
 	}
@@ -150,12 +177,19 @@ func (b *aesBlock) Encrypt(dst, src []byte) {
 
 // Decrypt 解密一个分组（16 字节），若 dst 或 src 长度不足 16 字节，或底层 EVP 计算失败，会 panic。
 //
-// Decrypt decrypts a single AES block (16 bytes) from src into dst; it panics if len(dst) < 16, len(src) < 16, or the underlying EVP call fails.
+// 内部从解密模板 EVP_CIPHER_CTX_copy 一份独立副本并立即调 Update+Close。
+//
+// Decrypt decrypts a single AES block (16 bytes) from src into dst; it panics if len(dst) < 16, len(src) < 16, or the underlying EVP call fails. Internally the call copies the decryption template via EVP_CIPHER_CTX_copy and runs Update on the independent copy.
 func (b *aesBlock) Decrypt(dst, src []byte) {
 	if len(dst) < BlockSize || len(src) < BlockSize {
 		panic("aes: invalid block size")
 	}
-	out, err := b.dec.Update(src[:BlockSize])
+	ctx, err := b.decTpl.Clone()
+	if err != nil {
+		panic(err)
+	}
+	defer ctx.Close()
+	out, err := ctx.Update(src[:BlockSize])
 	if err != nil {
 		panic(err)
 	}
@@ -270,6 +304,9 @@ func DecryptCTR(key, iv, data []byte) ([]byte, error) {
 // breaks both confidentiality and authenticity. key must be 16 (AES-128)
 // or 32 (AES-256) bytes. tag is always TagSize (16) bytes.
 func EncryptGCM(key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, err error) {
+	if len(nonce) != NonceSize {
+		return nil, nil, fmt.Errorf("aes: invalid nonce size %d, want %d", len(nonce), NonceSize)
+	}
 	c, err := aesCipher(key, "gcm")
 	if err != nil {
 		return nil, nil, err
@@ -307,6 +344,9 @@ func EncryptGCM(key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, err 
 // must treat the error as an authentication failure and discard the
 // returned plaintext rather than act on it.
 func DecryptGCM(key, nonce, ciphertext, tag, aad []byte) ([]byte, error) {
+	if len(nonce) != NonceSize {
+		return nil, fmt.Errorf("aes: invalid nonce size %d, want %d", len(nonce), NonceSize)
+	}
 	c, err := aesCipher(key, "gcm")
 	if err != nil {
 		return nil, err
@@ -350,6 +390,9 @@ type aesGCM struct {
 // (the tag is appended after ciphertext); the AEAD nonce length is NonceSize
 // and the authentication overhead is TagSize. The same nonce-reuse warning
 // as EncryptGCM applies.
+//
+// 安全：AEAD 实例保留对 key 切片的引用（每次 Seal/Open 都复用）；
+// **调用方有责任在使用完毕后清零 key 切片**（本函数不会拷贝 key 也不持有清零能力）。
 func NewGCM(key []byte) (cipher.AEAD, error) {
 	if len(key) != 16 && len(key) != 32 {
 		return nil, fmt.Errorf("aes: invalid key size %d, want 16 or 32", len(key))

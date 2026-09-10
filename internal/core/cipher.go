@@ -365,6 +365,48 @@ func (c *CipherCtx) Close() error {
 	return c.handle.Close()
 }
 
+// Clone 深拷贝当前 CipherCtx 状态（算法、密钥、IV、加密/解密方向、padding 标志等）
+// 到一个新的 *CipherCtx。
+//
+// 返回的 *CipherCtx 拥有独立的底层 EVP_CIPHER_CTX，可独立用于 Update/Final；
+// 调用方负责 Close 释放副本。原 CipherCtx 不受影响；可继续作为"模板"复用，
+// 与 Go 标准库 cipher.Block 的"可被多 goroutine 并发调用"语义对齐。
+//
+// 用于：cipher.Block 实现（aesBlock/sm4Block）持有一个永不调用 Update 的模板
+// 上下文，每次 Encrypt/Decrypt 复制一份副本调用——避免多 goroutine 复用同一个
+// 可变 EVP_CIPHER_CTX 引发数据竞争。
+//
+// 已关闭的 CipherCtx 上调用 Clone 返回 "cipher: context closed"；底层
+// EVP_CIPHER_CTX_copy 失败包装为 OpError。
+//
+// Clone deep-copies the state of the receiver (algorithm, key, IV,
+// direction, padding flag, ...) into a fresh *CipherCtx.
+//
+// The returned context owns an independent EVP_CIPHER_CTX and may be
+// used concurrently with the original. The caller is responsible for
+// invoking Close on the clone. The receiver is left untouched and
+// remains usable as a template.
+//
+// This is used by cipher.Block implementations (aesBlock/sm4Block) to
+// satisfy the stdlib contract that Block instances are safe for
+// concurrent use: the implementation keeps an untouched "template"
+// context and copies it on every Encrypt/Decrypt call.
+func (c *CipherCtx) Clone() (*CipherCtx, error) {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil, fmt.Errorf("cipher: context closed")
+	}
+	dst := native.EVP_CIPHER_CTX_new()
+	if dst == nil {
+		return nil, NewOpError("cipher: EVP_CIPHER_CTX_new", native.PopError())
+	}
+	dstHandle := NewHandle(dst, true, native.EVP_CIPHER_CTX_free)
+	if !native.EVP_CIPHER_CTX_copy(dst, c.handle.Ptr()) {
+		_ = dstHandle.Close()
+		return nil, NewOpError("cipher: EVP_CIPHER_CTX_copy", native.PopError())
+	}
+	return &CipherCtx{handle: dstHandle, cipher: c.cipher, enc: c.enc, pad: c.pad}, nil
+}
+
 // NewGcmCtx 以 GCM 两步初始化方式创建加密/解密上下文。
 //
 // 序列（经验证，与官方 tongsuo-go-sdk 一致）：

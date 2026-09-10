@@ -66,3 +66,67 @@ func TestPEMRoundtrip(t *testing.T) {
 		t.Fatalf("PEM roundtrip mismatch: %v", certs)
 	}
 }
+
+// TestBuildEmpty 验证空证书切片返回有效 DER（OpenSSL 允许空 SignedData）。
+func TestBuildEmpty(t *testing.T) {
+	der, err := Build(nil)
+	if err != nil {
+		t.Fatalf("Build(nil): %v", err)
+	}
+	if len(der) == 0 {
+		t.Fatal("Build(nil) returned empty DER")
+	}
+}
+
+// TestExtractInvalidDER 验证非法 DER / PEM 返回错误。
+func TestExtractInvalidDER(t *testing.T) {
+	if _, err := Extract([]byte("garbage")); err == nil {
+		t.Fatal("garbage should error")
+	}
+	if _, err := Extract(nil); err == nil {
+		t.Fatal("nil should error")
+	}
+	if _, err := Extract([]byte("not pem either")); err == nil {
+		t.Fatal("invalid data should error")
+	}
+}
+
+// TestMarshalPEMRoundtrip 验证 PEM 多次编码后仍可被 Extract。
+func TestMarshalPEMRoundtrip(t *testing.T) {
+	c1 := makeCert(t, "marshal.pkcs7.dev", 5)
+	der, _ := Build([]*x509.Certificate{c1})
+	pem1 := MarshalPEM(der)
+	// 再次 marshal（DER 与 PEM 等价输入应都能解码）
+	certs, err := Extract(pem1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(certs) != 1 {
+		t.Fatalf("MarshalPEM roundtrip count = %d, want 1", len(certs))
+	}
+}
+
+// TestBuildOrder 验证证书顺序保持（先进先出）。
+func TestBuildOrder(t *testing.T) {
+	cs := []*x509.Certificate{
+		makeCert(t, "first", 1),
+		makeCert(t, "second", 2),
+		makeCert(t, "third", 3),
+	}
+	der, err := Build(cs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Extract(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d certs, want 3", len(got))
+	}
+	for i, want := range []string{"first", "second", "third"} {
+		if got[i].Subject() != want {
+			t.Errorf("position %d: got %q, want %q", i, got[i].Subject(), want)
+		}
+	}
+}

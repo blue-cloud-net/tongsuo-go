@@ -154,6 +154,58 @@ func (c *CRL) RevokedEntries() []RevokedEntry {
 	return out
 }
 
+// Signature 返回 CRL 的原始签名字节（DER 编码）；CRL 无效或未签名返回 nil。
+//
+// Signature returns the CRL's raw signature bytes (DER-encoded), or nil when the CRL is invalid or has no signature.
+func (c *CRL) Signature() []byte { return c.crl.Signature() }
+
+// SignatureAlgorithm 返回 CRL 签名算法的短名（如 "SM2-SM3"、"RSA-SHA256"、"ecdsa-with-SHA256"）；不可识别返回 ""。
+//
+// SignatureAlgorithm returns the signature algorithm short name (for example "SM2-SM3", "RSA-SHA256", or "ecdsa-with-SHA256"), or "" when the algorithm is not recognized.
+func (c *CRL) SignatureAlgorithm() string { return c.crl.SignatureAlgorithm() }
+
+// SignatureAlgorithmOID 返回 CRL 签名算法的 OID 点分文本（如 "1.2.156.10197.1.501"、"1.2.840.113549.1.1.11"）；不可读取返回 ""。
+//
+// SignatureAlgorithmOID returns the signature algorithm OID as a dotted string (for example "1.2.156.10197.1.501" for SM2-with-SM3 or "1.2.840.113549.1.1.11" for sha256WithRSAEncryption), or "" when the OID cannot be read.
+func (c *CRL) SignatureAlgorithmOID() string { return c.crl.SignatureAlgorithmOID() }
+
+// AuthorityKeyID 返回 authorityKeyIdentifier 扩展中 keyid 的字节；无则返回 nil。
+//
+// AuthorityKeyID returns the keyid bytes of the authorityKeyIdentifier extension, or nil when the extension is absent.
+func (c *CRL) AuthorityKeyID() []byte { return c.crl.AuthorityKeyID() }
+
+// Number 返回 CRL Number 扩展的整数值；无 CRL Number 扩展或无效返回 -1。
+//
+// Number returns the integer value of the CRL Number extension, or -1 when no CRL Number extension is present.
+func (c *CRL) Number() int64 { return c.crl.Number() }
+
+// Extensions 返回 CRL 中的全部扩展（按出现顺序）。
+//
+// Extensions returns every extension of the CRL in the order they appear.
+func (c *CRL) Extensions() []Extension { return convertExtensions(c.crl.Extensions()) }
+
+// IssuerEntries 返回签发者的完整 RDN 条目。
+//
+// IssuerEntries returns every RDN entry of the issuer in the order they appear in the CRL.
+func (c *CRL) IssuerEntries() []NameEntry {
+	n := c.crl.Issuer()
+	if n == nil {
+		return nil
+	}
+	return convertEntries(n.Entries())
+}
+
+// IssuerText 返回签发者完整 RDN 单行文本。
+//
+// IssuerText returns the issuer's full RDN sequence as a single-line string.
+func (c *CRL) IssuerText() string {
+	n := c.crl.Issuer()
+	if n == nil {
+		return ""
+	}
+	return n.String()
+}
+
 // IsRevoked 报告证书是否在此 CRL 中被吊销（仅按序列号匹配）。
 //
 // IsRevoked reports whether cert is revoked by this CRL. Matching is performed by serial number only.
@@ -170,15 +222,54 @@ func (c *CRL) IsRevoked(cert *Certificate) bool {
 	return false
 }
 
+// Close 释放底层 X509_CRL 句柄。
+//
+// 调用是幂等的：对 nil 接收者或已关闭的 CRL 调用返回 nil，不产生副作用。
+//
+// Close releases the underlying X509_CRL handle.
+//
+// The call is idempotent: invoking it on a nil receiver or on a CRL
+// that has already been closed returns nil without further side effects.
+func (c *CRL) Close() error {
+	if c == nil || c.crl == nil {
+		return nil
+	}
+	return c.crl.Close()
+}
+
+// AddAuthorityKeyID 向 CRL 追加 authorityKeyIdentifier 扩展（keyid 取自 issuer 的 SKID 或公钥）。
+// 须在 MarshalPEM / MarshalDER 之前调用；底层 OpenSSL 错误以 OpError 包装。
+//
+// AddAuthorityKeyID appends an authorityKeyIdentifier extension to the CRL.
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (c *CRL) AddAuthorityKeyID(issuer *Certificate) error {
+	if c == nil || c.crl == nil {
+		return fmt.Errorf("x509: nil CRL")
+	}
+	if issuer == nil {
+		return fmt.Errorf("x509: nil issuer certificate")
+	}
+	return c.crl.AddAuthorityKeyID(issuer.cert)
+}
+
 // RevocationCheck 检查证书是否被任一 CRL 吊销。
 // 仅当 CRL 的签发者与证书签发者一致且序列号匹配时判定为已吊销。
 // 未吊销返回 nil；已吊销返回描述性错误。
 //
-// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+// ⚠️ 信任前提：本函数**不校验 CRL 的签名/有效期**——它只做 issuer 名 +
+// serial 的匹配。调用方必须先通过 CRL.Verify（或证书链验证流程）确认每张
+// CRL 由可信签发者签名且未过期，再把该 CRL 传入；对不可信/被篡改的 CRL，
+// 任何能伪造同名签发者的输入都可能让任意序列号被误报为已吊销。
 //
 // RevocationCheck reports whether cert is revoked by any of the supplied CRLs. A CRL is only considered when its issuer matches the certificate's issuer and the serial number matches; an unrevoked certificate yields nil, while a revoked one produces a descriptive error.
 //
-// On failure, it returns an error wrapping an OpError describing the operation.
+// ⚠️ Trust precondition: this function does NOT verify the CRL's signature
+// or validity window — it only matches issuer name + serial. Callers MUST
+// first confirm each CRL is signed by a trusted issuer and still in
+// force (via CRL.Verify or a chain-validation flow) before passing it
+// in; an untrusted / tampered CRL with a forged same-name issuer could
+// otherwise make any serial number appear revoked.
 func RevocationCheck(cert *Certificate, crls []*CRL) error {
 	if cert == nil {
 		return fmt.Errorf("x509: nil certificate")
@@ -191,4 +282,33 @@ func RevocationCheck(cert *Certificate, crls []*CRL) error {
 		ccrls = append(ccrls, c.crl)
 	}
 	return core.RevocationCheck(cert.cert, ccrls)
+}
+
+// Verify 校验 CRL 的签名（以签发者证书 issuer 的公钥），用于在把 CRL 交给
+// RevocationCheck 之前确认其真实性。
+//
+// issuer 支持 SM2 / RSA / ECDSA 证书；验签使用 CRL 内声明的签名算法与摘要。
+// 验签失败返回错误（含底层 OpError）；nil 接收者/签发者返回相应错误。
+//
+// Verify checks the CRL signature against the public key of the issuer
+// certificate, letting callers establish trust before handing the CRL
+// to RevocationCheck.
+//
+// issuer supports SM2 / RSA / ECDSA certificates; verification uses the
+// signature algorithm and digest recorded in the CRL. A failed check
+// returns an error (including the wrapped OpError); nil receivers /
+// issuers return explicit errors.
+func (c *CRL) Verify(issuer *Certificate) error {
+	if c == nil || c.crl == nil {
+		return fmt.Errorf("x509: nil CRL")
+	}
+	if issuer == nil {
+		return fmt.Errorf("x509: nil issuer certificate")
+	}
+	pub, err := issuer.PublicKeyPKey()
+	if err != nil {
+		return err
+	}
+	defer pub.Close()
+	return c.crl.Verify(pub)
 }

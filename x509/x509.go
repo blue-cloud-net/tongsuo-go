@@ -175,7 +175,46 @@ func (c *Certificate) SAN() []string { return c.cert.SAN() }
 // KeyUsage 返回证书 KeyUsage 能力位名称列表（如 ["digitalSignature"]）；无则 nil。
 //
 // KeyUsage returns the certificate's KeyUsage bit names (for example ["digitalSignature"]). It returns nil when no KeyUsage extension is present.
-func (c *Certificate) KeyUsage() []string { return c.cert.KeyUsage() }
+//
+// 位→名称映射遵循 RFC 5280 §4.2.1.3（固定的 9 位）：位序低→高依次为
+// digitalSignature、nonRepudiation、keyEncipherment、dataEncipherment、
+// keyAgreement、keyCertSign、cRLSign、encipherOnly、decipherOnly。位图来自
+// core.Certificate.KeyUsageBits。
+//
+// The bit-to-name mapping follows RFC 5280 §4.2.1.3 (nine fixed bits):
+// digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment,
+// keyAgreement, keyCertSign, cRLSign, encipherOnly, decipherOnly (least to
+// most significant). The bitmask comes from core.Certificate.KeyUsageBits.
+func (c *Certificate) KeyUsage() []string {
+	bits := c.cert.KeyUsageBits()
+	if bits == 0 {
+		return nil
+	}
+	out := make([]string, 0, 9)
+	for b, name := range keyUsageNames {
+		if bits&(1<<uint(b)) != 0 {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// keyUsageNames 为 RFC 5280 §4.2.1.3 KeyUsage 位（0–8）到短名的映射，
+// 与 openssl x509 -text 输出一致。
+//
+// keyUsageNames maps the RFC 5280 §4.2.1.3 KeyUsage bits (0-8) to their
+// short names, matching the human-readable form of `openssl x509 -text`.
+var keyUsageNames = [...]string{
+	"digitalSignature",
+	"nonRepudiation",
+	"keyEncipherment",
+	"dataEncipherment",
+	"keyAgreement",
+	"keyCertSign",
+	"cRLSign",
+	"encipherOnly",
+	"decipherOnly",
+}
 
 // ExtendedKeyUsage 返回证书 EKU 条目（如 ["serverAuth"]）；无则 nil。
 //
@@ -209,18 +248,19 @@ func (c *Certificate) CertificateType() string { return c.cert.CertificateType()
 
 // Extension 表示证书/CSR 中的一个 X.509 扩展。
 //
-// Nid 为扩展 NID；Field 与 Critical 在读取时填充；
+// Nid 为扩展 NID；Field、OID 与 Critical 在读取时填充；
 // Value 为构建时使用的 X509V3_EXT_conf 配置串；
 // Data 为 DER 编码的扩展值（读取时填充）。
 //
 // Extension represents a single X.509 extension on a certificate or CSR.
 //
-// Nid is the extension NID. Field and Critical are populated on read.
+// Nid is the extension NID. Field, OID and Critical are populated on read.
 // Value holds an X509V3_EXT_conf configuration string used while building.
 // Data holds the DER-encoded extension value (populated on read).
 type Extension struct {
 	Nid      int    // 扩展 NID
 	Field    string // 扩展短名（读取时填充，如 "subjectAltName"）
+	OID      string // 扩展点分 OID（读取时填充，如 "2.5.29.17"；OBJ_obj2txt(_,_,_,1)）
 	Critical bool   // critical 标志（读取时填充）
 	Value    string // X509V3_EXT_conf 配置串（构建时使用，如 "DNS:example.com"）
 	Data     []byte // DER 编码的扩展值（读取时填充）
@@ -469,6 +509,46 @@ func (c *Certificate) Verify(signerPub PublicKey) error {
 	return c.cert.Verify(signerPub.Key())
 }
 
+// SelfSigned 报告证书是否为自签（主题与签发者名字完全一致，且签名可被自身公钥验证通过）。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// SelfSigned reports whether the certificate is self-signed (subject and issuer names match exactly, and the signature verifies against the certificate's own public key).
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (c *Certificate) SelfSigned() (bool, error) {
+	if c == nil {
+		return false, fmt.Errorf("x509: nil certificate")
+	}
+	if c.SubjectText() != c.IssuerText() {
+		return false, nil
+	}
+	pub, err := c.PublicKey()
+	if err != nil {
+		return false, err
+	}
+	if err := c.Verify(pub); err != nil {
+		// 签名不通过：仍视为"主题/签发者同名"但非真正自签，返回 false 且无错误。
+		return false, nil
+	}
+	return true, nil
+}
+
+// Signature 返回证书的原始签名字节（DER 编码）；证书无效或未签名返回 nil。
+//
+// Signature returns the certificate's raw signature bytes (DER-encoded), or nil when the certificate is invalid or has no signature.
+func (c *Certificate) Signature() []byte { return c.cert.Signature() }
+
+// SignatureAlgorithm 返回证书签名算法的短名（如 "SM2-SM3"、"RSA-SHA256"、"ecdsa-with-SHA256"）；不可识别返回 ""。
+//
+// SignatureAlgorithm returns the signature algorithm short name (for example "SM2-SM3", "RSA-SHA256", or "ecdsa-with-SHA256"), or "" when the algorithm is not recognized.
+func (c *Certificate) SignatureAlgorithm() string { return c.cert.SignatureAlgorithm() }
+
+// SignatureAlgorithmOID 返回证书签名算法的 OID 点分文本（如 "1.2.156.10197.1.501"、"1.2.840.113549.1.1.11"）；不可读取返回 ""。
+//
+// SignatureAlgorithmOID returns the signature algorithm OID as a dotted string (for example "1.2.156.10197.1.501" for SM2-with-SM3 or "1.2.840.113549.1.1.11" for sha256WithRSAEncryption), or "" when the OID cannot be read.
+func (c *Certificate) SignatureAlgorithmOID() string { return c.cert.SignatureAlgorithmOID() }
+
 // PublicKey 表示可作为证书公钥的非对称密钥（SM2 / RSA / ECDSA）。
 //
 // PublicKey is the interface satisfied by asymmetric keys usable as a certificate public key (SM2 / RSA / ECDSA).
@@ -494,7 +574,7 @@ type PrivateKey interface {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func CreateCertificate(subject, issuer *Name, serial int64, notBefore, notAfter time.Time,
-	pub PublicKey, signer PrivateKey) (*Certificate, error) {
+	pub PublicKey, signer PrivateKey) (ret *Certificate, retErr error) {
 	if subject == nil || issuer == nil || pub == nil || signer == nil {
 		return nil, fmt.Errorf("x509: nil parameter")
 	}
@@ -502,6 +582,12 @@ func CreateCertificate(subject, issuer *Name, serial int64, notBefore, notAfter 
 	if err != nil {
 		return nil, err
 	}
+	// 任何中间步骤失败都要释放已创建的原生对象，避免泄漏（依赖 finalizer 兜底）。
+	defer func() {
+		if retErr != nil {
+			_ = cert.Close()
+		}
+	}()
 	if err := cert.SetVersion(2); err != nil { // v3
 		return nil, err
 	}

@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"runtime"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -208,6 +209,132 @@ func (c *TLSContext) Close() error {
 	return c.handle.Close()
 }
 
+// VerifyModePeer / VerifyModeNone 透传自 native 的 SSL_VERIFY_* 常量，
+// 便于公开层 tls.Config 在不需要直接 import internal/native 的情况下
+// 表达对端验证模式（保留中间层抽象）。
+//
+// VerifyModePeer / VerifyModeNone are re-exported from native.SSL_VERIFY_*
+// so that the public tls.Config layer can talk about verification modes
+// without importing internal/native.
+const (
+	VerifyModeNone = native.SSL_VERIFY_NONE
+	VerifyModePeer = native.SSL_VERIFY_PEER
+)
+
+// SetVerifyMode 设置对端证书验证模式（native.SSL_VERIFY_NONE / SSL_VERIFY_PEER 等可位或）。
+//
+// SetVerifyMode sets the peer certificate verification mode on the
+// underlying SSL_CTX (SSL_VERIFY_NONE / SSL_VERIFY_PEER, optionally OR'd
+// with SSL_VERIFY_FAIL_IF_NO_PEER_CERT). The verify callback is fixed to
+// NULL — Tongsuo performs its built-in chain validation.
+//
+// 已关闭上下文返回 "tls: SSL_CTX closed"；底层失败包装为 OpError。
+//
+// Returns "tls: SSL_CTX closed" when called on a closed context;
+// underlying failures are wrapped as OpError.
+func (c *TLSContext) SetVerifyMode(mode int) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("tls: SSL_CTX closed")
+	}
+	if !native.SSL_CTX_set_verify(c.handle.Ptr(), mode) {
+		return NewOpError("tls: SSL_CTX_set_verify", native.PopError())
+	}
+	return nil
+}
+
+// SetVerifyDepth 设置对端证书链验证最大深度。
+//
+// SetVerifyDepth sets the chain validation depth limit (number of CA
+// certificates that may follow the peer certificate).
+func (c *TLSContext) SetVerifyDepth(depth int) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("tls: SSL_CTX closed")
+	}
+	if !native.SSL_CTX_set_verify_depth(c.handle.Ptr(), depth) {
+		return NewOpError("tls: SSL_CTX_set_verify_depth", native.PopError())
+	}
+	return nil
+}
+
+// AddVerifyRoots 注入受信 CA 证书到 ctx 自带的 trust store（AddCert 形式）。
+//
+// 实际路径：先通过 SSL_CTX_get_cert_store 取 ctx 自身拥有的 X509_STORE
+// （首次调用会自动创建，由 ctx 负责随 SSL_CTX 释放）；再逐个调
+// X509_STORE_add_cert 注入证书副本——所有权留在 store 内，调用方仍需
+// 负责自身 *Certificate 的生命周期。
+//
+// AddVerifyRoots adds trust anchors to the SSL_CTX's built-in store
+// (which is auto-created if absent). The store is owned by ctx; only
+// its elements are owned by the store itself. The caller still owns
+// the passed *Certificate values.
+//
+// 证书为 nil 或已关闭会被静默跳过；至少需要一个有效证书；底层失败包装为 OpError。
+//
+// nil / closed *Certificate entries are silently skipped; at least one
+// valid cert is required. On failure the returned error names the
+// failing certificate's subject so the caller can identify the bad
+// trust anchor.
+func (c *TLSContext) AddVerifyRoots(certs []*Certificate) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("tls: SSL_CTX closed")
+	}
+	store := native.SSL_CTX_get_cert_store(c.handle.Ptr())
+	if store == nil {
+		return NewOpError("tls: SSL_CTX_get_cert_store", native.PopError())
+	}
+	added := 0
+	var firstErr error
+	var firstFailingSubject string
+	for _, cert := range certs {
+		if cert == nil || cert.handle == nil || cert.handle.IsClosed() {
+			continue
+		}
+		// SSL_CTX_get_cert_store 首次调用会自动建 store，复制 cert 内部 X509 指针。
+		if native.X509_STORE_add_cert(store, cert.handle.Ptr()) {
+			added++
+			continue
+		}
+		// 记录第一次失败及首个失败证书的 subject，便于定位错误源（典型的重复证书）。
+		if firstErr == nil {
+			firstErr = NewOpError("tls: X509_STORE_add_cert", native.PopError())
+			if subj := cert.SubjectName(); subj != nil {
+				firstFailingSubject = subj.String()
+			}
+		}
+	}
+	if added == 0 {
+		if firstErr != nil {
+			if firstFailingSubject != "" {
+				return fmt.Errorf("tls: AddVerifyRoots: no valid root certificate, first failure subject=%q: %w", firstFailingSubject, firstErr)
+			}
+			return fmt.Errorf("tls: AddVerifyRoots: no valid root certificate: %w", firstErr)
+		}
+		return fmt.Errorf("tls: AddVerifyRoots: no valid root certificate")
+	}
+	// 至少一个成功；若同时存在失败，附带警告信息（仍视为成功，因为部分证书已加入）。
+	if firstErr != nil {
+		if firstFailingSubject != "" {
+			return fmt.Errorf("tls: AddVerifyRoots: %d added, first failure subject=%q: %w", added, firstFailingSubject, firstErr)
+		}
+		return fmt.Errorf("tls: AddVerifyRoots: %d added, first failure: %w", added, firstErr)
+	}
+	return nil
+}
+
+// SetDefaultVerifyPaths 加载系统默认 CA 证书路径到 ctx trust store。
+//
+// SetDefaultVerifyPaths loads the system (or OpenSSL-configured) default
+// CA locations into ctx's trust store.
+func (c *TLSContext) SetDefaultVerifyPaths() error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("tls: SSL_CTX closed")
+	}
+	if !native.SSL_CTX_set_default_verify_paths(c.handle.Ptr()) {
+		return NewOpError("tls: SSL_CTX_set_default_verify_paths", native.PopError())
+	}
+	return nil
+}
+
 // SSLConn 表示一个 TLS 连接（SSL 的包装）。
 // 使用完毕必须调用 Close 释放底层句柄。
 //
@@ -216,16 +343,21 @@ func (c *TLSContext) Close() error {
 //
 // 类型通过内部 Handle 拥有底层 SSL 句柄，使用完毕须调用 Close 释放连接。
 // 持有的 ctx 与 fd 不属于 *SSLConn：关闭上下文或底层 socket 由调用方负责。
+// deadline（unix nano）由 SetDeadline 写入，Connect/Accept/Read/Write 在
+// retry 时按剩余时间调用 waitFD——未设置 deadline 时使用 waitFDTimeout
+// 的最大单次等待时长（每次 retry 都完整重置）。
 //
 // The type owns the underlying SSL handle through an internal Handle
 // value; callers must invoke Close to release the connection once they
 // are done with it. The retained ctx and fd are not owned by *SSLConn;
 // closing the context or the underlying socket is the caller's
-// responsibility.
+// responsibility. The deadline (unix nano) is set via SetDeadline and
+// bounds the cumulative wait of Connect/Accept/Read/Write retry loops.
 type SSLConn struct {
-	handle *Handle
-	ctx    *TLSContext
-	fd     int
+	handle   *Handle
+	ctx      *TLSContext
+	fd       int
+	deadline atomic.Int64 // 0 = 无 deadline；其它值 = unix nano
 }
 
 // NewSSLConn 基于套接字 fd 创建 TLS 连接并绑定。
@@ -256,15 +388,39 @@ func NewSSLConn(ctx *TLSContext, fd int) (*SSLConn, error) {
 	return &SSLConn{handle: h, ctx: ctx, fd: fd}, nil
 }
 
+// SetDeadline 设置 handshake / I/O 的累计 deadline。
+//
+// SetDeadline sets the the deadline for subsequent handshake / I/O
+// retry loops. Passing the zero time.Time clears it.
+//
+// deadline 在内部按 unix nano 存储；retry 时按剩余时间切分到每次
+// waitFD 调用。已关闭连接返回错误。
+//
+// The deadline is stored as unix-nano and is consumed by the retry
+// loop on every WANT_READ/WANT_WRITE; returns an error on a closed
+// connection.
+func (s *SSLConn) SetDeadline(t time.Time) error {
+	if s == nil || s.handle == nil || s.handle.IsClosed() {
+		return fmt.Errorf("tls: SSL closed")
+	}
+	if t.IsZero() {
+		s.deadline.Store(0)
+	} else {
+		s.deadline.Store(t.UnixNano())
+	}
+	return nil
+}
+
 // Connect 执行客户端握手。Go 的 socket 为非阻塞，按 WANT_READ/WANT_WRITE 轮询重试。
 //
 // Connect performs the TLS client handshake.
 //
 // The method locks the current OS thread and drives SSL_connect in a
 // retry loop: SSL_ERROR_WANT_READ / SSL_ERROR_WANT_WRITE are answered by
-// waiting for fd readiness via select with a waitFDTimeout deadline, after
-// which the handshake resumes. Returns nil once the handshake completes;
-// any other SSL error is wrapped as OpError.
+// waiting for fd readiness via waitFD with the remaining deadline (or
+// waitFDTimeout per iteration when no deadline is set), after which the
+// handshake resumes. Returns nil once the handshake completes; any
+// other SSL error is wrapped as OpError.
 func (s *SSLConn) Connect() error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -306,10 +462,11 @@ func (s *SSLConn) Accept() error {
 // Read reads decrypted application data into buf.
 //
 // The method locks the current OS thread and retries on
-// SSL_ERROR_WANT_READ / SSL_ERROR_WANT_WRITE using select with the
-// waitFDTimeout deadline. A return value of (0, error) indicates EOF or
-// a fatal SSL error (the error string distinguishes "tls: connection
-// closed" from a wrapped OpError).
+// SSL_ERROR_WANT_READ / SSL_ERROR_WANT_WRITE using waitFD with the
+// remaining deadline (or waitFDTimeout when no deadline is set).
+// A return value of (0, error) indicates EOF or a fatal SSL error
+// (the error string distinguishes "tls: connection closed" from a
+// wrapped OpError).
 func (s *SSLConn) Read(buf []byte) (int, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -332,9 +489,10 @@ func (s *SSLConn) Read(buf []byte) (int, error) {
 // Write encrypts and sends application data from buf.
 //
 // The method locks the current OS thread and retries on
-// SSL_ERROR_WANT_READ / SSL_ERROR_WANT_WRITE using select with the
-// waitFDTimeout deadline. A return value of (0, error) indicates a fatal
-// SSL error (wrapped as OpError).
+// SSL_ERROR_WANT_READ / SSL_ERROR_WANT_WRITE using waitFD with the
+// remaining deadline (or waitFDTimeout when no deadline is set).
+// A return value of (0, error) indicates a fatal SSL error (wrapped as
+// OpError).
 func (s *SSLConn) Write(buf []byte) (int, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -349,6 +507,26 @@ func (s *SSLConn) Write(buf []byte) (int, error) {
 	}
 }
 
+// remainingDeadline 返回 retry 等待时使用的剩余时间。
+// 未设 deadline（0）或剩余 <= 0 时返回 waitFDTimeout；否则返回剩余时间
+// （最小到 1ms 以避免内核 0 超时）。
+//
+// remainingDeadline returns the duration to wait on this retry step:
+// waitFDTimeout when no deadline is set or the deadline has passed;
+// otherwise the remaining time (clamped to >= 1ms so the kernel does
+// not treat it as "infinite").
+func (s *SSLConn) remainingDeadline() time.Duration {
+	d := s.deadline.Load()
+	if d == 0 {
+		return waitFDTimeout
+	}
+	rem := time.Until(time.Unix(0, d))
+	if rem <= 0 {
+		return time.Millisecond // 已超时；让本次 waitFD 立即返回
+	}
+	return rem
+}
+
 // retry 处理 WANT_READ/WANT_WRITE：等待 fd 就绪并返回 nil 以便重试；其他错误返回 error。
 //
 // retry maps SSL_ERROR_WANT_READ / SSL_ERROR_WANT_WRITE to waitFD and
@@ -357,9 +535,9 @@ func (s *SSLConn) Write(buf []byte) (int, error) {
 func (s *SSLConn) retry(op string, ret int) error {
 	switch native.SSL_get_error(s.handle.Ptr(), ret) {
 	case native.SSLErrorWantRead:
-		return waitFD(s.fd, false)
+		return waitFD(s.fd, false, s.remainingDeadline())
 	case native.SSLErrorWantWrite:
-		return waitFD(s.fd, true)
+		return waitFD(s.fd, true, s.remainingDeadline())
 	default:
 		return s.opError(op, ret)
 	}
@@ -380,10 +558,15 @@ func (s *SSLConn) retry(op string, ret int) error {
 //
 // The call is idempotent: invoking it on a nil receiver or on a
 // connection that has already been closed returns nil without further
-// side effects. The underlying socket fd is NOT closed by this method;
-// the caller is responsible for closing it.
+// side effects and does NOT invoke SSL_shutdown again. The underlying
+// socket fd is NOT closed by this method; the caller is responsible for
+// closing it.
 func (s *SSLConn) Close() error {
 	if s == nil {
+		return nil
+	}
+	// 幂等：closed 时直接返回；避免二次 Close 时 SSL_shutdown(NULL) 崩溃。
+	if s.handle == nil || s.handle.IsClosed() {
 		return nil
 	}
 	native.SSL_shutdown(s.handle.Ptr())
@@ -392,18 +575,101 @@ func (s *SSLConn) Close() error {
 
 // Version 返回协商后的协议版本字符串。
 //
+// 对 nil 接收者或已关闭的连接返回空字符串。
+//
 // Version returns the negotiated protocol version as a human-readable
-// string (for example "TLSv1.2" or "NTLSv1.1").
+// string (for example "TLSv1.2" or "NTLSv1.1"). Returns the empty
+// string for a nil or closed connection.
 func (s *SSLConn) Version() string {
+	if s == nil || s.handle == nil || s.handle.IsClosed() {
+		return ""
+	}
 	return native.SSL_get_version(s.handle.Ptr())
 }
 
 // CipherName 返回协商后的密码套件名。
 //
+// 对 nil 接收者或已关闭的连接返回空字符串。
+//
 // CipherName returns the name of the negotiated cipher suite
-// (for example "ECDHE-ECDSA-SM2-WITH-SM4-SM3").
+// (for example "ECDHE-ECDSA-SM2-WITH-SM4-SM3"). Returns the empty
+// string for a nil or closed connection.
 func (s *SSLConn) CipherName() string {
+	if s == nil || s.handle == nil || s.handle.IsClosed() {
+		return ""
+	}
 	return native.SSL_get_current_cipher_name(s.handle.Ptr())
+}
+
+// SetHostname 设置对端主机名校验的预期值（SSL_set1_host；由 SSL 内部复制）。
+//
+// SetHostname sets the expected peer hostname used for hostname
+// verification (SSL_set1_host). The string is copied internally; empty
+// string is a no-op.
+//
+// 必须在 Connect 调用之前设置；已关闭连接返回错误。
+//
+// Must be invoked before Connect. Returns an error on a closed connection.
+func (s *SSLConn) SetHostname(host string) error {
+	if s == nil || s.handle == nil || s.handle.IsClosed() {
+		return fmt.Errorf("tls: SSL closed")
+	}
+	if !native.SSL_set1_host(s.handle.Ptr(), host) {
+		return NewOpError("tls: SSL_set1_host", native.PopError())
+	}
+	return nil
+}
+
+// VerifyResultClosed 是 VerifyResult 在已关闭连接上返回的哨兵值。
+//
+// VerifyResultClosed is the sentinel returned by VerifyResult when the
+// underlying SSL connection has been closed (so callers can distinguish
+// "no verification was performed" from a real failure code).
+const VerifyResultClosed = -2
+
+// VerifyResult 返回握手结束后对端证书链验证的结果。
+//
+// VerifyResult returns the result code of the peer certificate chain
+// validation performed during handshake.
+//
+// 返回值约定：
+//   - VerifyResultClosed (-2): 句柄已关闭，未执行验证；
+//   - x509.VerifyOK (0): X509_V_OK，验证通过；
+//   - > 0: X509 错误码（X509_V_ERR_*），与 x509.VerifyErrorMessage(code) 配合解析。
+//
+// 已关闭连接返回哨兵 VerifyResultClosed（区别于 X509_V_OK=0 与真实错误码），
+// 避免调用方把"未验证"误判为"成功"。
+//
+// Return value contract:
+//   - VerifyResultClosed (-2): handle is closed, no verification was run;
+//   - x509.VerifyOK (0): X509_V_OK, verification passed;
+//   - > 0: X509 error code (X509_V_ERR_*); pair with
+//     x509.VerifyErrorMessage(code) for human-readable text.
+//
+// The closed-handle case returns the explicit VerifyResultClosed sentinel
+// to prevent callers from confusing "not yet verified" with "successful".
+func (s *SSLConn) VerifyResult() int {
+	if s == nil || s.handle == nil || s.handle.IsClosed() {
+		return VerifyResultClosed
+	}
+	return native.SSL_get_verify_result(s.handle.Ptr())
+}
+
+// PeerCertificate 返回对端证书（独立的 owned *Certificate）；无对端证书时返回 nil, nil。
+//
+// PeerCertificate returns the peer certificate as an independent, owned
+// *Certificate (the caller must Close it). Returns (nil, nil) when no
+// peer certificate was presented (typical for the server side on a
+// non-mTLS handshake).
+func (s *SSLConn) PeerCertificate() (*Certificate, error) {
+	if s == nil || s.handle == nil || s.handle.IsClosed() {
+		return nil, fmt.Errorf("tls: SSL closed")
+	}
+	c := native.SSL_get_peer_certificate(s.handle.Ptr())
+	if c == nil {
+		return nil, nil
+	}
+	return &Certificate{handle: NewHandle(c, true, native.X509_free)}, nil
 }
 
 // opError 将 SSL 返回值转为错误。

@@ -4,8 +4,8 @@
 # 覆盖率门禁脚本：对核心公开包（不含 internal/*）逐包检查行覆盖，
 # 默认阈值 ≥ 60%（可用环境变量 THRESHOLD 覆盖）。
 #
-# Phase 14 路线图目标为 ≥ 80%；当前基线 60% 反映了"按 Phase 1-12 已交付测试"的
-# 真实覆盖水平。Phase 15+ 的持续工作中按"短板优先"原则分批补齐到 80%。
+# 路线图目标为 ≥ 80%；当前基线 60% 反映了按"已交付测试"的真实覆盖水平。
+# 后续工作中按"短板优先"原则分批补齐到 80%。
 #
 # 部分包受外部依赖或集成测试复杂度过高暂时豁免（如 ocsp 需本地 OCSP responder），
 # 可通过环境变量 EXCLUDE 指定（逗号分隔的包名后缀，如 "ocsp,jwk"）。
@@ -24,7 +24,7 @@
 set -euo pipefail
 
 THRESHOLD="${THRESHOLD:-60}"
-EXCLUDE="${EXCLUDE:-ocsp}"  # 默认豁免 ocsp：依赖外部 OCSP responder（roadmap Phase 12）
+EXCLUDE="${EXCLUDE:-ocsp}"  # 默认豁免 ocsp：依赖外部 OCSP responder
 
 if ! command -v go >/dev/null 2>&1; then
   echo "go 未安装或不在 PATH 中" >&2

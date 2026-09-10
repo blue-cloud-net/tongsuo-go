@@ -43,35 +43,49 @@ const (
 
 // sm4Block 是基于铜锁 EVP 的 SM4 单块加密封装，实现 cipher.Block。
 //
-// sm4Block implements cipher.Block for SM4 by wrapping two Tongsuo EVP
-// cipher contexts (encryption and decryption) with padding disabled.
+// sm4Block 持有两个不可变的"模板"上下文（encTpl/decTpl），从未调用 Update；
+// 每次 Encrypt/Decrypt 都通过 EVP_CIPHER_CTX_copy 复制模板得到独立的副
+// 本，并在副本上调 Update——这样 Block 实例可被多个 goroutine 并发复用，
+// 与 Go 标准库 cipher.Block 的并发安全契约对齐。
+//
+// sm4Block implements cipher.Block for SM4.
+//
+// The type keeps two untouched "template" contexts (encTpl/decTpl)
+// built from the original key. Every Encrypt/Decrypt call deep-copies
+// the template via EVP_CIPHER_CTX_copy and operates on the copy, so
+// the same Block can be safely shared across goroutines — matching
+// the concurrency contract of Go's stdlib cipher.Block.
 type sm4Block struct {
-	enc *core.CipherCtx // ECB、无填充
-	dec *core.CipherCtx
+	encTpl *core.CipherCtx // ECB / 无填充，加密模板（永不在其上调 Update）
+	decTpl *core.CipherCtx // ECB / 无填充，解密模板（永不在其上调 Update）
 }
 
 // NewCipher 返回使用给定密钥的 SM4 分组加密器（cipher.Block）。
 // 底层基于 SM4-ECB 无填充模式；单块 Encrypt/Decrypt 独立处理。
 // 当 key 长度不为 KeySize（16 字节）时返回错误。
+// 同一 Block 实例可被多个 goroutine 并发复用（与 stdlib 一致）。
 //
 // NewCipher creates a SM4 cipher.Block with the given 16-byte key.
-// It backs onto SM4-ECB with padding disabled, so single-block Encrypt and
-// Decrypt calls operate independently. An error is returned if key length
-// is not exactly KeySize.
+// It backs onto SM4-ECB with padding disabled. An error is returned
+// if key length is not exactly KeySize. The same Block is safe for
+// concurrent use by multiple goroutines.
+//
+// 安全：key 仅在构造时使用一次并复制到底层 EVP_CIPHER_CTX；本函数不会持有明文副本。
+// **调用方有责任在使用完毕后清零 key 切片**（Go 编译器允许消除看似无副作用的清零循环）。
 func NewCipher(key []byte) (cipher.Block, error) {
 	if len(key) != KeySize {
 		return nil, fmt.Errorf("sm4: invalid key size %d, want %d", len(key), KeySize)
 	}
-	enc, err := newNoPadCtx(key, true)
+	encTpl, err := newNoPadCtx(key, true)
 	if err != nil {
 		return nil, err
 	}
-	dec, err := newNoPadCtx(key, false)
+	decTpl, err := newNoPadCtx(key, false)
 	if err != nil {
-		_ = enc.Close()
+		_ = encTpl.Close()
 		return nil, err
 	}
-	return &sm4Block{enc: enc, dec: dec}, nil
+	return &sm4Block{encTpl: encTpl, decTpl: decTpl}, nil
 }
 
 func newNoPadCtx(key []byte, enc bool) (*core.CipherCtx, error) {
@@ -88,13 +102,23 @@ func newNoPadCtx(key []byte, enc bool) (*core.CipherCtx, error) {
 
 // Encrypt 加密一个分组（16 字节），从 src 加密单个 16 字节分组写入 dst；两切片长度必须 ≥ BlockSize，否则 panic。
 //
+// 每次调用从加密模板 EVP_CIPHER_CTX_copy 一份独立副本并立即 Update+Close，
+// 保证模板不被并发调用方共享。
+//
 // Encrypt encrypts a single 16-byte block from src into dst. Both slices must
-// have length at least BlockSize; otherwise Encrypt panics.
+// have length at least BlockSize; otherwise Encrypt panics. Internally the
+// call copies the encryption template via EVP_CIPHER_CTX_copy and runs
+// Update on the independent copy.
 func (b *sm4Block) Encrypt(dst, src []byte) {
 	if len(dst) < BlockSize || len(src) < BlockSize {
 		panic("sm4: invalid block size")
 	}
-	out, err := b.enc.Update(src[:BlockSize])
+	ctx, err := b.encTpl.Clone()
+	if err != nil {
+		panic(err)
+	}
+	defer ctx.Close()
+	out, err := ctx.Update(src[:BlockSize])
 	if err != nil {
 		panic(err)
 	}
@@ -103,13 +127,22 @@ func (b *sm4Block) Encrypt(dst, src []byte) {
 
 // Decrypt 解密一个分组（16 字节），从 src 解密单个 16 字节分组写入 dst；两切片长度必须 ≥ BlockSize，否则 panic。
 //
+// 每次调用从解密模板 EVP_CIPHER_CTX_copy 一份独立副本并立即 Update+Close。
+//
 // Decrypt decrypts a single 16-byte block from src into dst. Both slices must
-// have length at least BlockSize; otherwise Decrypt panics.
+// have length at least BlockSize; otherwise Decrypt panics. Internally the
+// call copies the decryption template via EVP_CIPHER_CTX_copy and runs
+// Update on the independent copy.
 func (b *sm4Block) Decrypt(dst, src []byte) {
 	if len(dst) < BlockSize || len(src) < BlockSize {
 		panic("sm4: invalid block size")
 	}
-	out, err := b.dec.Update(src[:BlockSize])
+	ctx, err := b.decTpl.Clone()
+	if err != nil {
+		panic(err)
+	}
+	defer ctx.Close()
+	out, err := ctx.Update(src[:BlockSize])
 	if err != nil {
 		panic(err)
 	}
@@ -346,12 +379,15 @@ func DecryptCFB(key, iv, data []byte) ([]byte, error) {
 //
 // EncryptGCM authenticates and encrypts plaintext with SM4-GCM (AEAD).
 // It returns the ciphertext and authentication tag separately; DecryptGCM
-// requires the same nonce, aad, and tag. The nonce should be NonceSize (12)
-// bytes and must be unique per key. aad may be nil and is authenticated
-// but not encrypted.
+// requires the same nonce, aad, and tag. The nonce must be exactly
+// NonceSize (12) bytes and must be unique per key. aad may be nil and is
+// authenticated but not encrypted.
 func EncryptGCM(key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, err error) {
 	if len(key) != KeySize {
 		return nil, nil, fmt.Errorf("sm4: invalid key size %d, want %d", len(key), KeySize)
+	}
+	if len(nonce) != NonceSize {
+		return nil, nil, fmt.Errorf("sm4: invalid nonce size %d, want %d", len(nonce), NonceSize)
 	}
 	ctx, err := core.NewGcmCtx(core.SM4GCM(), key, nonce, true)
 	if err != nil {
@@ -381,6 +417,9 @@ func EncryptGCM(key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, err 
 func DecryptGCM(key, nonce, ciphertext, tag, aad []byte) ([]byte, error) {
 	if len(key) != KeySize {
 		return nil, fmt.Errorf("sm4: invalid key size %d, want %d", len(key), KeySize)
+	}
+	if len(nonce) != NonceSize {
+		return nil, fmt.Errorf("sm4: invalid nonce size %d, want %d", len(nonce), NonceSize)
 	}
 	if len(tag) != TagSize {
 		return nil, fmt.Errorf("sm4: invalid tag size %d, want %d", len(tag), TagSize)
@@ -416,6 +455,9 @@ type gcm struct {
 // The output format appends the tag to the ciphertext (ciphertext || tag),
 // matching the layout used by the standard library's AEAD interface.
 // An error is returned if key length is not exactly KeySize.
+//
+// 安全：AEAD 实例保留对 key 切片的引用（每次 Seal/Open 都复用）；
+// **调用方有责任在使用完毕后清零 key 切片**。
 func NewGCM(key []byte) (cipher.AEAD, error) {
 	if len(key) != KeySize {
 		return nil, fmt.Errorf("sm4: invalid key size %d, want %d", len(key), KeySize)
