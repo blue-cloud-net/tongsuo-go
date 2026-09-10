@@ -1972,27 +1972,44 @@ func ChainVerify(cert *Certificate, store *Store, intermediates []*Certificate) 
 		if sk == nil {
 			return nil, NewOpError("x509: sk_X509_new_null", native.PopError())
 		}
-		// 注意：X509_STORE_CTX_set0_untrusted 仅借用该栈，OpenSSL 的
-		// X509_STORE_CTX_cleanup 不释放 ctx->untrusted（只 free ctx->chain），
-		// 因此必须在验证结束后自行 X509_sk_X509_free 释放栈容器。
-		// 栈内元素是借用调用方的 intermediate 证书指针，不在此释放。
+		// 关于所有权语义（关键、易错）：
+		//   - X509_STORE_CTX_set0_untrusted 仅"借用"栈（不取所有权）；
+		//   - Tongsuo 8.4.x 的 X509_STORE_CTX_cleanup 仅 free ctx->chain，
+		//     不 free ctx->untrusted，因此 defer X509_sk_X509_free 安全；
+		//   - OpenSSL 3.0.0–3.0.x 的 cleanup 会同时 free untrusted 栈元素，
+		//     与本路径联用将导致调用方中间证书双重释放。
+		// 本仓库要求 Tongsuo ≥ 8.4（见 README 与 go.mod），但仍采取防御性策略：
+		// 对每个 intermediate 调 X509_dup，栈内元素改为本路径自有，由 pop_free
+		// 统一释放——即使将来升级到会 free untrusted 的 OpenSSL，也只是元素级
+		// 二次 free（dup 本体），不会触碰调用方原始证书。
 		ok := true
 		for _, ic := range intermediates {
 			if ic == nil || ic.handle == nil || ic.handle.IsClosed() {
 				ok = false
 				break
 			}
-			if !native.X509_sk_X509_push(sk, ic.handle.Ptr()) {
+			// X509_dup 复制证书本体（含公钥、扩展等），返回 owned 指针。
+			dup := native.X509_dup(ic.handle.Ptr())
+			if dup == nil {
+				ok = false
+				break
+			}
+			if !native.X509_sk_X509_push(sk, dup) {
+				native.X509_free(dup)
 				ok = false
 				break
 			}
 		}
 		if !ok {
-			native.X509_sk_X509_free(sk)
+			// 把已 push 的 dup 元素一并释放（X509_sk_X509_pop_free 会 free 元素 + 栈）。
+			native.X509_sk_X509_pop_free(sk)
 			return nil, fmt.Errorf("x509: invalid intermediate certificate")
 		}
 		native.X509_STORE_CTX_set0_untrusted(ctx, sk)
-		defer native.X509_sk_X509_free(sk)
+		// 关键修复：用 pop_free 而非 free，让底层 free 栈元素；
+		// 即使升级到 OpenSSL 3.0.x 也只是元素级 dup 本体的释放，由本路径负全责，
+		// 调用方原始 intermediate 证书始终保持借用语义、永不二次 free。
+		defer native.X509_sk_X509_pop_free(sk)
 	}
 	ret := native.X509_verify_cert(ctx)
 	if ret != 1 {
