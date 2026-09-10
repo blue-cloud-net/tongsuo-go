@@ -16,7 +16,7 @@
 
 ---
 
-## [0.1.1] - 2026-09-09
+## [0.1.1] - 2026-09-10
 
 ### 新增功能
 
@@ -34,6 +34,9 @@
   EdDSA 密钥支持证书 / CSR / CRL 无摘要签名与验签。
 - `tls` 客户端对端证书验证与超时语义。
 - 新增内部辅助包 `internal/digest`、`internal/testutil`。
+- 新增 Ed25519 / X25519 独立示例：`examples/ed25519`、`examples/x25519`。
+- `x509` 新增证书 / CSR / CRL 签名信息读取（`Signature` /
+  `SignatureAlgorithm` / `SignatureAlgorithmOID`）。
 
 ### 行为变化与重构
 
@@ -41,6 +44,14 @@
   `internal/native` 的依赖。
 - `internal/core` 编码规范与核心层瘦身。
 - AES / SM4 分组加密 `Block` 改为模板 + 副本以支持并发复用。
+- `internal/core` 新增 `ZeroBytes`（基于 `OPENSSL_cleanse`）用于敏感缓冲区清零；
+  `TLSContext.AddVerifyRoots` 不再静默吞错，并引入 `VerifyResultClosed` 哨兵。
+- `EvpPkey` 常量下沉到 `internal/core`，恢复三层架构。
+- SM2 签名 / 验签仅对 SM2 密钥加锁（`LockOSThread`），提升其他密钥类型的并发性能。
+- CI：触发收敛到 `main`；测试矩阵扩展为 ubuntu + macOS × amd64 / arm64（Go 1.21）；
+  Tongsuo 固定 8.4.0。
+- Release：通过 `workflow_call` 复用 CI 工作流，发布说明由中英 CHANGELOG 自动抽取；
+  不再上传二进制产物。
 
 ### Bug 修复
 
@@ -51,6 +62,13 @@
 - RSA / SM2 / `key` 包非对称加解密语义与 PEM 加载的类型安全修正。
 - `asn1` DER 解析增加嵌套深度上限。
 - `ocsp.Check` 自适应匹配证书状态哈希。
+- EC / SM2 公钥参数改以 provider 仿射坐标 `qx` / `qy` 读取，修复 Tongsuo 8.4
+  以压缩点导出 `pub` 时 X / Y 为空的问题。
+- OCSP：修复 `Verify` 中 `defer` 循环变量捕获问题。
+- `internal/core`：`signDigest` / `verifyDigest` 补充闭包守卫。
+- `tls`：`SplitHostPort` IPv6 容错；`SetReadDeadline` / `SetWriteDeadline`
+  配对清零。
+- `x509`：`ChainVerify` 中间证书处理跨 OpenSSL 版本可移植。
 
 ### 文档
 
