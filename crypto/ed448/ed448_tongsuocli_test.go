@@ -1,3 +1,5 @@
+//go:build tongsuocli
+
 // Package ed448 的 tongsuocli 对拍测试。
 // Build tag: tongsuocli (off by default).
 package ed448
