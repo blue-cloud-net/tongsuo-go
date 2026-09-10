@@ -26,6 +26,7 @@ X.509 certificate management and TLS / NTLS transport.
 - 🔄 **AES symmetric cipher**: ECB / CBC / CTR / GCM (`cipher.Block` + `cipher.AEAD`)
 - � **Ed25519 / Ed448 signatures** (RFC 8032): pure EdDSA (no pre-hashing), raw 32B / 57B seed and public-key bytes interoperable with Go standard library, WireGuard; X.509 certificate / CSR / CRL signing via the `X509_sign_ctx` path
 - 🤝 **X25519 ECDH key agreement** (RFC 7748): 32-byte shared secret, interoperable with Go `crypto/ecdh` and WireGuard, supports X.509 certificate / CSR public-key loading
+- 🤝 **Curve-based ECDH (`crypto/ecdh`)**: NIST P-256 / P-384 / P-521 (X9.63), the OKP curves X25519 / X448 (RFC 7748) and secp256k1; key generation, PEM (PKCS#8 / SPKI) round-trip and shared-secret derivation matching Go's standard `crypto/ecdh` semantics
 - 🎲 **Cryptographically secure random**: based on Tongsuo `RAND_bytes`
 - 📜 **X.509 certificate management**: parse, create, self-signed / CA-signed certificates (SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448), CSR generation and verification, BasicConstraints extension
 - 🌐 **TLS / NTLS transport**: client / server wrappers, supporting Tongsuo NTLS dual certificates (signing certificate + encryption certificate)

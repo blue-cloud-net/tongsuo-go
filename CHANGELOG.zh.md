@@ -16,6 +16,38 @@
 
 ---
 
+## [0.1.2] - 2026-09-10
+
+### 新增功能
+
+- `crypto/ecdh` 新增 OKP 曲线 `X25519()` 与 `X448()`（RFC 7748），与既有
+  P-256 / P-384 / P-521 并列。
+- `crypto/ecdh` 新增 `Secp256k1()` 曲线；可用性取决于运行时铜锁 provider。
+- 新增 `crypto/x448` 包（X448 ECDH，RFC 7748）：密钥生成、PEM（PKCS#8 /
+  SPKI）往返、56 字节原始密钥互操作与 `SharedSecret`。
+- `key` 包新增 `AlgX448` 与 `GenerateX448Key`。
+
+### 行为变化与重构
+
+- `internal/core`：`Derive` 拒绝 OKP 低阶点（RFC 7748 §6.1）产生的全零共享
+  密钥，与 Go 标准库 `crypto/ecdh` 语义对齐。
+- `crypto/ecdh`：OKP 曲线改用类型化曲线族分派（不再比较展示名），且 `ECDH`
+  显式拒绝非 EC 的算法组合。
+
+### Bug 修复
+
+- `crypto/ecdh`：`*_tongsuocli_test.go` 现在真正调用铜锁 `openssl` CLI；
+  此前仅调用 `internal/core`。
+- `internal/testutil`：新增 `OpenSSLAvailable` 与 `SkipIfNoOpenSSL`，使 CLI
+  对拍测试在缺少铜锁二进制时跳过而不是失败。
+
+### 文档
+
+- 在 `crypto/ecdh` 中补充 X25519 / X448 / secp256k1 说明，并同步
+  `docs/architecture.md` 与 `docs/testing-guide.md`。
+
+---
+
 ## [0.1.1] - 2026-09-10
 
 ### 新增功能
@@ -158,6 +190,7 @@
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/blue-cloud-net/tongsuo-go/releases/tag/v0.1.0

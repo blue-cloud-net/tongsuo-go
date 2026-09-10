@@ -17,6 +17,41 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
+## [0.1.2] - 2026-09-10
+
+### Added
+
+- `crypto/ecdh` now supports the OKP curves `X25519()` and `X448()`
+  (RFC 7748) alongside P-256 / P-384 / P-521.
+- Added `Secp256k1()` to `crypto/ecdh`; availability depends on the runtime
+  Tongsuo provider.
+- Added the `crypto/x448` package (X448 ECDH, RFC 7748): key generation, PEM
+  (PKCS#8 / SPKI) round-trip, 56-byte raw key interop and `SharedSecret`.
+- `key` gained `AlgX448` and `GenerateX448Key`.
+
+### Changed
+
+- `internal/core`: `Derive` rejects the all-zero shared secret produced by
+  OKP low-order points (RFC 7748 §6.1), matching Go's `crypto/ecdh`.
+- `crypto/ecdh`: OKP curves are dispatched through a typed curve kind
+  instead of comparing display names, and `ECDH` rejects non-EC algorithm
+  pairs explicitly.
+
+### Fixed
+
+- `crypto/ecdh`: the `*_tongsuocli_test.go` interop test now actually
+  invokes the Tongsuo `openssl` CLI; it previously only exercised
+  `internal/core`.
+- `internal/testutil`: added `OpenSSLAvailable` and `SkipIfNoOpenSSL`, so CLI
+  interop tests skip instead of failing when the Tongsuo binary is missing.
+
+### Documentation
+
+- Documented X25519 / X448 / secp256k1 support in `crypto/ecdh`, and synced
+  `docs/architecture.md` and `docs/testing-guide.md`.
+
+---
+
 ## [0.1.1] - 2026-09-10
 
 ### Added
@@ -190,6 +225,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/blue-cloud-net/tongsuo-go/releases/tag/v0.1.0
