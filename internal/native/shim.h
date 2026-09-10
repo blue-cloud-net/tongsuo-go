@@ -48,6 +48,11 @@ EVP_PKEY *X_EVP_PKEY_Q_keygen_ed448(void);
 EVP_PKEY *X_EVP_PKEY_Q_keygen_x25519(void);
 
 /*
+ * X_EVP_PKEY_Q_keygen_x448：生成 X448 ECDH 密钥对（RFC 7748）。
+ */
+EVP_PKEY *X_EVP_PKEY_Q_keygen_x448(void);
+
+/*
  * PEM 读写（EVP_PKEY 层）。回调/口令等参数固定为 NULL，
  * 避免 cgo 对 pem_password_cb 函数指针类型的桥接问题。
  */

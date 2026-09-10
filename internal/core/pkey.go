@@ -24,13 +24,13 @@ var DefaultSM2ID = []byte("1234567812345678")
 
 // PKey 表示一个非对称密钥对象（EVP_PKEY 的包装）。
 //
-// 已支持 SM2、RSA、EC、Ed25519、Ed448、X25519；通过内部 Handle 持有底层 EVP_PKEY，使用完毕须调用 Close 释放。
+// 已支持 SM2、RSA、EC、Ed25519、Ed448、X25519、X448；通过内部 Handle 持有底层 EVP_PKEY，使用完毕须调用 Close 释放。
 //
 // PKey is the Go wrapper around an OpenSSL EVP_PKEY asymmetric key.
 //
-// The type supports SM2, RSA, EC, Ed25519, Ed448 and X25519. It owns the underlying EVP_PKEY handle through
-// an internal Handle value; callers must invoke Close to release the key
-// once they are done using it.
+// The type supports SM2, RSA, EC, Ed25519, Ed448, X25519 and X448. It owns
+// the underlying EVP_PKEY handle through an internal Handle value; callers
+// must invoke Close to release the key once they are done using it.
 type PKey struct {
 	handle *Handle
 }
@@ -101,6 +101,8 @@ func (k *PKey) Algorithm() string {
 		return "ED448"
 	case native.EvpPkeyX25519:
 		return "X25519"
+	case native.EvpPkeyX448:
+		return "X448"
 	default:
 		return fmt.Sprintf("id:%d", k.BaseID())
 	}
@@ -516,6 +518,25 @@ func GenerateX25519Key() (*PKey, error) {
 	p := native.X_EVP_PKEY_Q_keygen_x25519()
 	if p == nil {
 		return nil, NewOpError("pkey: EVP_PKEY_Q_keygen(X25519)", native.PopError())
+	}
+	return &PKey{handle: NewHandle(p, true, native.EVP_PKEY_free)}, nil
+}
+
+// GenerateX448Key 生成 X448 ECDH 密钥对（RFC 7748，共享密钥 56 字节）。
+//
+// 返回的 *PKey 持有底层 EVP_PKEY，使用完毕须调用 Close 释放；若底层原生调用失败，返回的错误包装 native.PopError 给出的 OpenSSL 错误码。
+//
+// GenerateX448Key generates a fresh X448 ECDH key pair (RFC 7748, 56-byte
+// shared secret).
+//
+// The returned *PKey owns the underlying EVP_PKEY and the caller is
+// responsible for calling Close to release it. If the underlying native
+// call fails, the returned error wraps the OpenSSL error code from
+// native.PopError.
+func GenerateX448Key() (*PKey, error) {
+	p := native.X_EVP_PKEY_Q_keygen_x448()
+	if p == nil {
+		return nil, NewOpError("pkey: EVP_PKEY_Q_keygen(X448)", native.PopError())
 	}
 	return &PKey{handle: NewHandle(p, true, native.EVP_PKEY_free)}, nil
 }
@@ -1178,18 +1199,19 @@ func (k *PKey) VerifyMessage(msg, sig []byte) error {
 	return nil
 }
 
-// RawPrivateKey 导出 EdDSA/X25519 的原始私钥字节。
+// RawPrivateKey 导出 EdDSA / X25519 / X448 的原始私钥字节。
 //
-// 仅支持 Ed25519（32B）/ Ed448（57B）/ X25519（32B）；其他算法密钥返回
+// 仅支持 Ed25519（32B）/ Ed448（57B）/ X25519（32B）/ X448（56B）；其他算法密钥返回
 // "pkey: algorithm not supported" 错误。返回的字节直接来自 OpenSSL，
 // 敏感内存清理由调用方负责。
 //
-// RawPrivateKey exports the raw private key bytes for EdDSA / X25519 keys.
+// RawPrivateKey exports the raw private key bytes for EdDSA / X25519 / X448
+// keys.
 //
-// Only Ed25519 (32B), Ed448 (57B) and X25519 (32B) are accepted; all
-// other algorithms return "pkey: algorithm not supported". The returned
-// bytes originate from OpenSSL; the caller is responsible for zeroising
-// sensitive memory.
+// Only Ed25519 (32B), Ed448 (57B), X25519 (32B) and X448 (56B) are
+// accepted; all other algorithms return "pkey: algorithm not supported".
+// The returned bytes originate from OpenSSL; the caller is responsible
+// for zeroising sensitive memory.
 func (k *PKey) RawPrivateKey() ([]byte, error) {
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil, fmt.Errorf("pkey: key closed")
@@ -1210,11 +1232,12 @@ func (k *PKey) RawPrivateKey() ([]byte, error) {
 	return buf, nil
 }
 
-// RawPublicKey 导出 EdDSA/X25519 的原始公钥字节。
+// RawPublicKey 导出 EdDSA / X25519 / X448 的原始公钥字节。
 //
 // 容量与算法对应关系与 RawPrivateKey 相同；返回字节不敏感，不需要清零。
 //
-// RawPublicKey exports the raw public key bytes for EdDSA / X25519 keys.
+// RawPublicKey exports the raw public key bytes for EdDSA / X25519 / X448
+// keys.
 //
 // Sizes match RawPrivateKey; the returned bytes are not sensitive and
 // need not be zeroised.
@@ -1237,18 +1260,19 @@ func (k *PKey) RawPublicKey() ([]byte, error) {
 	return buf, nil
 }
 
-// NewRawPrivateKey 从原始私钥字节构造 *PKey（typeID 指定 Ed25519 / Ed448 / X25519）。
+// NewRawPrivateKey 从原始私钥字节构造 *PKey（typeID 指定 Ed25519 / Ed448 / X25519 / X448）。
 //
-// 调用方负责 raw 的清零；typeID 必须为 native.EvpPkeyED25519 / EvpPkeyED448 / EvpPkeyX25519 之一，
+// 调用方负责 raw 的清零；typeID 必须为 native.EvpPkeyED25519 / EvpPkeyED448 / EvpPkeyX25519 / EvpPkeyX448 之一，
 // 否则返回错误包装的 OpError。
 //
 // NewRawPrivateKey constructs a *PKey from raw private key bytes; typeID
-// must be one of native.EvpPkeyED25519, native.EvpPkeyED448, or
-// native.EvpPkeyX25519. Callers are responsible for zeroising raw after
-// the call returns. Errors wrap OpError carrying the OpenSSL code.
+// must be one of native.EvpPkeyED25519, native.EvpPkeyED448,
+// native.EvpPkeyX25519 or native.EvpPkeyX448. Callers are responsible for
+// zeroising raw after the call returns. Errors wrap OpError carrying the
+// OpenSSL code.
 func NewRawPrivateKey(typeID int, raw []byte) (*PKey, error) {
 	switch typeID {
-	case native.EvpPkeyED25519, native.EvpPkeyED448, native.EvpPkeyX25519:
+	case native.EvpPkeyED25519, native.EvpPkeyED448, native.EvpPkeyX25519, native.EvpPkeyX448:
 	default:
 		return nil, fmt.Errorf("pkey: invalid raw key type: %d", typeID)
 	}
@@ -1268,7 +1292,7 @@ func NewRawPrivateKey(typeID int, raw []byte) (*PKey, error) {
 // follows the same convention as NewRawPrivateKey.
 func NewRawPublicKey(typeID int, raw []byte) (*PKey, error) {
 	switch typeID {
-	case native.EvpPkeyED25519, native.EvpPkeyED448, native.EvpPkeyX25519:
+	case native.EvpPkeyED25519, native.EvpPkeyED448, native.EvpPkeyX25519, native.EvpPkeyX448:
 	default:
 		return nil, fmt.Errorf("pkey: invalid raw key type: %d", typeID)
 	}
@@ -1290,6 +1314,8 @@ func rawKeySize(typeID int) (int, bool) {
 	switch typeID {
 	case native.EvpPkeyED25519, native.EvpPkeyX25519:
 		return 32, true
+	case native.EvpPkeyX448:
+		return 56, true
 	case native.EvpPkeyED448:
 		return 57, true
 	default:

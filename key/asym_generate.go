@@ -108,3 +108,19 @@ func GenerateX25519Key() (AsymmetricPrivateKey, error) {
 	}
 	return wrapPrivate(pk)
 }
+
+// GenerateX448Key 生成 X448 ECDH 密钥对（RFC 7748，AlgX448）并返回私钥包装。
+// 调用方使用完毕应经 key.Close 释放底层句柄；密钥交换由各 crypto/* 包的 SharedSecret 方法完成。
+//
+// GenerateX448Key generates a fresh X448 ECDH key pair (RFC 7748, AlgX448)
+// and returns the private-key wrapper.
+// Callers should release the underlying handle through key.Close when done;
+// the actual shared-secret computation lives in the per-package SharedSecret
+// method.
+func GenerateX448Key() (AsymmetricPrivateKey, error) {
+	pk, err := core.GenerateX448Key()
+	if err != nil {
+		return nil, err
+	}
+	return wrapPrivate(pk)
+}

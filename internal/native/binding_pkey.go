@@ -53,19 +53,21 @@ func EVP_PKEY_free(pkey unsafe.Pointer) {
 // EVP_PKEY 类型常量（来自 evp.h 宏，OpenSSL 3.x / 铜锁）。
 //
 // EvpPkeyRSA, EvpPkeyDSA, EvpPkeyEC, EvpPkeyED25519, EvpPkeyED448,
-// EvpPkeyX25519 and EvpPkeySM2 are the EVP_PKEY base IDs returned by
-// EVP_PKEY_get_base_id; use EvpPkeySM2 to detect SM2 keys (which otherwise
-// report as EvpPkeyEC via get_base_id but EvpPkeySM2 via get_id). The EdDSA
-// and X25519 IDs also come from obj_mac.h (Tongsuo/OpenSSL 3.x) and match
-// the numeric values exposed via OBJ_txt2nid.
+// EvpPkeyX25519, EvpPkeyX448 and EvpPkeySM2 are the EVP_PKEY base IDs
+// returned by EVP_PKEY_get_base_id; use EvpPkeySM2 to detect SM2 keys
+// (which otherwise report as EvpPkeyEC via get_base_id but EvpPkeySM2 via
+// get_id). The EdDSA and X25519/X448 IDs also come from obj_mac.h
+// (Tongsuo/OpenSSL 3.x) and match the numeric values exposed via
+// OBJ_txt2nid.
 const (
-	EvpPkeyRSA    = 6
-	EvpPkeyDSA    = 116
-	EvpPkeyEC     = 408
-	EvpPkeyX25519 = 1034
+	EvpPkeyRSA     = 6
+	EvpPkeyDSA     = 116
+	EvpPkeyEC      = 408
+	EvpPkeyX25519  = 1034
+	EvpPkeyX448    = 1035
 	EvpPkeyED25519 = 1087
-	EvpPkeyED448  = 1088
-	EvpPkeySM2    = 1172
+	EvpPkeyED448   = 1088
+	EvpPkeySM2     = 1172
 )
 
 // EVP_PKEY_get_base_id 返回密钥底层类型 ID（如 EvpPkeyEC）。
@@ -319,6 +321,13 @@ func X_EVP_PKEY_Q_keygen_x25519() unsafe.Pointer {
 	return unsafe.Pointer(C.X_EVP_PKEY_Q_keygen_x25519())
 }
 
+// X_EVP_PKEY_Q_keygen_x448 生成 X448 密钥对（RFC 7748）。
+// X_EVP_PKEY_Q_keygen_x448 (shim) generates an X448 ECDH key pair.
+// The caller owns the returned EVP_PKEY and must release it with EVP_PKEY_free.
+func X_EVP_PKEY_Q_keygen_x448() unsafe.Pointer {
+	return unsafe.Pointer(C.X_EVP_PKEY_Q_keygen_x448())
+}
+
 // X_PEM_read_bio_PrivateKey_pass 从 BIO 读取用口令加密的 PEM 私钥。
 // X_PEM_read_bio_PrivateKey_pass (shim) reads an encrypted PEM private key
 // from bio using pass. Returns NULL on failure; caller owns the EVP_PKEY.
@@ -512,10 +521,11 @@ func D2i_PrivateKey(der []byte) unsafe.Pointer {
 	return unsafe.Pointer(C.d2i_PrivateKey(0, nil, &p, C.long(len(der))))
 }
 
-// EVP_PKEY_new_raw_private_key 从原始私钥字节构造密钥（Ed25519=32B，Ed448=57B，X25519=32B）。
+// EVP_PKEY_new_raw_private_key 从原始私钥字节构造密钥（Ed25519=32B，Ed448=57B，X25519=32B，X448=56B）。
 // EVP_PKEY_new_raw_private_key wraps raw private-key bytes into an EVP_PKEY.
-// type must be one of EvpPkeyED25519 / EvpPkeyED448 / EvpPkeyX25519. The
-// caller owns the returned EVP_PKEY and must release it with EVP_PKEY_free.
+// type must be one of EvpPkeyED25519 / EvpPkeyED448 / EvpPkeyX25519 /
+// EvpPkeyX448. The caller owns the returned EVP_PKEY and must release it
+// with EVP_PKEY_free.
 func EVP_PKEY_new_raw_private_key(typeID int, raw []byte) unsafe.Pointer {
 	if len(raw) == 0 {
 		return nil
@@ -524,10 +534,11 @@ func EVP_PKEY_new_raw_private_key(typeID int, raw []byte) unsafe.Pointer {
 		(*C.uchar)(unsafe.Pointer(&raw[0])), C.size_t(len(raw))))
 }
 
-// EVP_PKEY_new_raw_public_key 从原始公钥字节构造密钥（Ed25519=32B，Ed448=57B，X25519=32B）。
+// EVP_PKEY_new_raw_public_key 从原始公钥字节构造密钥（Ed25519=32B，Ed448=57B，X25519=32B，X448=56B）。
 // EVP_PKEY_new_raw_public_key wraps raw public-key bytes into an EVP_PKEY.
-// type must be one of EvpPkeyED25519 / EvpPkeyED448 / EvpPkeyX25519. The
-// caller owns the returned EVP_PKEY and must release it with EVP_PKEY_free.
+// type must be one of EvpPkeyED25519 / EvpPkeyED448 / EvpPkeyX25519 /
+// EvpPkeyX448. The caller owns the returned EVP_PKEY and must release it
+// with EVP_PKEY_free.
 func EVP_PKEY_new_raw_public_key(typeID int, raw []byte) unsafe.Pointer {
 	if len(raw) == 0 {
 		return nil
