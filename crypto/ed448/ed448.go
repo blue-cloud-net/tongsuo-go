@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
-	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
 
 // seedSize 是 Ed448 原始私钥种子（RFC 8032 §5.2.2）的字节数。
@@ -84,7 +83,7 @@ func PrivateKeyFromSeed(seed []byte) (*PrivateKey, error) {
 	if len(seed) != seedSize {
 		return nil, ErrInvalidSeedLength
 	}
-	k, err := core.NewRawPrivateKey(native.EvpPkeyED448, seed)
+	k, err := core.NewRawPrivateKey(core.PKeyAlgoED448, seed)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +101,7 @@ func PublicKeyFromBytes(raw []byte) (*PublicKey, error) {
 	if len(raw) != seedSize {
 		return nil, ErrInvalidPublicKeyLength
 	}
-	k, err := core.NewRawPublicKey(native.EvpPkeyED448, raw)
+	k, err := core.NewRawPublicKey(core.PKeyAlgoED448, raw)
 	if err != nil {
 		return nil, err
 	}

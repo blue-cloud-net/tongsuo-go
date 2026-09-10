@@ -15,7 +15,6 @@ import (
 	"fmt"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
-	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
 
 // keySize 是 X25519 原始私钥 / 公钥字节数（RFC 7748 §5）。
@@ -72,7 +71,7 @@ func PrivateKeyFromBytes(raw []byte) (*PrivateKey, error) {
 	if len(raw) != keySize {
 		return nil, ErrInvalidKeyLength
 	}
-	k, err := core.NewRawPrivateKey(native.EvpPkeyX25519, raw)
+	k, err := core.NewRawPrivateKey(core.PKeyAlgoX25519, raw)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +89,7 @@ func PublicKeyFromBytes(raw []byte) (*PublicKey, error) {
 	if len(raw) != keySize {
 		return nil, ErrInvalidKeyLength
 	}
-	k, err := core.NewRawPublicKey(native.EvpPkeyX25519, raw)
+	k, err := core.NewRawPublicKey(core.PKeyAlgoX25519, raw)
 	if err != nil {
 		return nil, err
 	}
