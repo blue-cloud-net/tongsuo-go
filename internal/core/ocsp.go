@@ -335,8 +335,12 @@ func (r *OCSPResponse) Verify(roots *Store, certs []*Certificate) error {
 		if err != nil {
 			return err
 		}
-		for _, c := range respCerts {
-			defer c.Close()
+		// 显式逆序调度，避免 Go < 1.22 的 `for _, c := range` 循环变量捕获陷阱
+		// (所有 defer 会捕获同一变量 c，结果只有最后一个被释放)。
+		// 逆序 LIFO 调度保证先释放最后一个压入栈的证书，与 native 一侧
+		// X509_sk_X509_push 的顺序保持一致的逆序语义。
+		for i := len(respCerts) - 1; i >= 0; i-- {
+			defer respCerts[i].Close()
 		}
 		certs = respCerts
 	}
