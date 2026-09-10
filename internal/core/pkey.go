@@ -573,7 +573,7 @@ func (k *PKey) signDigest(data []byte, md *Digest, setOpts func(unsafe.Pointer) 
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil, fmt.Errorf("pkey: key closed")
 	}
-	if md == nil || md.handle == nil {
+	if md == nil || md.handle == nil || md.handle.IsClosed() {
 		return nil, fmt.Errorf("pkey: invalid digest")
 	}
 	runtime.LockOSThread()
@@ -659,7 +659,7 @@ func (k *PKey) verifyDigest(data, sig []byte, md *Digest, setOpts func(unsafe.Po
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return fmt.Errorf("pkey: key closed")
 	}
-	if md == nil || md.handle == nil {
+	if md == nil || md.handle == nil || md.handle.IsClosed() {
 		return fmt.Errorf("pkey: invalid digest")
 	}
 	runtime.LockOSThread()
