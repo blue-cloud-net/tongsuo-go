@@ -104,10 +104,10 @@ type Config struct {
 // 握手阶段的取消由 *Conn.HandshakeContext 负责。
 //
 // **Linux 平台限制**：握手阶段使用 syscall.Select 等待 fd 可读，该调用
-// 在 Linux 上不可从 Go 侧直接打断；ctx 触发后需等待当前 waitFD 超时
-// （默认 30s）才能从 HandshakeContext 返回。建议用户使用带 deadline
-// 的 ctx，或通过 SetDeadline 提前终结。完整 epoll/poll(2) 改造计划在
-// v0.1.3+。
+// 在 Linux 上不可从 Go 侧直接打断；握手循环以 waitFDTimeout 为切片
+// 等待，并在每片超时后重新检查 ctx / deadline，使 ctx 取消的实际
+// 响应延迟不超过一个切片（当前 250ms）。完整 epoll/poll(2) 改造计划
+// 在 v0.1.3+。
 //
 // DialContext dials network/addr under ctx and completes a TLS or NTLS
 // handshake. Cancellation of ctx aborts the TCP dial (via net.Dialer)
@@ -128,27 +128,35 @@ func DialContext(ctx context.Context, network, addr string, config *Config) (net
 		_ = raw.Close()
 		return nil, err
 	}
-	// 主机名：D1 方案 A 仅在用户显式提供 ServerName 时启用；
-	// 同时支持从 addr 推导（"host:port" / "[host]:port" / "host"）。
-	hostname := ""
-	if !shouldSkipVerify(config) {
-		if config.ServerName != "" {
-			hostname = config.ServerName
-		} else if host, _, e := net.SplitHostPort(addr); e == nil {
-			// SplitHostPort 成功：去掉端口，得到纯主机名用作 SNI / 证书校验。
-			// 去除 IPv6 字面量外层的方括号（SplitHostPort 不会去掉）。
-			hostname = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
-		} else if !strings.Contains(addr, ":") {
-			// addr 没有冒号（裸主机名）：可直接用作 SNI。
-			hostname = addr
-		} else {
-			// addr 含冒号但 SplitHostPort 失败（典型 IPv6 缺方括号 "::1:443"）：
-			// 不强行回退到原始串，避免把 "host:port" 当 SNI 发出去；
-			// 留空 hostname，由 wrapConn / 验证层使用对端 IP 作为 fallback。
-			hostname = ""
-		}
+	// 主机名：
+	//   - sniHost：ClientHello 的 SNI 扩展值，**无条件**推导——SNI 是路由信息，
+	//     与是否校验证书无关；缺它时多数真实站点回 `sslv3 alert handshake
+	//     failure`（alert 40），握手在验证之前就失败（见 SetServerName 注释）。
+	//   - verifyHost：仅在开启 PEER 验证时用于 SSL_set1_host 主机名校验。
+	// 两者都取自 ServerName，其次从 addr 推导（"host:port" / "[host]:port" / "host"）。
+	sniHost := ""
+	if config != nil && config.ServerName != "" {
+		sniHost = config.ServerName
+	} else if host, _, e := net.SplitHostPort(addr); e == nil {
+		// SplitHostPort 成功：去掉端口，得到纯主机名用作 SNI / 证书校验。
+		// 去除 IPv6 字面量外层的方括号（SplitHostPort 不会去掉）。
+		sniHost = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+	} else if !strings.Contains(addr, ":") {
+		// addr 没有冒号（裸主机名）：可直接用作 SNI。
+		sniHost = addr
 	}
-	conn, err := wrapConnWithHostname(raw, tlsCtx, false, hostname, true)
+	// IPv4 / IPv6 字面量不作为 SNI 发送（RFC 6066 §3：SNI 只允许 DNS 主机名，
+	// 发 IP 会被部分实现直接拒绝），但主机名校验仍可用 IP。
+	if net.ParseIP(sniHost) != nil {
+		sniHost = ""
+	}
+
+	verifyHost := ""
+	if !shouldSkipVerify(config) {
+		verifyHost = sniHost
+	}
+
+	conn, err := wrapConnWithHostname(raw, tlsCtx, false, sniHost, verifyHost, true)
 	if err != nil {
 		// wrapConnWithHostname 现在不做握手；唯一可能的失败是
 		// NewSSLConn / SetHostname，都与 ctx 无关——直接返回。
@@ -231,7 +239,8 @@ func NewServer(config *Config) (*Server, error) {
 // Callers must invoke *Conn.Handshake / HandshakeContext on the
 // returned *Conn to actually drive the handshake.
 func (s *Server) Accept(raw net.Conn) (net.Conn, error) {
-	return wrapConnWithHostname(raw, s.ctx, true, "", false)
+	// 服务端不设置 SNI / 校验主机名（由客户端在 ClientHello 中提供）。
+	return wrapConnWithHostname(raw, s.ctx, true, "", "", false)
 }
 
 // Close 释放服务端上下文（重复调用安全，幂等）。
@@ -268,7 +277,7 @@ type Conn struct {
 	// ownsCtx 为真时 Conn 拥有底层 *core.TLSContext，Close 时释放；
 	// 服务端 Accept 路径中 sharesCtx=false，关闭 ctx 由 Server.Close 负责。
 	ownsCtx bool
-	ctx *core.TLSContext
+	ctx     *core.TLSContext
 
 	// isServer / ntls 记录握手方向与协议类型，PeerCertificates / Close 路径需要。
 	isServer bool
@@ -288,8 +297,16 @@ type Conn struct {
 // *Conn without performing the handshake. When ownsCtx is true, the
 // returned *Conn owns ctx (only the DialContext path sets this); the
 // server Accept path shares ctx with the Server and the Server is
-// responsible for releasing it.
-func wrapConnWithHostname(raw net.Conn, ctx *core.TLSContext, server bool, hostname string, ownsCtx bool) (net.Conn, error) {
+// wrapConnWithHostname 创建 SSL 连接并（分别）设置 SNI 与校验用主机名。
+//
+// sniHost 非空时写入 ClientHello 的 server_name 扩展（路由信息，与验证无关）；
+// verifyHost 非空时设置 SSL_set1_host（证书主机名校验）。两者可为不同值，也可
+// 各自为空。均必须在 Connect 之前设置。
+//
+// wrapConnWithHostname creates the SSL connection and, independently, applies
+// the SNI (server_name) extension and the verification hostname. Both must be
+// set before Connect.
+func wrapConnWithHostname(raw net.Conn, ctx *core.TLSContext, server bool, sniHost, verifyHost string, ownsCtx bool) (net.Conn, error) {
 	fd, err := connFD(raw)
 	if err != nil {
 		return nil, err
@@ -298,18 +315,26 @@ func wrapConnWithHostname(raw net.Conn, ctx *core.TLSContext, server bool, hostn
 	if err != nil {
 		return nil, err
 	}
-	if !server && hostname != "" {
-		// 主机名验证必须在 Connect 之前设置；空字符串表示跳过。
-		if err := ssl.SetHostname(hostname); err != nil {
-			_ = ssl.Close()
-			return nil, err
+	if !server {
+		if sniHost != "" {
+			if err := ssl.SetServerName(sniHost); err != nil {
+				_ = ssl.Close()
+				return nil, err
+			}
+		}
+		if verifyHost != "" {
+			// 主机名验证必须在 Connect 之前设置；空字符串表示跳过。
+			if err := ssl.SetHostname(verifyHost); err != nil {
+				_ = ssl.Close()
+				return nil, err
+			}
 		}
 	}
 	return &Conn{
-		ssl:     ssl,
-		raw:     raw,
-		ownsCtx: ownsCtx,
-		ctx:     ctx,
+		ssl:      ssl,
+		raw:      raw,
+		ownsCtx:  ownsCtx,
+		ctx:      ctx,
 		isServer: server,
 		ntls:     ctx.IsNTLS(),
 	}, nil
@@ -375,7 +400,15 @@ func (c *Conn) HandshakeContext(ctx context.Context) error {
 		}()
 		select {
 		case hsErr := <-errCh:
-			c.handshakeErr = hsErr
+			// 竞态：ctx 到期/取消与后台握手 goroutine 因 deadline 退出可能
+			// 同时就绪，select 随机择一。为保持 crypto/tls 语义（调用方按
+			// errors.Is(err, context.DeadlineExceeded / context.Canceled)
+			// 判断），ctx 已结束时一律以 ctx.Err() 为准。
+			if cErr := ctx.Err(); cErr != nil {
+				c.handshakeErr = cErr
+			} else {
+				c.handshakeErr = hsErr
+			}
 		case <-ctx.Done():
 			// 唤醒握手中的 SSL_read/SSL_write 等待。
 			//

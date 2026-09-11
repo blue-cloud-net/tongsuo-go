@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -11,11 +12,27 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
 
-// waitFDTimeout 为 fd 轮询等待超时。
+// waitFDTimeout 为 fd 轮询等待超时（单次 select 的最长阻塞时间）。
 //
-// waitFDTimeout is the deadline for waiting on fd readiness during the
-// poll-based retry loop driven by Connect / Accept / Read / Write.
-const waitFDTimeout = 30 * time.Second
+// 这是**取消延迟的上界**：Connect / Accept / Read / Write 的重试循环只在
+// waitFD 返回后才重新检查 deadline 与 ctx，而在 Linux 上从另一线程关闭 fd
+// 并不能可靠唤醒已阻塞在 select(2) 里的调用（POSIX 未定义该行为）——因此
+// 单次 select 阻塞多久，取消就要等多久。
+//
+// 取值 250ms 的理由：把最坏取消延迟从 30s 降到 250ms（诊断/探针类场景里
+// "总预算"必须可强制执行），代价只是每 250ms 一次空转的 SSL_connect /
+// SSL_read 重试（该调用在 WANT_READ 时立即返回，开销可忽略）。
+//
+// 彻底方案是改用 poll(2)/epoll 以实现可中断等待（计划 v0.1.3+）。
+//
+// waitFDTimeout is the deadline for a single select(2) wait inside the
+// poll-based retry loop driven by Connect / Accept / Read / Write. It bounds
+// how long a cancellation can take: the retry loop only re-checks the
+// deadline / ctx after waitFD returns, and on Linux closing an fd from
+// another thread does not reliably wake a blocked select(2). 250ms keeps
+// cancellation prompt at negligible cost; a poll(2)/epoll rewrite is the
+// long-term fix.
+const waitFDTimeout = 250 * time.Millisecond
 
 // TLSContext 表示一个 TLS / NTLS 上下文（SSL_CTX 的包装）。
 //
@@ -188,6 +205,7 @@ func (c *TLSContext) SetMaxProtoVersion(v uint16) error {
 	}
 	return nil
 }
+
 // IsNTLS 报告 ctx 是否启用了 NTLS（TLCP）协议。
 //
 // IsNTLS reports whether the ctx was created with NTLS_method and has
@@ -206,6 +224,7 @@ func (c *TLSContext) IsNTLS() bool {
 	}
 	return c.ntls
 }
+
 // Close 释放底层上下文。幂等。
 //
 // Close releases the underlying SSL_CTX handle.
@@ -549,81 +568,101 @@ func (e *timeoutError) Temporary() bool { return false }
 // 在 deadline 触发的退出路径上同样成立，与 stdlib net 一致。
 func (e *timeoutError) Is(target error) bool { return target == os.ErrDeadlineExceeded }
 
-// remainingDeadline 返回 retry 等待时使用的剩余时间。
-// 未设 deadline 时返回 waitFDTimeout；deadline 已过期返回 0，调用方
-// （retry）应据此直接返回 timeoutError 而非再次进入 waitFD；
-// 否则返回剩余时间。
+// errWaitFDTimeout 表示**单次 select(2) 轮询切片**到期。
 //
-// remainingDeadline returns the duration to wait on this retry step:
-// waitFDTimeout when no deadline is set, 0 when the deadline has already
-// passed (caller MUST detect via retry and return a timeoutError without
-// invoking waitFD), otherwise the remaining time.
-func (s *SSLConn) remainingDeadline() time.Duration {
+// 它不等于"连接失败"：只要还有预算，调用方应当回去重试 SSL_* 并按新的
+// 剩余时间重新等待（这样 ctx/deadline 才能成为真正的终止条件）。
+//
+// errWaitFDTimeout marks the expiry of a single select(2) polling slice. It
+// does not mean the connection failed: while budget remains the caller should
+// retry SSL_* and wait again with the recomputed remaining time, so that the
+// ctx / deadline stays the effective termination condition.
+var errWaitFDTimeout = errors.New("tls: wait fd timeout")
+
+// waitPlan 返回本次 waitFD 的等待切片时长，以及"切片到期是否即为终止"。
+//
+//   - 已设 deadline 且已到期 → (0, true)：立即超时并终止（waitFD 对 <=0 退化为
+//     近即时返回）；
+//   - 已设 deadline 且剩余 ≤ 切片 → (剩余, true)：本次等待覆盖全部剩余预算，
+//     超时即到期；
+//   - 已设 deadline 且剩余 > 切片 → (切片, false)：切片到期后回到调用方重试，
+//     以重查 deadline；
+//   - 未设 deadline → (切片, false)：保持阻塞语义（等待直到 fd 就绪），
+//     取消由 HandshakeContext/DialContext 设置 deadline 或关闭 fd 来驱动。
+//
+// waitPlan returns the duration of the next waitFD slice and whether a slice
+// timeout is terminal.
+func (s *SSLConn) waitPlan() (slice time.Duration, terminal bool) {
 	d := s.deadline.Load()
 	if d == 0 {
-		return waitFDTimeout
+		return waitFDTimeout, false
 	}
 	rem := time.Until(time.Unix(0, d))
 	if rem <= 0 {
-		return 0 // 已超时；retry 应直接返回 timeoutError，避免再走 waitFD
+		return 0, true
 	}
-	return rem
+	if rem <= waitFDTimeout {
+		return rem, true
+	}
+	return waitFDTimeout, false
 }
 
-// retry 处理 WANT_READ/WANT_WRITE：等待 fd 就绪并返回 nil 以便重试；其他错误返回 error。
+// waitReady 等待 fd 就绪（write=true 表示等可写），返回 nil 以便调用方重试。
 //
-// 若调用方此前已设置 deadline 且已到期，retry 直接返回 timeoutError，
-// 不再调用 waitFD，从而绕开 syscall.Select 在 cgo 边界不可打断的
-// 平台限制（macOS / Linux 同样适用）。
+// 非终止的切片到期返回 nil（继续重试）；终止性超时（deadline 已耗尽）转换为
+// timeoutError，使调用方可按 net.Error.Timeout() 与
+// errors.Is(err, os.ErrDeadlineExceeded) 识别；其它 fd 错误原样上抛。
 //
-// 若 waitFD 自身因 deadline 到期而返回 "tls: wait fd timeout"，retry 也
-// 会把这种内核超时转换成 timeoutError，让调用方能用 net.Error.Timeout()
-// 与 errors.Is(err, os.ErrDeadlineExceeded) 识别。
+// waitReady blocks until the fd is ready, returning nil so the caller can
+// retry. A non-terminal slice timeout returns nil (keep retrying); a terminal
+// timeout is translated into a timeoutError so callers can detect it via
+// net.Error.Timeout() and errors.Is(err, os.ErrDeadlineExceeded); other fd
+// errors are surfaced unchanged.
+func (s *SSLConn) waitReady(op string, write bool) error {
+	slice, terminal := s.waitPlan()
+	err := waitFD(s.fd, write, slice)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, errWaitFDTimeout):
+		if terminal {
+			return &timeoutError{op: op}
+		}
+		return nil
+	default:
+		return err
+	}
+}
+
+// retry 处理 WANT_READ/WANT_WRITE：等待 fd 就绪并返回 nil 以便重试；其他错误返
+// 回 error。
 //
 // retry maps SSL_ERROR_WANT_READ / SSL_ERROR_WANT_WRITE to waitFD and
 // returns nil so the caller can retry; any other SSL_get_error value is
-// converted to a wrapped error via opError. When a user deadline has
-// already expired, retry short-circuits with a timeoutError to avoid
-// relying on syscall.Select being interruptible from Go. A waitFD-level
-// timeout under a user deadline is also surfaced as timeoutError.
+// converted to a wrapped error via opError.
 func (s *SSLConn) retry(op string, ret int) error {
 	switch native.SSL_get_error(s.handle.Ptr(), ret) {
 	case native.SSLErrorWantRead:
-		if err := waitFD(s.fd, false, s.remainingDeadline()); err != nil {
-			return s.deadlineError(op, err)
-		}
-		return nil
+		return s.waitReady(op, false)
 	case native.SSLErrorWantWrite:
-		if err := waitFD(s.fd, true, s.remainingDeadline()); err != nil {
-			return s.deadlineError(op, err)
-		}
-		return nil
+		return s.waitReady(op, true)
 	default:
 		return s.opError(op, ret)
 	}
 }
 
-// deadlineError 把 waitFD 的返回值按需转成 timeoutError：当用户已设置
-// deadline 且该 deadline 已过期（waitFD 内部超时的根因），将错误归类为
-// i/o timeout；否则透传 waitFD 原本的错误（fd 越界、EBADF 等）。
-//
-// deadlineError translates a waitFD error into a timeoutError when the
-// user deadline is the proximate cause; otherwise it surfaces the
-// underlying error unchanged (FD_SETSIZE overflow, EBADF, etc.).
-func (s *SSLConn) deadlineError(op string, waitErr error) error {
-	if d := s.deadline.Load(); d != 0 && time.Until(time.Unix(0, d)) <= 0 {
-		return &timeoutError{op: op}
-	}
-	return waitErr
-}
-
 // waitFD 在内部平台实现文件里定义（waitfd_linux.go / waitfd_darwin.go）。
+//
+// waitFD 仅承担"一次 select(2) 切片"的职责：返回 nil / errWaitFDTimeout
+// （切片到期）/ 其他 fd 错误（EBADF、FD_SETSIZE 越界等）。上层通过
+// waitPlan / waitReady 将切片轮询节奏与 ctx/deadline 终止条件解耦。
 //
 // waitFD is implemented in the per-OS build files
 // waitfd_linux.go and waitfd_darwin.go because syscall.Timeval field
-// types and syscall.Select return shape differ between Linux and
-// macOS. Keeping a single implementation per OS avoids runtime
-// branching while preserving cross-platform correctness.
+// types differ between Linux and macOS. waitFD only owns one slice's
+// outcome (nil / errWaitFDTimeout / other fd error); the slice cadence
+// and the ctx / deadline termination condition live in waitPlan /
+// waitReady so they stay free of platform branching.
 
 // Close 发送关闭通知并释放底层句柄。幂等。
 //
@@ -690,6 +729,31 @@ func (s *SSLConn) SetHostname(host string) error {
 	}
 	if !native.SSL_set1_host(s.handle.Ptr(), host) {
 		return NewOpError("tls: SSL_set1_host", native.PopError())
+	}
+	return nil
+}
+
+// SetServerName 设置 ClientHello 的 SNI 扩展（SSL_set_tlsext_host_name）。
+//
+// 与 SetHostname（SSL_set1_host，证书主机名校验）**互不替代**，需分别调用：
+//   - 本方法只是"路由信息"——告诉服务端要访问哪个域名，以便其选择正确证书；
+//   - 不改变对端验证模式（VERIFY_NONE / PEER 由 SetVerifyMode 决定）。
+//
+// 缺失 SNI 时，多数真实站点会直接返回 `sslv3 alert handshake failure`
+// （alert 40），握手在验证之前即失败；因此即使不校验证书也必须发送 SNI。
+//
+// 必须在 Connect 调用之前设置；已关闭连接返回错误。
+//
+// SetServerName sets the SNI (server_name) extension sent in the
+// ClientHello. It is routing information only and does not alter the peer
+// verification mode; call SetHostname separately when hostname verification
+// is desired. Must be invoked before Connect.
+func (s *SSLConn) SetServerName(host string) error {
+	if s == nil || s.handle == nil || s.handle.IsClosed() {
+		return fmt.Errorf("tls: SSL closed")
+	}
+	if !native.SSL_set_tlsext_host_name(s.handle.Ptr(), host) {
+		return NewOpError("tls: SSL_set_tlsext_host_name", native.PopError())
 	}
 	return nil
 }
@@ -778,8 +842,8 @@ func (s *SSLConn) opError(op string, ret int) error {
 // the Tongsuo cipher stack. The struct is a value type safe to copy and
 // store; no resource ownership is involved.
 type CipherInfo struct {
-	Name    string // OpenSSL 名，如 "ECDHE-SM2-SM4-GCM-SM3" / "TLS_AES_128_GCM_SHA256"
-	ID      uint16 // 16 位 IANA wire ID（NTLS 套件为 Tongsuo 私有编码）
+	Name       string // OpenSSL 名，如 "ECDHE-SM2-SM4-GCM-SM3" / "TLS_AES_128_GCM_SHA256"
+	ID         uint16 // 16 位 IANA wire ID（NTLS 套件为 Tongsuo 私有编码）
 	MinVersion string // "TLSv1.0"/"TLSv1.1"/"TLSv1.2"/"TLSv1.3"/"NTLSv1.1"
 }
 
@@ -830,8 +894,8 @@ func (c *TLSContext) CipherList() []CipherInfo {
 			continue
 		}
 		out = append(out, CipherInfo{
-			Name:      native.SSL_CIPHER_get_name(cp),
-			ID:        native.SSL_CIPHER_get_protocol_id(cp),
+			Name:       native.SSL_CIPHER_get_name(cp),
+			ID:         native.SSL_CIPHER_get_protocol_id(cp),
 			MinVersion: native.SSL_CIPHER_get_version(cp),
 		})
 	}

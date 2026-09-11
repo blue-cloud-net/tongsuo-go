@@ -257,4 +257,14 @@ int X_EVP_KDF_PBKDF2(const char *digest,
 /* 探测某 KDF 算法是否可用（成功返回 1 并清空 fetch 失败入队的错误）。 */
 int X_EVP_KDF_available(const char *algorithm);
 
+/*
+ * X_SSL_set_tlsext_host_name 包装 SSL_set_tlsext_host_name 宏（cgo 不能直接
+ * 调宏），在 ClientHello 中设置 SNI 扩展。
+ *
+ * 语义提醒：SNI 是路由扩展，与证书校验模式无关。缺 SNI 时多数真实站点回
+ * `sslv3 alert handshake failure`（alert 40），握手在验证之前就失败。
+ * 成功返回 1，失败返回 0。
+ */
+int X_SSL_set_tlsext_host_name(SSL *ssl, const char *name);
+
 #endif /* TONGSUO_GO_SHIM_H */

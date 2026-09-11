@@ -106,6 +106,31 @@
   `Conn.Close()` 在拨号侧负责释放；先前每次成功拨号都泄漏一个上下文。
 - `tls`：`Conn.Close` 现返回底层 raw socket close、SSL 句柄 close
   以及可选 ctx close 中的首个非 nil 错误；此前始终返回 `nil`。
+- `tls`：**客户端现在无条件发送 SNI（`server_name` 扩展），与对端验证模式解耦。**
+  此前 `DialContext` 仅在开启 PEER 验证时才推导主机名，且只经 `SSL_set1_host`
+  （主机名校验）应用，**从未**调用 `SSL_set_tlsext_host_name`。因此在
+  `InsecureSkipVerify: true`（`VERIFY_NONE`——诊断/探针类工具必须能观察自签与
+  过期证书，只能这么配）下 ClientHello **不带 SNI**，而绝大多数真实站点
+  （CDN / 虚拟主机 / 多证书部署）会直接回 `sslv3 alert handshake failure`
+  （alert 40），握手在验证阶段之前就失败。SNI 属**路由**信息，现改为无条件从
+  `Config.ServerName` 或拨号地址推导；IP 字面量不作为 SNI 发送（RFC 6066 §3）。
+  `SSL_set1_host` 仍在开启验证时使用。判别依据：`openssl s_client -connect
+  example.com:443 -noservername` 复现同一 alert。
+- `internal/native`：新增 `X_SSL_set_tlsext_host_name` shim（`SSL_set_tlsext_host_name`
+  是宏，cgo 无法直接调用）与 `SSL_set_tlsext_host_name` 绑定。
+- `internal/core`：新增 `SSLConn.SetServerName`，只设置 SNI 扩展、不改变验证模式。
+- `internal/core`：**握手 / 读写取消的生效时间从最长 30s 降到约 250ms。** 重试
+  循环只在 `waitFD` 返回后才重查 deadline / ctx，而在 Linux 上从另一线程关闭 fd
+  不能可靠唤醒阻塞中的 `select(2)` —— 因此单次 `waitFDTimeout`（原 30s）就是取消
+  延迟的上界。实测：父 ctx 300ms 到期时，一次版本矩阵探测仍耗时 **30.03s** 才返回，
+  调用方设置的"总预算"完全无法强制执行。现把 `waitFDTimeout` 降为 250ms 并改为
+  切片等待：**切片到期不再视为终止**（新增 `errWaitFDTimeout` 哨兵与
+  `waitPlan` / `waitReady`），只有 deadline 到期才终止；此前切片超时被当作致命错误
+  返回，还导致 `TestDialContextCancelFast` 间歇失败。副作用：`tls` 包测试耗时从
+  约 60s 降到约 6s。
+- `tls`：`HandshakeContext` 在 ctx 已结束时优先返回 `ctx.Err()`，不再与后台握手
+  goroutine 抢跑（后者在 deadline 被设置后可能自行退出）。保持 `crypto/tls` 语义，
+  便于调用方用 `errors.Is(err, context.DeadlineExceeded)` 判断。
 
 ### 测试硬化
 

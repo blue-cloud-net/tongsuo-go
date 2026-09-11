@@ -120,6 +120,42 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - `tls`: `Conn.Close` now returns the first non-nil error from the
   underlying raw socket close, the SSL handle close, and the optional
   context close. Previously it always returned `nil`.
+- `tls`: **the client now sends SNI (the `server_name` extension) regardless
+  of the peer-verification mode.** `DialContext` previously derived the
+  hostname only when PEER verification was enabled, and only applied it via
+  `SSL_set1_host` (hostname verification) — never via
+  `SSL_set_tlsext_host_name`. With `InsecureSkipVerify: true` (the
+  `VERIFY_NONE` configuration used by diagnostic/probe tools, where
+  self-signed and expired certificates must be inspectable) the ClientHello
+  therefore carried **no SNI**, and most real-world endpoints (CDNs, virtual
+  hosts, multi-certificate deployments) aborted the handshake with
+  `sslv3 alert handshake failure` (alert 40) before any verification could
+  run. SNI is routing information and is now derived unconditionally from
+  `Config.ServerName` or the dial address; IP literals are not used as SNI
+  (RFC 6066 §3). `SSL_set1_host` is still applied only when verifying.
+  Verified against `openssl s_client -connect example.com:443
+  -noservername`, which reproduces the same alert.
+- `internal/native`: added the `X_SSL_set_tlsext_host_name` shim (the
+  `SSL_set_tlsext_host_name` macro cannot be called directly from cgo) and
+  the `SSL_set_tlsext_host_name` binding.
+- `internal/core`: added `SSLConn.SetServerName`, which sets the SNI
+  extension only; it does not change the verification mode.
+- `internal/core`: **handshake / read / write cancellation now takes effect
+  within ~250ms instead of up to 30s.** The poll-based retry loop only
+  re-checks the deadline / ctx after `waitFD` returns, and on Linux closing an
+  fd from another thread does not reliably wake a blocked `select(2)` — so a
+  single `waitFDTimeout` (previously 30s) bounded how long a cancellation
+  could take. Measured: with a parent ctx expiring at 300ms, a version-matrix
+  probe still took **30.03s** to return, making any caller-side budget
+  unenforceable. `waitFDTimeout` is now 250ms and the wait is sliced: a slice
+  expiry is **not** terminal (`errWaitFDTimeout` + `waitPlan` / `waitReady`),
+  only an expired deadline is. Previously a slice timeout was returned as a
+  fatal error, which additionally made `TestDialContextCancelFast` flaky.
+  Side effect: the `tls` package test suite dropped from ~60s to ~6s.
+- `tls`: `HandshakeContext` now prefers `ctx.Err()` when ctx has already
+  ended, instead of racing the background handshake goroutine (which may exit
+  on its own once the deadline is set). Keeps `crypto/tls` semantics for
+  callers that check `errors.Is(err, context.DeadlineExceeded)`.
 
 ### Tests hardened
 
