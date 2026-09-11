@@ -28,6 +28,7 @@ const waitFDTimeout = 30 * time.Second
 // the context.
 type TLSContext struct {
 	handle *Handle
+	ntls   bool // 构造时一次性锁定；IsNTLS() 使用。
 }
 
 // NewClientTLSContext 创建 TLS 客户端上下文。
@@ -91,7 +92,7 @@ func newTLSContext(method unsafe.Pointer, ntls bool) (*TLSContext, error) {
 	if ntls {
 		native.SSL_CTX_enable_ntls(ctx)
 	}
-	return &TLSContext{handle: h}, nil
+	return &TLSContext{handle: h, ntls: ntls}, nil
 }
 
 // UseCertificate 设置 TLS 证书与私钥（单证书模式）。
@@ -166,12 +167,6 @@ func (c *TLSContext) SetCipherList(list string) error {
 }
 
 // SetMinProtoVersion 设置最低协议版本（如 native.TLS1_2Version）。
-//
-// SetMinProtoVersion sets the minimum accepted protocol version.
-//
-// Pass one of the native.TLS*_VERSION constants (for example
-// native.TLS1_2Version). Errors from the underlying OpenSSL call are
-// wrapped as OpError.
 func (c *TLSContext) SetMinProtoVersion(v uint16) error {
 	if !native.SSL_CTX_set_min_proto_version(c.handle.Ptr(), int(v)) {
 		return NewOpError("tls: SSL_CTX_set_min_proto_version", native.PopError())
@@ -192,7 +187,24 @@ func (c *TLSContext) SetMaxProtoVersion(v uint16) error {
 	}
 	return nil
 }
-
+// IsNTLS 报告 ctx 是否启用了 NTLS（TLCP）协议。
+//
+// IsNTLS reports whether the ctx was created with NTLS_method and has
+// had SSL_CTX_enable_ntls applied. Used by tls.go to route per-Conn
+// fields such as the NTLS-specific peer-certificate extraction.
+//
+// 返回值：在 NewNTLSContext 构造并启用 NTLS 时为 true；其它场景（含
+// 已关闭上下文 / nil 接收者）一律为 false。
+//
+// Returns true when the ctx was created via NewNTLSContext (which
+// invokes SSL_CTX_enable_ntls); false for every other case including
+// nil receivers and closed contexts.
+func (c *TLSContext) IsNTLS() bool {
+	if c == nil {
+		return false
+	}
+	return c.ntls
+}
 // Close 释放底层上下文。幂等。
 //
 // Close releases the underlying SSL_CTX handle.
@@ -688,4 +700,155 @@ func (s *SSLConn) opError(op string, ret int) error {
 		return NewOpError("tls: "+op+" (syscall)", native.PopError())
 	}
 	return NewOpError("tls: "+op, native.PopError())
+}
+
+/*
+ * Phase v0.1.2：套件枚举与对端证书链在 core 层的表现。
+ *
+ * tls 包将在其上实现 CipherSuites(uint16) []CipherSuiteInfo 、对端证书
+ * leaf→root 重构等公开能力；core 只提供面向 handle 的原子操作（枚举、dup），
+ * 不做以公开层语义（RFC 5280 验证、链顺序）为单位的包装。
+ */
+
+// CipherInfo 是对 TLS 密码套件只读信息的轻量描述。
+//
+// CipherInfo is a read-only snapshot of a TLS cipher suite as reported by
+// the Tongsuo cipher stack. The struct is a value type safe to copy and
+// store; no resource ownership is involved.
+type CipherInfo struct {
+	Name    string // OpenSSL 名，如 "ECDHE-SM2-SM4-GCM-SM3" / "TLS_AES_128_GCM_SHA256"
+	ID      uint16 // 16 位 IANA wire ID（NTLS 套件为 Tongsuo 私有编码）
+	MinVersion string // "TLSv1.0"/"TLSv1.1"/"TLSv1.2"/"TLSv1.3"/"NTLSv1.1"
+}
+
+// SetCipherSuites 设置 ctx 上的 TLS1.3 套件名单（OpenSSL 标准名）。经
+// ciphersuites 接口走 TLS1.3 路径，不会改变 SSL_CTX_set_cipher_list 控制的
+// ≤ TLS1.2 套件名单。空字符串是 no-op。
+//
+// SetCipherSuites restricts ctx's TLS1.3 ciphersuites to the colon-separated
+// list of OpenSSL standard names. This does NOT affect the legacy cipher
+// list (SSL_CTX_set_cipher_list); the two lists are independent. An empty
+// string is a no-op.
+func (c *TLSContext) SetCipherSuites(list string) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("tls: SSL_CTX closed")
+	}
+	if list == "" {
+		return nil
+	}
+	if !native.SSL_CTX_set_ciphersuites(c.handle.Ptr(), list) {
+		return NewOpError("tls: SSL_CTX_set_ciphersuites", native.PopError())
+	}
+	return nil
+}
+
+// CipherList 返回 ctx 当前启用的全部套件信息（TLS1.3 套件排在前部）。
+// 结果以 OpenSSL 名字符串、IANA 16 位 ID 与 min_tls 版本字符串三字段表达；
+// 已关闭上下文 / 未设置任何套件 返回 nil。
+//
+// CipherList returns information about every cipher currently enabled on
+// ctx (TLS1.3 ciphers precede legacy ones). Returns nil for a closed ctx
+// or when no cipher is enabled.
+func (c *TLSContext) CipherList() []CipherInfo {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil
+	}
+	sk := native.SSL_CTX_get_ciphers(c.handle.Ptr())
+	if sk == nil {
+		return nil
+	}
+	n := native.SSL_CIPHER_sk_num(sk)
+	if n == 0 {
+		return nil
+	}
+	out := make([]CipherInfo, 0, n)
+	for i := 0; i < n; i++ {
+		cp := native.SSL_CIPHER_sk_value(sk, i)
+		if cp == nil {
+			continue
+		}
+		out = append(out, CipherInfo{
+			Name:      native.SSL_CIPHER_get_name(cp),
+			ID:        native.SSL_CIPHER_get_protocol_id(cp),
+			MinVersion: native.SSL_CIPHER_get_version(cp),
+		})
+	}
+	return out
+}
+
+// CipherVersionToUint16 将公开层使用的版本标识映射到 native.*Version 常量。
+// 未识别返回 0。供 tls.CipherSuites 等枚举接口调用。
+//
+// CipherVersionToUint16 maps a public-facing version identifier to the
+// internal native.*Version constant. Returns 0 for unknown inputs.
+func CipherVersionToUint16(version uint16) uint16 {
+	switch version {
+	case native.TLS1Version, native.TLS1_1Version, native.TLS1_2Version,
+		native.TLS1_3Version, native.NTLSVersion:
+		return version
+	}
+	return 0
+}
+
+// VersionNameToUint16 将 SSL_get_version 返回的字符串映射到 native 版本常量。
+// 用于拆解受套件带有的版本字段。未识别返回 0。
+//
+// VersionNameToUint16 maps the human-readable version string returned by
+// SSL_get_version to the corresponding native.*Version constant. Returns 0
+// for unrecognized values.
+func VersionNameToUint16(name string) uint16 {
+	switch name {
+	case "TLSv1", "TLSv1.0":
+		return native.TLS1Version
+	case "TLSv1.1":
+		return native.TLS1_1Version
+	case "TLSv1.2":
+		return native.TLS1_2Version
+	case "TLSv1.3":
+		return native.TLS1_3Version
+	case "NTLS", "NTLSv1.1":
+		return native.NTLSVersion
+	}
+	return 0
+}
+
+// PeerCertificates 返回对端证书链的 owned *Certificate 副本（每张都经
+// X509_dup）。返回切片索引 0 为最深的「最上送」证书（调用方需按
+// IssuerText/SubjectText 关系自行重排为 leaf→root）。无对端证书返回
+// nil, nil。ssl 已关闭返回 error。
+//
+// PeerCertificates returns owned *Certificate copies of the peer's
+// certificate chain. The stack returned by SSL_get_peer_cert_chain holds
+// internal pointers borrowed from the session; we duplicate each entry via
+// X509_dup so the caller owns the result.
+//
+// The returned slice is in the on-the-wire order (deepest "most recent"
+// cert first); callers that need a leaf→root chain should rebuild it from
+// the issuer / subject relations. Returns (nil, nil) when the peer did
+// not present any certificate.
+func (s *SSLConn) PeerCertificates() ([]*Certificate, error) {
+	if s == nil || s.handle == nil || s.handle.IsClosed() {
+		return nil, fmt.Errorf("tls: SSL closed")
+	}
+	sk := native.SSL_get_peer_cert_chain(s.handle.Ptr())
+	if sk == nil {
+		return nil, nil
+	}
+	n := native.X509_sk_X509_num(sk)
+	if n == 0 {
+		return nil, nil
+	}
+	out := make([]*Certificate, 0, n)
+	for i := 0; i < n; i++ {
+		cp := native.X509_sk_X509_value(sk, i)
+		if cp == nil {
+			continue
+		}
+		dup := native.X509_dup(cp)
+		if dup == nil {
+			return nil, NewOpError("tls: X509_dup", native.PopError())
+		}
+		out = append(out, &Certificate{handle: NewHandle(dup, true, native.X509_free)})
+	}
+	return out, nil
 }
