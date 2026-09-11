@@ -26,6 +26,32 @@
 - 新增 `crypto/x448` 包（X448 ECDH，RFC 7748）：密钥生成、PEM（PKCS#8 /
   SPKI）往返、56 字节原始密钥互操作与 `SharedSecret`。
 - `key` 包新增 `AlgX448` 与 `GenerateX448Key`。
+- `tls`：新增 `DialContext(ctx, network, addr, cfg)`，TCP 拨号与 TLS/NTLS
+  握手统一受同一 ctx 控制；`Dial` 改为 `DialContext(context.Background(),
+  ...)` 的薄包装，源代码兼容。
+- `tls.Conn`：新增 `HandshakeContext(ctx)` 在 goroutine 内执行握手，
+  ctx 触发时通过 `SetDeadline` + 关闭 raw socket 唤醒在途的
+  `SSL_read` / `SSL_write` 等待；对外暴露的 `Handshake()` 是
+  `context.Background()` 的包装。
+- `tls.Conn`：新增 `PeerCertificates() ([]*x509.Certificate, error)` 返回
+  对端的叶子证书与所有中间证书；NTLS 另提供 `PeerEncCertificates()
+  ([]*x509.Certificate, error)` 返回加密证书链。
+- `tls`：新增 `CipherSuites(version uint16) []CipherSuiteInfo`，
+  按协议版本（`0x0301`–`0x0304` 与 `NTLSVersion = 0x0101`）枚举
+  `SSL_CTX` 支持的算法套件，每项返回 `{Name, ID, MinVersion, MaxVersion}`。
+- `tls`：新增 `NTLSVersion uint16 = 0x0101` 常量用于 NTLS 协议探测。
+- `tls.Config.CipherSuites`：以 `TLS_` 开头的名字走 Tongsuo TLS 1.3
+  路径 `SSL_CTX_set_ciphersuites`，其余（无前缀）走经典路径
+  `SSL_CTX_set_cipher_list`。任一名字未匹配时不视为致命错误（直接
+  跳过）；最终空集返回 `ErrNoSharedCipher`。
+- `tls`：新增哨兵错误 `ErrVersionNotSupported` / `ErrNoSharedCipher` /
+  `ErrPeerVerification` / `ErrNetwork`，以及类型化错误
+  `*HandshakeError`（`Op` / `Kind` / `Err`），按 library + reason 对
+  OpenSSL 错误分类（`SSL_R_NO_SHARED_CIPHER` /
+  `SSL_R_UNSUPPORTED_PROTOCOL` / `X509_R_CERT_VERIFY_FAILED` 等），同时
+  保留 `ctx.Err()` 直传语义。
+- `x509.Certificate`：新增 `Close() error` 释放证书持有的 cgo 资源，
+  多次调用幂等。
 
 ### 行为变化与重构
 
@@ -33,6 +59,9 @@
   密钥，与 Go 标准库 `crypto/ecdh` 语义对齐。
 - `crypto/ecdh`：OKP 曲线改用类型化曲线族分派（不再比较展示名），且 `ECDH`
   显式拒绝非 EC 的算法组合。
+- `tls.Server.Accept`：现仅构造 `*Conn` 即返回，TLS/NTLS 握手推迟到
+  在返回的连接上显式调用 `Handshake()` / `HandshakeContext()`；原有
+  调用方若没有主动调用 `Handshake` 则需补上，已显式调用的不受影响。
 
 ### Bug 修复
 
@@ -40,11 +69,24 @@
   此前仅调用 `internal/core`。
 - `internal/testutil`：新增 `OpenSSLAvailable` 与 `SkipIfNoOpenSSL`，使 CLI
   对拍测试在缺少铜锁二进制时跳过而不是失败。
+- `tls`：修复 `Dial` 路径的 `SSL_CTX` 泄漏——`*core.TLSContext` 现由
+  `Conn.Close()` 在拨号侧负责释放；先前每次成功拨号都泄漏一个上下文。
+- `tls`：`Conn.Close` 现返回底层 raw socket close、SSL 句柄 close
+  以及可选 ctx close 中的首个非 nil 错误；此前始终返回 `nil`。
 
 ### 文档
 
 - 在 `crypto/ecdh` 中补充 X25519 / X448 / secp256k1 说明，并同步
   `docs/architecture.md` 与 `docs/testing-guide.md`。
+- 在包 GoDoc 中补充 `tls.DialContext` / `tls.Conn.HandshakeContext` 的取
+  消语义说明。
+
+### 已知限制
+
+- `tls`：在 Linux 平台，握手阶段的 ctx 取消最多需等待内部
+  `waitFDTimeout`（30 s）才能返回——cgo 等待路径使用 `syscall.Select`，
+  该调用无法从 Go 侧直接打断。建议调用方给 ctx 携带 deadline，而
+  非依赖纯 `cancel`。完整的 `epoll` / `poll(2)` 改造计划在 v0.1.3+。
 
 ---
 

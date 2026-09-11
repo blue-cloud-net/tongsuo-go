@@ -28,6 +28,37 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - Added the `crypto/x448` package (X448 ECDH, RFC 7748): key generation, PEM
   (PKCS#8 / SPKI) round-trip, 56-byte raw key interop and `SharedSecret`.
 - `key` gained `AlgX448` and `GenerateX448Key`.
+- `tls`: new `DialContext(ctx, network, addr, cfg)` drives both the TCP dial
+  and the TLS/NTLS handshake under the same context. `Dial` is now a
+  `context.Background()` wrapper around `DialContext` and remains source
+  compatible.
+- `tls.Conn`: new `HandshakeContext(ctx)` runs the handshake on a goroutine
+  and unwinds in-progress `SSL_read` / `SSL_write` waits via the underlying
+  `SetDeadline` + raw-socket close when `ctx` is cancelled; the exported
+  `Handshake()` is a `context.Background()` wrapper.
+- `tls.Conn`: new `PeerCertificates() ([]*x509.Certificate, error)` returns
+  the leaf and any intermediates received from the peer; for NTLS a second
+  accessor `PeerEncCertificates() ([]*x509.Certificate, error)` returns the
+  encryption certificate chain.
+- `tls`: new `CipherSuites(version uint16) []CipherSuiteInfo` enumerates the
+  ciphers supported by an `SSL_CTX` for a given protocol version
+  (`0x0301`–`0x0304` and `NTLSVersion = 0x0101`); each entry exposes
+  `{Name, ID, MinVersion, MaxVersion}`.
+- `tls`: new `NTLSVersion uint16 = 0x0101` constant for NTLS protocol
+  probing.
+- `tls.Config.CipherSuites`: names starting with `TLS_` are forwarded to
+  Tongsuo's TLS 1.3 `SSL_CTX_set_ciphersuites`; legacy names (no `TLS_`
+  prefix) are routed to the classic `SSL_CTX_set_cipher_list`. Names that
+  fail to match in either path are skipped (no fatal error); a final
+  empty match set surfaces as `ErrNoSharedCipher`.
+- `tls`: new sentinel errors `ErrVersionNotSupported`, `ErrNoSharedCipher`,
+  `ErrPeerVerification`, `ErrNetwork` and a typed `*HandshakeError`
+  (`Op` / `Kind` / `Err`) that classifies OpenSSL errors by library +
+  reason (`SSL_R_NO_SHARED_CIPHER`, `SSL_R_UNSUPPORTED_PROTOCOL`,
+  `X509_R_CERT_VERIFY_FAILED`, etc.) without losing `ctx.Err()`
+  passthrough.
+- `x509.Certificate`: new `Close() error` releases any cgo-managed
+  resources held by the certificate; safe to call multiple times.
 
 ### Changed
 
@@ -36,6 +67,11 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - `crypto/ecdh`: OKP curves are dispatched through a typed curve kind
   instead of comparing display names, and `ECDH` rejects non-EC algorithm
   pairs explicitly.
+- `tls.Server.Accept`: now returns immediately after constructing the
+  `*Conn`; the TLS/NTLS handshake is deferred until `Handshake()` /
+  `HandshakeContext()` is called on the returned connection. Existing
+  callers that did not invoke `Handshake` now need to do so explicitly;
+  callers that already call `Handshake` are unaffected.
 
 ### Fixed
 
@@ -44,11 +80,27 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   `internal/core`.
 - `internal/testutil`: added `OpenSSLAvailable` and `SkipIfNoOpenSSL`, so CLI
   interop tests skip instead of failing when the Tongsuo binary is missing.
+- `tls`: fixed a `SSL_CTX` leak in `Dial` — the `*core.TLSContext` is now
+  released by `Conn.Close()` on the dial path. The previous code leaked one
+  context per successful dial.
+- `tls`: `Conn.Close` now returns the first non-nil error from the
+  underlying raw socket close, the SSL handle close, and the optional
+  context close. Previously it always returned `nil`.
 
 ### Documentation
 
 - Documented X25519 / X448 / secp256k1 support in `crypto/ecdh`, and synced
   `docs/architecture.md` and `docs/testing-guide.md`.
+- Documented `tls.DialContext` / `tls.Conn.HandshakeContext` cancellation
+  semantics in the package GoDoc.
+
+### Known limitations
+
+- `tls`: on Linux, in-flight handshake cancellation can take up to the
+  internal `waitFDTimeout` (30 s) to unwind because the cgo wait path uses
+  `syscall.Select`, which is not interruptible from Go. Callers should
+  pass a context with a deadline rather than relying on plain `cancel`.
+  A move to `epoll` / `poll(2)` is planned for v0.1.3+.
 
 ---
 
