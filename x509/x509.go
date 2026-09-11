@@ -36,6 +36,7 @@ package x509
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
@@ -46,7 +47,47 @@ import (
 //
 // Certificate represents an X.509 certificate.
 type Certificate struct {
-	cert *core.Certificate
+	cert    *core.Certificate
+	closeMu sync.Mutex   // 保护 closed 字段，使 Close 幂等。
+	closed  bool
+}
+
+// Close 释放底层证书句柄。幂等。
+//
+// 成功 Close 后任何其他方法对该 *Certificate 调用会返回错误
+// （操作类）或零值（查询类，参见 internal/core.Handle 合约）。
+//
+// Close releases the underlying X509 handle.
+//
+// The call is idempotent: invoking it on a nil receiver or on a
+// certificate that has already been closed returns nil without further
+// side effects. After Close returns, any other method on the same
+// *Certificate returns the error "x509: certificate closed" (or a
+// zero-value result for query-style methods, see the internal/core
+// Handle contract).
+//
+// All ownership rules:
+//   - LoadCertificatePEM / LoadCertificateDER / NewCertificate return a
+//     *Certificate whose underlying *core.Certificate is owned solely by
+//     that wrapper. Calling Close releases the native X509.
+//   - WrapCertificate wraps an existing *core.Certificate without taking
+//     ownership; the caller (whoever owns the *core.Certificate) is
+//     responsible for releasing it. Calling Close on a wrapped certificate
+//     is safe but has no effect: the first close (from the true owner)
+//     wins, and Handle.Close is idempotent.
+//   - Config.Cert (TLS) is installed into SSL_CTX with X509_up_ref, so
+//     closing the original *Certificate is safe.
+func (c *Certificate) Close() error {
+	if c == nil {
+		return nil
+	}
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
+	if c.closed {
+		return nil
+	}
+	c.closed = true
+	return c.cert.Close()
 }
 
 // Core 返回底层核心证书对象（供内部跨包使用，如 tls）。
