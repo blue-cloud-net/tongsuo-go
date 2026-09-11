@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -519,14 +520,44 @@ func (s *SSLConn) Write(buf []byte) (int, error) {
 	}
 }
 
+// timeoutError 标记一次 I/O 因用户 deadline 到期而中止，实现 net.Error。
+//
+// 实现 Timeout() bool 与 Is(os.ErrDeadlineExceeded) 双向：
+//
+//   - var ne net.Error; errors.As(err, &ne) && ne.Timeout()
+//   - errors.Is(err, os.ErrDeadlineExceeded)
+//
+// 调用方因此既可按超时识别，也可按 deadline 哨兵统一比较。
+//
+// timeoutError signals that an SSL read / write / connect / accept was
+// aborted because the user-supplied deadline expired before the underlying
+// fd became ready. It implements net.Error so callers can detect timeouts
+// via the standard Timeout() interface and via errors.Is against
+// os.ErrDeadlineExceeded.
+type timeoutError struct {
+	op string
+}
+
+func (e *timeoutError) Error() string { return "tls: " + e.op + ": i/o timeout" }
+func (e *timeoutError) Timeout() bool { return true }
+
+// Temporary 满足 net.Error 接口；deadline-driven 退出不属于 transient 故障，
+// 故返回 false，与 stdlib net 包对 deadline 类错误的语义一致。
+func (e *timeoutError) Temporary() bool { return false }
+
+// Is 让 errors.Is(err, os.ErrDeadlineExceeded) / context.DeadlineExceeded
+// 在 deadline 触发的退出路径上同样成立，与 stdlib net 一致。
+func (e *timeoutError) Is(target error) bool { return target == os.ErrDeadlineExceeded }
+
 // remainingDeadline 返回 retry 等待时使用的剩余时间。
-// 未设 deadline（0）或剩余 <= 0 时返回 waitFDTimeout；否则返回剩余时间
-// （最小到 1ms 以避免内核 0 超时）。
+// 未设 deadline 时返回 waitFDTimeout；deadline 已过期返回 0，调用方
+// （retry）应据此直接返回 timeoutError 而非再次进入 waitFD；
+// 否则返回剩余时间。
 //
 // remainingDeadline returns the duration to wait on this retry step:
-// waitFDTimeout when no deadline is set or the deadline has passed;
-// otherwise the remaining time (clamped to >= 1ms so the kernel does
-// not treat it as "infinite").
+// waitFDTimeout when no deadline is set, 0 when the deadline has already
+// passed (caller MUST detect via retry and return a timeoutError without
+// invoking waitFD), otherwise the remaining time.
 func (s *SSLConn) remainingDeadline() time.Duration {
 	d := s.deadline.Load()
 	if d == 0 {
@@ -534,25 +565,56 @@ func (s *SSLConn) remainingDeadline() time.Duration {
 	}
 	rem := time.Until(time.Unix(0, d))
 	if rem <= 0 {
-		return time.Millisecond // 已超时；让本次 waitFD 立即返回
+		return 0 // 已超时；retry 应直接返回 timeoutError，避免再走 waitFD
 	}
 	return rem
 }
 
 // retry 处理 WANT_READ/WANT_WRITE：等待 fd 就绪并返回 nil 以便重试；其他错误返回 error。
 //
+// 若调用方此前已设置 deadline 且已到期，retry 直接返回 timeoutError，
+// 不再调用 waitFD，从而绕开 syscall.Select 在 cgo 边界不可打断的
+// 平台限制（macOS / Linux 同样适用）。
+//
+// 若 waitFD 自身因 deadline 到期而返回 "tls: wait fd timeout"，retry 也
+// 会把这种内核超时转换成 timeoutError，让调用方能用 net.Error.Timeout()
+// 与 errors.Is(err, os.ErrDeadlineExceeded) 识别。
+//
 // retry maps SSL_ERROR_WANT_READ / SSL_ERROR_WANT_WRITE to waitFD and
 // returns nil so the caller can retry; any other SSL_get_error value is
-// converted to a wrapped error via opError.
+// converted to a wrapped error via opError. When a user deadline has
+// already expired, retry short-circuits with a timeoutError to avoid
+// relying on syscall.Select being interruptible from Go. A waitFD-level
+// timeout under a user deadline is also surfaced as timeoutError.
 func (s *SSLConn) retry(op string, ret int) error {
 	switch native.SSL_get_error(s.handle.Ptr(), ret) {
 	case native.SSLErrorWantRead:
-		return waitFD(s.fd, false, s.remainingDeadline())
+		if err := waitFD(s.fd, false, s.remainingDeadline()); err != nil {
+			return s.deadlineError(op, err)
+		}
+		return nil
 	case native.SSLErrorWantWrite:
-		return waitFD(s.fd, true, s.remainingDeadline())
+		if err := waitFD(s.fd, true, s.remainingDeadline()); err != nil {
+			return s.deadlineError(op, err)
+		}
+		return nil
 	default:
 		return s.opError(op, ret)
 	}
+}
+
+// deadlineError 把 waitFD 的返回值按需转成 timeoutError：当用户已设置
+// deadline 且该 deadline 已过期（waitFD 内部超时的根因），将错误归类为
+// i/o timeout；否则透传 waitFD 原本的错误（fd 越界、EBADF 等）。
+//
+// deadlineError translates a waitFD error into a timeoutError when the
+// user deadline is the proximate cause; otherwise it surfaces the
+// underlying error unchanged (FD_SETSIZE overflow, EBADF, etc.).
+func (s *SSLConn) deadlineError(op string, waitErr error) error {
+	if d := s.deadline.Load(); d != 0 && time.Until(time.Unix(0, d)) <= 0 {
+		return &timeoutError{op: op}
+	}
+	return waitErr
 }
 
 // waitFD 在内部平台实现文件里定义（waitfd_linux.go / waitfd_darwin.go）。

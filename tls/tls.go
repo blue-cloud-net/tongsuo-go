@@ -552,6 +552,9 @@ func (c *Conn) RemoteAddr() net.Addr { return c.raw.RemoteAddr() }
 // (propagated to SSL's waitFD retry loop) and also to the underlying
 // socket.
 func (c *Conn) SetDeadline(t time.Time) error {
+	if c == nil || c.ssl == nil {
+		return errors.New("tls: SSL closed")
+	}
 	if err := c.ssl.SetDeadline(t); err != nil {
 		return err
 	}
@@ -567,6 +570,9 @@ func (c *Conn) SetDeadline(t time.Time) error {
 // zero so that subsequent Write calls are not impacted by a stale write
 // timeout.
 func (c *Conn) SetReadDeadline(t time.Time) error {
+	if c == nil || c.ssl == nil {
+		return errors.New("tls: SSL closed")
+	}
 	if err := c.ssl.SetDeadline(t); err != nil {
 		return err
 	}
@@ -587,6 +593,9 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
 // zero so that subsequent Read calls are not impacted by a stale read
 // timeout.
 func (c *Conn) SetWriteDeadline(t time.Time) error {
+	if c == nil || c.ssl == nil {
+		return errors.New("tls: SSL closed")
+	}
 	if err := c.ssl.SetDeadline(t); err != nil {
 		return err
 	}

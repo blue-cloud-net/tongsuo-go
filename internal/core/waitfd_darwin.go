@@ -22,10 +22,15 @@ const fdSetSize = 1024
 
 // waitFD 等待 fd 可读（write=false）或可写（write=true），最长 timeout 时间。
 // timeout <= 0 退化为 1μs 立即超时。fd >= FD_SETSIZE 直接返回明确错误。
+// Select 返回 0（fd 永远未就绪）时返回 "tls: wait fd timeout"，与 linux
+// 路径一致；否则将 n==0 错误地当成"就绪"会让 retry 循环无限自旋。
 //
 // waitFD blocks until fd becomes ready for read (write=false) or write
 // (write=true), or until timeout elapses. fd >= 1024 returns a clear
-// error rather than risking OOB.
+// error rather than risking OOB. A Select return of 0 (timeout) surfaces
+// as "tls: wait fd timeout" — matching the linux implementation so the
+// outer retry loop has an actual upper bound instead of silently
+// retrying on a kernel-side timeout.
 func waitFD(fd int, write bool, timeout time.Duration) error {
 	if fd < 0 {
 		return fmt.Errorf("tls: wait fd: invalid fd %d", fd)
@@ -46,14 +51,20 @@ func waitFD(fd int, write bool, timeout time.Duration) error {
 		Sec:  int64(timeout / time.Second),
 		Usec: int32((timeout % time.Second) / time.Microsecond),
 	}
-	var selErr error
+	var (
+		n      int
+		selErr error
+	)
 	if write {
-		selErr = syscall.Select(fd+1, nil, &wfds, nil, tv)
+		n, selErr = syscall.Select(fd+1, nil, &wfds, nil, tv)
 	} else {
-		selErr = syscall.Select(fd+1, &rfds, nil, nil, tv)
+		n, selErr = syscall.Select(fd+1, &rfds, nil, nil, tv)
 	}
 	if selErr != nil {
 		return fmt.Errorf("tls: wait fd: %w", selErr)
+	}
+	if n == 0 {
+		return fmt.Errorf("tls: wait fd timeout")
 	}
 	return nil
 }
