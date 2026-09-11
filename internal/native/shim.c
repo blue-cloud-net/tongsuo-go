@@ -469,6 +469,65 @@ void X_ASN1_ENUMERATED_free(void *a)
     ASN1_ENUMERATED_free((ASN1_ENUMERATED *)a);
 }
 
+/* ---------- TLS 密码套件枚举与访问（Tongsuo/OpenSSL 3.x） ---------- */
+
+void *X_SSL_CIPHER_get_name(const void *cipher)
+{
+    const char *p = SSL_CIPHER_get_name((const SSL_CIPHER *)cipher);
+    return p == NULL ? NULL : (void *)OPENSSL_strdup(p);
+}
+
+uint32_t X_SSL_CIPHER_get_id(const void *cipher)
+{
+    return (uint32_t)SSL_CIPHER_get_id((const SSL_CIPHER *)cipher);
+}
+
+uint16_t X_SSL_CIPHER_get_protocol_id(const void *cipher)
+{
+    return (uint16_t)SSL_CIPHER_get_protocol_id((const SSL_CIPHER *)cipher);
+}
+
+void *X_SSL_CIPHER_get_version_str(const void *cipher)
+{
+    const char *p = SSL_CIPHER_get_version((const SSL_CIPHER *)cipher);
+    return p == NULL ? NULL : (void *)OPENSSL_strdup(p);
+}
+
+void *X_SSL_CTX_get_ciphers(const void *ctx)
+{
+    return (void *)SSL_CTX_get_ciphers((const SSL_CTX *)ctx);
+}
+
+int X_SSL_CIPHER_sk_num(const void *sk)
+{
+    return sk_SSL_CIPHER_num((const STACK_OF(SSL_CIPHER) *)sk);
+}
+
+void *X_SSL_CIPHER_sk_value(const void *sk, int i)
+{
+    return (void *)sk_SSL_CIPHER_value((const STACK_OF(SSL_CIPHER) *)sk, i);
+}
+
+int X_SSL_CTX_set_ciphersuites(void *ctx, const char *str)
+{
+    return SSL_CTX_set_ciphersuites((SSL_CTX *)ctx, str);
+}
+
+void *X_SSL_get_peer_cert_chain(const void *ssl)
+{
+    return (void *)SSL_get_peer_cert_chain((const SSL *)ssl);
+}
+
+int X_ERR_get_lib(uint64_t code)
+{
+    return (int)ERR_GET_LIB((unsigned long)code);
+}
+
+int X_ERR_get_reason(uint64_t code)
+{
+    return (int)ERR_GET_REASON((unsigned long)code);
+}
+
 X509_CRL *X_PEM_read_bio_X509_CRL(BIO *bp)
 {
     return PEM_read_bio_X509_CRL(bp, NULL, NULL, NULL);

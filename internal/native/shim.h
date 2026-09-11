@@ -171,6 +171,32 @@ void *X_sk_X509_REVOKED_value(const void *sk, int i);       /* X509_REVOKED* */
 /* CRL 吊销原因枚举释放 */
 void X_ASN1_ENUMERATED_free(void *a);
 
+/*
+ * TLS 密码套件栈（SSL_CIPHER）枚举与访问。
+ * STACK_OF(SSL_CIPHER) 经 ossl_check_SSL_CIPHER_sk_type 类型检查，跨 cgo
+ * 不能直接传 Go 的 unsafe.Pointer，所以一律降级为 void *。
+ */
+void *X_SSL_CIPHER_get_name(const void *cipher);   /* 字符串，调用方 free */
+uint32_t X_SSL_CIPHER_get_id(const void *cipher);  /* IANA cipher id */
+uint16_t X_SSL_CIPHER_get_protocol_id(const void *cipher);
+void    *X_SSL_CIPHER_get_version_str(const void *cipher);  /* "TLSv1.3"/"NTLSv1.1"/... 调用方 free */
+
+/* SSL_CTX 上启用的全部密码套件栈（含 TLS1.3，TLS1.3 套件排在最前） */
+void *X_SSL_CTX_get_ciphers(const void *ctx);     /* STACK_OF(SSL_CIPHER)* */
+
+int    X_SSL_CIPHER_sk_num(const void *sk);
+void  *X_SSL_CIPHER_sk_value(const void *sk, int i); /* SSL_CIPHER* */
+
+/* 设置 TLS1.3 密码套件名单（OpenSSL standard names，如 "TLS_AES_128_GCM_SHA256"） */
+int    X_SSL_CTX_set_ciphersuites(void *ctx, const char *str);
+
+/* 对端证书链（session->peer_chain 内部栈，元素借用，勿 free） */
+void  *X_SSL_get_peer_cert_chain(const void *ssl); /* STACK_OF(X509)* */
+
+/* OpenSSL 错误队列字段抽取（ERR_GET_LIB / ERR_GET_REASON 是宏，cgo 不能直接用） */
+int    X_ERR_get_lib(uint64_t code);
+int    X_ERR_get_reason(uint64_t code);
+
 /* CRL PEM 读写（回调固定 NULL） */
 X509_CRL *X_PEM_read_bio_X509_CRL(BIO *bp);
 int X_PEM_write_bio_X509_CRL(BIO *bp, X509_CRL *x);

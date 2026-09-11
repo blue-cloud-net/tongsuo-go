@@ -362,3 +362,142 @@ func SSL_get_peer_certificate(ssl unsafe.Pointer) unsafe.Pointer {
 }
 
 // X509_free 由 binding_x509.go 导出，PeerCertificate 直接复用。
+
+/*
+ * Phase v0.1.2：套件枚举与对端证书链。
+ *
+ * 历史背景（调研）：OpenSSL/Tongsuo 8.x 没有「枚举 ctx 上全部可用
+ * 套件」的标准 API 公开宏。常见做法是直接读 ctx->cipher_list 内部字段，
+ * 或走 sk_SSL_CIPHER_* 宏（受 ossl_check_SSL_CIPHER_sk_type 类型检查）。
+ * 这里经 shim 规避：shim 函数以 void * 收 SSL_CTX / STACK_OF(SSL_CIPHER) /
+ * SSL_CIPHER，再转回原生类型；Go 侧只看 unsafe.Pointer 与标量。
+ */
+
+// SSL_CIPHER_get_name 返回套件的 OpenSSL 名（如 "ECDHE-SM2-SM4-GCM-SM3"）。
+// 失败（nil 套件）返回空串。
+//
+// SSL_CIPHER_get_name returns the OpenSSL name of cipher (for example
+// "ECDHE-SM2-SM4-GCM-SM3"). Returns the empty string for a nil cipher.
+func SSL_CIPHER_get_name(cipher unsafe.Pointer) string {
+	if cipher == nil {
+		return ""
+	}
+	p := (*C.char)(C.X_SSL_CIPHER_get_name(cipher))
+	if p == nil {
+		return ""
+	}
+	return C.GoString(p)
+}
+
+// SSL_CIPHER_get_id 返回 32 位编码的套件 ID（与 OpenSSL 标准格式一致）。
+//
+// SSL_CIPHER_get_id returns the 32-bit cipher identifier in OpenSSL
+// encoding. Note that the lower 16 bits form the IANA wire ID surfaced as
+// CipherSuiteInfo.ID.
+func SSL_CIPHER_get_id(cipher unsafe.Pointer) uint32 {
+	if cipher == nil {
+		return 0
+	}
+	return uint32(C.X_SSL_CIPHER_get_id(cipher))
+}
+
+// SSL_CIPHER_get_protocol_id 返回 16 位 IANA 协议 ID（与 TLS CipherSuite
+// wire number 一致；NTLS 套件返回 Tongsuo 自定义编码如 0x0300E051）。
+//
+// SSL_CIPHER_get_protocol_id returns the 16-bit IANA cipher wire ID; for
+// NTLS ciphers the value is the Tongsuo private range (e.g. 0x0300E051).
+// Returns 0 for a nil cipher.
+func SSL_CIPHER_get_protocol_id(cipher unsafe.Pointer) uint16 {
+	if cipher == nil {
+		return 0
+	}
+	return uint16(C.X_SSL_CIPHER_get_protocol_id(cipher))
+}
+
+// SSL_CIPHER_get_version 返回套件适用的协议版本字符串（"TLSv1.0"/"TLSv1.2"/
+// "TLSv1.3"/"NTLSv1.1"），对应 c->min_tls 经 SSL_CIPHER_get_version 内部
+// 处理。
+//
+// SSL_CIPHER_get_version returns the minimum-TLS version string for cipher
+// (for example "TLSv1.2", "TLSv1.3", "NTLSv1.1"). Returns "" for a nil
+// cipher.
+func SSL_CIPHER_get_version(cipher unsafe.Pointer) string {
+	if cipher == nil {
+		return ""
+	}
+	p := (*C.char)(C.X_SSL_CIPHER_get_version_str(cipher))
+	if p == nil {
+		return ""
+	}
+	return C.GoString(p)
+}
+
+// SSL_CTX_get_ciphers 返回 ctx 上当前启用的全部套件栈（STACK_OF(SSL_CIPHER)*）。
+// 栈由 ctx 拥有，不可 free；元素 SSL_CIPHER* 也由 ctx 拥有，遍历时勿 free。
+// TLS1.3 套件排在最前。空集 / 失败返回 nil。
+//
+// SSL_CTX_get_ciphers returns the cipher stack currently enabled on ctx.
+// The stack is owned by ctx (do not free); each SSL_CIPHER* is also owned
+// by ctx (do not free). TLS1.3 ciphers are placed first. Returns nil when
+// the stack is empty or unavailable.
+func SSL_CTX_get_ciphers(ctx unsafe.Pointer) unsafe.Pointer {
+	if ctx == nil {
+		return nil
+	}
+	return unsafe.Pointer(C.X_SSL_CTX_get_ciphers(ctx))
+}
+
+// SSL_CIPHER_sk_num 返回栈中套件数量。
+//
+// SSL_CIPHER_sk_num returns the number of ciphers in the stack. Returns 0
+// for a nil stack.
+func SSL_CIPHER_sk_num(sk unsafe.Pointer) int {
+	if sk == nil {
+		return 0
+	}
+	return int(C.X_SSL_CIPHER_sk_num(sk))
+}
+
+// SSL_CIPHER_sk_value 返回第 i 个套件（内部指针，勿 free）。
+//
+// SSL_CIPHER_sk_value returns the i-th cipher as an internal pointer; do
+// NOT free. Returns nil for out-of-range indices.
+func SSL_CIPHER_sk_value(sk unsafe.Pointer, i int) unsafe.Pointer {
+	if sk == nil {
+		return nil
+	}
+	return unsafe.Pointer(C.X_SSL_CIPHER_sk_value(sk, C.int(i)))
+}
+
+// SSL_CTX_set_ciphersuites 设置 TLS1.3 套件名单（OpenSSL 标准名）。
+// 成功返回 true；空字符串与"ALL"等别名不会被识别（仅认 standard name）。
+//
+// SSL_CTX_set_ciphersuites restricts ctx to the colon-separated list of
+// TLS1.3 ciphersuites (OpenSSL standard names such as "TLS_AES_128_GCM_SHA256").
+// Returns true on success. The "ALL" alias is NOT recognised — pass an
+// explicit list or the value returned by OSSL_default_ciphersuites(1).
+func SSL_CTX_set_ciphersuites(ctx unsafe.Pointer, list string) bool {
+	if ctx == nil {
+		return false
+	}
+	if list == "" {
+		return true
+	}
+	c := C.CString(list)
+	defer C.free(unsafe.Pointer(c))
+	return C.X_SSL_CTX_set_ciphersuites(ctx, c) == 1
+}
+
+// SSL_get_peer_cert_chain 返回对端证书链（STACK_OF(X509)*，内部栈，勿 free）。
+// 单张对端证书可用 SSL_get_peer_certificate 单独取。
+//
+// SSL_get_peer_cert_chain returns the peer's certificate chain as the
+// internal session->peer_chain stack. The stack and elements are owned
+// by the SSL session; do NOT free. For a single peer cert, use
+// SSL_get_peer_certificate instead.
+func SSL_get_peer_cert_chain(ssl unsafe.Pointer) unsafe.Pointer {
+	if ssl == nil {
+		return nil
+	}
+	return unsafe.Pointer(C.X_SSL_get_peer_cert_chain(ssl))
+}

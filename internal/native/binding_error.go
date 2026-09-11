@@ -42,3 +42,52 @@ func Cleanse(b []byte) {
 	}
 	C.X_OPENSSL_cleanse(unsafe.Pointer(&b[0]), C.size_t(len(b)))
 }
+
+// ErrGetLib 从错误码中取出 library 部分（openssl/err.h 的 ERR_GET_LIB 宏）。
+//
+// ErrGetLib extracts the library portion of an OpenSSL error code (mirrors
+// the ERR_GET_LIB macro, which is a macro and cannot cross cgo directly).
+func ErrGetLib(code uint64) int {
+	return int(C.X_ERR_get_lib(C.ulong(code)))
+}
+
+// ErrGetReason 从错误码中取出 reason 部分（openssl/err.h 的 ERR_GET_REASON）。
+//
+// ErrGetReason extracts the reason portion of an OpenSSL error code
+// (mirrors the ERR_GET_REASON macro).
+func ErrGetReason(code uint64) int {
+	return int(C.X_ERR_get_reason(C.ulong(code)))
+}
+
+/*
+ * ERR_LIB_* 与 ERR_R_*（本项目实际使用的子集）。
+ *
+ * OpenSSL/Tongsuo 错误码 = (lib<<24) | (reason & 0xfff)，但 lib 与 reason
+ * 并不总在 <<24 范围，所以本层仅暴露数值常量；调用方应使用 ErrGetLib /
+ * ErrGetReason 拆分。
+ *
+ * ERR_LIB_* are the library identifiers (e.g. ERR_LIB_SSL == 20,
+ * ERR_LIB_X509 == 11). The ERR_R_* constants are the reason numbers used
+ * by SSL and X509. This is the subset the public tls package needs to
+ * classify handshake failures; extend as required.
+ */
+const (
+	ErrLibSSL  = 20 // ERR_LIB_SSL
+	ErrLibX509 = 11 // ERR_LIB_X509
+)
+
+// X509 / SSL 错误 reason（openssl err.h 中的 ERR_R_*）。
+//
+// 这些是本项目代码路径下实际出现的 reason；新增分类时可按需补充。
+//
+// X509 / SSL error reason numbers actually seen on this project's code
+// paths. Add more as classification grows.
+const (
+	SSL_R_NO_SHARED_CIPHER      = 158 // no shared cipher
+	SSL_R_NO_CIPHERS_AVAILABLE  = 229 // no ciphers available for max version
+	SSL_R_UNSUPPORTED_PROTOCOL  = 258 // unsupported protocol
+	SSL_R_VERSION_TOO_LOW       = 166 // version too low
+	SSL_R_WRONG_SSL_VERSION     = 267 // wrong version number
+	SSL_R_BAD_LEGACY_VERSION    = 928 // legacy_version in ClientHello out of range
+	X509_R_CERT_VERIFY_FAILED   = 101 // X509_verify_cert failed
+)
