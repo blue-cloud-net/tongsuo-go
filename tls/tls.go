@@ -480,7 +480,7 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 		}
 	}
 	if len(config.CipherSuites) > 0 {
-		if err := ctx.SetCipherList(strings.Join(config.CipherSuites, ":")); err != nil {
+		if err := applyCipherSuites(ctx, config.CipherSuites); err != nil {
 			_ = ctx.Close()
 			return nil, err
 		}
