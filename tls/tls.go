@@ -608,6 +608,86 @@ func (c *Conn) Version() string { return c.ssl.Version() }
 // CipherName returns the name of the negotiated cipher suite.
 func (c *Conn) CipherName() string { return c.ssl.CipherName() }
 
+// PeerCertificates 返回对端证书链（leaf→root，已按签发者顺序重排）。
+// 返回的每张 *x509.Certificate 为 owned（X509_dup 副本），调用方须在用毕
+// 后调用 Close 释放。
+//
+// 普通 TLS 与 NTLS 行为略有差异：
+//
+//   - 客户端：peer_chain 已是「签名叶 + 后续链」；按签发者重构。
+//   - 服务端：peer_chain 不含叶；另用 peer_certificate 取叶再重构。
+//   - 无对端证书（非 mTLS 服务端路径）：返回 (nil, nil)。
+//
+// PeerCertificates returns the peer's certificate chain rebuilt in
+// leaf→root order (issuer walk). Each returned *x509.Certificate is an
+// owned copy (X509_dup); the caller should Close it. Returns (nil, nil)
+// when the peer did not present any certificate.
+func (c *Conn) PeerCertificates() ([]*x509.Certificate, error) {
+	if c == nil {
+		return nil, errors.New("tls: nil Conn")
+	}
+	if !c.handshakeDone.Load() {
+		return nil, errors.New("tls: PeerCertificates before handshake")
+	}
+	pool, err := c.ssl.PeerCertificates()
+	if err != nil {
+		return nil, err
+	}
+	leafCore, err := c.ssl.PeerCertificate()
+	if err != nil {
+		return nil, err
+	}
+	return c.peerCertificateChain(leafCore, pool)
+}
+
+// PeerEncCertificates 返回对端 NTLS 加密证书链（仅在 NTLS 下有意义；
+// 普通 TLS 始终返回 nil, nil）。
+//
+// Tongsuo NTLS 下对端证书链布局（来源：ssl/statem_ntls/ntls_statem_clnt.c
+// 与 ntls_statem_srvr.c 的代码注释）：
+//
+//   - 客户端：peer_chain[0] = 对端签名证书；peer_chain[1] = 对端加密证书；
+//     其后为额外链证书。peer == peer_chain[0]（签名叶）。
+//   - 服务端：peer = 客户端签名证书；peer_chain[0] = 客户端加密证书。
+//
+// 本方法按角色定位加密叶并按签发者重构 leaf→root。依赖 Tongsuo 内部栈
+// 布局，代码注释已标注。
+//
+// PeerEncCertificates returns the NTLS encryption certificate chain
+// rebuilt leaf→root. Returns (nil, nil) for non-NTLS connections or when
+// no encryption certificate is present. Depends on Tongsuo's internal
+// peer_chain layout.
+func (c *Conn) PeerEncCertificates() ([]*x509.Certificate, error) {
+	if c == nil {
+		return nil, errors.New("tls: nil Conn")
+	}
+	if !c.handshakeDone.Load() {
+		return nil, errors.New("tls: PeerEncCertificates before handshake")
+	}
+	if !c.ntls {
+		return nil, nil
+	}
+	pool, err := c.ssl.PeerCertificates()
+	if err != nil {
+		return nil, err
+	}
+	if len(pool) == 0 {
+		return nil, nil
+	}
+	// 按角色定位加密叶起点。
+	switch c.isServer {
+	case true:
+		// 服务端：加密叶 = peer_chain[0]；栈只此一张。
+		return c.peerCertificateChain(pool[0], pool[:0])
+	default:
+		// 客户端：加密叶 = peer_chain[1]；后续为链证书。
+		if len(pool) < 2 {
+			return nil, nil
+		}
+		return c.peerCertificateChain(pool[1], pool[2:])
+	}
+}
+
 // newContext 根据配置创建客户端/服务端上下文并加载证书。
 //
 // newContext builds the underlying Tongsuo TLS context (NTLS, client, or
