@@ -499,21 +499,40 @@ func isCleanShutdownErr(err error) bool {
 // socket 以唤醒任何在途阻塞的 SSL_read / SSL_write / select 调用，再释
 // 放 SSL 句柄与 raw 连接。
 //
-// Close shuts down the TLS or NTLS session and then closes the
-// underlying socket connection. The call is idempotent — multiple
-// invocations return the same error as the first. The raw socket is
-// closed first so that any in-progress SSL_read / SSL_write / select
-// call wakes up immediately.
+// Close shuts down the TLS or NTLS session, closes the underlying socket,
+// and (when ownsCtx is true — the DialContext path) releases the
+// *core.TLSContext. The call is idempotent — multiple invocations return
+// the same error as the first. The raw socket is closed first so that
+// any in-progress SSL_read / SSL_write / select call wakes up immediately.
 func (c *Conn) Close() error {
-	var err error
+	if c == nil {
+		return nil
+	}
+	var firstErr error
 	c.closeOnce.Do(func() {
 		c.closed.Store(true)
-		// 先关 raw socket：唤醒在途 SSL_read/SSL_write 的 select/waitFD 与
-		// syscall；之后 ssl.Close 仅释放 native 句柄不再操作已关闭的 fd。
-		_ = c.raw.Close()
-		_ = c.ssl.Close()
+		// 1) 关 raw socket：唤醒在途 SSL_read/SSL_write 的 select/waitFD 与
+		//    syscall；之后 ssl.Close 仅释放 native 句柄不再操作已关闭的 fd。
+		if c.raw != nil {
+			if err := c.raw.Close(); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		// 2) 释放 SSL 句柄。
+		if c.ssl != nil {
+			if err := c.ssl.Close(); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		// 3) DialContext 路径上 Conn 拥有 ctx，必须释放（避免 leak）。
+		//    Accept 路径 ownsCtx=false，跳过（Server.Close 负责）。
+		if c.ownsCtx && c.ctx != nil {
+			if err := c.ctx.Close(); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
 	})
-	return err
+	return firstErr
 }
 
 // LocalAddr 返回本地地址。
