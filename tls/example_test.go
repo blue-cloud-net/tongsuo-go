@@ -49,7 +49,9 @@ func ExampleDial() {
 	go func() {
 		raw, _ := ln.Accept()
 		conn, _ := srv.Accept(raw)
-		_ = conn
+		if tc, ok := conn.(*tls.Conn); ok {
+			_ = tc.Handshake()
+		}
 	}()
 
 	// 客户端

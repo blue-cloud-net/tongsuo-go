@@ -10,6 +10,7 @@
 package tls
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
+	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
@@ -93,12 +95,35 @@ type Config struct {
 // handshake. On success it returns a *Conn wrapping the underlying socket
 // after the handshake completes; on failure it returns an error and closes
 // any partially initialised resources.
-func Dial(network, addr string, config *Config) (net.Conn, error) {
-	raw, err := net.Dial(network, addr)
+// DialContext 与指定地址建立 TLS 连接。ctx 同时控制 TCP 拨号超时/取消与握手超时/取消。
+//
+// 握手完成后若开启了 PEER 验证，额外调用 SSL_get_verify_result 检查错误码；
+// 验证失败关闭连接并返回 *HandshakeError{Kind:HandshakeErrorPeerVerify}。
+//
+// 取消/超时：ctx 取消/超时经 net.Dialer.DialContext 传播为底层 error；
+// 握手阶段的取消由 *Conn.HandshakeContext 负责。
+//
+// **Linux 平台限制**：握手阶段使用 syscall.Select 等待 fd 可读，该调用
+// 在 Linux 上不可从 Go 侧直接打断；ctx 触发后需等待当前 waitFD 超时
+// （默认 30s）才能从 HandshakeContext 返回。建议用户使用带 deadline
+// 的 ctx，或通过 SetDeadline 提前终结。完整 epoll/poll(2) 改造计划在
+// v0.1.3+。
+//
+// DialContext dials network/addr under ctx and completes a TLS or NTLS
+// handshake. Cancellation of ctx aborts the TCP dial (via net.Dialer)
+// and the TLS handshake (via *Conn.HandshakeContext); the returned
+// error is the raw ctx.Err() (context.Canceled or context.DeadlineExceeded).
+//
+// On peer-verification failure (when PEER mode is enabled) the returned
+// error is a *HandshakeError{Kind:HandshakeErrorPeerVerify} wrapping
+// the Tongsuo X509 verification result text.
+func DialContext(ctx context.Context, network, addr string, config *Config) (net.Conn, error) {
+	dialer := &net.Dialer{}
+	raw, err := dialer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
-	ctx, err := newContext(config, true)
+	tlsCtx, err := newContext(config, true)
 	if err != nil {
 		_ = raw.Close()
 		return nil, err
@@ -123,24 +148,39 @@ func Dial(network, addr string, config *Config) (net.Conn, error) {
 			hostname = ""
 		}
 	}
-	conn, err := wrapConnWithHostname(raw, ctx, false, hostname)
+	conn, err := wrapConnWithHostname(raw, tlsCtx, false, hostname, true)
 	if err != nil {
+		// wrapConnWithHostname 现在不做握手；唯一可能的失败是
+		// NewSSLConn / SetHostname，都与 ctx 无关——直接返回。
 		_ = raw.Close()
+		_ = tlsCtx.Close()
 		return nil, err
 	}
-	// 主机名校验：在 wrapConn 之后、返回前检查。
+	tlsConn := conn.(*Conn) // wrapConn 总是返回 *Conn
+	if hsErr := tlsConn.HandshakeContext(ctx); hsErr != nil {
+		// HandshakeContext 已经 Close 了连接。
+		return nil, hsErr
+	}
+	// 主机名校验：握手完成后检查 Tongsuo 验证结果。
 	if !shouldSkipVerify(config) {
-		tlsConn, ok := conn.(*Conn)
-		if !ok {
-			return conn, nil // 防御：理论上不可达（wrapConn 总是返回 *Conn）
-		}
 		if code := tlsConn.ssl.VerifyResult(); code != core.VerifyOK {
 			_ = tlsConn.Close()
-			return nil, fmt.Errorf("tls: peer verification failed: %s",
-				core.VerifyErrorMessage(code))
+			return nil, &HandshakeError{
+				Op:   "DialContext",
+				Kind: HandshakeErrorPeerVerify,
+				Err:  fmt.Errorf("peer verification failed: %s", core.VerifyErrorMessage(code)),
+			}
 		}
 	}
-	return conn, nil
+	return tlsConn, nil
+}
+
+// Dial 以 context.Background() 包装 DialContext，向后兼容现有调用点。
+//
+// Dial is a context.Background() wrapper around DialContext, kept for
+// backward compatibility with callers that cannot pass a context.
+func Dial(network, addr string, config *Config) (net.Conn, error) {
+	return DialContext(context.Background(), network, addr, config)
 }
 
 // shouldSkipVerify 按 D1 方案 A 判定客户端是否跳过对端验证。
@@ -182,13 +222,16 @@ func NewServer(config *Config) (*Server, error) {
 	return &Server{ctx: ctx}, nil
 }
 
-// Accept 将已接受的原始连接包装为 TLS 连接（执行服务端握手）；失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+// Accept 将已接受的原始连接包装为 TLS 连接（**惰性握手**：仅创建底层 SSL 句柄，
+// 不执行服务端 Accept()）；调用方须随后调用返回 *Conn 的 Handshake /
+// HandshakeContext 以驱动握手。
 //
-// Accept wraps an already-accepted raw connection and drives the TLS or
-// NTLS server handshake. On failure it returns an error wrapping an
-// OpError that describes the underlying operation.
+// Accept wraps an already-accepted raw connection and prepares the
+// underlying SSL handle without performing the server-side handshake.
+// Callers must invoke *Conn.Handshake / HandshakeContext on the
+// returned *Conn to actually drive the handshake.
 func (s *Server) Accept(raw net.Conn) (net.Conn, error) {
-	return wrapConn(raw, s.ctx, true)
+	return wrapConnWithHostname(raw, s.ctx, true, "", false)
 }
 
 // Close 释放服务端上下文（重复调用安全，幂等）。
@@ -221,18 +264,32 @@ type Conn struct {
 	mu        sync.Mutex  // 序列化 Read/Write
 	closeOnce sync.Once   // 保证 Close 只执行一次（幂等）
 	closed    atomic.Bool // Close 完成后置位，Read/Write 入口短路
+
+	// ownsCtx 为真时 Conn 拥有底层 *core.TLSContext，Close 时释放；
+	// 服务端 Accept 路径中 sharesCtx=false，关闭 ctx 由 Server.Close 负责。
+	ownsCtx bool
+	ctx *core.TLSContext
+
+	// isServer / ntls 记录握手方向与协议类型，PeerCertificates / Close 路径需要。
+	isServer bool
+	ntls     bool
+
+	// handshakeOnce 与 handshakeErr 保证 Handshake / HandshakeContext 幂等。
+	handshakeOnce sync.Once
+	handshakeErr  error
+	handshakeDone atomic.Bool
 }
 
-func wrapConn(raw net.Conn, ctx *core.TLSContext, server bool) (net.Conn, error) {
-	return wrapConnWithHostname(raw, ctx, server, "")
-}
-
-// wrapConnWithHostname 是 wrapConn 的扩展版本：客户端路径可在 Connect 之前
-// 设置预期对端主机名（用于主机名校验）；服务端忽略。
+// wrapConnWithHostname 创建底层 SSL 句柄并构造 *Conn，但不执行握手。
+// ownsCtx 为 true 时 Conn 拥有 ctx（仅 DialContext 路径为 true）；
+// 服务端 Accept 路径共享 s.ctx，由 Server.Close 释放。
 //
-// wrapConnWithHostname is wrapConn with an extra hostname argument used by
-// the client path to set the expected peer hostname before Connect.
-func wrapConnWithHostname(raw net.Conn, ctx *core.TLSContext, server bool, hostname string) (net.Conn, error) {
+// wrapConnWithHostname creates the underlying SSL handle and returns a
+// *Conn without performing the handshake. When ownsCtx is true, the
+// returned *Conn owns ctx (only the DialContext path sets this); the
+// server Accept path shares ctx with the Server and the Server is
+// responsible for releasing it.
+func wrapConnWithHostname(raw net.Conn, ctx *core.TLSContext, server bool, hostname string, ownsCtx bool) (net.Conn, error) {
 	fd, err := connFD(raw)
 	if err != nil {
 		return nil, err
@@ -248,18 +305,129 @@ func wrapConnWithHostname(raw net.Conn, ctx *core.TLSContext, server bool, hostn
 			return nil, err
 		}
 	}
-	if server {
-		if err := ssl.Accept(); err != nil {
-			_ = ssl.Close()
-			return nil, err
-		}
-	} else {
-		if err := ssl.Connect(); err != nil {
-			_ = ssl.Close()
-			return nil, err
-		}
+	return &Conn{
+		ssl:     ssl,
+		raw:     raw,
+		ownsCtx: ownsCtx,
+		ctx:     ctx,
+		isServer: server,
+		ntls:     ctx.IsNTLS(),
+	}, nil
+}
+
+// Handshake 驱动 TLS / NTLS 握手。是 HandshakeContext(context.Background()) 的别名。
+//
+// Handshake performs the TLS / NTLS handshake; it is a shortcut for
+// HandshakeContext(context.Background()). Handshake is idempotent: the
+// handshake is driven exactly once per *Conn, and the result is cached.
+// Returns the cached error on subsequent calls.
+//
+// **API 注意**：Server.Accept 当前是惰性的；服务端连接在 Accept 后必须调
+// 用 Handshake / HandshakeContext 才会真正完成握手。
+func (c *Conn) Handshake() error {
+	return c.HandshakeContext(context.Background())
+}
+
+// HandshakeContext 在 ctx 的控制下驱动 TLS / NTLS 握手。握手在后台 goroutine
+// 中执行；ctx 取消时立即关闭底层 socket 使 select 唤醒、握手退出，等待
+// goroutine 收敛后返回 ctx.Err()。握手完成后必须 Close 才能彻底释放。
+//
+// 返回的错误可能为：
+//   - context.Canceled / context.DeadlineExceeded：ctx 取消/超时；
+//   - *HandshakeError：握手本身失败（版本/套件/对端验证等）；
+//   - core.OpError：底层 Tongsuo 错误未分类。
+//
+// HandshakeContext drives the TLS / NTLS handshake under ctx. The
+// handshake runs on a helper goroutine; ctx cancellation closes the
+// underlying socket to wake up the poll-based retry loop, then waits
+// for the helper goroutine to converge before returning ctx.Err().
+//
+// The handshake is executed exactly once per *Conn; subsequent calls
+// return the cached error (or nil if the first call succeeded).
+func (c *Conn) HandshakeContext(ctx context.Context) error {
+	if c == nil {
+		return errors.New("tls: nil Conn")
 	}
-	return &Conn{ssl: ssl, raw: raw}, nil
+	c.handshakeOnce.Do(func() {
+		// 校验 ctx：HandshakeContext 拒绝 nil；DialContext 已早一步传
+		// Background() 进来，因此只针对外部直接调用此方法的场景。
+		if ctx == nil {
+			c.handshakeErr = errors.New("tls: HandshakeContext requires non-nil ctx")
+			return
+		}
+		if c.handshakeDone.Load() {
+			return
+		}
+		// 句柄已关闭：直接报错（Close 后不可再 Handshake）。
+		if c.ssl == nil {
+			c.handshakeErr = errors.New("tls: SSL closed")
+			return
+		}
+		errCh := make(chan error, 1)
+		go func() {
+			var hsErr error
+			if c.isServer {
+				hsErr = c.ssl.Accept()
+			} else {
+				hsErr = c.ssl.Connect()
+			}
+			errCh <- hsErr
+		}()
+		select {
+		case hsErr := <-errCh:
+			c.handshakeErr = hsErr
+		case <-ctx.Done():
+			// 唤醒握手中的 SSL_read/SSL_write 等待。
+			//
+			// 仅关 raw socket 在 Linux 上不一定能立刻打断 syscall.Select
+			// （fd 仍存在但无数据），所以同时把 SSLConn 的 deadline 设为
+			// 「现在」让后续 waitFD 立即返回 timeout；二者联合保证后台
+			// goroutine 能在毫秒级退出。
+			_ = c.ssl.SetDeadline(time.Now())
+			_ = c.raw.Close()
+			// 等后台 goroutine 退出后再返回 ctx.Err，避免泄漏。
+			<-errCh
+			c.handshakeErr = ctx.Err()
+		}
+		if c.handshakeErr == nil {
+			c.handshakeDone.Store(true)
+		}
+	})
+	if c.handshakeErr == nil {
+		return nil
+	}
+	// 包装握手错误为 HandshakeError（保留 context 取消/超时原样）。
+	if errors.Is(c.handshakeErr, context.Canceled) || errors.Is(c.handshakeErr, context.DeadlineExceeded) {
+		return c.handshakeErr
+	}
+	return classifyHandshakeErr("HandshakeContext", c.handshakeErr)
+}
+
+// classifyHandshakeErr 将底层错误包装为 *HandshakeError（仅握手阶段）。
+// 取消/超时已在调用方拦截；其余错误按最近的 Tongsuo 错误码分类。
+//
+// classifyHandshakeErr wraps a non-context error from the handshake path
+// as a *HandshakeError, using the most recent Tongsuo error code on the
+// thread's error queue as the classification signal.
+func classifyHandshakeErr(op string, err error) error {
+	if err == nil {
+		return nil
+	}
+	// 先把队列里残留的错误全部弹出，再用最后一次弹出的码分类。
+	var last uint64
+	for {
+		code := native.PopError()
+		if code == 0 {
+			break
+		}
+		last = code
+	}
+	kind := classifyOpenSSLError(last)
+	if kind == HandshakeErrorOther {
+		// 无可分类错误码：归到 Network 类。
+		kind = HandshakeErrorNetwork
+	}
+	return &HandshakeError{Op: op, Kind: kind, Err: err}
 }
 
 // Read 读取解密后的应用层数据。

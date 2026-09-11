@@ -12,6 +12,28 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
+// mustHandshake 同步驱动服务端握手的测试辅助（Server.Accept 当前为惰性，
+// 测试代码需要显式调 Handshake 后才能 Read/Write）。
+//
+// mustHandshake 仅在握手应当成功时使用；期望握手失败的测试（如 TestDialPeerVerifyReject）
+// 须自己写 if/return，不要走 t.Fatalf，否则会误判为测试失败。
+//
+// mustHandshake is a test helper that drives the now-lazy server-side
+// handshake synchronously; Server.Accept returns before the handshake
+// completes, so tests must explicitly call Handshake (or HandshakeContext)
+// before reading/writing. Use it only when the handshake is expected to
+// succeed — for tests that expect a handshake failure, do not Fatalf on
+// the server side (the test asserts the client-side failure).
+func mustHandshake(t *testing.T, c net.Conn) net.Conn {
+	t.Helper()
+	if tc, ok := c.(*Conn); ok {
+		if err := tc.Handshake(); err != nil {
+			t.Fatalf("Handshake: %v", err)
+		}
+	}
+	return c
+}
+
 // testServerConfig 生成 SM2 自签服务器证书配置。
 func testServerConfig(t *testing.T) *Config {
 	t.Helper()
@@ -126,6 +148,7 @@ func TestNTLSLoopback(t *testing.T) {
 			errCh <- err
 			return
 		}
+		tlsConn = mustHandshake(t, tlsConn)
 		buf := make([]byte, 512)
 		n, err := tlsConn.Read(buf)
 		if err != nil {
@@ -193,6 +216,7 @@ func TestLoopback(t *testing.T) {
 			errCh <- err
 			return
 		}
+		tlsConn = mustHandshake(t, tlsConn)
 		// 回显：读一段再写回。
 		buf := make([]byte, 512)
 		n, err := tlsConn.Read(buf)
@@ -267,6 +291,7 @@ func TestLoopbackMultiRound(t *testing.T) {
 			done <- err
 			return
 		}
+		tlsConn = mustHandshake(t, tlsConn)
 		buf := make([]byte, 1024)
 		for i := 0; i < 5; i++ {
 			n, err := tlsConn.Read(buf)
@@ -331,7 +356,15 @@ func TestDialPeerVerifyReject(t *testing.T) {
 		if err != nil {
 			return
 		}
-		_, _ = srv.Accept(c)
+		conn, aerr := srv.Accept(c)
+		if aerr != nil {
+			return
+		}
+		// 服务端也驱动一次握手：让对端 Connect 走完进而失败；服务端本身
+		// 在收到 alert 后会失败，这里我们忽略（不 fatal）以免误判。
+		if tc, ok := conn.(*Conn); ok {
+			_ = tc.Handshake()
+		}
 	}()
 
 	// 客户端：显式给 ServerName 但不给 RootCAs；自签不可信，应当握手失败。
@@ -381,8 +414,14 @@ func TestDialInsecureSkipVerify(t *testing.T) {
 			acceptDone <- err
 			return
 		}
-		_, aerr := srv.Accept(c)
-		acceptDone <- aerr
+		conn, aerr := srv.Accept(c)
+		if aerr != nil {
+			acceptDone <- aerr
+			return
+		}
+		conn = mustHandshake(t, conn)
+		_ = conn
+		acceptDone <- nil
 	}()
 
 	cliCfg := &Config{
@@ -419,8 +458,14 @@ func TestConnCloseIdempotent(t *testing.T) {
 			done <- err
 			return
 		}
-		_, aerr := srv.Accept(c)
-		done <- aerr
+		conn, aerr := srv.Accept(c)
+		if aerr != nil {
+			done <- aerr
+			return
+		}
+		conn = mustHandshake(t, conn)
+		_ = conn
+		done <- nil
 	}()
 
 	cliCfg := &Config{
@@ -478,6 +523,11 @@ func TestConnCloseConcurrentWithRead(t *testing.T) {
 		if aerr != nil {
 			return
 		}
+		if tc, ok := conn.(*Conn); ok {
+			if err := tc.Handshake(); err != nil {
+				return
+			}
+		}
 		// 服务端写一些数据后关闭。
 		_, _ = conn.Write([]byte("hello"))
 		_ = conn.Close()
@@ -530,7 +580,12 @@ func TestConnDeadlineUnblocksRead(t *testing.T) {
 		if err != nil {
 			return
 		}
-		_, _ = srv.Accept(c)
+		conn, aerr := srv.Accept(c)
+		if aerr != nil {
+			return
+		}
+		conn = mustHandshake(t, conn)
+		_ = conn
 	}()
 
 	cliCfg := &Config{

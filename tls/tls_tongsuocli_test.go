@@ -111,6 +111,12 @@ func TestCLIOpenSSLClientToOurServer(t *testing.T) {
 			serverErr <- err
 			return
 		}
+		if tc, ok := conn.(*Conn); ok {
+			if err := tc.Handshake(); err != nil {
+				serverErr <- err
+				return
+			}
+		}
 		defer conn.Close()
 		buf := make([]byte, 512)
 		n, err := conn.Read(buf)
