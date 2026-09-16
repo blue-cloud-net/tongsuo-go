@@ -37,3 +37,6 @@ go.work.sum
 # .vscode/
 
 docs/issues
+
+# act 本地 CI 日志（scripts/run-act.sh 生成；不在 .tongsuo-install 之内）
+.act-logs/

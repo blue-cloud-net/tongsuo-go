@@ -503,6 +503,13 @@ func (s *SSLConn) Read(buf []byte) (int, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	for {
+		// 守护：Close 可能在重试循环外被并发调用，导致 SSL* 已被 SSL_free，
+		// 若继续调 SSL_read 会进 cgo 后 use-after-free 触发 SIGSEGV
+		// （参见 tls/tls_test.go::TestReadReturnsAfterCancel）。句柄的
+		// IsClosed / Ptr 在 handle.go 用 mutex 保护，对并发 Close 安全。
+		if s.handle.IsClosed() {
+			return 0, fmt.Errorf("tls: connection closed")
+		}
 		ret := native.SSL_read(s.handle.Ptr(), buf)
 		if ret > 0 {
 			return ret, nil
@@ -529,6 +536,10 @@ func (s *SSLConn) Write(buf []byte) (int, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	for {
+		// 守护：参见 Read 同源说明。Close 与 Write 并发时跳过 SSL_write。
+		if s.handle.IsClosed() {
+			return 0, fmt.Errorf("tls: connection closed")
+		}
 		ret := native.SSL_write(s.handle.Ptr(), buf)
 		if ret > 0 {
 			return ret, nil

@@ -40,39 +40,46 @@ func waitFD(fd int, write bool, timeout time.Duration) error {
 	if fd >= fdSetSize {
 		return fmt.Errorf("tls: wait fd: fd %d >= FD_SETSIZE; rebuild with x/sys/unix poll(2) support", fd)
 	}
+	// darwin syscall.FdSet.Bits 的单元类型为 int32，位容量 32；本实现对
+	// fd < 1024 设置 fd/32 槽内的 fd%32 位。fd >= fdSetSize 已在上方
+	// 拦截。
+	//
+	// On darwin syscall.FdSet.Bits is [32]int32, so we address a 32-bit
+	// slot via fd/32 and bit via fd%32. fd >= fdSetSize is rejected
+	// above.
 	var rfds, wfds syscall.FdSet
+	slot := uint(fd) / 32
+	bit := uint32(1) << (uint(fd) % 32)
 	if write {
-		wfds.Bits[fd/64] |= 1 << (uint(fd) % 64)
+		wfds.Bits[slot] |= bit
 	} else {
-		rfds.Bits[fd/64] |= 1 << (uint(fd) % 64)
+		rfds.Bits[slot] |= bit
 	}
 	tv := &syscall.Timeval{
-		Sec:  int64(timeout / time.Second),
+		Sec:  timeout / time.Second,
 		Usec: int32((timeout % time.Second) / time.Microsecond),
 	}
-	var (
-		n      int
-		selErr error
-	)
+	// darwin syscall.Select 仅返回 err：Go 包装丢弃了 BSD select 的 nfd_ready
+	// 返回值（见 zsyscall_darwin_*.go 中的 syscall6 调用），我们无法像 linux
+	// 路径那样区分"本次切片超时"与"已就绪"。这里把任意 nil err 视为已就绪
+	// （包括 fd 已触发或内核因信号提前返回 0）——切片超时场景只能由外层
+	// waitReady 按 ctx/deadline 终止，而不能像 linux 那样由本路径报告
+	// errWaitFDTimeout。这是 darwin ABI 的硬约束，非可修缺陷。
+	//
+	// darwin's syscall.Select returns err only — the Go wrapper drops the
+	// BSD nfd_ready return value (see syscall6 in zsyscall_darwin_*.go),
+	// so unlike the linux path we cannot distinguish "slice timed out"
+	// from "ready". We treat any nil err as ready (including the rare
+	// EINTR / n=0 case) and let the outer waitReady enforce the deadline
+	// via ctx/deadline. This is a darwin ABI limitation, not a bug here.
+	var selErr error
 	if write {
-		n, selErr = syscall.Select(fd+1, nil, &wfds, nil, tv)
+		selErr = syscall.Select(fd+1, nil, &wfds, nil, tv)
 	} else {
-		n, selErr = syscall.Select(fd+1, &rfds, nil, nil, tv)
+		selErr = syscall.Select(fd+1, &rfds, nil, nil, tv)
 	}
 	if selErr != nil {
 		return fmt.Errorf("tls: wait fd: %w", selErr)
-	}
-	// Select 返回 0 表示本次切片超时：返回 errWaitFDTimeout 与 linux 路径保持
-	// 一致，交由 waitReady 按"是否为终止切片"决定继续重试还是上抛 timeoutError。
-	// 若把 n == 0 当成"就绪"返回 nil，retry 会立刻重试 SSL_* 并再次空转，
-	// 退化成忙轮询而非按切片节奏轮询。
-	//
-	// A Select return of 0 means this slice timed out: return errWaitFDTimeout to
-	// match the linux path, letting waitReady decide between retrying and
-	// surfacing a timeoutError. Treating n == 0 as "ready" would make retry spin
-	// in a busy loop rather than polling at the slice cadence.
-	if n == 0 {
-		return errWaitFDTimeout
 	}
 	return nil
 }
