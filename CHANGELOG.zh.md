@@ -16,38 +16,7 @@
 
 ---
 
-## [0.1.2] - 2026-09-10
-
-### 新增功能
-
-- `crypto/ecdh` 新增 OKP 曲线 `X25519()` 与 `X448()`（RFC 7748），与既有
-  P-256 / P-384 / P-521 并列。
-- `crypto/ecdh` 新增 `Secp256k1()` 曲线；可用性取决于运行时铜锁 provider。
-- 新增 `crypto/x448` 包（X448 ECDH，RFC 7748）：密钥生成、PEM（PKCS#8 /
-  SPKI）往返、56 字节原始密钥互操作与 `SharedSecret`。
-- `key` 包新增 `AlgX448` 与 `GenerateX448Key`。
-- `internal/core`：新增 `MarshalEncryptedPEMWithCipher`，支持以调用方
-  指定的 cipher（如 AES-256-CBC）导出加密 PEM，扩展内置默认之外的
-  自定义加密流水线。
-
-### 行为变化与重构
-
-- `internal/core`：`Derive` 拒绝 OKP 低阶点（RFC 7748 §6.1）产生的全零共享
-  密钥，与 Go 标准库 `crypto/ecdh` 语义对齐。
-- `crypto/ecdh`：OKP 曲线改用类型化曲线族分派（不再比较展示名），且 `ECDH`
-  显式拒绝非 EC 的算法组合。
-
-### Bug 修复
-
-- `crypto/ecdh`：`*_tongsuocli_test.go` 现在真正调用铜锁 `openssl` CLI；
-  此前仅调用 `internal/core`。
-- `internal/testutil`：新增 `OpenSSLAvailable` 与 `SkipIfNoOpenSSL`，使 CLI
-  对拍测试在缺少铜锁二进制时跳过而不是失败。
-
-### 文档
-
-- 在 `crypto/ecdh` 中补充 X25519 / X448 / secp256k1 说明，并同步
-  `docs/architecture.md` 与 `docs/testing-guide.md`。
+## [Unreleased]
 
 ---
 
@@ -155,6 +124,41 @@
   deadline-exit 修复会让 `i/o timeout` 立即上报。建议调用方优先选择
   `context.WithTimeout` / `WithDeadline`，而非纯 `cancel`。完整的
   `epoll` / `poll(2)` 改造计划在 v0.2.x+。
+
+---
+
+## [0.1.2] - 2026-09-16
+
+### 新增功能
+
+- `crypto/ecdh` 新增 OKP 曲线 `X25519()` 与 `X448()`（RFC 7748），与既有
+  P-256 / P-384 / P-521 并列。
+- `crypto/ecdh` 新增 `Secp256k1()` 曲线；可用性取决于运行时铜锁 provider。
+- 新增 `crypto/x448` 包（X448 ECDH，RFC 7748）：密钥生成、PEM（PKCS#8 /
+  SPKI）往返、56 字节原始密钥互操作与 `SharedSecret`。
+- `key` 包新增 `AlgX448` 与 `GenerateX448Key`。
+- `internal/core`：新增 `MarshalEncryptedPEMWithCipher`，支持以调用方
+  指定的 cipher（如 AES-256-CBC）导出加密 PEM，扩展内置默认之外的
+  自定义加密流水线。
+
+### 行为变化与重构
+
+- `internal/core`：`Derive` 拒绝 OKP 低阶点（RFC 7748 §6.1）产生的全零共享
+  密钥，与 Go 标准库 `crypto/ecdh` 语义对齐。
+- `crypto/ecdh`：OKP 曲线改用类型化曲线族分派（不再比较展示名），且 `ECDH`
+  显式拒绝非 EC 的算法组合。
+
+### Bug 修复
+
+- `crypto/ecdh`：`*_tongsuocli_test.go` 现在真正调用铜锁 `openssl` CLI；
+  此前仅调用 `internal/core`。
+- `internal/testutil`：新增 `OpenSSLAvailable` 与 `SkipIfNoOpenSSL`，使 CLI
+  对拍测试在缺少铜锁二进制时跳过而不是失败。
+
+### 文档
+
+- 在 `crypto/ecdh` 中补充 X25519 / X448 / secp256k1 说明，并同步
+  `docs/architecture.md` 与 `docs/testing-guide.md`。
 
 ---
 

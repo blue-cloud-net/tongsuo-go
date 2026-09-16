@@ -424,9 +424,17 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 - 格式遵循 [Keep a Changelog 1.1.0](https://keepachangelog.com/)，
   版本号遵循 [SemVer 2.0.0](https://semver.org/)
 - 分类标题：`新增功能` / `行为变化与重构` / `Bug 修复` / `文档` / `BREAKING / 已知限制`
+- **版本段一律按版本号降序排列**；新增版本段必须**插到列表最顶部**（禁止追加在
+  最新已发布段之下 —— 否则会把 `0.2.0` 错位到 `0.1.1` / `0.1.2` 之间）
+- 两套"未发布"语义，分工清晰、不重复：
+  - `## [Unreleased]`（**尚未决定归入哪个版本**的改动暂存区）放在**最顶部**；
+  - `## [x.y.z] - TBD`（**已定目标版本、尚未发 tag**的条目）紧随其后；
+  - 打 tag 时把 `TBD` 换成真实日期（推荐格式 `YYYY-MM-DD`）
 - 待发布版本用 `## [0.2.0] - TBD`
 - 术语保留英文（SM2 / SM4 / PEM / DER / PKCS#8 / NTLS / RFC xxxx …）
+- 底部链接定义区必须与正文标题一一对应（无引用即无定义）
 - ❌ 反例：只改 `CHANGELOG.zh.md` 而不改 `CHANGELOG.md`（发版会被脚本拦下）
+- ❌ 反例：把新建的 `[x.y.z] - TBD` 段追加在最新已发布段之下，导致版本段顺序错乱
 
 ### 6.4 发版
 
