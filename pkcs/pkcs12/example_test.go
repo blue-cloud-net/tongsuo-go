@@ -8,6 +8,7 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/pkcs/pkcs12"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
+
 // ExamplePack 演示把证书 + 私钥 + CA 链打包为 PKCS#12（DER）。
 //
 // 浏览器与操作系统用此格式导入/导出客户端身份（.p12 / .pfx）。
@@ -35,6 +36,7 @@ func ExamplePack() {
 	fmt.Println(len(p12) > 0)
 	// Output: true
 }
+
 // ExampleParse 演示从 DER 解析 PKCS#12。
 // 返回的 Bundle 包含 PrivateKey（核心 PKey）、Certificate 主证书、CACerts CA 链。
 //

@@ -87,11 +87,11 @@ const (
 // X509 / SSL error reason numbers actually seen on this project's code
 // paths. Add more as classification grows.
 const (
-	SSL_R_NO_SHARED_CIPHER      = 158 // no shared cipher
-	SSL_R_NO_CIPHERS_AVAILABLE  = 229 // no ciphers available for max version
-	SSL_R_UNSUPPORTED_PROTOCOL  = 258 // unsupported protocol
-	SSL_R_VERSION_TOO_LOW       = 166 // version too low
-	SSL_R_WRONG_SSL_VERSION     = 267 // wrong version number
-	SSL_R_BAD_LEGACY_VERSION    = 928 // legacy_version in ClientHello out of range
-	X509_R_CERT_VERIFY_FAILED   = 101 // X509_verify_cert failed
+	SSL_R_NO_SHARED_CIPHER     = 158 // no shared cipher
+	SSL_R_NO_CIPHERS_AVAILABLE = 229 // no ciphers available for max version
+	SSL_R_UNSUPPORTED_PROTOCOL = 258 // unsupported protocol
+	SSL_R_VERSION_TOO_LOW      = 166 // version too low
+	SSL_R_WRONG_SSL_VERSION    = 267 // wrong version number
+	SSL_R_BAD_LEGACY_VERSION   = 928 // legacy_version in ClientHello out of range
+	X509_R_CERT_VERIFY_FAILED  = 101 // X509_verify_cert failed
 )

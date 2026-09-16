@@ -8,6 +8,7 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/pkcs/pkcs7"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
+
 // ExampleBuild 演示用证书集合构建 PKCS#7（DER）。
 // 当前实现支持 Certs-only 类型——多个 X.509 证书的 DER 串接封装，常用扩展名 .p7b。
 // 等价于 `openssl crl2pkcs7 -nocrl` 的输出。

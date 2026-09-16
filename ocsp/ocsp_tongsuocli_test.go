@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/blue-cloud-net/tongsuo-go/x509"
 	"github.com/blue-cloud-net/tongsuo-go/internal/testutil"
+	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
 func runOpenSSL(t *testing.T, dir string, args ...string) []byte {

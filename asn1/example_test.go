@@ -6,6 +6,7 @@ import (
 
 	"github.com/blue-cloud-net/tongsuo-go/asn1"
 )
+
 // ExampleParse 演示解析 DER 编码为可读树。
 // 本包与 Go 标准库 encoding/asn1 的区别：stdlib 关注结构化编解码（marshal/unmarshal
 // 到 Go 类型）；本包关注**裸 DER 的可读展示**，输出带缩进的树形结构
@@ -31,6 +32,7 @@ func ExampleParse() {
 	//   offset=2 INTEGER UNIVERSAL len=1
 	//     0000: 01                                                 .
 }
+
 // ExampleParse_certificate 演示解析证书 DER 顶层 SEQUENCE。
 // X.509 证书 ASN.1 结构：Certificate ::= SEQUENCE { tbsCertificate, signatureAlgorithm, signatureValue }
 // 直接子节点恰好 3 个，与 openssl asn1parse 一致。

@@ -66,7 +66,7 @@ func TestSignVerify(t *testing.T) {
 // TestSeedRoundtrip 验证 Seed() 导出与 PrivateKeyFromSeed 重新构造后公钥一致。
 //
 // TestSeedRoundtrip checks that Seed() / PrivateKeyFromSeed produce the
-//// same public key as the original.
+// // same public key as the original.
 func TestSeedRoundtrip(t *testing.T) {
 	priv, err := GenerateKey()
 	if err != nil {

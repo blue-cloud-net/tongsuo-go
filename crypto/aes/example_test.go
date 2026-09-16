@@ -5,6 +5,7 @@ import (
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/aes"
 )
+
 // ExampleNewCipher 演示使用 16 字节密钥构造 AES-128 cipher.Block。
 // AES-256 用 32 字节密钥。
 //
@@ -19,6 +20,7 @@ func ExampleNewCipher() {
 	fmt.Println(block.BlockSize())
 	// Output: 16
 }
+
 // ExampleNewGCM 演示 AES-GCM AEAD。
 //
 // GCM 提供认证加密：除密文外还输出 16 字节认证标签，可防篡改。
@@ -56,6 +58,7 @@ func ExampleNewGCM() {
 	// 30
 	// secret message
 }
+
 // ExampleEncryptCBC 演示 AES-CBC 加密与解密（PKCS7 填充）。
 // IV 必须唯一不可预测；推荐使用 crypto/rand 生成。
 // CBC 单独不提供完整性保护，建议搭配 HMAC 使用或直接选择 AES-GCM。

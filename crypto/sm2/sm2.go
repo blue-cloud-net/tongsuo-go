@@ -28,12 +28,12 @@ var DefaultID = []byte("1234567812345678")
 // C1 point is therefore 1 prefix byte + 2*32 = 65 bytes, a compressed
 // one is 1 + 32 = 33 bytes.
 const (
-	coordBytes         = 32   // 单坐标字节长度
-	c1UncompressedLen  = 65   // 未压缩 C1 点（0x04 前缀 + X + Y）
-	c1CompressedLen    = 33   // 压缩 C1 点（0x02/0x03 前缀 + X）
-	c1PrefixUncomp     = 0x04 // 未压缩点前缀
-	c1PrefixCompEven   = 0x02 // 压缩点偶数 Y 前缀
-	c1PrefixCompOdd    = 0x03 // 压缩点奇数 Y 前缀
+	coordBytes        = 32   // 单坐标字节长度
+	c1UncompressedLen = 65   // 未压缩 C1 点（0x04 前缀 + X + Y）
+	c1CompressedLen   = 33   // 压缩 C1 点（0x02/0x03 前缀 + X）
+	c1PrefixUncomp    = 0x04 // 未压缩点前缀
+	c1PrefixCompEven  = 0x02 // 压缩点偶数 Y 前缀
+	c1PrefixCompOdd   = 0x03 // 压缩点奇数 Y 前缀
 )
 
 // PrivateKey 表示 SM2 私钥。
