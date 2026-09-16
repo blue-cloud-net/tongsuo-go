@@ -78,12 +78,15 @@ jobs:
           echo "==> Cloning Tongsuo (${{ env.TONGSUO_REPO }} @ ${{ env.TONGSUO_REF }})"
           git clone --depth 1 --branch "${{ env.TONGSUO_REF }}" \
             "https://github.com/${{ env.TONGSUO_REPO }}.git" tongsuo
+          echo "==> Clone done: $(du -sh tongsuo | cut -f1) in $(pwd)"
           cd tongsuo
           echo "==> ./config $TONGSUO_CONFIG_FLAGS"
           ./config $TONGSUO_CONFIG_FLAGS
+          echo "==> ./config done"
           JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
           echo "==> make -j${JOBS}"
           make -j"${JOBS}"
+          echo "==> make done"
           echo "==> make install_sw"
           make install_sw
           echo "==> Tongsuo installed to ${{ github.workspace }}/.tongsuo-install"
@@ -151,12 +154,15 @@ jobs:
           echo "==> Cloning Tongsuo (${{ env.TONGSUO_REPO }} @ ${{ env.TONGSUO_REF }})"
           git clone --depth 1 --branch "${{ env.TONGSUO_REF }}" \
             "https://github.com/${{ env.TONGSUO_REPO }}.git" tongsuo
+          echo "==> Clone done: $(du -sh tongsuo | cut -f1) in $(pwd)"
           cd tongsuo
           echo "==> ./config $TONGSUO_CONFIG_FLAGS"
           ./config $TONGSUO_CONFIG_FLAGS
+          echo "==> ./config done"
           JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
           echo "==> make -j${JOBS}"
           make -j"${JOBS}"
+          echo "==> make done"
           echo "==> make install_sw"
           make install_sw
           echo "==> Tongsuo installed to ${{ github.workspace }}/.tongsuo-install"
