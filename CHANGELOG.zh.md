@@ -16,16 +16,14 @@
 
 ---
 
-## [0.1.2] - 2026-09-10
+## [Unreleased]
+
+---
+
+## [0.2.0] - TBD
 
 ### 新增功能
 
-- `crypto/ecdh` 新增 OKP 曲线 `X25519()` 与 `X448()`（RFC 7748），与既有
-  P-256 / P-384 / P-521 并列。
-- `crypto/ecdh` 新增 `Secp256k1()` 曲线；可用性取决于运行时铜锁 provider。
-- 新增 `crypto/x448` 包（X448 ECDH，RFC 7748）：密钥生成、PEM（PKCS#8 /
-  SPKI）往返、56 字节原始密钥互操作与 `SharedSecret`。
-- `key` 包新增 `AlgX448` 与 `GenerateX448Key`。
 - `tls`：新增 `DialContext(ctx, network, addr, cfg)`，TCP 拨号与 TLS/NTLS
   握手统一受同一 ctx 控制；`Dial` 改为 `DialContext(context.Background(),
   ...)` 的薄包装，源代码兼容。
@@ -55,13 +53,100 @@
 
 ### 行为变化与重构
 
+- `tls.Server.Accept`：现仅构造 `*Conn` 即返回，TLS/NTLS 握手推迟到
+  在返回的连接上显式调用 `Handshake()` / `HandshakeContext()`；原有
+  调用方若没有主动调用 `Handshake` 则需补上，已显式调用的不受影响。
+
+### Bug 修复
+
+- `internal/core`：`SSLConn.retry` 现在能检测用户已设置的 deadline 是否
+  已过期，并返回 `net.Error`（`Timeout() == true`，同时
+  `errors.Is(err, os.ErrDeadlineExceeded)` 成立），不再以 1 ms
+  `syscall.Select` 自旋。这使 `SetReadDeadline` / `SetWriteDeadline`
+  在所有平台上都即时生效，并修复了 `macos-15-intel` 上
+  `TestConnDeadlineUnblocksRead` 的 flaky 行为。
+- `internal/core`：darwin 上的 `waitFD` 现在按 linux 实现的方式检查
+  `Select` 的 `n == 0` 返回值。此前 `waitFDTimeout` 只约束单次 `Select
+  调用，外层 retry 循环在 macOS 上实际没有上限。
+- `tls.Conn.SetDeadline` / `SetReadDeadline` / `SetWriteDeadline` 新增
+  `c.ssl == nil` 防御性检查（之前只有 `Close` / `Read` / `Write` 在
+  closed 状态下短路），用于未来重构安全。
+- `tls`：修复 `Dial` 路径的 `SSL_CTX` 泄漏——`*core.TLSContext` 现由
+  `Conn.Close()` 在拨号侧负责释放；先前每次成功拨号都泄漏一个上下文。
+- `tls`：`Conn.Close` 现返回底层 raw socket close、SSL 句柄 close
+  以及可选 ctx close 中的首个非 nil 错误；此前始终返回 `nil`。
+- `tls`：**客户端现在无条件发送 SNI（`server_name` 扩展），与对端验证模式解耦。**
+  此前 `DialContext` 仅在开启 PEER 验证时才推导主机名，且只经 `SSL_set1_host`
+  （主机名校验）应用，**从未**调用 `SSL_set_tlsext_host_name`。因此在
+  `InsecureSkipVerify: true`（`VERIFY_NONE`——诊断/探针类工具必须能观察自签与
+  过期证书，只能这么配）下 ClientHello **不带 SNI**，而绝大多数真实站点
+  （CDN / 虚拟主机 / 多证书部署）会直接回 `sslv3 alert handshake failure`
+  （alert 40），握手在验证阶段之前就失败。SNI 属**路由**信息，现改为无条件从
+  `Config.ServerName` 或拨号地址推导；IP 字面量不作为 SNI 发送（RFC 6066 §3）。
+  `SSL_set1_host` 仍在开启验证时使用。判别依据：`openssl s_client -connect
+  example.com:443 -noservername` 复现同一 alert。
+- `internal/native`：新增 `X_SSL_set_tlsext_host_name` shim（`SSL_set_tlsext_host_name`
+  是宏，cgo 无法直接调用）与 `SSL_set_tlsext_host_name` 绑定。
+- `internal/core`：新增 `SSLConn.SetServerName`，只设置 SNI 扩展、不改变验证模式。
+- `internal/core`：**握手 / 读写取消的生效时间从最长 30s 降到约 250ms。** 重试
+  循环只在 `waitFD` 返回后才重查 deadline / ctx，而在 Linux 上从另一线程关闭 fd
+  不能可靠唤醒阻塞中的 `select(2)` —— 因此单次 `waitFDTimeout`（原 30s）就是取消
+  延迟的上界。实测：父 ctx 300ms 到期时，一次版本矩阵探测仍耗时 **30.03s** 才返回，
+  调用方设置的"总预算"完全无法强制执行。现把 `waitFDTimeout` 降为 250ms 并改为
+  切片等待：**切片到期不再视为终止**（新增 `errWaitFDTimeout` 哨兵与
+  `waitPlan` / `waitReady`），只有 deadline 到期才终止；此前切片超时被当作致命错误
+  返回，还导致 `TestDialContextCancelFast` 间歇失败。副作用：`tls` 包测试耗时从
+  约 60s 降到约 6s。
+- `tls`：`HandshakeContext` 在 ctx 已结束时优先返回 `ctx.Err()`，不再与后台握手
+  goroutine 抢跑（后者在 deadline 被设置后可能自行退出）。保持 `crypto/tls` 语义，
+  便于调用方用 `errors.Is(err, context.DeadlineExceeded)` 判断。
+
+### 测试硬化
+
+- `tls` 测试：`TestDialPeerVerifyReject`、`TestDialInsecureSkipVerify`、
+  `TestConnCloseIdempotent`、`TestConnCloseConcurrentWithRead`、
+  `TestConnDeadlineUnblocksRead`、`TestReadReturnsAfterCancel` 与
+  `TestConfigCipherSuitesMixed` 的服务端 goroutine 现在会
+  `Close()` 服务端 `*Conn`；此前 SSL 句柄要等内核回收 `CLOSE_WAIT`
+  （约 2 小时）。
+
+### 文档
+
+- 在包 GoDoc 中补充 `tls.DialContext` / `tls.Conn.HandshakeContext` 的取
+  消语义说明。
+
+### 已知限制
+
+- `tls`：在**纯 ctx 取消（不带 deadline）**路径上，在途握手仍最多需
+  等待内部 `waitFDTimeout`（30 s）才能返回——cgo 等待路径使用
+  `syscall.Select`，该调用无法从 Go 侧直接打断。若 ctx 携带 deadline
+  （或经 `HandshakeContext` / `DialContext` 路径），`internal/core` 的
+  deadline-exit 修复会让 `i/o timeout` 立即上报。建议调用方优先选择
+  `context.WithTimeout` / `WithDeadline`，而非纯 `cancel`。完整的
+  `epoll` / `poll(2)` 改造计划在 v0.2.x+。
+
+---
+
+## [0.1.2] - 2026-09-16
+
+### 新增功能
+
+- `crypto/ecdh` 新增 OKP 曲线 `X25519()` 与 `X448()`（RFC 7748），与既有
+  P-256 / P-384 / P-521 并列。
+- `crypto/ecdh` 新增 `Secp256k1()` 曲线；可用性取决于运行时铜锁 provider。
+- 新增 `crypto/x448` 包（X448 ECDH，RFC 7748）：密钥生成、PEM（PKCS#8 /
+  SPKI）往返、56 字节原始密钥互操作与 `SharedSecret`。
+- `key` 包新增 `AlgX448` 与 `GenerateX448Key`。
+- `internal/core`：新增 `MarshalEncryptedPEMWithCipher`，支持以调用方
+  指定的 cipher（如 AES-256-CBC）导出加密 PEM，扩展内置默认之外的
+  自定义加密流水线。
+
+### 行为变化与重构
+
 - `internal/core`：`Derive` 拒绝 OKP 低阶点（RFC 7748 §6.1）产生的全零共享
   密钥，与 Go 标准库 `crypto/ecdh` 语义对齐。
 - `crypto/ecdh`：OKP 曲线改用类型化曲线族分派（不再比较展示名），且 `ECDH`
   显式拒绝非 EC 的算法组合。
-- `tls.Server.Accept`：现仅构造 `*Conn` 即返回，TLS/NTLS 握手推迟到
-  在返回的连接上显式调用 `Handshake()` / `HandshakeContext()`；原有
-  调用方若没有主动调用 `Handshake` 则需补上，已显式调用的不受影响。
 
 ### Bug 修复
 
@@ -69,24 +154,11 @@
   此前仅调用 `internal/core`。
 - `internal/testutil`：新增 `OpenSSLAvailable` 与 `SkipIfNoOpenSSL`，使 CLI
   对拍测试在缺少铜锁二进制时跳过而不是失败。
-- `tls`：修复 `Dial` 路径的 `SSL_CTX` 泄漏——`*core.TLSContext` 现由
-  `Conn.Close()` 在拨号侧负责释放；先前每次成功拨号都泄漏一个上下文。
-- `tls`：`Conn.Close` 现返回底层 raw socket close、SSL 句柄 close
-  以及可选 ctx close 中的首个非 nil 错误；此前始终返回 `nil`。
 
 ### 文档
 
 - 在 `crypto/ecdh` 中补充 X25519 / X448 / secp256k1 说明，并同步
   `docs/architecture.md` 与 `docs/testing-guide.md`。
-- 在包 GoDoc 中补充 `tls.DialContext` / `tls.Conn.HandshakeContext` 的取
-  消语义说明。
-
-### 已知限制
-
-- `tls`：在 Linux 平台，握手阶段的 ctx 取消最多需等待内部
-  `waitFDTimeout`（30 s）才能返回——cgo 等待路径使用 `syscall.Select`，
-  该调用无法从 Go 侧直接打断。建议调用方给 ctx 携带 deadline，而
-  非依赖纯 `cancel`。完整的 `epoll` / `poll(2)` 改造计划在 v0.1.3+。
 
 ---
 
@@ -232,7 +304,8 @@
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/blue-cloud-net/tongsuo-go/releases/tag/v0.1.0

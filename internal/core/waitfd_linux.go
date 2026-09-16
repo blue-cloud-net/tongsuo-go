@@ -29,10 +29,13 @@ const fdSetSize = 1024
 // waitFD 等待 fd 可读（write=false）或可写（write=true），最长 timeout 时间。
 // timeout <= 0 退化为 1μs 立即超时。fd >= FD_SETSIZE 直接返回明确错误。
 //
+// 超时返回 errWaitFDTimeout（可经 errors.Is 判别），调用方据此决定"继续重试"
+// 还是"终止"——切片超时不等于连接失败，见 waitPlan 注释。
+//
 // waitFD blocks until fd becomes ready for read (write=false) or write
 // (write=true), or until timeout elapses. timeout <= 0 reduces to a
 // near-immediate poll. fd >= 1024 returns a clear error rather than
-// risking OOB on syscall.FdSet.
+// risking OOB on syscall.FdSet. A timeout is reported as errWaitFDTimeout.
 func waitFD(fd int, write bool, timeout time.Duration) error {
 	if fd < 0 {
 		return fmt.Errorf("tls: wait fd: invalid fd %d", fd)
@@ -63,7 +66,7 @@ func waitFD(fd int, write bool, timeout time.Duration) error {
 		return fmt.Errorf("tls: wait fd: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("tls: wait fd timeout")
+		return errWaitFDTimeout
 	}
 	return nil
 }

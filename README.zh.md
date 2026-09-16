@@ -7,6 +7,9 @@
 （`hash.Hash`、`cipher.Block`、`cipher.AEAD`、`(T, error)`），覆盖 SM2 / SM3 / SM4 商用密码算法，
 并提供 X.509 证书管理与 TLS / NTLS 传输层。
 
+**本仓库仅提供 Go 封装 SDK，不包含铜锁（Tongsuo）本体**——仓库内不含铜锁源码或二进制，
+构建、测试与运行前必须自行安装铜锁（见[环境要求](#环境要求)）。
+
 - **模块路径**：`github.com/blue-cloud-net/tongsuo-go`
 - **底层依赖**：铜锁 (Tongsuo) **8.4.0+**（Apache-2.0）
 - **参考设计**：[blue-cloud-net/tongsuo-csharp](https://github.com/blue-cloud-net/tongsuo-csharp)

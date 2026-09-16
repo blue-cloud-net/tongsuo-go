@@ -343,6 +343,31 @@ func SSL_set1_host(ssl unsafe.Pointer, hostname string) bool {
 	return C.SSL_set1_host((*C.SSL)(ssl), c) == 1
 }
 
+// SSL_set_tlsext_host_name 在 ClientHello 中设置 SNI（server_name 扩展）。
+//
+// 与 SSL_set1_host 是**两件不同的事**，必须分别调用：
+//   - SSL_set_tlsext_host_name（本函数）：告诉服务端"我要访问哪个域名"，属于
+//     路由信息 —— 缺它时多数真实站点（CDN / 虚拟主机）直接回
+//     `sslv3 alert handshake failure`（alert 40），握手在证书验证之前就失败；
+//   - SSL_set1_host：校验对端证书是否为该域名签发，属于验证信息。
+//
+// 因此即使客户端为 VERIFY_NONE（不校验证书），也**必须**发送 SNI。
+// 空字符串或 nil 不报错但无效果。
+//
+// SSL_set_tlsext_host_name sets the SNI (server_name) extension in the
+// ClientHello. This is routing information and is independent of certificate
+// verification: without it most real-world servers abort the handshake with
+// `sslv3 alert handshake failure` (alert 40) before any verification happens.
+// Passing "" is accepted but has no effect.
+func SSL_set_tlsext_host_name(ssl unsafe.Pointer, hostname string) bool {
+	if hostname == "" {
+		return true
+	}
+	c := C.CString(hostname)
+	defer C.free(unsafe.Pointer(c))
+	return C.X_SSL_set_tlsext_host_name((*C.SSL)(ssl), c) == 1
+}
+
 // SSL_get_verify_result 返回最近一次对端验证的结果码（X509_V_OK=0 表示成功）。
 // 仅在 SSL_VERIFY_PEER 模式下有意义；握手未完成或模式关闭时返回 -1。
 // SSL_get_verify_result returns the result code of the most recent peer

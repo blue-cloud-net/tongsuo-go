@@ -130,7 +130,13 @@ func TestGenerateX448KeyAlgorithm(t *testing.T) {
 	if err != nil {
 		t.Skipf("X448 unavailable in this Tongsuo build: %v", err)
 	}
-	defer priv.Close()
+	// priv 的动态类型是 *key.PrivateKey,但接口类型 AsymmetricPrivateKey
+	// 按设计不导出 Close;用包级 key.Close 释放底层句柄。
+	t.Cleanup(func() {
+		if err := key.Close(priv); err != nil {
+			t.Errorf("close priv: %v", err)
+		}
+	})
 	if priv.Algorithm() != key.AlgX448 {
 		t.Fatalf("Algorithm() = %s, want %s", priv.Algorithm(), key.AlgX448)
 	}
@@ -142,7 +148,12 @@ func TestGenerateX448KeyAlgorithm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadPrivateKeyPEM: %v", err)
 	}
-	defer parsed.Close()
+	// 同上:对 AsymmetricPrivateKey 接口值走 key.Close。
+	t.Cleanup(func() {
+		if err := key.Close(parsed); err != nil {
+			t.Errorf("close parsed: %v", err)
+		}
+	})
 	if parsed.Algorithm() != key.AlgX448 {
 		t.Fatalf("reloaded Algorithm() = %s, want %s", parsed.Algorithm(), key.AlgX448)
 	}

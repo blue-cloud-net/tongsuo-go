@@ -118,6 +118,25 @@ int X_SSL_CTX_set_default_verify_paths(SSL_CTX *ctx)
     return SSL_CTX_set_default_verify_paths(ctx);
 }
 
+/*
+ * X_SSL_set_tlsext_host_name 包装 SSL_set_tlsext_host_name 宏。
+ *
+ * SSL_set_tlsext_host_name 是宏（SSL_ctrl 的封装），cgo 无法直接调用宏，
+ * 故由 C shim 提供函数入口。
+ *
+ * 作用：在 ClientHello 中填入 server_name 扩展（SNI）。这是**路由**扩展，
+ * 与证书校验（SSL_set1_host / X509_VERIFY_PARAM）完全独立：
+ *   - 缺失 SNI 时，绝大多数真实站点（CDN / 虚拟主机 / 多证书部署）会直接
+ *     回 `sslv3 alert handshake failure`（alert 40），握手根本走不到验证阶段；
+ *   - 因此即使客户端配置为 VERIFY_NONE（不校验证书），也必须发送 SNI。
+ *
+ * 返回值遵循 OpenSSL 惯例：成功 1，失败 0（错误入队列，经 ERR_get_error 读取）。
+ */
+int X_SSL_set_tlsext_host_name(SSL *ssl, const char *name)
+{
+    return SSL_set_tlsext_host_name(ssl, name) == 1;
+}
+
 int X_X509_NAME_entry_count(const X509_NAME *n)
 {
     return X509_NAME_entry_count(n);

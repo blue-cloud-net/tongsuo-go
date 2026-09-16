@@ -7,6 +7,10 @@ Through cgo it calls the Tongsuo native library directly, exposing **idiomatic G
 (`hash.Hash`, `cipher.Block`, `cipher.AEAD`, `(T, error)`) for SM2 / SM3 / SM4, along with
 X.509 certificate management and TLS / NTLS transport.
 
+**This repository ships only the Go SDK (wrapper) and does not bundle Tongsuo itself** — no
+Tongsuo source, headers or binaries are included, so you must install Tongsuo yourself before
+building, testing or running (see [Requirements](#requirements)).
+
 - **Module path**: `github.com/blue-cloud-net/tongsuo-go`
 - **Native dependency**: Tongsuo **8.4.0+** (Apache-2.0)
 - **Reference design**: [blue-cloud-net/tongsuo-csharp](https://github.com/blue-cloud-net/tongsuo-csharp)

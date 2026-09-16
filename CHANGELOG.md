@@ -17,19 +17,16 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-## [0.1.2] - 2026-09-10
+## [Unreleased]
+
+---
+
+## [0.2.0] - TBD
 
 ### Added
 
-- `crypto/ecdh` now supports the OKP curves `X25519()` and `X448()`
-  (RFC 7748) alongside P-256 / P-384 / P-521.
-- Added `Secp256k1()` to `crypto/ecdh`; availability depends on the runtime
-  Tongsuo provider.
-- Added the `crypto/x448` package (X448 ECDH, RFC 7748): key generation, PEM
-  (PKCS#8 / SPKI) round-trip, 56-byte raw key interop and `SharedSecret`.
-- `key` gained `AlgX448` and `GenerateX448Key`.
-- `tls`: new `DialContext(ctx, network, addr, cfg)` drives both the TCP dial
-  and the TLS/NTLS handshake under the same context. `Dial` is now a
+- `tls`: new `DialContext(ctx, network, addr, cfg)` drives both the TCP
+  dial and the TLS/NTLS handshake under the same context. `Dial` is now a
   `context.Background()` wrapper around `DialContext` and remains source
   compatible.
 - `tls.Conn`: new `HandshakeContext(ctx)` runs the handshake on a goroutine
@@ -38,8 +35,8 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   `Handshake()` is a `context.Background()` wrapper.
 - `tls.Conn`: new `PeerCertificates() ([]*x509.Certificate, error)` returns
   the leaf and any intermediates received from the peer; for NTLS a second
-  accessor `PeerEncCertificates() ([]*x509.Certificate, error)` returns the
-  encryption certificate chain.
+  accessor `PeerEncCertificates() ([]*x509.Certificate, error)` returns
+  the encryption certificate chain.
 - `tls`: new `CipherSuites(version uint16) []CipherSuiteInfo` enumerates the
   ciphers supported by an `SSL_CTX` for a given protocol version
   (`0x0301`–`0x0304` and `NTLSVersion = 0x0101`); each entry exposes
@@ -62,11 +59,6 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ### Changed
 
-- `internal/core`: `Derive` rejects the all-zero shared secret produced by
-  OKP low-order points (RFC 7748 §6.1), matching Go's `crypto/ecdh`.
-- `crypto/ecdh`: OKP curves are dispatched through a typed curve kind
-  instead of comparing display names, and `ECDH` rejects non-EC algorithm
-  pairs explicitly.
 - `tls.Server.Accept`: now returns immediately after constructing the
   `*Conn`; the TLS/NTLS handshake is deferred until `Handshake()` /
   `HandshakeContext()` is called on the returned connection. Existing
@@ -75,32 +67,124 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ### Fixed
 
-- `crypto/ecdh`: the `*_tongsuocli_test.go` interop test now actually
-  invokes the Tongsuo `openssl` CLI; it previously only exercised
-  `internal/core`.
-- `internal/testutil`: added `OpenSSLAvailable` and `SkipIfNoOpenSSL`, so CLI
-  interop tests skip instead of failing when the Tongsuo binary is missing.
+- `internal/core`: `SSLConn.retry` now detects a user-set deadline that
+  has already expired and returns a `net.Error` (`Timeout() == true`,
+  also `errors.Is(err, os.ErrDeadlineExceeded)`) instead of busy-looping
+  on 1 ms `syscall.Select` waits. This makes `SetReadDeadline` /
+  `SetWriteDeadline` take effect promptly on every platform and fixes the
+  `TestConnDeadlineUnblocksRead` flakiness observed on `macos-15-intel`.
+- `internal/core`: `waitFD` on darwin now checks `Select`'s `n == 0`
+  return value (matching the linux implementation). Without this the
+  `waitFDTimeout` cap only bounded a single `Select` call, and the
+  outer retry loop had no upper bound on macOS.
+- `tls.Conn.SetDeadline` / `SetReadDeadline` / `SetWriteDeadline` now
+  guard against a nil `*core.SSLConn` for forward-safety (previously
+  only `Close`/`Read`/`Write` short-circuited on the closed state).
 - `tls`: fixed a `SSL_CTX` leak in `Dial` — the `*core.TLSContext` is now
   released by `Conn.Close()` on the dial path. The previous code leaked one
   context per successful dial.
 - `tls`: `Conn.Close` now returns the first non-nil error from the
   underlying raw socket close, the SSL handle close, and the optional
   context close. Previously it always returned `nil`.
+- `tls`: **the client now sends SNI (the `server_name` extension) regardless
+  of the peer-verification mode.** `DialContext` previously derived the
+  hostname only when PEER verification was enabled, and only applied it via
+  `SSL_set1_host` (hostname verification) — never via
+  `SSL_set_tlsext_host_name`. With `InsecureSkipVerify: true` (the
+  `VERIFY_NONE` configuration used by diagnostic/probe tools, where
+  self-signed and expired certificates must be inspectable) the ClientHello
+  therefore carried **no SNI**, and most real-world endpoints (CDNs, virtual
+  hosts, multi-certificate deployments) aborted the handshake with
+  `sslv3 alert handshake failure` (alert 40) before any verification could
+  run. SNI is routing information and is now derived unconditionally from
+  `Config.ServerName` or the dial address; IP literals are not used as SNI
+  (RFC 6066 §3). `SSL_set1_host` is still applied only when verifying.
+  Verified against `openssl s_client -connect example.com:443
+  -noservername`, which reproduces the same alert.
+- `internal/native`: added the `X_SSL_set_tlsext_host_name` shim (the
+  `SSL_set_tlsext_host_name` macro cannot be called directly from cgo) and
+  the `SSL_set_tlsext_host_name` binding.
+- `internal/core`: added `SSLConn.SetServerName`, which sets the SNI
+  extension only; it does not change the verification mode.
+- `internal/core`: **handshake / read / write cancellation now takes effect
+  within ~250ms instead of up to 30s.** The poll-based retry loop only
+  re-checks the deadline / ctx after `waitFD` returns, and on Linux closing an
+  fd from another thread does not reliably wake a blocked `select(2)` — so a
+  single `waitFDTimeout` (previously 30s) bounded how long a cancellation
+  could take. Measured: with a parent ctx expiring at 300ms, a version-matrix
+  probe still took **30.03s** to return, making any caller-side budget
+  unenforceable. `waitFDTimeout` is now 250ms and the wait is sliced: a slice
+  expiry is **not** terminal (`errWaitFDTimeout` + `waitPlan` / `waitReady`),
+  only an expired deadline is. Previously a slice timeout was returned as a
+  fatal error, which additionally made `TestDialContextCancelFast` flaky.
+  Side effect: the `tls` package test suite dropped from ~60s to ~6s.
+- `tls`: `HandshakeContext` now prefers `ctx.Err()` when ctx has already
+  ended, instead of racing the background handshake goroutine (which may exit
+  on its own once the deadline is set). Keeps `crypto/tls` semantics for
+  callers that check `errors.Is(err, context.DeadlineExceeded)`.
+
+### Tests hardened
+
+- `tls` tests: server-side `*Conn` is now `Close()`d in the goroutines of
+  `TestDialPeerVerifyReject`, `TestDialInsecureSkipVerify`,
+  `TestConnCloseIdempotent`, `TestConnCloseConcurrentWithRead`,
+  `TestConnDeadlineUnblocksRead`, `TestReadReturnsAfterCancel`, and
+  `TestConfigCipherSuitesMixed`; these previously held the SSL handle open
+  until the kernel reaped the `CLOSE_WAIT` socket (~2 h).
 
 ### Documentation
 
-- Documented X25519 / X448 / secp256k1 support in `crypto/ecdh`, and synced
-  `docs/architecture.md` and `docs/testing-guide.md`.
 - Documented `tls.DialContext` / `tls.Conn.HandshakeContext` cancellation
   semantics in the package GoDoc.
 
 ### Known limitations
 
-- `tls`: on Linux, in-flight handshake cancellation can take up to the
-  internal `waitFDTimeout` (30 s) to unwind because the cgo wait path uses
-  `syscall.Select`, which is not interruptible from Go. Callers should
-  pass a context with a deadline rather than relying on plain `cancel`.
-  A move to `epoll` / `poll(2)` is planned for v0.1.3+.
+- `tls`: on the **plain (no-deadline) ctx-cancel path**, an in-flight
+  handshake can still take up to `waitFDTimeout` (30 s) to unwind because
+  the cgo wait path uses `syscall.Select`, which is not interruptible
+  from Go. With a `ctx` that has a deadline (or via the `HandshakeContext`
+  / `DialContext` helpers), the deadline-exit fix in `internal/core` now
+  surfaces an `i/o timeout` promptly. Callers should prefer
+  `context.WithTimeout`/`WithDeadline` over plain `cancel`. A move to
+  `epoll` / `poll(2)` is planned for v0.2.x+.
+
+---
+
+## [0.1.2] - 2026-09-16
+
+### Added
+
+- `crypto/ecdh` now supports the OKP curves `X25519()` and `X448()`
+  (RFC 7748) alongside P-256 / P-384 / P-521.
+- Added `Secp256k1()` to `crypto/ecdh`; availability depends on the runtime
+  Tongsuo provider.
+- Added the `crypto/x448` package (X448 ECDH, RFC 7748): key generation, PEM
+  (PKCS#8 / SPKI) round-trip, 56-byte raw key interop and `SharedSecret`.
+- `key` gained `AlgX448` and `GenerateX448Key`.
+- `internal/core`: added `MarshalEncryptedPEMWithCipher` for exporting
+  encrypted PEM with a caller-supplied cipher (e.g. AES-256-CBC), to
+  support custom encryption pipelines beyond the built-in default.
+
+### Changed
+
+- `internal/core`: `Derive` rejects the all-zero shared secret produced by
+  OKP low-order points (RFC 7748 §6.1), matching Go's `crypto/ecdh`.
+- `crypto/ecdh`: OKP curves are dispatched through a typed curve kind
+  instead of comparing display names, and `ECDH` rejects non-EC algorithm
+  pairs explicitly.
+
+### Fixed
+
+- `crypto/ecdh`: the `*_tongsuocli_test.go` interop test now actually
+  invokes the Tongsuo `openssl` CLI; it previously only exercised
+  `internal/core`.
+- `internal/testutil`: added `OpenSSLAvailable` and `SkipIfNoOpenSSL`, so CLI
+  interop tests skip instead of failing when the Tongsuo binary is missing.
+
+### Documentation
+
+- Documented X25519 / X448 / secp256k1 support in `crypto/ecdh`, and synced
+  `docs/architecture.md` and `docs/testing-guide.md`.
 
 ---
 
@@ -277,7 +361,8 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/blue-cloud-net/tongsuo-go/releases/tag/v0.1.0

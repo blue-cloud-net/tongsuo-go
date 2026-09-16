@@ -363,6 +363,7 @@ func TestDialPeerVerifyReject(t *testing.T) {
 		if aerr != nil {
 			return
 		}
+		defer conn.Close()
 		// 服务端也驱动一次握手：让对端 Connect 走完进而失败；服务端本身
 		// 在收到 alert 后会失败，这里我们忽略（不 fatal）以免误判。
 		if tc, ok := conn.(*Conn); ok {
@@ -423,7 +424,7 @@ func TestDialInsecureSkipVerify(t *testing.T) {
 			return
 		}
 		conn = mustHandshake(t, conn)
-		_ = conn
+		defer conn.Close()
 		acceptDone <- nil
 	}()
 
@@ -467,7 +468,7 @@ func TestConnCloseIdempotent(t *testing.T) {
 			return
 		}
 		conn = mustHandshake(t, conn)
-		_ = conn
+		defer conn.Close()
 		done <- nil
 	}()
 
@@ -489,8 +490,8 @@ func TestConnCloseIdempotent(t *testing.T) {
 	if err := conn.Close(); err != nil {
 		t.Fatalf("third Close: %v", err)
 	}
-	// Close 后 Read 必须立即返回 io.EOF（不阻塞）。
-	_ = conn.SetReadDeadline(time.Now())
+	// Close 后 Read 必须立即返回 io.EOF（不阻塞）；不再额外 SetReadDeadline
+	// 来触发 EOF——c.closed.Load() 短路径已直接返回 io.EOF。
 	if n, err := conn.Read(make([]byte, 16)); n != 0 || err != io.EOF {
 		t.Fatalf("post-Close Read: got (%d, %v), want (0, EOF)", n, err)
 	}
@@ -544,7 +545,7 @@ func TestConnCloseConcurrentWithRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 在 Close 路上有在途 Read；并发触发应不崩溃。
+	// 在 Close 路上有在途 Read；并发触发应不崩溃，且全部 Read 应在合理时间内返回。
 	var wg sync.WaitGroup
 	for i := 0; i < 4; i++ {
 		wg.Add(1)
@@ -557,13 +558,28 @@ func TestConnCloseConcurrentWithRead(t *testing.T) {
 	// 让 Read 先在途，然后 Close。
 	time.Sleep(10 * time.Millisecond)
 	_ = conn.Close()
-	wg.Wait()
+
+	// 加 2s 上限避免实现退化为 deadlock 路径时测试卡死；正常路径在毫秒级返回。
+	doneAll := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(doneAll)
+	}()
+	select {
+	case <-doneAll:
+	case <-time.After(2 * time.Second):
+		t.Fatal("in-flight Reads did not return within 2s after Close; possible deadlock")
+	}
 }
 
-// TestConnDeadlineUnblocksRead 验证 SetDeadline 真的能中断阻塞的 Read。
-// 若实现错误（deadline 只转 raw socket 不通知 SSL 层），Read 仍会阻塞
-// 最多 waitFDTimeout=30s 才能被 raw socket Close 唤醒。本测试设置 2s
-// deadline 并断言 Read 在 ~2.5s 内返回超时错误。
+// TestConnDeadlineUnblocksRead 验证 SetReadDeadline 能中断阻塞的 Read。
+// 若实现错误（deadline 未透传到 SSLConn），Read 会持续等待直到 raw socket
+// 被 Close 唤醒（最长可达 waitFDTimeout=30s）。本测试设置 500ms deadline
+// 并断言 Read 在 ~2s 内返回 i/o timeout 错误（满足 net.Error.Timeout() == true）。
+//
+// 服务端必须保持连接打开直到客户端退出，因此用 keepAlive 通道显式同步：
+// 服务端握手后挂起直到测试函数返回；客户端 defer close(keepAlive) 触发
+// 服务端清理，避免提前 EOF 让客户端的 Read 收不到 deadline-exit 错误。
 func TestConnDeadlineUnblocksRead(t *testing.T) {
 	srvCfg := testServerConfig(t)
 	srv, err := NewServer(srvCfg)
@@ -578,6 +594,8 @@ func TestConnDeadlineUnblocksRead(t *testing.T) {
 	}
 	defer ln.Close()
 
+	keepAlive := make(chan struct{})
+	defer close(keepAlive)
 	go func() {
 		c, err := ln.Accept()
 		if err != nil {
@@ -588,7 +606,8 @@ func TestConnDeadlineUnblocksRead(t *testing.T) {
 			return
 		}
 		conn = mustHandshake(t, conn)
-		_ = conn
+		<-keepAlive
+		_ = conn.Close()
 	}()
 
 	cliCfg := &Config{
@@ -611,10 +630,99 @@ func TestConnDeadlineUnblocksRead(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected deadline error, got nil")
 	}
-	if elapsed > 5*time.Second {
+	var ne net.Error
+	if !errors.As(err, &ne) || !ne.Timeout() {
+		t.Fatalf("Read err = %v; want a net.Error with Timeout() == true", err)
+	}
+	if elapsed > 2*time.Second {
 		t.Fatalf("Read blocked %v; deadline did not unblock it (should be ~500ms)", elapsed)
 	}
-	t.Logf("Read returned after %v with %v (expected deadline within 500ms-5s)", elapsed, err)
+	t.Logf("Read returned after %v with %v (expected i/o timeout within 500ms-2s)", elapsed, err)
+}
+
+// TestReadReturnsAfterCancel 验证关闭连接能唤醒在途的阻塞 Read；与
+// TestConnDeadlineUnblocksRead 互补，锁定 Close 路径在 SSL 层与 TCP 层
+// 都及时生效的契约。
+//
+// POSIX 对「其他线程关闭 fd 时正在阻塞的 select(2)」未强制规定唤醒行为，
+// 因此本测试设 2s deadline 兜底，确保最坏情况下走 deadline-exit 而非
+// 阻塞到 waitFDTimeout=30s。Linux 上 fd 关闭通常会在毫秒级唤醒 Select；
+// macOS / 边缘情况下走 deadline-exit，~2s 内返回。
+//
+// 服务端握手后挂起到测试结束才关闭（keepAlive 通道），让客户端的 Read
+// 在 main 主动 Close 之前不会被服务端提前 EOF 唤醒。
+func TestReadReturnsAfterCancel(t *testing.T) {
+	srvCfg := testServerConfig(t)
+	srv, err := NewServer(srvCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	keepAlive := make(chan struct{})
+	defer close(keepAlive)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		conn, aerr := srv.Accept(c)
+		if aerr != nil {
+			return
+		}
+		conn = mustHandshake(t, conn)
+		<-keepAlive
+		_ = conn.Close()
+	}()
+
+	cliCfg := &Config{
+		Cert: srvCfg.Cert,
+		Key:  srvCfg.Key,
+	}
+	conn, err := Dial("tcp", ln.Addr().String(), cliCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 兜底：2s deadline 确保即便 fd 关闭未唤醒 Select，retry 仍能命中
+	// deadline-exit（参见 internal/core ssl.go retry 的 deadlineError）。
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
+	type readResult struct {
+		n   int
+		err error
+	}
+	result := make(chan readResult, 1)
+	go func() {
+		n, err := conn.Read(make([]byte, 16))
+		result <- readResult{n, err}
+	}()
+
+	// 让 Read 先在途，然后 Close。
+	time.Sleep(50 * time.Millisecond)
+	closeStart := time.Now()
+	_ = conn.Close()
+	select {
+	case r := <-result:
+		elapsed := time.Since(closeStart)
+		if r.err == nil {
+			t.Fatalf("expected error after Close, got n=%d", r.n)
+		}
+		// 上限放宽到 3s：fd 关闭唤醒 Select（<10ms） 或 deadline-exit（≤2s）。
+		if elapsed > 3*time.Second {
+			t.Fatalf("Read returned %v after Close; expected within 3s", elapsed)
+		}
+		t.Logf("Read returned %v after Close with %v (expected ms-3s)", elapsed, r.err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("Read did not return within 3s after Close; possible deadlock")
+	}
 }
 
 // TestDialContextCancelFast 验证：握手尚未完成时 ctx 触发后，DialContext
@@ -1005,7 +1113,7 @@ func TestConfigCipherSuitesMixed(t *testing.T) {
 			return
 		}
 		conn = mustHandshake(t, conn)
-		_ = conn
+		defer conn.Close()
 	}()
 
 	// 客户端用同样的混合名单；握手应该成功（部分不致命）。
