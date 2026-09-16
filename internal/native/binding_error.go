@@ -48,7 +48,10 @@ func Cleanse(b []byte) {
 // ErrGetLib extracts the library portion of an OpenSSL error code (mirrors
 // the ERR_GET_LIB macro, which is a macro and cannot cross cgo directly).
 func ErrGetLib(code uint64) int {
-	return int(C.X_ERR_get_lib(C.ulong(code)))
+	// C.uint64_t 而非 C.ulong：在所有 Go 支持平台上都是 8 字节、
+	// 与 shim.h 中 X_ERR_get_lib 的 uint64_t 形参严格匹配（cgo
+	// 把 C.uint64_t 与 C.ulonglong 当作两个不同的具名类型，不能互转）。
+	return int(C.X_ERR_get_lib(C.uint64_t(code)))
 }
 
 // ErrGetReason 从错误码中取出 reason 部分（openssl/err.h 的 ERR_GET_REASON）。
@@ -56,7 +59,8 @@ func ErrGetLib(code uint64) int {
 // ErrGetReason extracts the reason portion of an OpenSSL error code
 // (mirrors the ERR_GET_REASON macro).
 func ErrGetReason(code uint64) int {
-	return int(C.X_ERR_get_reason(C.ulong(code)))
+	// C.uint64_t 而非 C.ulong：见 ErrGetLib 同源说明。
+	return int(C.X_ERR_get_reason(C.uint64_t(code)))
 }
 
 /*
