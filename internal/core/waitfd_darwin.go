@@ -49,14 +49,13 @@ func waitFD(fd int, write bool, timeout time.Duration) error {
 	// above.
 	var rfds, wfds syscall.FdSet
 	slot := uint(fd) / 32
-	bit := uint32(1) << (uint(fd) % 32)
 	if write {
-		wfds.Bits[slot] |= bit
+		wfds.Bits[slot] |= 1 << (uint(fd) % 32)
 	} else {
-		rfds.Bits[slot] |= bit
+		rfds.Bits[slot] |= 1 << (uint(fd) % 32)
 	}
 	tv := &syscall.Timeval{
-		Sec:  timeout / time.Second,
+		Sec:  int64(timeout / time.Second),
 		Usec: int32((timeout % time.Second) / time.Microsecond),
 	}
 	// darwin syscall.Select 仅返回 err：Go 包装丢弃了 BSD select 的 nfd_ready
