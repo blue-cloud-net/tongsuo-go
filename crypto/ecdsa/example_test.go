@@ -5,6 +5,7 @@ import (
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/ecdsa"
 )
+
 // ExampleGenerateKey 演示生成 NIST P-256 ECDSA 私钥。
 //
 // 曲线名通过铜锁 EVP_PKEY 表达，常用值："prime256v1" / "secp384r1" / "secp521r1"。
@@ -28,6 +29,7 @@ func ExampleGenerateKey() {
 	fmt.Println(string(pem[:27]))
 	// Output: -----BEGIN PRIVATE KEY-----
 }
+
 // ExampleSign 演示 ECDSA 签名与验签（ASN.1 DER）。
 //
 // 摘要为 SHA-256（铜锁侧强制 ECDSA-SHA256）。
@@ -49,6 +51,7 @@ func ExampleSign() {
 	fmt.Println(ecdsa.Verify(priv.Public(), msg, sig))
 	// Output: <nil>
 }
+
 // ExamplePrivateKey_publicPEM 演示导出公钥 PEM。
 // 将 ECDSA 公钥导出为 SubjectPublicKeyInfo PEM 块（"-----BEGIN PUBLIC KEY-----"）。
 //

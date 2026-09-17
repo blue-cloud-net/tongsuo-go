@@ -295,8 +295,8 @@ func ChangePassword(pemBytes []byte, oldPass, newPass string) ([]byte, error) {
 //
 // msg 即被签内容；Ed25519 走 RFC 8032 定义的"纯签名"语义，调用方传入的 msg
 // 不会被本函数再次预哈希（这也意味着调用方**不应**对 msg 做预哈希，否则会
-//与其它 Ed25519 实现互不兼容）。priv 为 nil 或底层为 nil 时返回错误；
-//底层签名失败返回包装 OpError 的错误。
+// 与其它 Ed25519 实现互不兼容）。priv 为 nil 或底层为 nil 时返回错误；
+// 底层签名失败返回包装 OpError 的错误。
 //
 // Sign produces an Ed25519 signature over msg and returns 64 bytes.
 //

@@ -48,7 +48,7 @@ import (
 // Certificate represents an X.509 certificate.
 type Certificate struct {
 	cert    *core.Certificate
-	closeMu sync.Mutex   // 保护 closed 字段，使 Close 幂等。
+	closeMu sync.Mutex // 保护 closed 字段，使 Close 幂等。
 	closed  bool
 }
 

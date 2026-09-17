@@ -9,6 +9,7 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/tls"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
+
 // ExampleDial 演示 NTLS（国密 TLCP）双证书回环握手。
 //
 // 需要生成 4 个密钥：签名 + 加密 × 私钥 + 证书。本例同密钥对两证（生产环境应分开）。

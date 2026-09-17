@@ -6,6 +6,7 @@ import (
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/md5"
 )
+
 // ExampleSum 演示一次性 MD5 计算。
 //
 // 注意：MD5 已不抗碰撞，请勿用于数字签名或证书指纹等依赖抗碰撞性的场景。
@@ -21,6 +22,7 @@ func ExampleSum() {
 	fmt.Println(hex.EncodeToString(sum[:]))
 	// Output: 900150983cd24fb0d6963f7d28e17f72
 }
+
 // ExampleNew 演示流式 MD5。
 // 通过 hash.Hash 接口支持分段 Write 与 Reset 复用同一实例处理多条消息。
 //

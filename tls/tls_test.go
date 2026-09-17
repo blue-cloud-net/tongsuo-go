@@ -798,27 +798,27 @@ func TestDialContextDeadline(t *testing.T) {
 
 func TestHandshakeErrorClassification(t *testing.T) {
 	tests := []struct {
-		name    string
-		err     error
-		want    error // sentinel
+		name     string
+		err      error
+		want     error // sentinel
 		wantKind HandshakeErrorKind
 	}{
 		{
-			name:    "NoSharedCipher",
-			err:     &HandshakeError{Op: "x", Kind: HandshakeErrorCipher, Err: errors.New("no match")},
-			want:    ErrNoSharedCipher,
+			name:     "NoSharedCipher",
+			err:      &HandshakeError{Op: "x", Kind: HandshakeErrorCipher, Err: errors.New("no match")},
+			want:     ErrNoSharedCipher,
 			wantKind: HandshakeErrorCipher,
 		},
 		{
-			name:    "Version",
-			err:     &HandshakeError{Op: "x", Kind: HandshakeErrorVersion, Err: errors.New("proto mismatch")},
-			want:    ErrVersionNotSupported,
+			name:     "Version",
+			err:      &HandshakeError{Op: "x", Kind: HandshakeErrorVersion, Err: errors.New("proto mismatch")},
+			want:     ErrVersionNotSupported,
 			wantKind: HandshakeErrorVersion,
 		},
 		{
-			name:    "PeerVerify",
-			err:     &HandshakeError{Op: "x", Kind: HandshakeErrorPeerVerify, Err: errors.New("x509 v")},
-			want:    ErrPeerVerification,
+			name:     "PeerVerify",
+			err:      &HandshakeError{Op: "x", Kind: HandshakeErrorPeerVerify, Err: errors.New("x509 v")},
+			want:     ErrPeerVerification,
 			wantKind: HandshakeErrorPeerVerify,
 		},
 	}
