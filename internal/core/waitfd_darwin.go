@@ -58,24 +58,38 @@ func waitFD(fd int, write bool, timeout time.Duration) error {
 		Sec:  int64(timeout / time.Second),
 		Usec: int32((timeout % time.Second) / time.Microsecond),
 	}
-	// darwin syscall.Select 仅返回 err：Go 包装丢弃了 BSD select 的 nfd_ready
-	// 返回值（见 zsyscall_darwin_*.go 中的 syscall6 调用），我们无法像 linux
-	// 路径那样区分"本次切片超时"与"已就绪"。这里把任意 nil err 视为已就绪
-	// （包括 fd 已触发或内核因信号提前返回 0）——切片超时场景只能由外层
-	// waitReady 按 ctx/deadline 终止，而不能像 linux 那样由本路径报告
-	// errWaitFDTimeout。这是 darwin ABI 的硬约束，非可修缺陷。
+	// EINTR 重试与 linux 路径一致，理由详见 waitfd_linux.go 同名代码块：
+	// Go runtime 在调度 / 抢占 / GC 时投递信号，syscall.Select 在 linux
+	// 与 darwin 上都不自动重试 EINTR；若原样上抛，紧邻 deadline 触发的
+	// EINTR 会让外层 retry / waitReady 误把 EINTR 当 fd 错误终止握手，
+	// 抢跑 net.Error.Timeout() 断言。本路径在内部循环重试 EINTR。
 	//
-	// darwin's syscall.Select returns err only — the Go wrapper drops the
-	// BSD nfd_ready return value (see syscall6 in zsyscall_darwin_*.go),
-	// so unlike the linux path we cannot distinguish "slice timed out"
-	// from "ready". We treat any nil err as ready (including the rare
-	// EINTR / n=0 case) and let the outer waitReady enforce the deadline
-	// via ctx/deadline. This is a darwin ABI limitation, not a bug here.
+	// EINTR retry mirrors the linux path; see waitfd_linux.go for the
+	// rationale. syscall.Select does not auto-retry EINTR on either Linux
+	// or macOS; we loop on EINTR here so it does not race past the
+	// deadline-based timeoutError.
+	//
+	// 与 linux 路径的 ABI 差异：darwin syscall.Select 仅返回 err，丢弃
+	// 了 BSD select 的 nfd_ready 返回值（见 zsyscall_darwin_*.go 的
+	// syscall6 调用）；nil err 一律视为"已就绪"（包含 fd 触发与 n=0
+	// 这两种 BSD 都可能返回的零状态），切片超时的终止条件由外层
+	// waitReady 按 ctx/deadline 给出。
+	//
+	// ABI gap with the linux path: darwin's syscall.Select returns err
+	// only — the Go wrapper drops the BSD nfd_ready return value (see
+	// syscall6 in zsyscall_darwin_*.go). We treat any nil err as ready
+	// (covering both fd-triggered and the rare n=0 return), and the
+	// outer waitReady enforces the deadline via ctx/deadline.
 	var selErr error
-	if write {
-		selErr = syscall.Select(fd+1, nil, &wfds, nil, tv)
-	} else {
-		selErr = syscall.Select(fd+1, &rfds, nil, nil, tv)
+	for {
+		if write {
+			selErr = syscall.Select(fd+1, nil, &wfds, nil, tv)
+		} else {
+			selErr = syscall.Select(fd+1, &rfds, nil, nil, tv)
+		}
+		if selErr != syscall.EINTR {
+			break
+		}
 	}
 	if selErr != nil {
 		return fmt.Errorf("tls: wait fd: %w", selErr)

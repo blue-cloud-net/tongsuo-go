@@ -56,12 +56,35 @@ func waitFD(fd int, write bool, timeout time.Duration) error {
 		Sec:  int64(timeout / time.Second),
 		Usec: int64((timeout % time.Second) / time.Microsecond),
 	}
-	n, err := func() (int, error) {
+	// Go runtime 在调度 / 抢占 / GC 时会向 syscall 阻塞线程投递信号，
+	// syscall.Select 在 Linux 与 macOS 上均不自动重试 EINTR；若原样上抛，
+	// 紧邻 deadline 触发的 EINTR 会让外层 retry / waitReady 误把 EINTR
+	// 当成 fd 错误终止握手，并抢跑 net.Error.Timeout() 测试断言。本路径
+	// 在内部循环重试 EINTR，重试时复用同一 tv：外层 waitPlan / waitReady
+	// 已基于 deadline 把切片控制在正确上限，重试不会撑爆总等待时间。
+	//
+	// Go's runtime signals the syscall thread during scheduling, preemption
+	// and GC; syscall.Select does NOT auto-retry EINTR on either Linux or
+	// macOS (the Go wrapper is a thin Syscall6 wrapper on both). If EINTR
+	// surfaced unchanged, an EINTR that races the deadline would terminate
+	// the handshake as a generic fd error and defeat the net.Error.Timeout()
+	// assertion. We loop on EINTR here and reuse the same tv; the outer
+	// waitPlan / waitReady caps the total wait via the deadline so the
+	// retry cannot run away.
+	var (
+		n   int
+		err error
+	)
+	for {
 		if write {
-			return syscall.Select(fd+1, nil, &wfds, nil, tv)
+			n, err = syscall.Select(fd+1, nil, &wfds, nil, tv)
+		} else {
+			n, err = syscall.Select(fd+1, &rfds, nil, nil, tv)
 		}
-		return syscall.Select(fd+1, &rfds, nil, nil, tv)
-	}()
+		if err != syscall.EINTR {
+			break
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("tls: wait fd: %w", err)
 	}
