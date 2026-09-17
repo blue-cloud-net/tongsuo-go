@@ -57,33 +57,43 @@ func waitFD(fd int, write bool, timeout time.Duration) error {
 		Usec: int64((timeout % time.Second) / time.Microsecond),
 	}
 	// Go runtime 在调度 / 抢占 / GC 时会向 syscall 阻塞线程投递信号，
-	// syscall.Select 在 Linux 与 macOS 上均不自动重试 EINTR；若原样上抛，
-	// 紧邻 deadline 触发的 EINTR 会让外层 retry / waitReady 误把 EINTR
-	// 当成 fd 错误终止握手，并抢跑 net.Error.Timeout() 测试断言。本路径
-	// 在内部循环重试 EINTR，重试时复用同一 tv：外层 waitPlan / waitReady
-	// 已基于 deadline 把切片控制在正确上限，重试不会撑爆总等待时间。
+	// syscall.Select 在 Linux 与 macOS 上均不自动重试 EINTR。若原样上
+	// 抛，紧邻 deadline 触发的 EINTR 会让外层 retry / waitReady 误把
+	// EINTR 当 fd 错误终止握手，抢跑 net.Error.Timeout() 断言。把 EINTR
+	// 当 nil（视为 fd 已就绪）则会立刻让外层重试 SSL_*，而 fd 实际并
+	// 未就绪 → 错误地驱动 SSL_* 调用，与对端时序错位甚至产生 bad record
+	// MAC；高并发 / 高信号频率下还会把外层 SSL_* 驱动成紧密 spin。
+	//
+	// 正确语义：EINTR 表示本次切片被信号打断、tv 已被部分消耗，等价于
+	// 「切片到期」——把 EINTR 直接翻译成 errWaitFDTimeout，外层 waitReady
+	// 会基于 deadline 计算剩余预算并按需转 timeoutError。这避免「把
+	// EINTR 当就绪」的时序错位，也不需要在循环里复用 tv（EINTR 后内核
+	// 是否更新 tv 跨平台行为不一致，复用会引入微妙偏差）。
 	//
 	// Go's runtime signals the syscall thread during scheduling, preemption
 	// and GC; syscall.Select does NOT auto-retry EINTR on either Linux or
-	// macOS (the Go wrapper is a thin Syscall6 wrapper on both). If EINTR
-	// surfaced unchanged, an EINTR that races the deadline would terminate
-	// the handshake as a generic fd error and defeat the net.Error.Timeout()
-	// assertion. We loop on EINTR here and reuse the same tv; the outer
-	// waitPlan / waitReady caps the total wait via the deadline so the
-	// retry cannot run away.
+	// macOS. If EINTR surfaced unchanged, an EINTR that races the deadline
+	// would terminate the handshake as a generic fd error and defeat the
+	// net.Error.Timeout() assertion. Treating EINTR as nil ("fd ready")
+	// would instead make the outer SSL_* retry run on an fd that is not
+	// actually ready, racing the peer's message boundary (bad record MAC)
+	// and spinning under heavy signal load. The correct semantics: EINTR
+	// means the slice was cut short by a signal — translate it to
+	// errWaitFDTimeout so the outer waitReady recomputes the remaining
+	// budget via waitPlan (and turns into a timeoutError when terminal).
+	// We avoid looping on EINTR because the kernel's tv-update behavior
+	// after EINTR is platform-dependent and reusing tv would skew timing.
 	var (
 		n   int
 		err error
 	)
-	for {
-		if write {
-			n, err = syscall.Select(fd+1, nil, &wfds, nil, tv)
-		} else {
-			n, err = syscall.Select(fd+1, &rfds, nil, nil, tv)
-		}
-		if err != syscall.EINTR {
-			break
-		}
+	if write {
+		n, err = syscall.Select(fd+1, nil, &wfds, nil, tv)
+	} else {
+		n, err = syscall.Select(fd+1, &rfds, nil, nil, tv)
+	}
+	if err == syscall.EINTR {
+		return errWaitFDTimeout
 	}
 	if err != nil {
 		return fmt.Errorf("tls: wait fd: %w", err)
