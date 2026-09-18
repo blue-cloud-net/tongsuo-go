@@ -84,6 +84,27 @@ API 层（crypto/）              ← 对外高层 API，仅此层可被外部 i
 - **职责边界**：`crypto/` 严格限于算法引擎；ASN.1 / PKCS / OCSP / TLS / 格式转换
   等"组合层"包独立顶级化，借鉴 BouncyCastle C# 的命名空间分层原则
 
+#### tls 包公开 API（v0.2.0+）
+
+`tls/` 在 v0.2.0 引入 ctx 友好的握手与错误分类 API，公共符号：
+
+- 连接入口：`DialContext(ctx, network, addr, cfg)` 同时驱动 TCP 拨号与 TLS/NTLS
+  握手受同一 ctx 控制；`Dial` 退化为 `DialContext(context.Background(), …)` 薄包装，
+  保持源代码兼容
+- 握手：`(*Conn).HandshakeContext(ctx)` 在 goroutine 内执行握手，ctx 触发时通过
+  `SetDeadline` + 关闭 raw socket 唤醒在途 `SSL_read` / `SSL_write` 等待；
+  `(*Conn).Handshake()` 是 `context.Background()` 包装
+- 对端证书：`(*Conn).PeerCertificates()` 返回签名证书链；
+  `(*Conn).PeerEncCertificates()` 返回 NTLS 加密证书链（NTLS 专有）
+- 套件枚举：`CipherSuites(version uint16) []CipherSuiteInfo`（`0x0301`–`0x0304` 与
+  `NTLSVersion = 0x0101`）；`Config.CipherSuites` 同时接受 `TLS_xxx`（TLS 1.3
+  `SSL_CTX_set_ciphersuites`）与经典 `SSL_CTX_set_cipher_list` 名字
+- 错误：哨兵 `ErrVersionNotSupported` / `ErrNoSharedCipher` / `ErrPeerVerification`
+  / `ErrNetwork`；类型化 `*HandshakeError{Op, Kind, Err}` 按 library + reason
+  对 OpenSSL 错误分类；`ctx.Err()` 透传不包 `*HandshakeError`
+- `(*Server).Accept`：v0.2.0 起仅构造 `*Conn` 即返回，握手推迟到调用方显式调用
+  `Handshake` / `HandshakeContext`；未显式调用的调用方需要补上
+
 ---
 
 ## 4. 术语对照表（C# ↔ Go）
