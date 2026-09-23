@@ -66,14 +66,15 @@ func MarshalPrivate(priv *trsa.PrivateKey) ([]byte, error) {
 		D:        b64Std(p.D),
 	}
 	if p.P != nil && p.Q != nil {
-		one := big.NewInt(1)
-		pm1 := new(big.Int).Sub(p.P, one)
-		qm1 := new(big.Int).Sub(p.Q, one)
 		v.P = b64Std(p.P)
 		v.Q = b64Std(p.Q)
-		v.DP = b64Std(new(big.Int).Mod(p.D, pm1))
-		v.DQ = b64Std(new(big.Int).Mod(p.D, qm1))
-		v.InverseQ = b64Std(new(big.Int).ModInverse(p.Q, p.P))
+	}
+	// CRT 系数优先取自 core.KeyParams（由 core/PKey.Params 统一提供，provider
+	// 路径 + 本地推导回退已在内部合并），避免在导出侧重复 Mod/ModInverse。
+	if p.Dmp1 != nil && p.Dmq1 != nil && p.Iqmp != nil {
+		v.DP = b64Std(p.Dmp1)
+		v.DQ = b64Std(p.Dmq1)
+		v.InverseQ = b64Std(p.Iqmp)
 	}
 	return xml.MarshalIndent(v, "", "  ")
 }

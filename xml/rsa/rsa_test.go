@@ -1,11 +1,27 @@
 package rsa
 
 import (
+	"math/big"
 	"strings"
 	"testing"
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
 )
+
+// extractTag 提取 <Tag>value</Tag> 中的 base64 解码值（测试 helper）。未找到返回空串。
+func extractTag(s, tag string) string {
+	start := "<" + tag + ">"
+	end := "</" + tag + ">"
+	i := strings.Index(s, start)
+	if i < 0 {
+		return ""
+	}
+	j := strings.Index(s[i+len(start):], end)
+	if j < 0 {
+		return ""
+	}
+	return s[i+len(start) : i+len(start)+j]
+}
 
 // TestPrivateRoundtrip 验证私钥 XML 往返。
 func TestPrivateRoundtrip(t *testing.T) {
@@ -23,6 +39,31 @@ func TestPrivateRoundtrip(t *testing.T) {
 			t.Fatalf("XML missing %q: %s", tag, s)
 		}
 	}
+	// CRT 字段值断言：DP/DQ/InverseQ 应等于 core.KeyParams 的 Dmp1/Dmq1/Iqmp
+	// （即 XML 与本库 Params() 一致），保证不再走"重复 Mod/ModInverse"路径。
+	lp := priv.Params()
+	if lp == nil || lp.Dmp1 == nil || lp.Dmq1 == nil || lp.Iqmp == nil {
+		t.Fatal("underlying CRT params should be populated")
+	}
+	dpXML := extractTag(s, "DP")
+	dqXML := extractTag(s, "DQ")
+	iqXML := extractTag(s, "InverseQ")
+	if dpXML != b64Std(lp.Dmp1) {
+		t.Fatalf("DP mismatch: got %s want %s", dpXML, b64Std(lp.Dmp1))
+	}
+	if dqXML != b64Std(lp.Dmq1) {
+		t.Fatalf("DQ mismatch: got %s want %s", dqXML, b64Std(lp.Dmq1))
+	}
+	if iqXML != b64Std(lp.Iqmp) {
+		t.Fatalf("InverseQ mismatch: got %s want %s", iqXML, b64Std(lp.Iqmp))
+	}
+	// 反向：DP/DQ/InverseQ 满足 Iqmp*Q ≡ 1 (mod P)
+	qiq := new(big.Int).Mul(lp.Iqmp, lp.Q)
+	one := big.NewInt(1)
+	if qiq.Mod(qiq, lp.P).Cmp(one) != 0 {
+		t.Fatal("InverseQ*Q mod P != 1")
+	}
+
 	loaded, err := UnmarshalPrivate(data)
 	if err != nil {
 		t.Fatal(err)
