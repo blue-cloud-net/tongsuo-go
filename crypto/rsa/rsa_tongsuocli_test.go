@@ -4,6 +4,7 @@ package rsa
 
 import (
 	"bytes"
+	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,8 +47,18 @@ func TestCLIKeyInterop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load openssl-generated RSA key failed: %v", err)
 	}
-	if loaded.Params().N.BitLen() != 2048 {
-		t.Fatalf("loaded key N bits = %d, want 2048", loaded.Params().N.BitLen())
+	lp := loaded.Params()
+	if lp.N.BitLen() != 2048 {
+		t.Fatalf("loaded key N bits = %d, want 2048", lp.N.BitLen())
+	}
+	// openssl genpkey 生成的密钥经本库加载后，CRT 系数同样应可提取且
+	// 数学正确：覆盖"外部 PEM → 本库加载 → Params()"完整链路。
+	if lp.Dmp1 == nil || lp.Dmq1 == nil || lp.Iqmp == nil {
+		t.Fatal("loaded key CRT params should be populated")
+	}
+	one := big.NewInt(1)
+	if new(big.Int).Mod(new(big.Int).Mul(lp.Iqmp, lp.Q), lp.P).Cmp(one) != 0 {
+		t.Fatal("Iqmp*Q mod P != 1 for loaded key")
 	}
 }
 

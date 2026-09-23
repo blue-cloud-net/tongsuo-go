@@ -278,14 +278,18 @@ func ChangePassword(pemBytes []byte, oldPass, newPass string) ([]byte, error) {
 	return core.ChangePrivateKeyPassword(pemBytes, oldPass, newPass)
 }
 
-// Params 返回 RSA 参数（N/E 公钥，D/P/Q 私钥）；返回密钥的 RSA 参数：模数 N、公钥指数 E；私钥侧还有私钥指数 D 与 CRT 因子 P/Q。
+// Params 返回密钥的 RSA 参数：模数 N、公钥指数 E；私钥侧还有私钥指数 D 与素因子 P/Q，
+// 以及 CRT 系数 Dmp1 = D mod (P-1)、Dmq1 = D mod (Q-1)、Iqmp = Q⁻¹ mod P；
+// 公钥侧仅 N / E 非 nil。
 //
-// Params returns the RSA parameters of the key: the modulus N, the
-// public exponent E, and for the private side the private exponent D and
-// the CRT factors P and Q.
+// Params returns the RSA parameters of the key: the modulus N and the
+// public exponent E; for the private side additionally the private
+// exponent D, the prime factors P and Q, and the CRT factors Dmp1 =
+// D mod (P-1), Dmq1 = D mod (Q-1) and Iqmp = Q^-1 mod P; for the
+// public side only N and E are non-nil.
 func (k *PrivateKey) Params() *core.KeyParams { return k.key.Params() }
 
-// Params 返回 RSA 参数（N/E 公钥）；返回公钥的 RSA 参数：模数 N 与公钥指数 E。
+// Params 返回公钥的 RSA 参数：模数 N 与公钥指数 E。
 //
 // Params returns the RSA parameters of the public key: the modulus N and
 // the public exponent E.

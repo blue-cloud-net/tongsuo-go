@@ -2,6 +2,7 @@ package rsa
 
 import (
 	"bytes"
+	"math/big"
 	"testing"
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
@@ -29,6 +30,25 @@ func TestGenerateKey(t *testing.T) {
 	}
 	if p.P == nil || p.Q == nil {
 		t.Fatal("RSA params P/Q should be set for private key")
+	}
+	// CRT 系数（Dmp1/Dmq1/Iqmp）必须可提取，并与按 D/P/Q 独立推导的
+	// 数学期望一致：provider 路径与回落路径的期望值相同，因此本断言同时
+	// 覆盖"读对"与"算对"。
+	if p.Dmp1 == nil || p.Dmq1 == nil || p.Iqmp == nil {
+		t.Fatal("CRT params Dmp1/Dmq1/Iqmp should be set for private key")
+	}
+	one := big.NewInt(1)
+	expDmp1 := new(big.Int).Mod(p.D, new(big.Int).Sub(p.P, one))
+	expDmq1 := new(big.Int).Mod(p.D, new(big.Int).Sub(p.Q, one))
+	expIqmp := new(big.Int).ModInverse(p.Q, p.P)
+	if p.Dmp1.Cmp(expDmp1) != 0 {
+		t.Fatalf("Dmp1 = %v, want %v", p.Dmp1, expDmp1)
+	}
+	if p.Dmq1.Cmp(expDmq1) != 0 {
+		t.Fatalf("Dmq1 = %v, want %v", p.Dmq1, expDmq1)
+	}
+	if p.Iqmp.Cmp(expIqmp) != 0 {
+		t.Fatalf("Iqmp = %v, want %v", p.Iqmp, expIqmp)
 	}
 }
 
