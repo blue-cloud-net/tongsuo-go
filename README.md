@@ -21,19 +21,28 @@ building, testing or running (see [Requirements](#requirements)).
 
 ## Features
 
-- 🔐 **SM2 asymmetric algorithm** (GB/T 32918): key generation, PEM serialization, encrypt/decrypt (ASN.1 DER, C1C3C2 internal order),
+The API layer is **16 top-level packages** (`meta` / `digest` / `mac` / `kdf` / `rand` / `sym` /
+`asym` / `ecdh` / `keystore` / `x509` / `tls` / `asn1` / `jwk` / `pkcs/pkcs7` / `pkcs/pkcs12` /
+`xml/rsa`) with no intermediate `crypto/` directory. Every package exposes both the idiomatic Go
+interfaces and a CLI-style by-name entry point; see the
+[package restructuring roadmap](docs/refactor-roadmap.md).
+
+- 🔐 **SM2 asymmetric algorithm** (GB/T 32918, `asym`): key generation, PEM serialization, encrypt/decrypt (ASN.1 DER, C1C3C2 internal order),
   SM2withSM3 sign/verify, customizable userId
-- 🔑 **SM3 hash algorithm** (GB/T 32905-2016): `hash.Hash` interface + one-shot `Sum`
-- 🔒 **SM4 symmetric cipher** (GB/T 32907): ECB / CBC / CTR / OFB / CFB / GCM (AEAD)
-- 🧮 **HMAC message authentication codes**: HMAC-SM3 / MD5 / SHA1 / SHA256 / SHA512
-- 🔗 **More hashes**: MD5, SHA1, SHA256, SHA512 (`hash.Hash` + `Sum`)
-- 🔄 **AES symmetric cipher**: ECB / CBC / CTR / GCM (`cipher.Block` + `cipher.AEAD`)
-- � **Ed25519 / Ed448 signatures** (RFC 8032): pure EdDSA (no pre-hashing), raw 32B / 57B seed and public-key bytes interoperable with Go standard library, WireGuard; X.509 certificate / CSR / CRL signing via the `X509_sign_ctx` path
-- 🤝 **X25519 ECDH key agreement** (RFC 7748): 32-byte shared secret, interoperable with Go `crypto/ecdh` and WireGuard, supports X.509 certificate / CSR public-key loading
-- 🤝 **Curve-based ECDH (`crypto/ecdh`)**: NIST P-256 / P-384 / P-521 (X9.63), the OKP curves X25519 / X448 (RFC 7748) and secp256k1; key generation, PEM (PKCS#8 / SPKI) round-trip and shared-secret derivation matching Go's standard `crypto/ecdh` semantics
-- 🎲 **Cryptographically secure random**: based on Tongsuo `RAND_bytes`
-- 📜 **X.509 certificate management**: parse, create, self-signed / CA-signed certificates (SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448), CSR generation and verification, BasicConstraints extension
-- 🌐 **TLS / NTLS transport**: client / server wrappers, supporting Tongsuo NTLS dual certificates (signing certificate + encryption certificate)
+- 🔑 **SM3 hash algorithm** (GB/T 32905-2016, `digest`): `hash.Hash` interface + fixed-size `SumSM3` + by-name `Sum("SM3", d)`
+- 🔒 **SM4 symmetric cipher** (GB/T 32907, `sym`): ECB / CBC / CTR / OFB / CFB / GCM (AEAD)
+- 🧮 **HMAC message authentication codes** (`mac`): HMAC-SM3 / MD5 / SHA1 / SHA256 / SHA512
+- 🔗 **More hashes** (`digest`): MD5, SHA1, SHA224, SHA256, SHA384, SHA512 (`hash.Hash` + `Sum`)
+- 🔄 **AES symmetric cipher** (`sym`): ECB / CBC / CTR / GCM (`cipher.Block` + `cipher.AEAD`)
+- 🧬 **Key derivation** (`kdf`): HKDF / PBKDF2 / Argon2ID, including the by-name `Derive`
+- 📝 **Ed25519 / Ed448 signatures** (RFC 8032, `asym`): pure EdDSA (no pre-hashing), raw 32B / 57B seed and public-key bytes interoperable with Go standard library, WireGuard; X.509 certificate / CSR / CRL signing via the `X509_sign_ctx` path
+- 🤝 **X25519 / X448 ECDH key agreement** (RFC 7748, `ecdh`): 32 / 56-byte shared secret, interoperable with Go `crypto/ecdh` and WireGuard
+- 🤝 **Curve-based ECDH** (`ecdh`): NIST P-256 / P-384 / P-521 (X9.63), the OKP curves X25519 / X448 (RFC 7748) and secp256k1; PEM (PKCS#8 / SPKI) round-trip and shared-secret derivation matching Go's standard `crypto/ecdh` semantics
+- 🎲 **Cryptographically secure random** (`rand`): based on Tongsuo `RAND_bytes`
+- 🗄️ **Key storage and rotation** (`keystore`): key metadata, in-memory / custom stores, version rotation and history
+- 📜 **X.509 certificate management** (`x509`): parse and issue certificates / CSR / CRL / OCSP, one-line self-signed certificates (`CreateSelfSigned`), CA-signed certificates (SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448), hostname verification, chain verification
+- 🌐 **TLS / NTLS transport** (`tls`): client / server wrappers, supporting Tongsuo NTLS dual certificates (signing certificate + encryption certificate)
+- 📦 **Containers and formats**: PKCS#7 (`pkcs/pkcs7`), PKCS#12 (`pkcs/pkcs12`), JWK (`jwk`), ASN.1 DER viewer (`asn1`), .NET-style RSA XML (`xml/rsa`)
 - 🧪 **Standard-vector tests**: every algorithm package covers national-standard vectors, round-trips, edge cases and error paths, with bidirectional cross-validation against the openssl CLI
 
 ## Getting Started
@@ -108,15 +117,23 @@ package main
 import (
 	"fmt"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm3"
+	"github.com/blue-cloud-net/tongsuo-go/digest"
 )
 
 func main() {
-	sum := sm3.Sum([]byte("abc"))
+	// Fixed-size entry point (returns [32]byte)
+	sum := digest.SumSM3([]byte("abc"))
 	fmt.Printf("%x\n", sum)
 
+	// By-name dispatch
+	named, err := digest.Sum("SM3", []byte("abc"))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%x\n", named)
+
 	// Streaming interface (hash.Hash)
-	h := sm3.New()
+	h := digest.NewSM3()
 	h.Write([]byte("abc"))
 	fmt.Printf("%x\n", h.Sum(nil))
 }
@@ -130,7 +147,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm4"
+	"github.com/blue-cloud-net/tongsuo-go/sym"
 )
 
 func main() {
@@ -138,11 +155,11 @@ func main() {
 	iv := []byte("fedcba9876543210")
 
 	// One-shot helpers (CBC + PKCS7 padding)
-	ciphertext, err := sm4.EncryptCBC(key, iv, []byte("hello tongsuo"))
+	ciphertext, err := sym.EncryptSM4CBC(key, iv, []byte("hello tongsuo"))
 	if err != nil {
 		panic(err)
 	}
-	plaintext, err := sm4.DecryptCBC(key, iv, ciphertext)
+	plaintext, err := sym.DecryptSM4CBC(key, iv, ciphertext)
 	if err != nil {
 		panic(err)
 	}
@@ -150,11 +167,11 @@ func main() {
 
 	// GCM (AEAD)
 	nonce := []byte("0123456789ab")
-	ct, tag, err := sm4.EncryptGCM(key, nonce, []byte("secret"), nil)
+	ct, tag, err := sym.EncryptSM4GCM(key, nonce, []byte("secret"), nil)
 	if err != nil {
 		panic(err)
 	}
-	pt, err := sm4.DecryptGCM(key, nonce, ct, tag, nil)
+	pt, err := sym.DecryptSM4GCM(key, nonce, ct, tag, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -170,35 +187,35 @@ package main
 import (
 	"fmt"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 )
 
 func main() {
-	priv, err := sm2.GenerateKey()
+	priv, err := asym.GenerateSM2()
 	if err != nil {
 		panic(err)
 	}
 
 	// Sign (SM2withSM3, ASN.1 DER)
 	msg := []byte("tongsuo sm2")
-	sig, err := sm2.Sign(priv, msg)
+	sig, err := asym.Sign(asym.AlgSM2, priv, msg, nil)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Printf("signature: %x\n", sig)
 
 	pub := priv.Public()
-	if err := sm2.Verify(pub, msg, sig); err != nil {
+	if err := asym.Verify(asym.AlgSM2, pub, msg, sig, nil); err != nil {
 		panic(err)
 	}
 	fmt.Println("verify ok")
 
 	// Encrypt / decrypt (ASN.1 DER, C1C3C2 internal order)
-	ciphertext, err := sm2.Encrypt(pub, msg)
+	ciphertext, err := asym.Encrypt(asym.AlgSM2, pub, msg, nil)
 	if err != nil {
 		panic(err)
 	}
-	plaintext, err := sm2.Decrypt(priv, ciphertext)
+	plaintext, err := asym.Decrypt(asym.AlgSM2, priv, ciphertext, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -214,15 +231,15 @@ package main
 import (
 	"fmt"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/hmac"
+	"github.com/blue-cloud-net/tongsuo-go/mac"
 )
 
 func main() {
-	sum := hmac.SumSM3([]byte("secret-key"), []byte("message"))
+	sum := mac.SumHMACSM3([]byte("secret-key"), []byte("message"))
 	fmt.Printf("%x\n", sum)
 
 	// Streaming interface (hash.Hash)
-	h := hmac.NewSM3([]byte("secret-key"))
+	h := mac.NewHMACSM3([]byte("secret-key"))
 	h.Write([]byte("message"))
 	fmt.Printf("%x\n", h.Sum(nil))
 }
@@ -236,28 +253,29 @@ package main
 import (
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
-	"github.com/blue-cloud-net/tongsuo-go/x509"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/tls"
+	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
 func main() {
-	// Generate a CA key and create a self-signed certificate
-	caKey, _ := sm2.GenerateKey()
+	// One-line self-signed CA certificate (equivalent to `req -x509`)
+	caKey, _ := asym.GenerateSM2()
 	caName := x509.NewName().Add("CN", "tongsuo-go CA")
 
-	ca, err := x509.CreateCertificate(caName, caName, 1,
-		time.Now(), time.Now().Add(365*24*time.Hour), caKey, caKey)
+	ca, err := x509.CreateSelfSigned(caName, 1,
+		time.Now(), time.Now().Add(365*24*time.Hour), caKey.Public(), caKey)
 	if err != nil {
 		panic(err)
 	}
+	_ = ca
 
 	// Generate a server certificate (signed by the CA)
-	serverKey, _ := sm2.GenerateKey()
+	serverKey, _ := asym.GenerateSM2()
 	serverName := x509.NewName().Add("CN", "localhost")
 
 	serverCert, err := x509.CreateCertificate(serverName, caName, 2,
-		time.Now(), time.Now().Add(365*24*time.Hour), serverKey, caKey)
+		time.Now(), time.Now().Add(365*24*time.Hour), serverKey.Public(), caKey)
 	if err != nil {
 		panic(err)
 	}
@@ -282,20 +300,21 @@ More runnable examples live in [examples/](./examples).
 ## Architecture
 
 ```
-API layer (crypto/)              ← High-level public API; the only layer external code may import
+API layer (16 top-level packages)  ← High-level public API; the only layer external code may import
     ↓ calls
-Core layer (internal/core/)      ← Handle/context wrappers; lifetime and ownership management
+Core layer (internal/core/)        ← Handle/context wrappers; lifetime and ownership management
     ↓ calls
-Binding layer (internal/native/)← cgo + inline C shim; maps directly to Tongsuo C functions
+Binding layer (internal/native/)   ← cgo + inline C shim; maps directly to Tongsuo C functions
 ```
 
 - **Strict layering, one-way dependencies**: the API layer talks to objects only through the core layer, never touching cgo directly
+- **16 flat top-level packages**: algorithm primitives and their CLI-style by-name entry points share a package; no intermediate `crypto/` directory and no all-in-one `key/` package
 - **Memory safety**: native handles are wrapped by the core layer `handle` (`owned` flag + idempotent `Close()` + `runtime.SetFinalizer` as a safety net); raw native pointers never leak into the public API
 - **Error handling**: native failures surface uniformly as `*core.OpError`, carrying the `ERR_get_error()` code
 - **Concurrency model**: distinct handles can be used in parallel; a single handle must be serialized by its caller
-- **Internal implementation is hidden**: `internal/native` and `internal/core` are protected by Go's `internal` mechanism and cannot be imported from outside
+- **Internal implementation is hidden**: `internal/` is protected by Go's `internal` mechanism and cannot be imported from outside; no `internal/` type appears in a public signature
 
-See [docs/architecture.md](docs/architecture.md) for the detailed design.
+See [docs/architecture.md](docs/architecture.md) for the detailed design, and [docs/refactor-roadmap.md](docs/refactor-roadmap.md) for the package-structure decisions and migration path.
 
 ## License
 

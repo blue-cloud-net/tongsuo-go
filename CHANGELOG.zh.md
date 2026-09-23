@@ -29,6 +29,30 @@
   既有的 `N / E / D / P / Q` 一并返回。优先取自 Tongsuo provider 参数
   `rsa-exponent1` / `rsa-exponent2` / `rsa-coefficient1`（Tongsuo 8.5+
   可用），任一缺失则回落由 `D / P / Q` 在本包内推导；公钥侧相关字段保持 nil。
+- `meta`（新增顶级包）：铜锁版本与构建信息（`Version` / `VersionString` /
+  `VersionNum` / `TongsuoVersionNum` / `ReadBuildInfo`）与错误码解析
+  （`ErrorString` / `ErrorCode` / `ParseErrorCode`）。底层新增
+  `OpenSSLVersionWithIndex(idx int)` 绑定，使 `OpenSSL_version` 的全部
+  index 可达（原绑定把 index 硬编码为 `0`）。
+- `digest`：新增 `SHA-224` 与 `SHA-384` 支持——`SumSHA224` / `SumSHA384`、
+  `SHA224Size` / `SHA384Size` 以及对应的 `New` / `Sum` 按名入口。
+  `EVP_sha224` / `EVP_sha384` 已有绑定，**零新增 cgo**。
+- `digest` / `mac` / `kdf` / `sym` / `asym`：各包在 Go 惯例接口
+  （`hash.Hash` / `cipher.Block` / `cipher.AEAD`）之外，新增
+  「按算法名分发」的 CLI 式入口（`Names` / `New(name, …)` /
+  `Sum(name, …)` / `Derive(name, …)` / `GenerateKey(alg, …)`）。
+- `asym`：`LoadPrivateKeyPEM` 在失败前新增回退传统 RSA PKCS#1 与
+  EC SEC1 编码。
+- `ecdh`：新增 `LoadPrivateKey(asym.PrivateKey)` / `LoadPublicKey(asym.PublicKey)`，
+  使 `asym` 生成的密钥可直接用于密钥协商。
+- `x509`：新增 `CreateSelfSigned(...)` 一行生成自签证书；
+  `(*Certificate).VerifyHostname(host)` 校验主机名与 IP；
+  `(*Store).SetTime(t)` 指定验证时刻。
+- `x509`：新增 `CRLBuilder` / `NewCRLBuilder` / `(*CRLBuilder).Revoke` /
+  `(*CRLBuilder).Sign`，公开 CRL 签发入口（原 `internal/core.NewCRL`
+  未导出）。
+- `tls`：新增 `CipherSuiteByName(name)`，按名称或 ID 解析算法套件。
+- `rand`：新增 `Reader() io.Reader`，便于 `io.Copy` / `io.ReadFull` 组合。
 
 ### 行为变化与重构
 
@@ -36,17 +60,75 @@
   `dp` / `dq` / `qi`，与既有的 `p` / `q` 并列；公钥输出与 EC / SM2 输出不变。
 - `xml/rsa.MarshalPrivate`：改用 `KeyParams` 中的 CRT 系数，删除本地
   `Mod(D, P-1)`、`Mod(D, Q-1)` 与 `ModInverse(Q, P)` 重复推导。
+- `x509`：OCSP 相关入口并入本包并改名，避免与同包符号相撞——
+  `ocsp.CreateRequest` → `x509.CreateOCSPRequest`、
+  `ocsp.ParseResponse` → `x509.ParseOCSPResponse`、
+  `ocsp.Good` / `Revoked` / `Unknown` → `x509.OCSPGood` /
+  `OCSPRevoked` / `OCSPUnknown`。
+- `tls`：不再直接 import `internal/native`，套件与错误码查询改经
+  `internal/core`，恢复三层分离。
 
 ### Bug 修复
 
-- `crypto/rsa` GoDoc：`PrivateKey.Params` / `PublicKey.Params` 注释将
+- `asym` GoDoc：`PrivateKey.Params` / `PublicKey.Params` 注释将
   `P` / `Q` 误称为「CRT 因子」（实为 RSA 素因子）。现已区分素因子
   （`P` / `Q`）与 CRT 系数（`Dmp1` / `Dmq1` / `Iqmp`）。
 
 ### 文档
 
-- `docs/testing-guide.md` §5 非对称测试表新增「参数提取」行：
+- `docs/testing-guide.md` §5.1 非对称测试表新增「参数提取」行：
   CRT 系数非 nil、范围不变量与 `Iqmp*Q ≡ 1 (mod P)`。
+- `docs/refactor-roadmap.md`（新增）：包结构重构的完整决策记录、逐包
+  迁移方案、需新增的底层绑定、Phase 与版本归属、验证方案与回滚方案。
+- `docs/api-reference.md`：按重构后的 16 包布局重写，新增逐包状态标记
+  与逐符号「已有 / 当前版本实施中 / 规划中」标记。
+- `docs/api-reference-internal.md`：新增 `§5 internal/keyaccess` 并同步
+  分层图。
+- `docs/architecture.md`：§1.1 / §2 / §3.3 / §4 / §5 / §7 / §10 / §11。
+- `AGENTS.md`：目录地图、分层红线、文档同步表与已知陷阱清单。
+- `README.md` + `README.zh.md`：功能列表、代码示例与架构段。
+
+### BREAKING / 已知限制
+
+- **API 层包结构：27 个包 → 16 个。**`crypto/` 整目录与 `key/` 包已删除，
+  所有公开 import 路径都发生变化。包级对照见 `docs/api-reference.md`
+  §0.1，符号级对照见 `docs/refactor-roadmap.md` §4。
+  - `crypto/{sm3,md5,sha1,sha256,sha512}` → `digest`
+  - `crypto/hmac` → `mac`
+  - `crypto/{aes,sm4}` + `key` 对称部分 → `sym`
+  - `crypto/{sm2,rsa,ecdsa,ed25519,ed448}` + `key` 非对称部分 +
+    `crypto/{x25519,x448}` 的密钥生成 → `asym`
+  - `crypto/ecdh` + `crypto/{x25519,x448}` 的密钥协商 → `ecdh`
+  - `crypto/kdf` + `key` 的 KDF 部分 → `kdf`
+  - `crypto/rand` → `rand`
+  - `key.{Handle,Store,MemoryStore}` → `keystore`
+  - `ocsp` → `x509`
+  - `crypto/` 整目录、`crypto/{x25519,x448}` 与 `key/` 直接删除。
+- **不保留 deprecated 转发包**，调用方需一次性迁移。
+- **`x509` / `csr` / `crl` / `ocsp` 不拆分。**拆分会在 `x509` 与 `crl`
+  之间引入循环依赖（`Store.AddCRL(*crl.CRL)` ↔
+  `crl.NewBuilder(*x509.Certificate)`），故 CSR / CRL / OCSP 均留在 `x509`。
+- **算法特有的方法改为包级函数。**密钥类型现为 `asym.PrivateKey` /
+  `asym.PublicKey` 接口，如 `rsa.GenerateKey(2048)` →
+  `asym.GenerateRSA(2048)`、`priv.SignPSS(…)` → `asym.SignPSS(priv, …)`。
+- **公开签名中不再出现 `internal/` 类型。**`docs/refactor-roadmap.md`
+  §5.1 列出的 12 处泄露已全部收敛，`Key() *core.PKey` / `Core()` /
+  `PublicKeyPKey()` / `Store.Core()` / `jwk.Marshal(*core.PKey)` 等逃逸口
+  一并移除；跨包取句柄改经 `internal/keyaccess`。
+- **`KeyParams` 迁入 `asym`。**`(*PrivateKey).Params()` 返回类型由
+  `*core.KeyParams` 改为 `*asym.KeyParams`。
+- **`x509` 窄接口删除。**`x509.PublicKey` / `x509.PrivateKey` 移除，
+  改用 `asym.PublicKey` / `asym.PrivateKey`。
+- **`key.Algorithm` / `key.Key` 被取代。**非对称用 `asym.Algorithm` +
+  `asym.Key`，对称用 `sym.Algorithm` + `sym.SymmetricKey`；注意改名
+  `AlgED25519` → `AlgEd25519`。
+- **`tls.Config` 密钥字段改类型**：`Key` / `SignKey` / `EncKey` 由
+  `*sm2.PrivateKey` 改为 `asym.PrivateKey`。
+- **RSA OAEP 参数**：`crypto/rsa.EncryptOAEP` 的 `md *core.Digest` 参数
+  改为 `hash string`——旧参数在模块外本来无法构造。
+- 已知限制：`asym` 的密钥具体类型为非导出类型，仅以接口对外，第三方
+  自定义密钥类型不再能传给 `x509` / `tls`。此类类型此前也拿不到原生
+  句柄，故功能无损失。
 
 ---
 

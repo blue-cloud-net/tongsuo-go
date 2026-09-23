@@ -32,6 +32,33 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   `rsa-exponent1` / `rsa-exponent2` / `rsa-coefficient1` when exposed
   (Tongsuo 8.5+) and fall back to local derivation from `D / P / Q`
   otherwise; the public key path keeps these fields nil.
+- `meta` (new top-level package): Tongsuo version and build information
+  (`Version`, `VersionString`, `VersionNum`, `TongsuoVersionNum`,
+  `ReadBuildInfo`) plus error-code decoding (`ErrorString`, `ErrorCode`,
+  `ParseErrorCode`). Backed by a new `OpenSSLVersionWithIndex(idx int)`
+  binding, so every `OpenSSL_version` index is reachable (the previous
+  binding hard-coded index `0`).
+- `digest`: `SHA-224` and `SHA-384` are now supported —
+  `SumSHA224` / `SumSHA384`, `SHA224Size` / `SHA384Size` and the matching
+  `New` / `Sum` by-name entries. `EVP_sha224` / `EVP_sha384` were already
+  bound, so no new cgo binding was needed.
+- `digest` / `mac` / `kdf` / `sym` / `asym`: every package now also offers a
+  CLI-style "dispatch by algorithm name" entry point (`Names`,
+  `New(name, …)`, `Sum(name, …)`, `Derive(name, …)`,
+  `GenerateKey(alg, …)`) next to the idiomatic Go interfaces
+  (`hash.Hash` / `cipher.Block` / `cipher.AEAD`).
+- `asym`: `LoadPrivateKeyPEM` now falls back to the traditional RSA PKCS#1
+  and EC SEC1 encodings before failing.
+- `ecdh`: `LoadPrivateKey(asym.PrivateKey)` / `LoadPublicKey(asym.PublicKey)`
+  make a key produced by `asym` usable for key agreement.
+- `x509`: `CreateSelfSigned(...)` builds a self-signed certificate in one
+  call; `(*Certificate).VerifyHostname(host)` checks host names and IP
+  addresses; `(*Store).SetTime(t)` pins the verification instant.
+- `x509`: `CRLBuilder` / `NewCRLBuilder` / `(*CRLBuilder).Revoke` /
+  `(*CRLBuilder).Sign` make CRL issuance public (`internal/core.NewCRL`
+  was previously unexported).
+- `tls`: `CipherSuiteByName(name)` resolves a cipher suite by name or ID.
+- `rand`: `Reader() io.Reader` for `io.Copy` / `io.ReadFull` composition.
 
 ### Changed
 
@@ -42,19 +69,87 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - `xml/rsa.MarshalPrivate`: now uses the CRT factors from
   `core.KeyParams` instead of recomputing `Mod(D, P-1)`,
   `Mod(D, Q-1)` and `ModInverse(Q, P)` locally.
+- `x509`: the OCSP helpers moved in and were renamed to avoid colliding
+  with the new package's own symbols — `ocsp.CreateRequest` →
+  `x509.CreateOCSPRequest`, `ocsp.ParseResponse` →
+  `x509.ParseOCSPResponse`, and `ocsp.Good` / `Revoked` / `Unknown` →
+  `x509.OCSPGood` / `OCSPRevoked` / `OCSPUnknown`.
+- `tls`: the package no longer imports `internal/native` directly; the
+  cipher-suite and error-code lookups now go through `internal/core`,
+  restoring the three-layer separation.
 
 ### Fixed
 
-- `crypto/rsa` GoDoc for `PrivateKey.Params` / `PublicKey.Params`: the
+- `asym` GoDoc for `PrivateKey.Params` / `PublicKey.Params`: the
   private-side listing previously called `P` / `Q` "CRT 因子"; they are
   in fact the RSA prime factors. The doc now distinguishes 素因子
   (`P` / `Q`) and CRT factors (`Dmp1` / `Dmq1` / `Iqmp`).
 
 ### Documentation
 
-- `docs/testing-guide.md` §5 now lists the CRT parameter invariants
+- `docs/testing-guide.md` §5.1 now lists the CRT parameter invariants
   among the required RSA cases (non-nil, range checks and
   `Iqmp*Q ≡ 1 (mod P)`).
+- `docs/refactor-roadmap.md` (new): the full package-structure decision
+  record, per-package migration plan, required new bindings, phase/version
+  assignment, verification procedure and rollback plan.
+- `docs/api-reference.md`: rewritten for the post-refactor 16-package
+  layout, with a per-package status marker and a per-symbol marker for
+  "already present" / "landing in this release" / "planned".
+- `docs/api-reference-internal.md`: adds `§5 internal/keyaccess` and
+  updates the layer diagram.
+- `docs/architecture.md`: §1.1 / §2 / §3.3 / §4 / §5 / §7 / §10 / §11.
+- `AGENTS.md`: directory map, layering red lines, doc-sync table and the
+  known-trap list.
+- `README.md` + `README.zh.md`: features, code examples and the
+  architecture section.
+
+### BREAKING / 已知限制
+
+- **API-layer package layout: 27 packages → 16.** The `crypto/` tree and
+  the `key/` package are gone, so every public import path changes. See
+  `docs/api-reference.md` §0.1 for the package-level old → new mapping and
+  `docs/refactor-roadmap.md` §4 for the symbol-level one.
+  - `crypto/{sm3,md5,sha1,sha256,sha512}` → `digest`
+  - `crypto/hmac` → `mac`
+  - `crypto/{aes,sm4}` + the symmetric half of `key` → `sym`
+  - `crypto/{sm2,rsa,ecdsa,ed25519,ed448}` + the asymmetric half of `key`
+    + key generation from `crypto/{x25519,x448}` → `asym`
+  - `crypto/ecdh` + key agreement from `crypto/{x25519,x448}` → `ecdh`
+  - `crypto/kdf` + the KDF half of `key` → `kdf`
+  - `crypto/rand` → `rand`
+  - `key.{Handle,Store,MemoryStore}` → `keystore`
+  - `ocsp` → `x509`
+  - `crypto/`, `crypto/{x25519,x448}` and `key` are deleted outright.
+- **No deprecated forwarding packages.** Callers must migrate in one step.
+- **`x509` / `csr` / `crl` / `ocsp` are *not* split.** Splitting them would
+  introduce a `x509` ↔ `crl` import cycle (`Store.AddCRL(*crl.CRL)` versus
+  `crl.NewBuilder(*x509.Certificate)`), so CSR / CRL / OCSP stay in `x509`.
+- **Algorithm-specific methods became package-level functions.** Key types
+  are now the interfaces `asym.PrivateKey` / `asym.PublicKey`, so e.g.
+  `rsa.GenerateKey(2048)` → `asym.GenerateRSA(2048)` and
+  `priv.SignPSS(…)` → `asym.SignPSS(priv, …)`.
+- **No `internal/` type appears in a public signature any more.** All
+  twelve leaks listed in `docs/refactor-roadmap.md` §5.1 are closed, which
+  removes the `Key() *core.PKey`, `Core()`, `PublicKeyPKey()`,
+  `Store.Core()` and `jwk.Marshal(*core.PKey)` escape hatches.
+  Cross-package handle access now goes through `internal/keyaccess`.
+- **`KeyParams` moved to `asym`.** `(*PrivateKey).Params()` now returns
+  `*asym.KeyParams` instead of `*core.KeyParams`.
+- **`x509` narrow key interfaces removed.** `x509.PublicKey` /
+  `x509.PrivateKey` are gone; use `asym.PublicKey` / `asym.PrivateKey`.
+- **`key.Algorithm` / `key.Key` replaced.** Use `asym.Algorithm` +
+  `asym.Key` (asymmetric) or `sym.Algorithm` + `sym.SymmetricKey`
+  (symmetric); note the rename `AlgED25519` → `AlgEd25519`.
+- **`tls.Config` key fields retyped**: `Key` / `SignKey` / `EncKey` are
+  `asym.PrivateKey` instead of `*sm2.PrivateKey`.
+- **RSA OAEP parameter**: `crypto/rsa.EncryptOAEP`'s
+  `md *core.Digest` parameter became `hash string` — the old parameter was
+  impossible to construct from outside the module anyway.
+- Known limitation: `asym` key types are unexported concrete types behind
+  interfaces, so a third-party key type can no longer be passed to `x509` /
+  `tls`. Such a type could not supply a native handle before either, so no
+  functionality is lost.
 
 ---
 

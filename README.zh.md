@@ -20,19 +20,27 @@
 
 ## 功能
 
-- 🔐 **SM2 非对称算法**（GB/T 32918）：密钥生成、PEM 序列化、加密/解密（ASN.1 DER，内含 C1C3C2）、
+API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `sym` / `asym` / `ecdh` /
+`keystore` / `x509` / `tls` / `asn1` / `jwk` / `pkcs/pkcs7` / `pkcs/pkcs12` / `xml/rsa`），
+无 `crypto/` 中间目录；每个包同时提供 Go 惯例接口与「按算法名分发」的 CLI 式入口，
+详见[包结构重构路线图](docs/refactor-roadmap.md)。
+
+- 🔐 **SM2 非对称算法**（GB/T 32918，`asym`）：密钥生成、PEM 序列化、加密/解密（ASN.1 DER，内含 C1C3C2）、
   SM2withSM3 签名/验签、自定义 userId
-- 🔑 **SM3 哈希算法**（GB/T 32905-2016）：`hash.Hash` 接口 + 一次性 `Sum`
-- 🔒 **SM4 对称加密**（GB/T 32907）：ECB / CBC / CTR / OFB / CFB / GCM（AEAD）
-- 🧮 **HMAC 消息认证码**：HMAC-SM3 / MD5 / SHA1 / SHA256 / SHA512
-- 🔗 **更多哈希**：MD5、SHA1、SHA256、SHA512（`hash.Hash` + `Sum`）
-- 🔄 **AES 对称加密**：ECB / CBC / CTR / GCM（`cipher.Block` + `cipher.AEAD`）
-- � **Ed25519 / Ed448 签名算法**（RFC 8032）：纯 EdDSA（无预哈希），32B / 57B 原始种子与公钥字节可与 Go 标准库、WireGuard 互操作；通过 `X509_sign_ctx` 路径支持证书 / CSR / CRL 签发
-- 🤝 **X25519 ECDH 密钥交换**（RFC 7748）：32 字节共享密钥派生，可与 Go `crypto/ecdh`、WireGuard 互操作，支持证书 / CSR 公钥加载
-- 🤝 **曲线 ECDH（`crypto/ecdh`）**：NIST P-256 / P-384 / P-521（X9.63）、OKP 曲线 X25519 / X448（RFC 7748）与 secp256k1；支持密钥生成、PEM（PKCS#8 / SPKI）往返与共享密钥派生，语义对齐 Go 标准库 `crypto/ecdh`
-- 🎲 **安全随机数**：基于铜锁 `RAND_bytes`
-- 📜 **X.509 证书管理**：证书解析、创建、自签名 / CA 签发（SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448）、CSR 生成与验证、BasicConstraints 扩展
-- 🌐 **TLS / NTLS 传输层**：客户端 / 服务端封装，支持国密 NTLS 双证书（签名证书 + 加密证书）
+- 🔑 **SM3 哈希算法**（GB/T 32905-2016，`digest`）：`hash.Hash` 接口 + 定长 `SumSM3` + 按名 `Sum("SM3", d)`
+- 🔒 **SM4 对称加密**（GB/T 32907，`sym`）：ECB / CBC / CTR / OFB / CFB / GCM（AEAD）
+- 🧮 **HMAC 消息认证码**（`mac`）：HMAC-SM3 / MD5 / SHA1 / SHA256 / SHA512
+- 🔗 **更多哈希**（`digest`）：MD5、SHA1、SHA224、SHA256、SHA384、SHA512（`hash.Hash` + `Sum`）
+- 🔄 **AES 对称加密**（`sym`）：ECB / CBC / CTR / GCM（`cipher.Block` + `cipher.AEAD`）
+- 🧬 **密钥派生**（`kdf`）：HKDF / PBKDF2 / Argon2ID，含按名分发 `Derive`
+- 📝 **Ed25519 / Ed448 签名算法**（RFC 8032，`asym`）：纯 EdDSA（无预哈希），32B / 57B 原始种子与公钥字节可与 Go 标准库、WireGuard 互操作；通过 `X509_sign_ctx` 路径支持证书 / CSR / CRL 签发
+- 🤝 **X25519 / X448 ECDH 密钥交换**（RFC 7748，`ecdh`）：32 / 56 字节共享密钥派生，可与 Go `crypto/ecdh`、WireGuard 互操作
+- 🤝 **曲线 ECDH**（`ecdh`）：NIST P-256 / P-384 / P-521（X9.63）、OKP 曲线 X25519 / X448（RFC 7748）与 secp256k1；PEM（PKCS#8 / SPKI）往返与共享密钥派生，语义对齐 Go 标准库 `crypto/ecdh`
+- 🎲 **安全随机数**（`rand`）：基于铜锁 `RAND_bytes`
+- 🗄️ **密钥存储与轮转**（`keystore`）：密钥元数据、内存 / 自定义 Store、版本轮转与历史
+- 📜 **X.509 证书管理**（`x509`）：证书 / CSR / CRL / OCSP 解析与签发、一步自签（`CreateSelfSigned`）、CA 签发（SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448）、主机名校验、链验证
+- 🌐 **TLS / NTLS 传输层**（`tls`）：客户端 / 服务端封装，支持国密 NTLS 双证书（签名证书 + 加密证书）
+- 📦 **容器与格式**：PKCS#7（`pkcs/pkcs7`）、PKCS#12（`pkcs/pkcs12`）、JWK（`jwk`）、ASN.1 DER 查看（`asn1`）、.NET 风格 RSA XML（`xml/rsa`）
 - 🧪 **标准向量测试**：每个算法包覆盖国标标准向量、往返、边界与错误路径，并与 openssl CLI 双向交叉验证
 
 ## 使用教程
@@ -107,15 +115,23 @@ package main
 import (
 	"fmt"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm3"
+	"github.com/blue-cloud-net/tongsuo-go/digest"
 )
 
 func main() {
-	sum := sm3.Sum([]byte("abc"))
+	// 定长入口（返回 [32]byte）
+	sum := digest.SumSM3([]byte("abc"))
 	fmt.Printf("%x\n", sum)
 
+	// 按算法名分发
+	named, err := digest.Sum("SM3", []byte("abc"))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%x\n", named)
+
 	// 流式接口（hash.Hash）
-	h := sm3.New()
+	h := digest.NewSM3()
 	h.Write([]byte("abc"))
 	fmt.Printf("%x\n", h.Sum(nil))
 }
@@ -129,7 +145,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm4"
+	"github.com/blue-cloud-net/tongsuo-go/sym"
 )
 
 func main() {
@@ -137,11 +153,11 @@ func main() {
 	iv := []byte("fedcba9876543210")
 
 	// 一次性便捷函数（CBC + PKCS7 填充）
-	ciphertext, err := sm4.EncryptCBC(key, iv, []byte("hello tongsuo"))
+	ciphertext, err := sym.EncryptSM4CBC(key, iv, []byte("hello tongsuo"))
 	if err != nil {
 		panic(err)
 	}
-	plaintext, err := sm4.DecryptCBC(key, iv, ciphertext)
+	plaintext, err := sym.DecryptSM4CBC(key, iv, ciphertext)
 	if err != nil {
 		panic(err)
 	}
@@ -149,11 +165,11 @@ func main() {
 
 	// GCM（AEAD）
 	nonce := []byte("0123456789ab")
-	ct, tag, err := sm4.EncryptGCM(key, nonce, []byte("secret"), nil)
+	ct, tag, err := sym.EncryptSM4GCM(key, nonce, []byte("secret"), nil)
 	if err != nil {
 		panic(err)
 	}
-	pt, err := sm4.DecryptGCM(key, nonce, ct, tag, nil)
+	pt, err := sym.DecryptSM4GCM(key, nonce, ct, tag, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -169,35 +185,35 @@ package main
 import (
 	"fmt"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 )
 
 func main() {
-	priv, err := sm2.GenerateKey()
+	priv, err := asym.GenerateSM2()
 	if err != nil {
 		panic(err)
 	}
 
 	// 签名（SM2withSM3，ASN.1 DER）
 	msg := []byte("tongsuo sm2")
-	sig, err := sm2.Sign(priv, msg)
+	sig, err := asym.Sign(asym.AlgSM2, priv, msg, nil)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Printf("signature: %x\n", sig)
 
 	pub := priv.Public()
-	if err := sm2.Verify(pub, msg, sig); err != nil {
+	if err := asym.Verify(asym.AlgSM2, pub, msg, sig, nil); err != nil {
 		panic(err)
 	}
 	fmt.Println("verify ok")
 
 	// 加密 / 解密（ASN.1 DER，内含 C1C3C2）
-	ciphertext, err := sm2.Encrypt(pub, msg)
+	ciphertext, err := asym.Encrypt(asym.AlgSM2, pub, msg, nil)
 	if err != nil {
 		panic(err)
 	}
-	plaintext, err := sm2.Decrypt(priv, ciphertext)
+	plaintext, err := asym.Decrypt(asym.AlgSM2, priv, ciphertext, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -213,15 +229,15 @@ package main
 import (
 	"fmt"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/hmac"
+	"github.com/blue-cloud-net/tongsuo-go/mac"
 )
 
 func main() {
-	sum := hmac.SumSM3([]byte("secret-key"), []byte("message"))
+	sum := mac.SumHMACSM3([]byte("secret-key"), []byte("message"))
 	fmt.Printf("%x\n", sum)
 
 	// 流式接口（hash.Hash）
-	h := hmac.NewSM3([]byte("secret-key"))
+	h := mac.NewHMACSM3([]byte("secret-key"))
 	h.Write([]byte("message"))
 	fmt.Printf("%x\n", h.Sum(nil))
 }
@@ -235,28 +251,29 @@ package main
 import (
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
-	"github.com/blue-cloud-net/tongsuo-go/x509"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/tls"
+	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
 func main() {
-	// 生成 CA 密钥并创建自签名证书
-	caKey, _ := sm2.GenerateKey()
+	// 一行生成 CA 自签证书（等价 `req -x509`）
+	caKey, _ := asym.GenerateSM2()
 	caName := x509.NewName().Add("CN", "tongsuo-go CA")
 
-	ca, err := x509.CreateCertificate(caName, caName, 1,
-		time.Now(), time.Now().Add(365*24*time.Hour), caKey, caKey)
+	ca, err := x509.CreateSelfSigned(caName, 1,
+		time.Now(), time.Now().Add(365*24*time.Hour), caKey.Public(), caKey)
 	if err != nil {
 		panic(err)
 	}
+	_ = ca
 
 	// 生成服务端证书（由 CA 签发）
-	serverKey, _ := sm2.GenerateKey()
+	serverKey, _ := asym.GenerateSM2()
 	serverName := x509.NewName().Add("CN", "localhost")
 
 	serverCert, err := x509.CreateCertificate(serverName, caName, 2,
-		time.Now(), time.Now().Add(365*24*time.Hour), serverKey, caKey)
+		time.Now(), time.Now().Add(365*24*time.Hour), serverKey.Public(), caKey)
 	if err != nil {
 		panic(err)
 	}
@@ -281,7 +298,7 @@ func main() {
 ## 架构
 
 ```
-API 层（crypto/）              ← 对外高层 API，仅此层可被外部 import
+API 层（16 个顶级包）          ← 对外高层 API，仅此层可被外部 import
     ↓ 调用
 核心层（internal/core/）       ← 句柄/上下文包装，生命周期与所有权管理
     ↓ 调用
@@ -289,13 +306,14 @@ API 层（crypto/）              ← 对外高层 API，仅此层可被外部 i
 ```
 
 - **严格分层、单向依赖**：API 层只经核心层操作对象，不直接接触 cgo
+- **16 个扁平顶级包**：算法原语与「按算法名分发」的应用入口同包；无 `crypto/` 中间目录、无 `key/` 统合包
 - **内存安全**：原生句柄经核心层 `handle` 包装（`owned` 所有权 + 幂等 `Close()` +
   `runtime.SetFinalizer` 兜底），原生指针不进入公开 API
 - **错误处理**：原生失败统一为携带 `ERR_get_error()` 错误码的 `*core.OpError`
 - **并发模型**：不同句柄可并行使用；单句柄需调用方串行化
-- **内部实现隐藏**：`internal/native` 与 `internal/core` 受 Go `internal` 机制保护，外部不可导入
+- **内部实现隐藏**：`internal/` 受 Go `internal` 机制保护，外部不可导入；公开签名中不出现 `internal/` 类型
 
-详细设计见 [docs/architecture.md](docs/architecture.md)。
+详细设计见 [docs/architecture.md](docs/architecture.md)，包结构决策与迁移路径见 [docs/refactor-roadmap.md](docs/refactor-roadmap.md)。
 
 ## 协议
 
