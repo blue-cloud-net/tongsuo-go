@@ -20,6 +20,36 @@
 
 ---
 
+## [0.3.0] - TBD
+
+### 新增功能
+
+- `internal/core`：`KeyParams` 新增 RSA CRT 系数 `Dmp1 = D mod (P-1)`、
+  `Dmq1 = D mod (Q-1)` 与 `Iqmp = Q⁻¹ mod P`，由 `(*PKey).Params()` 与
+  既有的 `N / E / D / P / Q` 一并返回。优先取自 Tongsuo provider 参数
+  `rsa-exponent1` / `rsa-exponent2` / `rsa-coefficient1`（Tongsuo 8.5+
+  可用），任一缺失则回落由 `D / P / Q` 在本包内推导；公钥侧相关字段保持 nil。
+
+### 行为变化与重构
+
+- `jwk.Marshal`：RSA 私钥 JWK 现在同时携带 RFC 7518 §6.3.2 的 CRT 字段
+  `dp` / `dq` / `qi`，与既有的 `p` / `q` 并列；公钥输出与 EC / SM2 输出不变。
+- `xml/rsa.MarshalPrivate`：改用 `KeyParams` 中的 CRT 系数，删除本地
+  `Mod(D, P-1)`、`Mod(D, Q-1)` 与 `ModInverse(Q, P)` 重复推导。
+
+### Bug 修复
+
+- `crypto/rsa` GoDoc：`PrivateKey.Params` / `PublicKey.Params` 注释将
+  `P` / `Q` 误称为「CRT 因子」（实为 RSA 素因子）。现已区分素因子
+  （`P` / `Q`）与 CRT 系数（`Dmp1` / `Dmq1` / `Iqmp`）。
+
+### 文档
+
+- `docs/testing-guide.md` §5 非对称测试表新增「参数提取」行：
+  CRT 系数非 nil、范围不变量与 `Iqmp*Q ≡ 1 (mod P)`。
+
+---
+
 ## [0.2.0] - 2026-09-18
 
 ### 新增功能
@@ -304,7 +334,8 @@
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.0...v0.1.1

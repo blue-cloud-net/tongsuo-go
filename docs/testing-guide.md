@@ -113,6 +113,7 @@ go test -fuzz FuzzRoundTrip ./crypto/sm4
 | **加密 / 解密** | 同密钥加密 + 解密；不同密钥解密失败；每次密文不同（SM2 随机点） |
 | **标准向量** | GB/T 32918 系列标准向量（加密 / 签名） |
 | **交叉验证** | 库签名 → openssl 验签；openssl 签名 → 库验签 |
+| **参数提取**（仅 RSA） | `Params()` 私钥侧 `N / E / D / P / Q / Dmp1 / Dmq1 / Iqmp` 均非 nil；`Dmp1 < P`、`Dmq1 < Q`、`Iqmp * Q ≡ 1 (mod P)`；公钥侧 CRT 字段全部 nil；openssl genpkey 生成的密钥经本库加载后同样满足 |
 
 **CLI 对比测试**：生成密钥，导出 PEM，调用 `openssl pkeyutl` / `openssl dgst -sm3 -sign`
 进行加解密或签名验签，与库结果比对。

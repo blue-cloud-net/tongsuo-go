@@ -21,6 +21,43 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
+## [0.3.0] - TBD
+
+### Added
+
+- `internal/core`: `KeyParams` now exposes the RSA CRT factors
+  `Dmp1 = D mod (P-1)`, `Dmq1 = D mod (Q-1)` and `Iqmp = Q^-1 mod P`,
+  populated by `(*PKey).Params()` next to the existing `N / E / D / P / Q`
+  fields. Values come from the Tongsuo provider parameters
+  `rsa-exponent1` / `rsa-exponent2` / `rsa-coefficient1` when exposed
+  (Tongsuo 8.5+) and fall back to local derivation from `D / P / Q`
+  otherwise; the public key path keeps these fields nil.
+
+### Changed
+
+- `jwk.Marshal`: an RSA private-key JWK now also carries the RFC 7518
+  §6.3.2 CRT fields `dp` / `dq` / `qi` alongside the previously
+  populated `p` / `q`. Public-key output and EC/SM2 output are
+  unchanged.
+- `xml/rsa.MarshalPrivate`: now uses the CRT factors from
+  `core.KeyParams` instead of recomputing `Mod(D, P-1)`,
+  `Mod(D, Q-1)` and `ModInverse(Q, P)` locally.
+
+### Fixed
+
+- `crypto/rsa` GoDoc for `PrivateKey.Params` / `PublicKey.Params`: the
+  private-side listing previously called `P` / `Q` "CRT 因子"; they are
+  in fact the RSA prime factors. The doc now distinguishes 素因子
+  (`P` / `Q`) and CRT factors (`Dmp1` / `Dmq1` / `Iqmp`).
+
+### Documentation
+
+- `docs/testing-guide.md` §5 now lists the CRT parameter invariants
+  among the required RSA cases (non-nil, range checks and
+  `Iqmp*Q ≡ 1 (mod P)`).
+
+---
+
 ## [0.2.0] - 2026-09-18
 
 ### Added
@@ -361,7 +398,8 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.0...v0.1.1
