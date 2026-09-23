@@ -79,6 +79,17 @@ func Marshal(key *core.PKey) (*Key, error) {
 		if p.Q != nil {
 			k.Q = b64(p.Q)
 		}
+		// CRT 系数 dp/dq/qi（RFC 7518 §6.3.2）可选；若底层已提取则填入，
+		// 缺则省略字段（公钥 / 私钥因子未加载均会缺）。
+		if p.Dmp1 != nil {
+			k.DP = b64(p.Dmp1)
+		}
+		if p.Dmq1 != nil {
+			k.DQ = b64(p.Dmq1)
+		}
+		if p.Iqmp != nil {
+			k.QI = b64(p.Iqmp)
+		}
 		return k, nil
 	case "EC", "SM2":
 		k := &Key{Kty: "EC", Crv: crvName(p.Curve)}

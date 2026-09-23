@@ -58,6 +58,25 @@ func TestRSA(t *testing.T) {
 	if !k.IsPrivate() {
 		t.Fatal("RSA private JWK should have private material")
 	}
+	// 私钥 JWK 现在应包含 RFC 7518 §6.3.2 的 CRT 字段 dp/dq/qi。
+	// （公钥 Marshal 时这些字段保持为空，已由其它用例覆盖。）
+	if k.DP == "" || k.DQ == "" || k.QI == "" {
+		t.Fatalf("RSA private JWK should carry dp/dq/qi: %+v", k)
+	}
+	// 私钥 ↔ 私钥比较：dp/dq/qi 与底层 core.KeyParams 的 CRT 系数应一致。
+	p := priv.Key().Params()
+	if p == nil || p.Dmp1 == nil || p.Dmq1 == nil || p.Iqmp == nil {
+		t.Fatal("underlying CRT params should be populated")
+	}
+	if want := b64(p.Dmp1); k.DP != want {
+		t.Fatalf("JWK dp mismatch: got %q want %q", k.DP, want)
+	}
+	if want := b64(p.Dmq1); k.DQ != want {
+		t.Fatalf("JWK dq mismatch: got %q want %q", k.DQ, want)
+	}
+	if want := b64(p.Iqmp); k.QI != want {
+		t.Fatalf("JWK qi mismatch: got %q want %q", k.QI, want)
+	}
 
 	// 私钥 PEM 往返
 	pemBytes, err := k.ToPEM()

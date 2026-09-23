@@ -60,4 +60,11 @@ func TestCLIInterop(t *testing.T) {
 	if k2.Kty != "RSA" || k2.N == "" || k2.E == "" {
 		t.Fatalf("jwk fields: %+v", k2)
 	}
+	// openssl 生成的密钥经本库加载后，私钥 JWK 也应带 dp/dq/qi，
+	// 覆盖"外部 PEM → 本库加载 → 私钥 JWK 含 CRT"完整互通路径。
+	if k2.IsPrivate() {
+		if k2.DP == "" || k2.DQ == "" || k2.QI == "" {
+			t.Fatalf("RSA private JWK from openssl PEM should carry dp/dq/qi: %+v", k2)
+		}
+	}
 }
