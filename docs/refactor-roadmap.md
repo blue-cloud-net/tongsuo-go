@@ -595,3 +595,4 @@ go test -race ./...         # 涉及并发/生命周期时（commit 19/20）
 | 02 | `refactor(native-binding): 参数化 OpenSSL_version 调用` | ✅ | （+41 行） |
 | 03 | `feat(internal-keyaccess): 新建桥接包 + core.(*PKey).Dup` | ✅ | （+203 行；4 文件：2 新建 + 2 改） |
 | 04 | `feat(meta): 新建铜锁元信息查询包` | ✅ | （+429 行；7 文件：6 新建 + 1 改） |
+| 05 | `feat(digest): 合并 5 个摘要包并补 SHA-224/384` | ✅ | （+1224 行；7 文件纯新增） |
