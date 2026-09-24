@@ -796,7 +796,7 @@
 **套件枚举**
 
 - ♻️ `func CipherSuites(version uint16) []CipherSuiteInfo` — 枚举指定协议版本下铜锁支持的套件
-- 🆕 `func CipherSuiteByName(name string) (CipherSuiteInfo, error)` — 名称/ID → 套件信息（对应 `ciphers -convert` / `-stdname`）
+- 🆕 `func CipherSuiteByName(name string) (CipherSuiteInfo, error)` — 名称/ID → 套件信息（对应 `ciphers -convert` / `-stdname`）。名称**大小写不敏感**且只匹配枚举报告的**主名**（不含 OpenSSL 旧式别名）；ID 为 16 位 wire ID 的文本形式，接受十进制（`4865`）或 `0x` 前缀十六进制（`0x1301`）；空串/未命中返回错误
 
 **规划中（`0.5.0`～`0.6.0`）**
 
