@@ -129,6 +129,7 @@ graph TD
   core["internal/core"]
   keyaccess["internal/keyaccess"]
 
+  meta --> core
   digest --> core
   mac --> core
   sym --> core
@@ -158,6 +159,12 @@ graph TD
 - 算法原语包**不互相依赖**（`mac` 通过算法名字符串与 `digest` 对齐，不 import 它）
 - 无环；`ecdh → asym` 单向；`asym` 不认识 `ecdh` / `x509`
 - `tls` 不再直接 import `internal/native`（现状 `tls/{tls,suites,errors}.go` 直接引用绑定层，属分层违规，本轮修复）
+- ⚠️ **补充（2026-09-24，实施期发现）**：本图初版**遗漏了 `meta`**，而 `meta`
+  （`version.go` / `build.go` / `error.go`）同样直连绑定层，属同一类分层违规。
+  §3.1 又明文按 `internal/native` 描述其实现，两者矛盾。已按「API 层不得跨层调用」
+  （`AGENTS.md` §3.3）收敛：`meta` 改经 `internal/core`，本图补上 `meta --> core`；
+  `internal/native` 侧的 `OpenSSLVersionWithIndex` 参数化保留不变（§3.1 的实现要点
+  本就在绑定层）。
 
 ### 2.3 `crypto/` 与 `key/` 的取消
 
@@ -629,3 +636,4 @@ go test -race ./...         # 涉及并发/生命周期时（commit 19/20）
 | 19f | `refactor(jwk-pkcs12): 收敛剩余 internal 类型泄漏（E1-1/E1-7/E1-12）` | ✅ | （`jwk`：删 `Marshal(*core.PKey)` 收回为包内 `marshalCore`，`MarshalKey` 由 `key.CoreKey` 改收 `asym.Key`（经 keyaccess），示例改用 `MarshalKey`；`pkcs12`：`PrivateKey` 别名与 `Bundle.PrivateKey` 由 `key.CoreKey`/`*core.PKey` 改为 `asym.PrivateKey`（解析时经 keyaccess 的 PEM 往返包装）；`internal/keyaccess` 新增**反向**桥接 `WrapPublicKey`/`WrapPrivateKey`（句柄 → asym 对象，PEM 往返），并让 x509 的 `wrapCorePublicKey` 委派给它（实现只留一份）。验收：`go doc -all` 中 `core.*` 泄漏 `jwk` 1→0、`pkcs12` 7→0。**新发现 P1008（P0 安全）**：`asym.PrivateKey.Public()` 与私钥共享底层 EVP_PKEY（既有行为，旧 `crypto/rsa`、`key` 同样如此），导致 `jwk.MarshalKey(priv.Public())` **静默导出私钥 JWK**；已在 `jwk_test.go` 用断言钉住当前行为并归档，修复方案需用户裁决） |
 | 19g | `refactor(x509-certaccess): 删除公开 WrapCertificate，改经 certaccess.Wrap（DER 往返）` | ✅ | （清除 roadmap §5 E1 清单**未列出**的一处泄漏：`x509.WrapCertificate(c *core.Certificate)` 公开签名含 internal 类型。改动：`x509.WrapCertificate` 收回为包内 `wrapCertificate`（ocsp 使用），`internal/certaccess` 新增 `Wrap(c) (*x509.Certificate, error)` 用 **DER 往返**（`MarshalDER` → `x509.LoadCertificateDER`）实现；消费方 `tls/chain.go`、`pkcs12`、`pkcs7` 改经 certaccess（4 处）。**语义修正**：旧 `WrapCertificate` 是共享句柄，与 `tls.peerCertificateChain` 已声明的契约（「每个返回的证书是 owned，调用方负责 Close」）**不符**——Close 会连带释放真正的所有者；新实现产出 owned 副本，让实现与契约对齐（属 BREAKING，列入 commit 22 的 CHANGELOG 段）。验收：`go doc -all ./x509` 的**签名级**泄漏 2→1（仅剩已文档化的 `CoreCertificate()` 残余）。**顺带归档 P1009**（roadmap §3.12 称 `xml/rsa` 不改签名不成立 + api-reference §16 无符号清单，阻塞 commit 21）） |
 | 19e | `feat(x509): 公开 CRLBuilder / VerifyHostname / Store.SetTime` | ✅ | （闭合 §12.2 步 19 的剩余三个目标，也是 **P1005 订正**的落实：三者均属档位二，需新增 cgo。**native**：新增 `X509_REVOKED_new/free`、`X509_REVOKED_set_serial_int`、`set_revocation_date`、`set_reason`（`add1_ext_i2d`）、`X509_CRL_add0_revoked`、`X509_CRL_sort`、`X509_check_host`、`X509_check_ip_asc`、`X509_STORE_set_verify_time`；**实测所有权**：铜锁 8.5 的 `X509_REVOKED_set_serialNumber` / `set_revocationDate` 都是**复制**入参而非接管指针（临时 `ASN1_INTEGER` / `ASN1_TIME` 由本侧释放），与 `X509_set_serial_int` 同形。**core**：`NewCRLForIssuer` 拆出「分配 + v2 + issuer」三步，把 `NewCRL` 改为对其 + `SetThisUpdate`/`SetNextUpdate`/`SetNumber`/`Sign` 的组合（既有行为与错误串逐字保持）；新增 `AddRevokedEntry`（失败路径自行释放 `X509_REVOKED`，成功即所有权转移）、`SortRevokedEntries`、`Certificate.VerifyHostname`（IP 文本走 `X509_check_ip_asc`，否则 `X509_check_host`）、`Store.SetTime`。**公开面**：`RevocationReason` + 10 个原因码常量、`CRLBuilder`（`NewCRLBuilder` 自动取 CA **subject** 作 issuer 并补 AKID、`SetNumber`/`SetThisUpdate`/`SetNextUpdate`/`Revoke`/`Sign`/`Close`；`Sign` 后句柄转移、builder 失效；未设 thisUpdate 即签名报错，未设 Number 默认 1）、`Certificate.VerifyHostname`、`Store.SetTime`。**测试**：单元用例覆盖完整流程（Number/时间窗/两条吊销记录/AKID/`Revoke` 后失效/`RevocationCheck`/PEM+DER 往返）、5 种算法签名可验证、错误路径与 nil 安全性、`SetTime` 使已过期链在历史时刻通过（对照当前时刻报 code 10）、主机名/IP/通配符/CN 回退；`ExampleNewCRLBuilder`；CLI 双向对拍（`openssl crl -text` 读出十六进制序列号与原因长名、`-crlnumber` 得 `0x63`、`crl -verify -CAfile` 得 `verify OK`、DER 亦可解析；反向解析已由既有 `TestCLICrlParse` 覆盖）） |
+| 20a | `refactor(api-layer): 消除 API 层对 internal/native 的直连` | ✅ | （落实 §12.2 步 20 的前半与 §2.2 的分层目标：`AGENTS.md` §3.3 禁止 API 层跨层 import 绑定层。**范围超出 §3.11 一处**——实测 `tls/{tls,suites,errors}.go` 与 `meta/{version,build,error}.go` **共 6 个文件**直连 `internal/native`，而 §2.2 依赖图**漏画了 `meta`**、§3.1 又按 native 描述其实现（文档自相矛盾）；本 commit 按硬约束一并收敛，并补上 `meta --> core`。**core 新增**：`ErrorString`、`DrainErrors`、`SSLErrorClass`（无 OpenSSL 符号名的语义分类）+ `ClassifySSLError`、`VersionString`、`BuildEnv` + `ReadBuildEnv`、`NTLSVersion`、`ProbeCipherSuites`（临时 ctx 探测套件，原 `tls.probeCtx`/`probeCtxPtr`/`versionForCipher` 中「探测」部分上移，`versionForCipher` 保留在 `tls` 因为它只用 `core.VersionNameToUint16`）。**tls**：`CipherSuites` 改为消费 `core.ProbeCipherSuites` 并转换字段；`classifyOpenSSLError` 由「读 reason 码」改为「翻译 `core.SSLErrorClass`」；`classifyHandshakeErr` 改用 `core.DrainErrors()` + `core.ClassifySSLError()`。**meta**：三个文件的 12 处 `native.*` 全部改走 `core.*`。验收：`grep -rn '"…/internal/native"' --include='*.go' . \| grep -v '^./internal/'` **为空**（API 层直连归零）） |

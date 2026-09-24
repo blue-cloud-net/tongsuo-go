@@ -1,6 +1,6 @@
 package meta
 
-import "github.com/blue-cloud-net/tongsuo-go/internal/native"
+import "github.com/blue-cloud-net/tongsuo-go/internal/core"
 
 // Version 返回铜锁完整版本 banner 第一行（如 "OpenSSL 3.5.4 3 Aug 2026"）。
 // 对应 tongsuo version（无 -a）；等价 C 侧 OpenSSL_version(OPENSSL_VERSION)。
@@ -13,7 +13,7 @@ import "github.com/blue-cloud-net/tongsuo-go/internal/native"
 // Tongsuo 8.x the first line carries only the OpenSSL version string;
 // use VersionString to read the Tongsuo-specific identifier.
 func Version() string {
-	return native.OpenSSLVersionText()
+	return core.VersionText()
 }
 
 // VersionString 返回纯版本号字符串（如 "3.5.4"）。
@@ -25,7 +25,7 @@ func Version() string {
 // the shortest version form without product-name prefix or build date;
 // returns "" if the library reports nothing.
 func VersionString() string {
-	return native.OpenSSLVersionWithIndex(native.VersionString)
+	return core.VersionString()
 }
 
 // VersionNum 返回 OpenSSL 兼容版本号（OpenSSL_version_num）。
@@ -37,7 +37,7 @@ func VersionString() string {
 // 0x30500040f for 3.5.4 final. The value is identical between
 // native OpenSSL and Tongsuo.
 func VersionNum() uint64 {
-	return native.OpenSSLVersionNum()
+	return core.VersionNum()
 }
 
 // TongsuoVersionNum 返回铜锁自有版本号（Tongsuo_version_num）。
@@ -48,5 +48,5 @@ func VersionNum() uint64 {
 // (Tongsuo_version_num). It is non-zero on Tongsuo (with VersionNum
 // disambiguating Tongsuo vs OpenSSL); usually 0 on stock OpenSSL.
 func TongsuoVersionNum() uint64 {
-	return native.TongsuoVersionNum()
+	return core.TongsuoVersionNum()
 }

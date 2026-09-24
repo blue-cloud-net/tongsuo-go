@@ -29,3 +29,72 @@ func VersionNum() uint64 { return native.OpenSSLVersionNum() }
 // reflects the Tongsuo fork's release identity and may differ on
 // Tongsuo builds; on stock OpenSSL it is typically zero.
 func TongsuoVersionNum() uint64 { return native.TongsuoVersionNum() }
+
+// VersionString 返回纯版本号字符串（如 "3.5.4"），不含产品名前缀与构建日期。
+//
+// VersionString returns the bare version string (for example "3.5.4"), without
+// product-name prefix or build date.
+func VersionString() string {
+	return native.OpenSSLVersionWithIndex(native.VersionString)
+}
+
+// BuildEnv 汇总铜锁的编译期与运行期环境快照（对应 `tongsuo version -a`）。
+//
+// 各字段就是 OpenSSL_version(idx) 的原始返回值——铜锁已在返回值里带好前缀
+// （如 `OPENSSLDIR: "..."`），本结构体不再加前缀；不支持的 index 退化为空串。
+//
+// BuildEnv aggregates a snapshot of Tongsuo's build-time and runtime
+// environment (matching `tongsuo version -a`).
+//
+// Each field is the raw OpenSSL_version(idx) value — Tongsuo already prefixes
+// values (for example `OPENSSLDIR: "..."`) and this type adds none; unsupported
+// indices degrade to the empty string.
+type BuildEnv struct {
+	// Version 是完整 banner（OPENSSL_VERSION）；VersionString 是纯版本号。
+	Version       string
+	VersionString string
+	// VersionNum / TongsuoVersionNum 为数值版本号。
+	VersionNum        uint64
+	TongsuoVersionNum uint64
+	// Compiler 为 OPENSSL_CFLAGS，BuiltOn 为 OPENSSL_BUILT_ON。
+	Compiler string
+	BuiltOn  string
+	// Platform 为 OPENSSL_PLATFORM。
+	Platform string
+	// OpenSSLDir / EnginesDir / ModulesDir 为对应目录（已含前缀）。
+	OpenSSLDir string
+	EnginesDir string
+	ModulesDir string
+	// CPUInfo 为 OPENSSL_CPU_INFO。
+	CPUInfo string
+}
+
+// ReadBuildEnv 一次性读取铜锁的编译期与运行期环境快照。
+//
+// 本函数**不返回错误**：任何字段取不到都退化为空串或零值（与
+// `tongsuo version -a` 在信息不全时仍能输出一致）。
+//
+// ReadBuildEnv reads a one-shot snapshot of Tongsuo's build-time and runtime
+// environment.
+//
+// It never returns an error: fields that cannot be resolved degrade to the
+// empty string (or zero), matching `tongsuo version -a` behaviour on partially
+// instrumented builds.
+func ReadBuildEnv() BuildEnv {
+	byIndex := func(idx native.OpenSSLVersionInfo) string {
+		return native.OpenSSLVersionWithIndex(idx)
+	}
+	return BuildEnv{
+		Version:           VersionText(),
+		VersionString:     VersionString(),
+		VersionNum:        VersionNum(),
+		TongsuoVersionNum: TongsuoVersionNum(),
+		Compiler:          byIndex(native.VersionCFlags),
+		BuiltOn:           byIndex(native.VersionBuiltOn),
+		Platform:          byIndex(native.VersionPlatform),
+		OpenSSLDir:        byIndex(native.VersionDir),
+		EnginesDir:        byIndex(native.VersionEngines),
+		ModulesDir:        byIndex(native.VersionModules),
+		CPUInfo:           byIndex(native.VersionCPUInfo),
+	}
+}

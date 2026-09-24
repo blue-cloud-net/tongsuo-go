@@ -23,7 +23,7 @@
 | 5 | `internal/testutil` | 测试共享：铜锁 CLI 包装与跳过判定 |
 
 ```
-API 层（digest / mac / sym / asym / ecdh / kdf / rand / keystore / x509 / tls / asn1 / jwk / pkcs/* / xml-rsa）
+API 层（meta / digest / mac / sym / asym / ecdh / kdf / rand / keystore / x509 / tls / asn1 / jwk / pkcs/* / xml-rsa）
     ↓                                              ↑
 internal/core     ← 句柄/上下文包装、生命周期、错误、协议编排
 internal/keyaccess → 公开密钥对象到 *core.PKey 的反查（叶子包，只依赖 internal/core）
@@ -33,6 +33,11 @@ internal/native   ← cgo + shim.c（X_ 前缀），1:1 映射铜锁 C 函数
 internal/digest   ← 被 digest 包用于构造 hash.Hash
 internal/testutil ← 仅被 *_test.go 使用
 ```
+
+> **分层硬约束**：API 层任何包**不得** import `internal/native`（跨层调用，见
+> `AGENTS.md` §3.3）。需要绑定层能力时，先在 `internal/core` 加包装再调用——
+> `meta`（版本 / 构建信息 / errstr）与 `tls`（套件探测 / 错误分类）就是这两条路径的
+> 样板；仓库当前 **API 层对 `internal/native` 的直连为 0**。
 
 ---
 
@@ -47,6 +52,10 @@ internal/testutil ← 仅被 *_test.go 使用
 - `func (h *Handle) Close() error` — 释放句柄（幂等；`owned` 为 false 时不释放）
 - `type OpError struct { Op string; Code uint64; Msg string; Err error }` — 统一错误类型（携带铜锁错误码）
 - `func NewOpError(op string, code uint64) *OpError` — 由操作名与错误码构造（`Msg` 取自 `ERR_error_string_n`）
+- `func ErrorString(code uint64) string` — 错误码 → 文本（包装 `ERR_error_string_n`，等价 `tongsuo errstr`；与只认 `X509_V_ERR_*` 的 `VerifyErrorMessage` 不同）
+- `func DrainErrors() uint64` — 弹出本线程错误队列全部错误码，返回最后一条（0 = 队列为空）
+- `type SSLErrorClass int` + `SSLErrorClassOther` / `SSLErrorClassVersion` / `SSLErrorClassCipher` / `SSLErrorClassPeerVerify` / `SSLErrorClassNetwork` — TLS / 证书错误码的**无 OpenSSL 符号名**语义分类（供 `tls` 映射为 `HandshakeErrorKind`）
+- `func ClassifySSLError(code uint64) SSLErrorClass` — 依据 lib / reason 判别版本 / 套件 / 验证 / 兵底四类（尽力而为的启发式）
 
 ### 1.2 摘要
 
@@ -242,6 +251,8 @@ internal/testutil ← 仅被 *_test.go 使用
 - `func (s *SSLConn) PeerCertificate() (*Certificate, error)` / `PeerCertificates() ([]*Certificate, error)` — 对端证书与链
 - `func (s *SSLConn) Close() error` — 释放（幂等）
 - `type CipherInfo struct { …（内部字段） }` — 套件元数据
+- `const NTLSVersion uint16` — NTLS（TLCP）协议版本常量（与 `native.NTLSVersion` 同值；公开层 `tls.NTLSVersion` 来自此处）
+- `func ProbeCipherSuites(version uint16) []CipherInfo` — 枚举**指定协议版本**下可用的全部套件（自建临时 ctx、min=max=version；NTLS 走 `NTLS_method`）；供 `tls.CipherSuites` 使用
 - `func CipherVersionToUint16(version uint16) uint16` — 校验并回传协议版本常量（未知返回 0）
 - `func VersionNameToUint16(name string) uint16` — 版本名（如 `"TLSv1.2"`）→ 版本常量
 - `const VerifyResultClosed = -2` — `VerifyResult` 在连接已关闭时的返回值
@@ -254,8 +265,11 @@ internal/testutil ← 仅被 *_test.go 使用
 ### 1.11 版本
 
 - `func VersionText() string` — 铜锁版本字符串（如 `"Tongsuo 8.5.0-pre2 …"`）
+- `func VersionString() string` — 纯版本号（`OpenSSL_version(OPENSSL_VERSION_STRING)`，如 `"3.5.4"`）
 - `func VersionNum() uint64` — OpenSSL 兼容版本号
 - `func TongsuoVersionNum() uint64` — 铜锁自有版本号
+- `type BuildEnv struct { …（公开字段） }` — 编译期 / 运行期环境快照（banner / 版本号 / CFLAGS / BUILT_ON / PLATFORM / 库·引擎·模块目录 / CPU_INFO）
+- `func ReadBuildEnv() BuildEnv` — 一次性读取上述快照（不返回 error，缺项退化为空串）
 
 ---
 

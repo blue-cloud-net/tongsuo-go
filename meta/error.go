@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
-	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
 
 // ErrorString 返回铜锁错误码对应的文本描述。
@@ -19,7 +18,7 @@ import (
 // ERR_error_string_n via native.ErrorString. Unknown codes resolve to
 // a "<hex>:" placeholder rather than panicking.
 func ErrorString(code uint64) string {
-	return native.ErrorString(code)
+	return core.ErrorString(code)
 }
 
 // ErrorCode 尝试从 error 链中提取铜锁错误码。

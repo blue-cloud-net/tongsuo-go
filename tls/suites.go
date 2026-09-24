@@ -29,20 +29,19 @@ package tls
 import (
 	"errors"
 	"strings"
-	"unsafe"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
-	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
 
-// NTLSVersion 是铜锁 NTLS（TLCP）协议版本常量，对应 internal/native
-// 的 NTLSVersion，便于在 CipherSuites / Config.MinVersion / Config.MaxVersion
-// 等公开 API 中使用同一组数字标识。
+// NTLSVersion 是铜锁 NTLS（TLCP）协议版本常量，与 internal/core 的同名常量同值，
+// 便于在 CipherSuites / Config.MinVersion / Config.MaxVersion 等公开 API 中使用同一
+// 组数字标识。
 //
-// NTLSVersion is the Tongsuo NTLS (TLCP) protocol version constant; pass
-// it to CipherSuites / Config.MinVersion / Config.MaxVersion as the
-// canonical wire-version identifier.
-const NTLSVersion uint16 = native.NTLSVersion
+// NTLSVersion is the Tongsuo NTLS (TLCP) protocol version constant, equal to the
+// same-named constant in internal/core; pass it to CipherSuites /
+// Config.MinVersion / Config.MaxVersion as the canonical wire-version
+// identifier.
+const NTLSVersion uint16 = core.NTLSVersion
 
 // CipherSuiteInfo 描述一个 TLS / NTLS 密码套件。
 //
@@ -101,48 +100,22 @@ type CipherSuiteInfo struct {
 //
 // CipherSuites returns every cipher the Tongsuo native library supports
 // at the given protocol version. Pass one of TLS1Version / TLS1_1Version
-// / TLS1_2Version / TLS1_3Version / NTLSVersion (or the equivalent
-// native.TLS*_Version constants); unknown values return nil.
+// / TLS1_2Version / TLS1_3Version / NTLSVersion; unknown values return nil.
 //
-// Implementation creates a probe ctx (NTLS_method for NTLSVersion) and
-// restricts min=max=version, then enumerates SSL_CTX_get_ciphers.
+// Implementation delegates to core.ProbeCipherSuites (a scratch ctx with
+// min=max=version, NTLS_method for NTLS) and converts each MinVersion from
+// OpenSSL's min_tls string to the uint16 wire version.
 func CipherSuites(version uint16) []CipherSuiteInfo {
-	if core.CipherVersionToUint16(version) == 0 {
+	probed := core.ProbeCipherSuites(version)
+	if len(probed) == 0 {
 		return nil
 	}
-	ctx, err := probeCtx(version)
-	if err != nil {
-		return nil
-	}
-	defer ctx.free()
-
-	if !native.SSL_CTX_set_min_proto_version(ctx.handle, int(version)) {
-		return nil
-	}
-	if !native.SSL_CTX_set_max_proto_version(ctx.handle, int(version)) {
-		return nil
-	}
-	if !native.SSL_CTX_set_cipher_list(ctx.handle, "ALL:eNULL") {
-		return nil
-	}
-	sk := native.SSL_CTX_get_ciphers(ctx.handle)
-	n := native.SSL_CIPHER_sk_num(sk)
-	if n == 0 {
-		return nil
-	}
-	out := make([]CipherSuiteInfo, 0, n)
-	for i := 0; i < n; i++ {
-		cp := native.SSL_CIPHER_sk_value(sk, i)
-		if cp == nil {
-			continue
-		}
-		name := native.SSL_CIPHER_get_name(cp)
-		id := native.SSL_CIPHER_get_protocol_id(cp)
-		minStr := native.SSL_CIPHER_get_version(cp)
-		minV := versionForCipher(minStr, version)
+	out := make([]CipherSuiteInfo, 0, len(probed))
+	for _, c := range probed {
+		minV := versionForCipher(c.MinVersion, version)
 		out = append(out, CipherSuiteInfo{
-			Name:       name,
-			ID:         id,
+			Name:       c.Name,
+			ID:         c.ID,
 			MinVersion: minV,
 			MaxVersion: minV,
 		})
@@ -163,51 +136,6 @@ func versionForCipher(minTLS string, fallback uint16) uint16 {
 		return v
 	}
 	return fallback
-}
-
-// probeCtxPtr 包装一个 SSL_CTX native 指针 + close hook，让 defer 能
-// 直接调用 SSL_CTX_free 而不走 core.Handle 包装（避免给一次性临时句柄
-// 注册终结器）。
-//
-// probeCtxPtr wraps an SSL_CTX handle so the deferred release in
-// CipherSuites can call SSL_CTX_free directly without going through the
-// core.Handle layer (the probe ctx is short-lived and doesn't need a
-// finalizer).
-type probeCtxPtr struct {
-	handle unsafe.Pointer
-}
-
-// free 释放底层 SSL_CTX；幂等。
-//
-// free releases the wrapped SSL_CTX; idempotent.
-func (p probeCtxPtr) free() {
-	if p.handle != nil {
-		native.SSL_CTX_free(p.handle)
-		p.handle = nil
-	}
-}
-
-// probeCtx 创建一个用对应 method 的 probe ctx；version==NTLSVersion 时切
-// NTLS_method 并 SSL_CTX_enable_ntls。
-//
-// probeCtx creates a probe SSL_CTX using the SSL_METHOD matching the
-// supplied version; NTLSVersion switches to NTLS_method + enable_ntls.
-func probeCtx(version uint16) (probeCtxPtr, error) {
-	var method unsafe.Pointer
-	switch version {
-	case native.NTLSVersion:
-		method = native.NTLS_method()
-	default:
-		method = native.TLS_client_method()
-	}
-	ph := native.SSL_CTX_new(method)
-	if ph == nil {
-		return probeCtxPtr{}, errors.New("tls: probe: SSL_CTX_new")
-	}
-	if version == native.NTLSVersion {
-		native.SSL_CTX_enable_ntls(ph)
-	}
-	return probeCtxPtr{handle: ph}, nil
 }
 
 // applyCipherSuites 在 ctx 上按名字集合混合配置 cipher list / ciphersuites。

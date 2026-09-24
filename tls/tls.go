@@ -24,7 +24,6 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/internal/certaccess"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 	"github.com/blue-cloud-net/tongsuo-go/internal/keyaccess"
-	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
@@ -495,15 +494,7 @@ func classifyHandshakeErr(op string, err error) error {
 		return nil
 	}
 	// 先把队列里残留的错误全部弹出，再用最后一次弹出的码分类。
-	var last uint64
-	for {
-		code := native.PopError()
-		if code == 0 {
-			break
-		}
-		last = code
-	}
-	kind := classifyOpenSSLError(last)
+	kind := classifyOpenSSLError(core.ClassifySSLError(core.DrainErrors()))
 	if kind == HandshakeErrorOther {
 		// 无可分类错误码：归到 Network 类。
 		kind = HandshakeErrorNetwork

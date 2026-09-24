@@ -913,6 +913,133 @@ func (c *TLSContext) CipherList() []CipherInfo {
 	return out
 }
 
+// NTLSVersion 是铜锁 NTLS（TLCP）协议版本常量，与 native.NTLSVersion 同值，
+// 供公开层在不 import 绑定层的前提下引用同一组数字标识。
+//
+// NTLSVersion is the Tongsuo NTLS (TLCP) protocol version constant, equal to
+// native.NTLSVersion, so the public layer can reference the same numeric
+// identifier without importing the binding layer.
+const NTLSVersion uint16 = native.NTLSVersion
+
+// ProbeCipherSuites 返回指定协议版本下铜锁原生支持的密码套件清单（临时 ctx 探测）。
+//
+// version 取 TLS1Version / TLS1_1Version / TLS1_2Version / TLS1_3Version /
+// NTLSVersion；未识别或探测失败返回 nil。
+//
+// 与 `(*TLSContext).CipherList` 的差异：后者报告「某个已存在 ctx 上启用的」套件，
+// 而本函数自行建一个临时 ctx 并令 min = max = version，因此得到的是「该版本下
+// 可用的全部套件」。OpenSSL 没有按版本过滤 `SSL_CTX_get_ciphers` 的接口，临时
+// ctx 是唯一可靠办法；NTLS 走 `NTLS_method` + `SSL_CTX_enable_ntls`。
+//
+// 探测 ctx 刻意**不经** `core.Handle` 包装（不注册终结器），用毕立即
+// `SSL_CTX_free`：它是瞬时对象，不应进入 Go 的终结器队列。`MinVersion` 为
+// OpenSSL 的 min_tls 字符串（如 "TLSv1.2" / "NTLSv1.1"）。
+//
+// ProbeCipherSuites returns the cipher suites Tongsuo natively supports at the
+// given protocol version, using a scratch probe context.
+//
+// version is one of TLS1Version / TLS1_1Version / TLS1_2Version /
+// TLS1_3Version / NTLSVersion; unknown values, or a failed probe, return nil.
+//
+// Unlike (*TLSContext).CipherList, which reports the suites enabled on an
+// existing context, this function builds a scratch context with
+// min = max = version, so it yields every suite usable at that version. OpenSSL
+// offers no version filter for SSL_CTX_get_ciphers, making the scratch context
+// the only reliable approach; NTLS uses NTLS_method + SSL_CTX_enable_ntls.
+//
+// The probe context deliberately bypasses the core.Handle wrapper (no
+// finalizer) and is released with SSL_CTX_free immediately: it is
+// short-lived and must not enter Go's finalizer queue.
+func ProbeCipherSuites(version uint16) []CipherInfo {
+	if CipherVersionToUint16(version) == 0 {
+		return nil
+	}
+	ctx := newProbeSSLCTX(version)
+	if ctx.handle == nil {
+		return nil
+	}
+	defer ctx.free()
+
+	if !native.SSL_CTX_set_min_proto_version(ctx.handle, int(version)) {
+		return nil
+	}
+	if !native.SSL_CTX_set_max_proto_version(ctx.handle, int(version)) {
+		return nil
+	}
+	// "ALL:eNULL" 加载全量套件（含 eNULL，便于枚举出真实全貌）。
+	if !native.SSL_CTX_set_cipher_list(ctx.handle, "ALL:eNULL") {
+		return nil
+	}
+	return ctx.cipherList()
+}
+
+// probeSSLCTX 包装一个临时的 SSH_CTX 指针，让 defer 直接调用
+// SSL_CTX_free（不经 core.Handle，不给一次性句柄注册终结器）。
+//
+// probeSSLCTX wraps a scratch SSL_CTX pointer so a deferred call can invoke
+// SSL_CTX_free directly, without going through core.Handle and registering a
+// finalizer for a throwaway handle.
+type probeSSLCTX struct {
+	handle unsafe.Pointer
+}
+
+// free 释放探测 ctx（幂等）。
+//
+// free releases the probe context; idempotent.
+func (p *probeSSLCTX) free() {
+	if p.handle != nil {
+		native.SSL_CTX_free(p.handle)
+		p.handle = nil
+	}
+}
+
+// cipherList 读取探测 ctx 上启用的全部套件。
+//
+// cipherList reads every cipher enabled on the probe context.
+func (p *probeSSLCTX) cipherList() []CipherInfo {
+	sk := native.SSL_CTX_get_ciphers(p.handle)
+	n := native.SSL_CIPHER_sk_num(sk)
+	if n == 0 {
+		return nil
+	}
+	out := make([]CipherInfo, 0, n)
+	for i := 0; i < n; i++ {
+		cp := native.SSL_CIPHER_sk_value(sk, i)
+		if cp == nil {
+			continue
+		}
+		out = append(out, CipherInfo{
+			Name:       native.SSL_CIPHER_get_name(cp),
+			ID:         native.SSL_CIPHER_get_protocol_id(cp),
+			MinVersion: native.SSL_CIPHER_get_version(cp),
+		})
+	}
+	return out
+}
+
+// newProbeSSLCTX 按协议版本创建探测 ctx：NTLSVersion 走 NTLS_method 并启用
+// NTLS，其余走 TLS_client_method。
+//
+// newProbeSSLCTX creates a probe context for the protocol version:
+// NTLSVersion uses NTLS_method with NTLS enabled, everything else uses
+// TLS_client_method.
+func newProbeSSLCTX(version uint16) *probeSSLCTX {
+	var method unsafe.Pointer
+	if version == native.NTLSVersion {
+		method = native.NTLS_method()
+	} else {
+		method = native.TLS_client_method()
+	}
+	ph := native.SSL_CTX_new(method)
+	if ph == nil {
+		return &probeSSLCTX{}
+	}
+	if version == native.NTLSVersion {
+		native.SSL_CTX_enable_ntls(ph)
+	}
+	return &probeSSLCTX{handle: ph}
+}
+
 // CipherVersionToUint16 将公开层使用的版本标识映射到 native.*Version 常量。
 // 未识别返回 0。供 tls.CipherSuites 等枚举接口调用。
 //

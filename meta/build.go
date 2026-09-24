@@ -3,7 +3,7 @@ package meta
 import (
 	"strings"
 
-	"github.com/blue-cloud-net/tongsuo-go/internal/native"
+	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
 // BuildInfo 汇总铜锁构建与运行环境快照，对应 tongsuo version -a 的输出。
@@ -43,20 +43,20 @@ type BuildInfo struct {
 // an error: fields that fail to resolve degrade to "" (or 0 for the
 // numeric ones).
 func ReadBuildInfo() *BuildInfo {
-	bi := &BuildInfo{
-		Version:           Version(),
-		VersionString:     VersionString(),
-		VersionNum:        VersionNum(),
-		TongsuoVersionNum: TongsuoVersionNum(),
-		Compiler:          native.OpenSSLVersionWithIndex(native.VersionCFlags),
-		BuiltOn:           native.OpenSSLVersionWithIndex(native.VersionBuiltOn),
-		Platform:          native.OpenSSLVersionWithIndex(native.VersionPlatform),
-		OpenSSLDir:        native.OpenSSLVersionWithIndex(native.VersionDir),
-		EnginesDir:        native.OpenSSLVersionWithIndex(native.VersionEngines),
-		ModulesDir:        native.OpenSSLVersionWithIndex(native.VersionModules),
-		CPUInfo:           native.OpenSSLVersionWithIndex(native.VersionCPUInfo),
+	env := core.ReadBuildEnv()
+	return &BuildInfo{
+		Version:           env.Version,
+		VersionString:     env.VersionString,
+		VersionNum:        env.VersionNum,
+		TongsuoVersionNum: env.TongsuoVersionNum,
+		Compiler:          env.Compiler,
+		BuiltOn:           env.BuiltOn,
+		Platform:          env.Platform,
+		OpenSSLDir:        env.OpenSSLDir,
+		EnginesDir:        env.EnginesDir,
+		ModulesDir:        env.ModulesDir,
+		CPUInfo:           env.CPUInfo,
 	}
-	return bi
 }
 
 // String 以 tongsuo version -a 的排版返回 BuildInfo 的多行文本视图。

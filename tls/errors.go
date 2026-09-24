@@ -30,7 +30,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/blue-cloud-net/tongsuo-go/internal/native"
+	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
 // 握手失败原因的语义分类。
@@ -214,41 +214,28 @@ func (e *HandshakeError) Is(target error) bool {
 	return errors.Is(e.sentinel(), target)
 }
 
-// classifyOpenSSLError 根据最近一次 Tongsuo 错误码（reason 部分）决定
-// HandshakeErrorKind。
+// classifyOpenSSLError 把核心层的错误分类翻译为 HandshakeErrorKind。
 //
-// 备注：Tongsuo 在 X509_V_ERR_* / SSL_R_* 错误之间共用 ERR_R_* reason
-// 编号；此处仅依据 reason 推断版本/套件/验证三大类。其余归 Network。
+// 备注：真正依据 lib / reason 判别类别的逻辑在 internal/core
+// （`core.ClassifySSLError`）——它需要 internal/native，而 API 层不得直接
+// import 绑定层（AGENTS.md §3.3）；本函数只做枚举翻译。
 //
-// classifyOpenSSLError maps a Tongsuo error code (taken from
-// ERR_GET_REASON) to a HandshakeErrorKind. The mapping is a best-effort
-// heuristic that uses the reason portion of the last error code; it
-// focuses on the three categories that Tongsuo flags distinctly (version
-// negotiation, cipher negotiation, peer verification). Everything else
-// falls into HandshakeErrorNetwork.
-func classifyOpenSSLError(code uint64) HandshakeErrorKind {
-	if code == 0 {
+// classifyOpenSSLError translates the core-layer classification into a
+// HandshakeErrorKind. The actual lib / reason discrimination lives in
+// internal/core (core.ClassifySSLError) because it needs internal/native,
+// which this layer must not import (AGENTS.md §3.3); this function only maps
+// the enum.
+func classifyOpenSSLError(class core.SSLErrorClass) HandshakeErrorKind {
+	switch class {
+	case core.SSLErrorClassVersion:
+		return HandshakeErrorVersion
+	case core.SSLErrorClassCipher:
+		return HandshakeErrorCipher
+	case core.SSLErrorClassPeerVerify:
+		return HandshakeErrorPeerVerify
+	case core.SSLErrorClassNetwork:
+		return HandshakeErrorNetwork
+	default:
 		return HandshakeErrorOther
 	}
-	lib := native.ErrGetLib(code)
-	reason := native.ErrGetReason(code)
-	switch lib {
-	case native.ErrLibSSL:
-		switch reason {
-		case native.SSL_R_NO_SHARED_CIPHER, native.SSL_R_NO_CIPHERS_AVAILABLE:
-			return HandshakeErrorCipher
-		case native.SSL_R_UNSUPPORTED_PROTOCOL, native.SSL_R_VERSION_TOO_LOW,
-			native.SSL_R_WRONG_SSL_VERSION, native.SSL_R_BAD_LEGACY_VERSION:
-			return HandshakeErrorVersion
-		}
-	case native.ErrLibX509:
-		switch reason {
-		case native.X509_R_CERT_VERIFY_FAILED:
-			return HandshakeErrorPeerVerify
-		}
-	}
-	// X509_V_ERR_* 直接的 OpenSSL 验证错误（非通过 ERR_R_* 路径）会出
-	// 现在 ssl_get_verify_result 中；此分类器处理不到，由调用方
-	// VerifyResult 直接归类为 HandshakeErrorPeerVerify。
-	return HandshakeErrorNetwork
 }
