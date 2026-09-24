@@ -593,3 +593,4 @@ go test -race ./...         # 涉及并发/生命周期时（commit 19/20）
 |---|--------|------|------|
 | 01 | `docs(refactor-plan): 在 roadmap 末尾追加 §12` | ✅ | 本节 |
 | 02 | `refactor(native-binding): 参数化 OpenSSL_version 调用` | ✅ | （+41 行） |
+| 03 | `feat(internal-keyaccess): 新建桥接包 + core.(*PKey).Dup` | ✅ | （+203 行；4 文件：2 新建 + 2 改） |

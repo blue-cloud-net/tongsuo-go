@@ -425,6 +425,32 @@ func (k *PKey) Close() error {
 	return k.handle.Close()
 }
 
+// Dup 复制当前密钥，返回与本对象生命周期完全独立的 *PKey。
+//
+// 用于跨包传递句柄（如 keyaccess.PKey 取到底层 EVP_PKEY 后必须 dup 一份），
+// 以避免源密钥 Close 后副本变成悬垂指针。本函数包装 native.EVP_PKEY_dup；
+// 原密钥若已 Close 则返回错误；返回的新 *PKey 由调用方负责 Close。
+//
+// Dup duplicates the underlying EVP_PKEY and returns a *PKey whose
+// lifecycle is independent of the receiver.
+//
+// Use this when handing the underlying handle across package boundaries
+// (for example keyaccess.PKey must dup the EVP_PKEY it extracts); without
+// dup the source key's Close would leave the consumer with a dangling
+// pointer. The method wraps native.EVP_PKEY_dup; if the receiver has
+// already been closed it returns an error, and the returned *PKey must
+// be Closed by its new owner.
+func (k *PKey) Dup() (*PKey, error) {
+	if k == nil || k.handle == nil || k.handle.IsClosed() {
+		return nil, NewOpError("pkey: EVP_PKEY_dup", 0)
+	}
+	p := native.EVP_PKEY_dup(k.handle.Ptr())
+	if p == nil {
+		return nil, NewOpError("pkey: EVP_PKEY_dup", native.PopError())
+	}
+	return &PKey{handle: NewHandle(p, true, native.EVP_PKEY_free)}, nil
+}
+
 // GenerateRSAKey 生成 RSA 密钥对（bits 为模数位数，如 2048）。
 //
 // 返回的 *PKey 持有底层 EVP_PKEY，使用完毕须调用 Close 释放；若底层原生调用失败，返回的错误包装 native.PopError 给出的 OpenSSL 错误码。
