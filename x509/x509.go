@@ -3,6 +3,9 @@
 // 支持证书的 PEM 加载/导出、主题/签发者/有效期/序列号/公钥读取、
 // 证书创建与签名（自签或 CA 签发）、CSR 生成与验证。
 //
+// 自 v0.3.0 起本包同时收口 PKI 家族：原独立 `ocsp` 包已并入（`ocsp.go`），
+// 证书 / CSR / CRL / OCSP / 链验证均在同一包内（roadmap §3.10）。
+//
 // 内部按职责拆分为多个文件：
 //
 //	x509.go    — Certificate 主类型、Extension 类型、PublicKey/PrivateKey 接口、
@@ -11,6 +14,7 @@
 //	csr.go     — CertificateRequest（含 New/NewEmptyCertificateRequest 与所有 CSR 方法）
 //	store.go   — Store / VerifyError / NewStore / ChainVerify
 //	crl.go     — CRL / RevokedEntry / ParseCRL / RevocationCheck
+//	ocsp.go    — OCSP 请求/响应：CreateOCSPRequest / ParseOCSPResponse / Response
 //	helpers.go — convertEntries / convertExtensions（内部转换辅助）
 //
 // Package x509 provides X.509 certificate and certificate signing request
@@ -19,6 +23,11 @@
 // It covers PEM loading and export of certificates, reading of subject /
 // issuer / validity / serial number / public key, certificate creation and
 // signing (self-signed or CA-issued), and CSR generation and verification.
+//
+// Since v0.3.0 the package also hosts the whole PKI family: the former
+// standalone ocsp package has been merged in (ocsp.go), so certificates,
+// CSR, CRL, OCSP and chain verification all live in one package
+// (roadmap §3.10).
 //
 // The package is split across files by responsibility:
 //
@@ -30,6 +39,8 @@
 //	             all CSR methods)
 //	store.go   — Store / VerifyError / NewStore / ChainVerify
 //	crl.go     — CRL / RevokedEntry / ParseCRL / RevocationCheck
+//	ocsp.go    — OCSP request / response: CreateOCSPRequest,
+//	             ParseOCSPResponse, Response
 //	helpers.go — convertEntries / convertExtensions (internal helpers)
 package x509
 

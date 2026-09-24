@@ -1,6 +1,12 @@
 //go:build tongsuocli
 
-package ocsp
+// 本文件是 x509 包内 OCSP 部分的铜锁 CLI 对拍测试（原属独立 ocsp 包）。
+// Build tag: tongsuocli（默认关闭）；运行方式见 docs/testing-guide.md §2。
+//
+// These are the Tongsuo CLI interop tests for the OCSP part of x509
+// (formerly the standalone ocsp package). Build tag: tongsuocli, off by
+// default.
+package x509_test
 
 import (
 	"os"
@@ -89,7 +95,7 @@ func TestCLIOCSP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reqDER, err := CreateRequest(leaf, caCert, "sha1")
+	reqDER, err := x509.CreateOCSPRequest(leaf, caCert, "sha1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +104,7 @@ func TestCLIOCSP(t *testing.T) {
 	}
 	respDER := respond(t, dir, "req.der", "resp.der")
 
-	r, err := ParseResponse(respDER, leaf, caCert)
+	r, err := x509.ParseOCSPResponse(respDER, leaf, caCert)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +112,7 @@ func TestCLIOCSP(t *testing.T) {
 	if r.Status != 0 {
 		t.Fatalf("response status = %d (%s), want successful", r.Status, r.StatusText)
 	}
-	if r.CertStatus != Good {
+	if r.CertStatus != x509.OCSPGood {
 		t.Fatalf("cert status = %d (%s), want good", r.CertStatus, r.CertStatusText)
 	}
 	if r.ThisUpdate.IsZero() {
@@ -134,18 +140,18 @@ func TestCLIOCSPRevoked(t *testing.T) {
 	// 吊销叶证书
 	runOpenSSL(t, dir, "ca", "-config", "openssl.cnf", "-revoke", "leaf.pem", "-crl_reason", "keyCompromise")
 
-	reqDER, _ := CreateRequest(leaf, caCert, "sha1")
+	reqDER, _ := x509.CreateOCSPRequest(leaf, caCert, "sha1")
 	if err := os.WriteFile(filepath.Join(dir, "req2.der"), reqDER, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	respDER := respond(t, dir, "req2.der", "resp2.der")
 
-	r, err := ParseResponse(respDER, leaf, caCert)
+	r, err := x509.ParseOCSPResponse(respDER, leaf, caCert)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	if r.CertStatus != Revoked {
+	if r.CertStatus != x509.OCSPRevoked {
 		t.Fatalf("cert status = %d (%s), want revoked", r.CertStatus, r.CertStatusText)
 	}
 	if r.RevocationReason < 0 {

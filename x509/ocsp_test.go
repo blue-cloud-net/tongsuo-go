@@ -1,4 +1,4 @@
-package ocsp
+package x509_test
 
 import (
 	"testing"
@@ -9,6 +9,10 @@ import (
 )
 
 // buildCerts 构建 CA 签发叶证书（RSA）。
+// 供本文件内的 OCSP 用例共用；命名加 OCSP 前缀避免与 x509 其它测试文件相撞。
+//
+// buildCerts builds a CA-issued leaf certificate (RSA). The name carries an
+// OCSP marker to avoid collisions with the other x509 test files.
 func buildCerts(t *testing.T) (leaf *x509.Certificate, caCert *x509.Certificate) {
 	t.Helper()
 	now := time.Now()
@@ -55,52 +59,52 @@ func buildCerts(t *testing.T) (leaf *x509.Certificate, caCert *x509.Certificate)
 	return leaf, caCert
 }
 
-// TestCreateRequest 验证 OCSP 请求生成（DER 结构 + 非法参数）。
-func TestCreateRequest(t *testing.T) {
+// TestCreateOCSPRequest 验证 OCSP 请求生成（DER 结构 + 非法参数）。
+func TestCreateOCSPRequest(t *testing.T) {
 	leaf, caCert := buildCerts(t)
 	for _, hash := range []string{"sha1", "sha256", "sm3"} {
-		der, err := CreateRequest(leaf, caCert, hash)
+		der, err := x509.CreateOCSPRequest(leaf, caCert, hash)
 		if err != nil {
-			t.Fatalf("CreateRequest(%s): %v", hash, err)
+			t.Fatalf("CreateOCSPRequest(%s): %v", hash, err)
 		}
 		if len(der) == 0 || der[0] != 0x30 { // 顶层应为 SEQUENCE
 			t.Fatalf("request DER invalid: %x", der[:min(4, len(der))])
 		}
 	}
-	if _, err := CreateRequest(nil, caCert, "sha1"); err == nil {
+	if _, err := x509.CreateOCSPRequest(nil, caCert, "sha1"); err == nil {
 		t.Fatal("nil cert should error")
 	}
-	if _, err := CreateRequest(leaf, nil, "sha1"); err == nil {
+	if _, err := x509.CreateOCSPRequest(leaf, nil, "sha1"); err == nil {
 		t.Fatal("nil issuer should error")
 	}
-	if _, err := CreateRequest(leaf, caCert, "md5"); err == nil {
+	if _, err := x509.CreateOCSPRequest(leaf, caCert, "md5"); err == nil {
 		t.Fatal("unsupported hash should error")
 	}
 }
 
-// TestParseResponseInvalid 验证非法响应解析报错。
-func TestParseResponseInvalid(t *testing.T) {
+// TestParseOCSPResponseInvalid 验证非法响应解析报错。
+func TestParseOCSPResponseInvalid(t *testing.T) {
 	leaf, caCert := buildCerts(t)
-	if _, err := ParseResponse([]byte("garbage"), leaf, caCert); err == nil {
+	if _, err := x509.ParseOCSPResponse([]byte("garbage"), leaf, caCert); err == nil {
 		t.Fatal("garbage response should error")
 	}
-	if _, err := ParseResponse(nil, leaf, caCert); err == nil {
+	if _, err := x509.ParseOCSPResponse(nil, leaf, caCert); err == nil {
 		t.Fatal("nil response should error")
 	}
 }
 
-// TestParseResponseNilCertOrIssuer 验证 ParseResponse 对 nil 参数报错。
-func TestParseResponseNilCertOrIssuer(t *testing.T) {
-	if _, err := ParseResponse([]byte{0x30, 0x00}, nil, nil); err == nil {
+// TestParseOCSPResponseNilCertOrIssuer 验证 ParseOCSPResponse 对 nil 参数报错。
+func TestParseOCSPResponseNilCertOrIssuer(t *testing.T) {
+	if _, err := x509.ParseOCSPResponse([]byte{0x30, 0x00}, nil, nil); err == nil {
 		t.Fatal("nil cert/issuer should error")
 	}
 }
 
-// TestCreateRequestEmptyHash 验证空 hash 等价 sha1。
-func TestCreateRequestEmptyHash(t *testing.T) {
+// TestCreateOCSPRequestEmptyHash 验证空 hash 等价 sha1。
+func TestCreateOCSPRequestEmptyHash(t *testing.T) {
 	leaf, caCert := buildCerts(t)
-	der1, _ := CreateRequest(leaf, caCert, "")
-	der2, _ := CreateRequest(leaf, caCert, "sha1")
+	der1, _ := x509.CreateOCSPRequest(leaf, caCert, "")
+	der2, _ := x509.CreateOCSPRequest(leaf, caCert, "sha1")
 	// 空 hash 与 sha1 应产生等价请求（X509_NAME_hash 一样）
 	if len(der1) != len(der2) {
 		t.Fatalf("empty vs sha1 differ in length: %d vs %d", len(der1), len(der2))
@@ -110,13 +114,13 @@ func TestCreateRequestEmptyHash(t *testing.T) {
 // TestResponseCloseIdempotent 验证 Response.Close 幂等。
 func TestResponseCloseIdempotent(t *testing.T) {
 	// 构造一个 Response（绕开真实响应生成；这里只测 Close 路径）
-	var r *Response
+	var r *x509.Response
 	if err := r.Close(); err != nil {
 		t.Fatalf("nil Close: %v", err)
 	}
 
 	// 有 resp 但已 Close
-	r2 := &Response{}
+	r2 := &x509.Response{}
 	if err := r2.Close(); err != nil {
 		t.Fatalf("empty Close: %v", err)
 	}
@@ -128,15 +132,8 @@ func TestResponseCloseIdempotent(t *testing.T) {
 
 // TestVerifyNilResponse 验证 Verify 对 nil Response 返回错误。
 func TestVerifyNilResponse(t *testing.T) {
-	var r *Response
+	var r *x509.Response
 	if err := r.Verify(nil, nil); err == nil {
 		t.Fatal("nil Verify should error")
 	}
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
