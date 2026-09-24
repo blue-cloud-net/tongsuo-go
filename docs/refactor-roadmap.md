@@ -602,3 +602,4 @@ go test -race ./...         # 涉及并发/生命周期时（commit 19/20）
 | 09 | `feat(sym): 合并 AES+SM4 + 密钥对象 + GCM 按名分发` | ✅ | （+2028 行；10 文件纯新增；crypto/aes + crypto/sm4 + key/symmetric.go 未删除，留给 commit 21） |
 | 10 | `feat(asym-sm2): 新建 asym 包并实现 SM2 完整入口` | ✅ | （+约 1500 行；6 文件纯新增；jwk/pkcs12 实际不引用 sm2 类型，example_test.go 保留 crypto/sm2 直至 commit 19 x509 收紧窄接口） |
 | 11 | `feat(asym-rsa): 在 asym 包下实现 RSA 全家族入口` | ✅ | （+约 1000 行；4 文件纯新增；SM2 Load* 重命名为 LoadSM2*PrivateKeyPEM/LoadSM2*PublicKeyPEM 以让位；crypto/rsa 暂保留） |
+| 12 | `feat(asym-ecdsa): 在 asym 包下实现 ECDSA 与 NIST 曲线族` | ✅ | （+约 850 行；4 文件纯新增；含 CurveP256/P384/P521/Secp256k1 常量；SM2 曲线名被显式拒绝并指向 GenerateSM2；crypto/ecdsa 暂保留） |
