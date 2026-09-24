@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/blue-cloud-net/tongsuo-go/asym"
+	"github.com/blue-cloud-net/tongsuo-go/internal/keyaccess"
 	"github.com/blue-cloud-net/tongsuo-go/internal/testutil"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
@@ -62,12 +64,20 @@ func TestCLIInterop(t *testing.T) {
 		t.Fatalf("parse openssl p12 failed: %v", err)
 	}
 	if b.PrivateKey != nil {
-		defer b.PrivateKey.Close()
+		defer func() { _ = asym.Close(b.PrivateKey) }()
 	}
 	if b.Certificate == nil || b.Certificate.Subject() != "leaf.pkcs12.dev" {
 		t.Fatalf("parsed openssl cert = %v", b.Certificate)
 	}
-	if !b.PrivateKey.Equal(priv.Key()) {
+	gotKey, ok := keyaccess.PKey(b.PrivateKey)
+	if !ok || gotKey == nil {
+		t.Fatalf("parsed private key exposes no handle: %T", b.PrivateKey)
+	}
+	wantKey, ok := keyaccess.PKey(priv)
+	if !ok || wantKey == nil {
+		t.Fatalf("source private key exposes no handle: %T", priv)
+	}
+	if !gotKey.Equal(wantKey) {
 		t.Fatal("parsed openssl key mismatch")
 	}
 }

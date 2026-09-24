@@ -98,3 +98,17 @@ func (k *Key) CorePKey() *core.PKey { return k.handle }
 //
 // Public returns the paired public key, forwarded to the wrapped asym private key.
 func (k *Key) Public() asym.PublicKey { return k.PrivateKey.Public() }
+
+// LoadPrivateKeyPEM 从 PEM 加载私钥并包装为 *Key（等价原 crypto/*.LoadPrivateKeyPEM）。
+//
+// LoadPrivateKeyPEM loads a private key from PEM and wraps it as a *Key.
+func LoadPrivateKeyPEM(pemBytes []byte) (*Key, error) {
+	return Wrap(asym.LoadPrivateKeyPEM(pemBytes))
+}
+
+// LoadPublicKeyPEM 从 PEM 加载公钥（等价原 crypto/*.LoadPublicKeyPEM）。
+//
+// LoadPublicKeyPEM loads a public key from PEM.
+func LoadPublicKeyPEM(pemBytes []byte) (asym.PublicKey, error) {
+	return asym.LoadPublicKeyPEM(pemBytes)
+}

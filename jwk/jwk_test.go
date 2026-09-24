@@ -3,38 +3,63 @@ package jwk
 import (
 	"testing"
 
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/crypto/ecdsa"
 	"github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
-	"github.com/blue-cloud-net/tongsuo-go/key"
 )
 
-// TestMarshalKey 验证 MarshalKey 同时接受算法包密钥与统合 key.PrivateKey。
+// TestMarshalKey 验证 MarshalKey 接受 asym 密钥（roadmap §5 E1-1：参数由
+// key.CoreKey 改为 asym.Key；key 包将被删除）。
 //
-// TestMarshalKey verifies MarshalKey accepts both algorithm-package keys and
-// the unified key.PrivateKey.
+// TestMarshalKey verifies MarshalKey accepts asym keys (roadmap §5, E1-1: the
+// parameter changed from key.CoreKey to asym.Key as the key package goes away).
 func TestMarshalKey(t *testing.T) {
-	rsaPriv, err := rsa.GenerateKey(2048)
+	// 私钥
+	rsaPriv, err := asym.GenerateRSA(2048)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = asym.Close(rsaPriv) }()
 	k1, err := MarshalKey(rsaPriv)
 	if err != nil {
-		t.Fatalf("MarshalKey(*rsa.PrivateKey): %v", err)
+		t.Fatalf("MarshalKey(asym.PrivateKey): %v", err)
 	}
 	if k1.Kty != "RSA" || !k1.IsPrivate() {
 		t.Fatalf("unexpected RSA jwk: %+v", k1)
 	}
 
-	uPriv, err := key.GenerateRSAKey(2048)
+	// 公钥（同一把密钥的 Public()，共享句柄）
+	//
+	// ⚠️ 已知问题 docs/issues/2026-09-24/P1008：`asym.PrivateKey.Public()` 返回的
+	// 对象与私钥**共享同一个底层 EVP_PKEY**（不 Dup、也不剥离私钥分量），因此
+	// MarshalKey(priv.Public()) 依然会导出**私钥** JWK（含 d/p/q/dp/dq/qi）。
+	// 这是既有行为（旧 crypto/rsa 与 key 的 Public() 同样共享句柄），不是本次重构
+	// 引入的；但它属于安全相关缺陷，故在此把当前行为**显式钉住**：一旦 P1008 修好，
+	// 下面的断言会失败并提示翻转。
+	// 需要真正的公钥 JWK 时，应先把公钥 PEM 走一遍 Load 再 MarshalKey。
+	k2, err := MarshalKey(rsaPriv.Public())
+	if err != nil {
+		t.Fatalf("MarshalKey(asym.PublicKey): %v", err)
+	}
+	if k2.Kty != "RSA" {
+		t.Fatalf("unexpected RSA public jwk: %+v", k2)
+	}
+	if !k2.IsPrivate() {
+		t.Error("asym.PrivateKey.Public() 已不再携带私钥材料 —— 请翻转本断言并关闭 docs/issues/2026-09-24/P1008")
+	}
+
+	// EC
+	ecPriv, err := asym.GenerateEC(asym.CurveP256)
 	if err != nil {
 		t.Fatal(err)
 	}
-	k2, err := MarshalKey(uPriv)
+	defer func() { _ = asym.Close(ecPriv) }()
+	k3, err := MarshalKey(ecPriv)
 	if err != nil {
-		t.Fatalf("MarshalKey(key.PrivateKey): %v", err)
+		t.Fatalf("MarshalKey(EC): %v", err)
 	}
-	if k2.Kty != "RSA" || !k2.IsPrivate() {
-		t.Fatalf("unexpected unified RSA jwk: %+v", k2)
+	if k3.Kty != "EC" || k3.Crv != "P-256" {
+		t.Fatalf("unexpected EC jwk: %+v", k3)
 	}
 
 	if _, err := MarshalKey(nil); err == nil {
@@ -48,7 +73,7 @@ func TestRSA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	k, err := Marshal(priv.Key())
+	k, err := marshalCore(priv.Key())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +136,7 @@ func TestEC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	k, err := Marshal(priv.Key())
+	k, err := marshalCore(priv.Key())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +159,7 @@ func TestEC(t *testing.T) {
 // TestParseAndFromPEM 验证 JSON 解析与 FromPEM。
 func TestParseAndFromPEM(t *testing.T) {
 	priv, _ := rsa.GenerateKey(2048)
-	k, _ := Marshal(priv.Key())
+	k, _ := marshalCore(priv.Key())
 	data, err := k.MarshalJSON()
 	if err != nil {
 		t.Fatal(err)

@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blue-cloud-net/tongsuo-go/asym"
+	"github.com/blue-cloud-net/tongsuo-go/internal/keyaccess"
 	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/rsa"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
@@ -72,8 +74,9 @@ func TestPackParseRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Bundle.PrivateKey 现在是 asym.PrivateKey（roadmap §5 E1-12）。
 	if b.PrivateKey != nil {
-		defer b.PrivateKey.Close()
+		defer func() { _ = asym.Close(b.PrivateKey) }()
 	}
 	if b.Certificate == nil || b.Certificate.Subject() != "leaf.pkcs12.dev" {
 		t.Fatalf("parsed cert = %v", b.Certificate)
@@ -81,7 +84,16 @@ func TestPackParseRoundtrip(t *testing.T) {
 	if b.PrivateKey == nil {
 		t.Fatal("parsed private key is nil")
 	}
-	if !b.PrivateKey.Equal(leafPriv.Key()) {
+	// asym 密钥没有 Equal，改经 internal/keyaccess 取句柄后比较。
+	gotKey, ok := keyaccess.PKey(b.PrivateKey)
+	if !ok || gotKey == nil {
+		t.Fatalf("parsed private key exposes no handle: %T", b.PrivateKey)
+	}
+	wantKey, ok := keyaccess.PKey(leafPriv)
+	if !ok || wantKey == nil {
+		t.Fatalf("source private key exposes no handle: %T", leafPriv)
+	}
+	if !gotKey.Equal(wantKey) {
 		t.Fatal("parsed key mismatch")
 	}
 	if len(b.CACerts) != 1 || b.CACerts[0].Subject() != "PKCS12 Test CA" {
@@ -120,7 +132,7 @@ func TestChangePassword(t *testing.T) {
 		t.Fatal(err)
 	}
 	if b.PrivateKey != nil {
-		defer b.PrivateKey.Close()
+		defer func() { _ = asym.Close(b.PrivateKey) }()
 	}
 	if b.Certificate.Subject() != "leaf.pkcs12.dev" {
 		t.Fatal("changed password cert mismatch")

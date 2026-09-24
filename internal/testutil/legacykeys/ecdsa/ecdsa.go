@@ -61,3 +61,10 @@ func toLower(s string) string {
 	}
 	return string(b)
 }
+
+// LoadPrivateKeyPEM 从 PEM 加载 EC/ECDSA 私钥。
+//
+// LoadPrivateKeyPEM loads an EC/ECDSA private key from PEM.
+func LoadPrivateKeyPEM(pemBytes []byte) (*PrivateKey, error) {
+	return legacykeys.LoadPrivateKeyPEM(pemBytes)
+}

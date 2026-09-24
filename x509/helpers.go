@@ -53,35 +53,19 @@ func corePrivateKey(priv asym.PrivateKey) (*core.PKey, error) {
 
 // wrapCorePublicKey 把底层公钥句柄换成 asym.PublicKey。
 //
-// 实现方式是 **PEM 往返**：`MarshalPublicKeyPEM` → `asym.LoadPublicKeyPEM`。
-// 之所以不直接构造：`asym` 的包装函数（`wrapPublicKey`）非导出，而给 `asym`
-// 新加一个收 `*core.PKey` 的公开入口会让公开签名再次出现 internal/ 类型
-// （正是 roadmap §5 E1 要消除的）。PEM 往返零新增 API、零泄漏，代价是每次调用
-// 一次编解码——本函数只用在读访问器（Certificate.PublicKey /
-// CertificateRequest.PublicKey）上，不在热路径。
+// 直接委派给 internal/keyaccess.WrapPublicKey，保持「PEM 往返」实现只有一份；
+// 设计取舍见该函数的文档。
 //
 // 返回的对象**拥有**自己的句柄，调用方需用 asym.Close 释放。
 //
 // wrapCorePublicKey turns an underlying public-key handle into an asym.PublicKey.
 //
-// It performs a PEM round trip (MarshalPublicKeyPEM → asym.LoadPublicKeyPEM).
-// Constructing the value directly is not possible: asym's wrapper is unexported,
-// and adding a public asym entry point taking a *core.PKey would put an internal/
-// type back into a public signature — exactly what roadmap §5 E1 eliminates. The
-// round trip adds no API and leaks nothing, at the cost of one encode/decode per
-// call; this helper only serves read accessors (Certificate.PublicKey,
-// CertificateRequest.PublicKey) and is not on a hot path.
+// It delegates to internal/keyaccess.WrapPublicKey so the PEM round trip has a
+// single implementation; see that function for the rationale.
 //
 // The returned value **owns** its handle; release it with asym.Close.
 func wrapCorePublicKey(k *core.PKey) (asym.PublicKey, error) {
-	if k == nil {
-		return nil, fmt.Errorf("x509: nil public key handle")
-	}
-	pemBytes, err := k.MarshalPublicKeyPEM()
-	if err != nil {
-		return nil, err
-	}
-	return asym.LoadPublicKeyPEM(pemBytes)
+	return keyaccess.WrapPublicKey(k)
 }
 
 // convertEntries 将 core.NameEntry 切片转为 API 层 NameEntry 切片。

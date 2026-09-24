@@ -40,6 +40,9 @@
 package keyaccess
 
 import (
+	"fmt"
+
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
@@ -100,4 +103,62 @@ func PKey(v any) (*core.PKey, bool) {
 		return k.Key(), true
 	}
 	return nil, false
+}
+
+// WrapPublicKey 把底层公钥句柄换成 asym.PublicKey。
+//
+// 实现方式是 **PEM 往返**：`MarshalPublicKeyPEM` → `asym.LoadPublicKeyPEM`。
+// 之所以不直接构造：`asym` 的包装函数非导出，而给 `asym` 新增一个收
+// `*core.PKey` 的公开入口会让公开签名再次出现 internal/ 类型——正是 roadmap §5
+// 要消除的。代价是每次调用一次编解码，只用于「从原生句柄回到 API 对象」的读路径。
+//
+// 返回的对象**拥有**自己的句柄，调用方需用 asym.Close 释放。传入的 k 不受影响
+// （调用方仍负责释放它）。
+//
+// WrapPublicKey turns an underlying public-key handle into an asym.PublicKey.
+//
+// It performs a PEM round trip (MarshalPublicKeyPEM → asym.LoadPublicKeyPEM).
+// Constructing the value directly is impossible: asym's wrapper is unexported, and
+// adding a public asym entry point taking a *core.PKey would put an internal/ type
+// back into a public signature — exactly what roadmap §5 eliminates. The cost is
+// one encode/decode per call, on the "native handle back to an API object" path.
+//
+// The returned value **owns** its handle; release it with asym.Close. The
+// caller-supplied k is unaffected and remains the caller's to release.
+func WrapPublicKey(k *core.PKey) (asym.PublicKey, error) {
+	if k == nil {
+		return nil, fmt.Errorf("keyaccess: nil public key handle")
+	}
+	pemBytes, err := k.MarshalPublicKeyPEM()
+	if err != nil {
+		return nil, err
+	}
+	return asym.LoadPublicKeyPEM(pemBytes)
+}
+
+// WrapPrivateKey 把底层私钥句柄换成 asym.PrivateKey（同样走 PEM 往返，说明见
+// WrapPublicKey）。
+//
+// 返回的对象**拥有**自己的句柄，调用方需用 asym.Close 释放；传入的 k 仍由调用方
+// 负责释放。安全提示：往返过程会把私钥编码进内存中的 PEM 字节，调用方应在使用后
+// 清零该临时缓冲（本函数内部创建的缓冲由 GC 回收，无法由本包清零）。
+//
+// WrapPrivateKey turns an underlying private-key handle into an asym.PrivateKey
+// (also via a PEM round trip; see WrapPublicKey).
+//
+// The returned value **owns** its handle; release it with asym.Close. The
+// caller-supplied k remains the caller's to release. Security note: the round trip
+// encodes the private key into an in-memory PEM buffer; that temporary buffer is
+// allocated inside this function and reclaimed by the GC, so this package cannot
+// zeroise it — callers handling highly sensitive material should prefer a path
+// that never materialises the key.
+func WrapPrivateKey(k *core.PKey) (asym.PrivateKey, error) {
+	if k == nil {
+		return nil, fmt.Errorf("keyaccess: nil private key handle")
+	}
+	pemBytes, err := k.MarshalPrivateKeyPEM()
+	if err != nil {
+		return nil, err
+	}
+	return asym.LoadPrivateKeyPEM(pemBytes)
 }

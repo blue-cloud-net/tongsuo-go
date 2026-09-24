@@ -32,7 +32,7 @@ func TestCLIInterop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	k, err := Marshal(priv.Key())
+	k, err := marshalCore(priv.Key())
 	if err != nil {
 		t.Fatal(err)
 	}

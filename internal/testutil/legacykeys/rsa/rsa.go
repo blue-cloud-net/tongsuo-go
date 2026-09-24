@@ -28,3 +28,17 @@ type PublicKey = asym.PublicKey
 func GenerateKey(bits int) (*PrivateKey, error) {
 	return legacykeys.Wrap(asym.GenerateRSA(bits))
 }
+
+// LoadPrivateKeyPEM 从 PEM 加载 RSA 私钥。
+//
+// LoadPrivateKeyPEM loads an RSA private key from PEM.
+func LoadPrivateKeyPEM(pemBytes []byte) (*PrivateKey, error) {
+	return legacykeys.LoadPrivateKeyPEM(pemBytes)
+}
+
+// LoadPublicKeyPEM 从 PEM 加载 RSA 公钥。
+//
+// LoadPublicKeyPEM loads an RSA public key from PEM.
+func LoadPublicKeyPEM(pemBytes []byte) (PublicKey, error) {
+	return legacykeys.LoadPublicKeyPEM(pemBytes)
+}
