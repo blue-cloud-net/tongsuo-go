@@ -9,7 +9,7 @@
 // 内部按职责拆分为多个文件：
 //
 //	x509.go    — Certificate 主类型、Extension 类型、PublicKey/PrivateKey 接口、
-//	             CreateCertificate、Set* 构建方法、Add* 扩展方法、签/验
+//	             CreateCertificate / CreateSelfSigned、Set* 构建方法、Add* 扩展方法、签/验
 //	name.go    — Name / NameEntry / NewName
 //	csr.go     — CertificateRequest（含 New/NewEmptyCertificateRequest 与所有 CSR 方法）
 //	store.go   — Store / VerifyError / NewStore / ChainVerify
@@ -32,8 +32,8 @@
 // The package is split across files by responsibility:
 //
 //	x509.go    — Certificate main type, Extension type, PublicKey /
-//	             PrivateKey interfaces, CreateCertificate, Set* builders,
-//	             Add* extension methods, sign / verify
+//	             PrivateKey interfaces, CreateCertificate / CreateSelfSigned,
+//	             Set* builders, Add* extension methods, sign / verify
 //	name.go    — Name / NameEntry / NewName
 //	csr.go     — CertificateRequest (New / NewEmptyCertificateRequest and
 //	             all CSR methods)
@@ -50,8 +50,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
+	"github.com/blue-cloud-net/tongsuo-go/internal/keyaccess"
 )
 
 // Certificate 表示一张 X.509 证书。
@@ -686,6 +688,94 @@ func CreateCertificate(subject, issuer *Name, serial int64, notBefore, notAfter 
 		return nil, err
 	}
 	if err := cert.Sign(signer.Key(), nil); err != nil { // nil → 按密钥类型自动选摘要
+		return nil, err
+	}
+	return &Certificate{cert: cert}, nil
+}
+
+// CreateSelfSigned 一步生成自签证书（等价于 `openssl req -x509`）。
+// subject 同时作为主题与签发者；serial 为序列号；notBefore/notAfter 为有效期；
+// pub 为证书公钥；signer 为签名私钥（自签时与 pub 配对）。
+//
+// 与 CreateCertificate 的差异：
+//   - issuer 自动取 subject（无需重复传参）；
+//   - 自动补 subjectKeyIdentifier 与 authorityKeyIdentifier（后者取自自身的 SKID）；
+//   - pub / signer 使用 asym 接口（而非已弃用的 x509.PublicKey / PrivateKey
+//     窄接口），跨包取底层句柄经 internal/keyaccess，仅在调用期间短暂借用，
+//     因此无需 Dup（Dup 只针对「取出来继续持有」的场景；X509_set_pubkey 内部
+//     up-ref，X509_sign 在调用内用完即弃）。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作；任何中间步骤
+// 失败都会释放已创建的原生对象。
+//
+// CreateSelfSigned builds a self-signed certificate in one call (the equivalent of
+// `openssl req -x509`). subject doubles as both subject and issuer; serial is the
+// serial number; notBefore and notAfter define the validity window; pub is the
+// certificate public key and signer the paired signing key.
+//
+// It differs from CreateCertificate in that the issuer is taken from subject
+// automatically, the subjectKeyIdentifier and authorityKeyIdentifier extensions are
+// added for you (the latter derived from the certificate's own SKID), and pub /
+// signer use the asym interfaces rather than the deprecated x509.PublicKey /
+// x509.PrivateKey narrow interfaces. The underlying handle is obtained through
+// internal/keyaccess and only borrowed for the duration of the call, so no Dup is
+// needed: the Dup rule covers handles extracted for later use, whereas
+// X509_set_pubkey up-refs internally and X509_sign consumes the key only within the
+// call.
+//
+// On failure it returns an error wrapping an OpError describing the operation, and
+// any partially built native object is released.
+func CreateSelfSigned(subject *Name, serial int64, notBefore, notAfter time.Time,
+	pub asym.PublicKey, signer asym.PrivateKey) (ret *Certificate, retErr error) {
+	if subject == nil || pub == nil || signer == nil {
+		return nil, fmt.Errorf("x509: nil parameter")
+	}
+	pubKey, ok := keyaccess.PKey(pub)
+	if !ok || pubKey == nil {
+		return nil, fmt.Errorf("x509: unsupported public key type %T", pub)
+	}
+	signKey, ok := keyaccess.PKey(signer)
+	if !ok || signKey == nil {
+		return nil, fmt.Errorf("x509: unsupported signer type %T", signer)
+	}
+
+	cert, err := core.NewCertificate()
+	if err != nil {
+		return nil, err
+	}
+	// 任何中间步骤失败都要释放已创建的原生对象，避免泄漏（依赖 finalizer 兜底）。
+	defer func() {
+		if retErr != nil {
+			_ = cert.Close()
+		}
+	}()
+	if err := cert.SetVersion(2); err != nil { // v3
+		return nil, err
+	}
+	if err := cert.SetSerial(serial); err != nil {
+		return nil, err
+	}
+	// 自签：issuer == subject
+	if err := cert.SetIssuer(subject.name); err != nil {
+		return nil, err
+	}
+	if err := cert.SetSubject(subject.name); err != nil {
+		return nil, err
+	}
+	if err := cert.SetValidity(notBefore, notAfter); err != nil {
+		return nil, err
+	}
+	if err := cert.SetPublicKey(pubKey); err != nil {
+		return nil, err
+	}
+	// SKID 需先于 AKID：AKID 取签发者（此处即自身）的 SKID。
+	if err := cert.AddSubjectKeyID(); err != nil {
+		return nil, err
+	}
+	if err := cert.AddAuthorityKeyID(cert); err != nil {
+		return nil, err
+	}
+	if err := cert.Sign(signKey, nil); err != nil { // nil → 按密钥类型自动选摘要
 		return nil, err
 	}
 	return &Certificate{cert: cert}, nil

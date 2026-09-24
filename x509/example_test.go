@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
@@ -93,4 +94,39 @@ func ExampleNewCertificateRequest() {
 	}
 	fmt.Println(csr.SubjectName().String())
 	// Output: /O=Example Org/CN=example.com
+}
+
+// ExampleCreateSelfSigned 演示一步生成自签证书（等价 `openssl req -x509`）。
+//
+// 与 CreateCertificate 的差异：issuer 自动取 subject；自动补 SKID / AKID；
+// pub / signer 使用 asym 接口，生成密钥也更省事。
+//
+// ExampleCreateSelfSigned demonstrates building a self-signed certificate in one
+// call (the equivalent of `openssl req -x509`).
+//
+// Unlike CreateCertificate it derives the issuer from subject, adds the SKID and
+// AKID extensions automatically, and takes asym interfaces for pub / signer.
+func ExampleCreateSelfSigned() {
+	priv, err := asym.GenerateEC(asym.CurveP256)
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = asym.Close(priv) }()
+
+	now := time.Now()
+	subject := x509.NewName().Add("CN", "self.example.com").Add("O", "Example Org")
+	cert, err := x509.CreateSelfSigned(subject, 1001,
+		now.Add(-time.Hour), now.Add(365*24*time.Hour), priv.Public(), priv)
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = cert.Close() }()
+
+	fmt.Println(cert.Subject())
+	fmt.Println(cert.SubjectText() == cert.IssuerText())
+	fmt.Println(len(cert.SubjectKeyID()) > 0, len(cert.AuthorityKeyID()) > 0)
+	// Output:
+	// self.example.com
+	// true
+	// true true
 }
