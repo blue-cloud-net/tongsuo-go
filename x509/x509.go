@@ -92,8 +92,35 @@ func (c *Certificate) Close() error {
 
 // Core 返回底层核心证书对象（供内部跨包使用，如 tls）。
 //
+// 已弃用：roadmap §5 E1-8 要求删除该入口（公开签名不得出现 internal/ 类型）。
+// 消费方（tls / pkcs/pkcs7 / pkcs/pkcs12）请改用 internal/certaccess 的
+// Certificate() 取句柄，本方法将在后续改动中移除。
+//
 // Core returns the underlying core.Certificate for cross-package use (for example by the tls package).
+//
+// Deprecated: roadmap §5 E1-8 removes this entry point because no public
+// signature may mention an internal/ type. Consumers (tls, pkcs/pkcs7,
+// pkcs/pkcs12) should obtain the handle through internal/certaccess instead;
+// this method will be removed in a follow-up change.
 func (c *Certificate) Core() *core.Certificate { return c.cert }
+
+// CoreCertificate 返回底层核心证书对象（供 internal/certaccess 桥接使用）。
+//
+// 本方法不属于稳定公共 API：它存在的唯一目的是让 tls / pkcs/pkcs7 /
+// pkcs/pkcs12 跨包取到底层句柄，而这些消费方的公开签名中不得出现 internal/ 类型
+// （roadmap §5 E1-8）。外部包即使满足该结构化断言，也无法 import internal/core，
+// 因此拿到句柄也无法使用 —— 与 roadmap §5.2「残余瑕疵（已接受）」同理。
+//
+// CoreCertificate returns the underlying core certificate (used by the
+// internal/certaccess bridge).
+//
+// This method is not part of the stable public API: it exists solely so that
+// tls, pkcs/pkcs7 and pkcs/pkcs12 can reach the underlying handle while no
+// public signature of those consumers mentions an internal/ type (roadmap §5,
+// E1-8). An external package that satisfies the structural assertion still
+// cannot import internal/core and therefore cannot use the result — the same
+// accepted residual as roadmap §5.2.
+func (c *Certificate) CoreCertificate() *core.Certificate { return c.cert }
 
 // LoadCertificatePEM 从 PEM 加载证书。
 //
