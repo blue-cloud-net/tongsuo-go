@@ -28,4 +28,20 @@ var (
 	//
 	// ErrSignature indicates that signature verification failed.
 	ErrSignature = errors.New("asym: signature verification failed")
+
+	// ErrInvalidSeedLength 原始私钥种子长度不符合算法规定
+	// （Ed25519 = 32 字节，Ed448 = 57 字节，X25519 = 32 字节，X448 = 56 字节）。
+	//
+	// ErrInvalidSeedLength reports a raw private seed whose length does
+	// not match the algorithm's requirement (Ed25519 = 32 bytes,
+	// Ed448 = 57 bytes, X25519 = 32 bytes, X448 = 56 bytes).
+	ErrInvalidSeedLength = errors.New("asym: invalid seed length")
+
+	// ErrInvalidPublicKeyLength 原始公钥字节长度不符合算法规定
+	// （Ed25519 = 32 字节，Ed448 = 57 字节，X25519 = 32 字节，X448 = 56 字节）。
+	//
+	// ErrInvalidPublicKeyLength reports raw public key bytes whose length
+	// does not match the algorithm's requirement (Ed25519 = 32 bytes,
+	// Ed448 = 57 bytes, X25519 = 32 bytes, X448 = 56 bytes).
+	ErrInvalidPublicKeyLength = errors.New("asym: invalid public key length")
 )
