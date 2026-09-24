@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/internal/testutil"
 )
 
@@ -28,11 +28,12 @@ func TestCLIInterop(t *testing.T) {
 	dir := t.TempDir()
 
 	// 本库 JWK → PEM → openssl pkey 可读取
-	priv, err := rsa.GenerateKey(2048)
+	priv, err := asym.GenerateRSA(2048)
 	if err != nil {
 		t.Fatal(err)
 	}
-	k, err := marshalCore(priv.Key())
+	defer func() { _ = asym.Close(priv) }()
+	k, err := MarshalKey(priv)
 	if err != nil {
 		t.Fatal(err)
 	}
