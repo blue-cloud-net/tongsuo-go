@@ -20,7 +20,7 @@
 
 ---
 
-## [0.3.0] - TBD
+## [0.3.0] - 2026-09-24
 
 ### 新增功能
 
@@ -53,6 +53,9 @@
   未导出）。
 - `tls`：新增 `CipherSuiteByName(name)`，按名称或 ID 解析算法套件。
 - `rand`：新增 `Reader() io.Reader`，便于 `io.Copy` / `io.ReadFull` 组合。
+- `asym`：新增包级 `Close(k Key) error` 释放入口。此前本包**没有任何显式
+  释放途径**，持有句柄的密钥只能等 finalizer；`keystore` 与 `ecdh` 的用例
+  已用它验证「源密钥释放后副本仍可用」。
 
 ### 行为变化与重构
 
@@ -67,6 +70,19 @@
   `OCSPRevoked` / `OCSPUnknown`。
 - `tls`：不再直接 import `internal/native`，套件与错误码查询改经
   `internal/core`，恢复三层分离。
+- `meta`：同样不再直接 import `internal/native`——版本 / 构建信息 / 错误码
+  文本改经 `internal/core`（新增 `core.ReadBuildEnv` / `core.ErrorString`）。
+  至此 **API 层对绑定层的直连为 0**。
+- `meta` 的 `Version` / `VersionString` / `VersionNum` / `TongsuoVersionNum` /
+  `ReadBuildInfo` / `ErrorString` 公开签名不变。
+- `tls.CipherSuiteByName` 的匹配语义：名称**大小写不敏感**且只匹配枚举报告的
+  **主名**（不含 OpenSSL 旧式别名）；ID 传 16 位 wire ID 的文本形式，接受
+  十进制（`4865`）或 `0x` 前缀十六进制（`0x1301`）。
+- `examples/`：6 个示例（`sm2` / `ed25519` / `self-signed-cert` /
+  `ntls-loopback` / `x25519` / `ecdh`）同步迁到 16 包结构；用法改为
+  `cd examples/<name> && go run .`（它们是独立 module）。
+- `xml/rsa`：内部实现仍走 PKCS#1 / SPKI PEM 往返 + `asym.LoadPrivateKeyPEM`
+  / `LoadPublicKeyPEM`，**零新增 cgo**；仅参数来源改为 `asym.Params`。
 
 ### Bug 修复
 
@@ -119,6 +135,24 @@
   `*core.KeyParams` 改为 `*asym.KeyParams`。
 - **`x509` 窄接口删除。**`x509.PublicKey` / `x509.PrivateKey` 移除，
   改用 `asym.PublicKey` / `asym.PrivateKey`。
+- **`x509` 的证书包装入口删除，且证书所有权语义变更。**公开的
+  `x509.WrapCertificate(*core.Certificate)` 既泄露 `internal/` 类型、又与
+  契约不符（它**共享**底层句柄，调用方 `Close` 会连带释放真正的所有者）；
+  跨包包装现改经 `internal/certaccess.Wrap`，用 DER 往返产出**自有**句柄。
+  因此 `tls.PeerCertificates()` / `tls.PeerEncCertificates()`、
+  `pkcs/pkcs7.Extract`、`pkcs/pkcs12.Bundle` 返回的 `*x509.Certificate`
+  现在是**各自由调用方持有的副本**，须分别 `Close`（`tls` 侧此前文档已
+  如此声明，本次让实现与契约对齐）。
+- **`xml/rsa` 四个公开函数改收 `asym.*`。**`MarshalPrivate(asym.PrivateKey)` /
+  `MarshalPublic(asym.PublicKey)` / `UnmarshalPrivate(...) (asym.PrivateKey,
+  error)` / `UnmarshalPublic(...) (asym.PublicKey, error)`；原签名的
+  `*crypto/rsa.PrivateKey` / `*crypto/rsa.PublicKey` 随 `crypto/rsa` 删除
+  而不可用。
+- **`jwk.Marshal(*core.PKey)` 删除**，改用 `jwk.MarshalKey(k asym.Key)`；
+  `MarshalKey` 的参数也从 `key.CoreKey` 改为 `asym.Key`。
+- **`pkcs/pkcs12` 的私钥类型改公开接口**：`pkcs12.PrivateKey`（原
+  `key.CoreKey` 别名）与 `pkcs12.Bundle.PrivateKey`（原 `*core.PKey`）
+  现为 `asym.PrivateKey`。
 - **`key.Algorithm` / `key.Key` 被取代。**非对称用 `asym.Algorithm` +
   `asym.Key`，对称用 `sym.Algorithm` + `sym.SymmetricKey`；注意改名
   `AlgED25519` → `AlgEd25519`。
@@ -129,6 +163,14 @@
 - 已知限制：`asym` 的密钥具体类型为非导出类型，仅以接口对外，第三方
   自定义密钥类型不再能传给 `x509` / `tls`。此类类型此前也拿不到原生
   句柄，故功能无损失。
+- 已知限制：`asym.PrivateKey.Public()` 返回的对象与私钥**共享同一底层
+  句柄**（既有行为，非本版引入：旧 `crypto/rsa` 与 `key` 同样如此），
+  因此 `jwk.MarshalKey(priv.Public())` 仍会导出**含私钥分量**的 JWK。
+  需要公钥 JWK 时，请先把公钥 PEM 独立加载（`asym.LoadPublicKeyPEM`）
+  再传给 `MarshalKey`。
+- 已知限制：`x509.Store` 持有原生句柄但**未提供公开 `Close`**（同包其他
+  句柄类型都有），释放目前只能依赖 finalizer；对长驻进程建议复用同一个
+  `Store` 而非每次新建。
 
 ---
 

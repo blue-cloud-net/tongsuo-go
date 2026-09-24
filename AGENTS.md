@@ -123,7 +123,7 @@ API 层（16 个顶级包：meta / digest / mac / sym / asym / ecdh / kdf / rand
     ↓ 调用
 绑定层（internal/native/）                 ← cgo + 内嵌 C shim，直接映射铜锁 C 函数
 
-（桥接：internal/keyaccess ← 公开密钥对象 → *core.PKey，供 5 个消费包使用）
+（桥接：internal/keyaccess ← 公开密钥对象 → *core.PKey，供 6 个消费包使用）
 ```
 
 - `crypto/` 整目录与 `key/` 已在包结构重构中**取消**；详见 `docs/refactor-roadmap.md`
@@ -270,7 +270,8 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 - **公开签名中不得出现 `internal/` 类型**（重构后的硬约束）
   - ❌ 反例：`func EncryptOAEP(pub asym.PublicKey, data []byte, md *core.Digest)`
   - ❌ 反例：`func (k *PrivateKey) Key() *core.PKey`
-- 跨包取原生句柄**只允许**经 `internal/keyaccess`，且消费方仅限 `ecdh` / `x509` / `tls` / `jwk` / `pkcs/pkcs12`
+- 跨包取原生句柄**只允许**经 `internal/keyaccess`，且消费方仅限 `ecdh` / `x509` / `tls` / `jwk` / `keystore` / `pkcs/pkcs12`
+  - 注：`keystore` 是实施期新增的第 6 个消费方（`marshalKeyPEM` 取句柄做 PEM 序列化），原白名单只列了 5 个
   - ❌ 反例：在 `internal/core` 里写「类型开关」反查公开类型（会成环，`internal/core` 不能 import `asym`）
   - ✅ 正例：`asym` 在**非导出**具体类型上实现 `CorePKey() *core.PKey`，`keyaccess.PKey(v)` 结构化断言取得；取到后必须 `EVP_PKEY_dup`
 - `unsafe` 仅限绑定层与核心层，作用域尽量小；**不得**在 Go 与 C 之间直接传 Go 指针

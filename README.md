@@ -40,7 +40,7 @@ interfaces and a CLI-style by-name entry point; see the
 - 🤝 **Curve-based ECDH** (`ecdh`): NIST P-256 / P-384 / P-521 (X9.63), the OKP curves X25519 / X448 (RFC 7748) and secp256k1; PEM (PKCS#8 / SPKI) round-trip and shared-secret derivation matching Go's standard `crypto/ecdh` semantics
 - 🎲 **Cryptographically secure random** (`rand`): based on Tongsuo `RAND_bytes`
 - 🗄️ **Key storage and rotation** (`keystore`): key metadata, in-memory / custom stores, version rotation and history
-- 📜 **X.509 certificate management** (`x509`): parse and issue certificates / CSR / CRL / OCSP, one-line self-signed certificates (`CreateSelfSigned`), CA-signed certificates (SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448), hostname verification, chain verification
+- 📜 **X.509 certificate management** (`x509`): parse and issue certificates / CSR / CRL / OCSP, one-line self-signed certificates (`CreateSelfSigned`), step-by-step CRL issuance (`CRLBuilder`), CA-signed certificates (SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448), hostname / IP verification (`VerifyHostname`) and chain verification with an optional pinned verification instant (`Store.SetTime`)
 - 🌐 **TLS / NTLS transport** (`tls`): client / server wrappers, supporting Tongsuo NTLS dual certificates (signing certificate + encryption certificate)
 - 📦 **Containers and formats**: PKCS#7 (`pkcs/pkcs7`), PKCS#12 (`pkcs/pkcs12`), JWK (`jwk`), ASN.1 DER viewer (`asn1`), .NET-style RSA XML (`xml/rsa`)
 - 🧪 **Standard-vector tests**: every algorithm package covers national-standard vectors, round-trips, edge cases and error paths, with bidirectional cross-validation against the openssl CLI

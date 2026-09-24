@@ -9,14 +9,14 @@
 > 4. 类型给出导出字段；未导出字段以「（内部字段）」表示其存在；
 > 5. 本文描述的是**重构后的目标形态**：`crypto/` 整目录与 `key/` 已被 `digest` / `mac` / `sym` / `asym` / `ecdh` / `kdf` / `rand` / `keystore` 取代；`csr` / `crl` / `ocsp` **未拆**，全部留在 `x509`。
 >
-> **范围**：**16 个包**（13 个本版重构 + 3 个不受影响）。生成基线：`0.3.0 - TBD`（CHANGELOG 待发段）。
+> **范围**：**16 个包**。生成基线：`0.3.0`（2026-09-24 发布）。
 >
 > **状态标记**：
-> - ✅ **已有** — `0.2.0` 及之前已发布，本版**不改签名**；
-> - 🚧 **当前版本实施中** — 目标版本 `0.3.0 - TBD`：新包，或既有包在本版变更签名；
+> - ✅ **已有** — 已发布可用（`0.3.0` 及之前）；
+> - 🚧 **变更中** — 目标版本另标，尚不可用；
 > - 🧭 **规划中** — 目标版本另标；仅表达**目标 API 形态**，尚不可用。
 >
-> 符号行前缀：`🆕` 本版新增 / `♻️` 迁移自其他包（附原名） / `🧭` 规划中。
+> 符号行前缀：`🆕` `0.3.0` 新增 / `♻️` 迁移自其他包（附原名） / `🧭` 规划中。
 
 ---
 
@@ -24,22 +24,22 @@
 
 | # | 包 | 状态 | 用途 | 旧包来源 |
 |---|---|---|---|---|
-| 1 | `meta` | 🚧 | 铜锁运行环境与元信息（版本 / 构建信息 / 错误码 / 算法枚举） | —（新增） |
-| 2 | `digest` | 🚧 | 摘要算法（by-name 分发 + 类型化入口） | `crypto/{sm3,md5,sha1,sha256,sha512}` |
-| 3 | `mac` | 🚧 | 消息认证码（HMAC / CMAC / GMAC / KMAC / SipHash / Poly1305 / EIA3） | `crypto/hmac` |
-| 4 | `kdf` | 🚧 | 密钥派生（HKDF / PBKDF2 / Argon2ID / scrypt / …） | `crypto/kdf` + `key` 的 KDF |
-| 5 | `rand` | 🚧 | 安全随机数（铜锁 `RAND_bytes`） | `crypto/rand` |
-| 6 | `sym` | 🚧 | 对称加密与对称密钥对象（AES / SM4，六种模式 + AEAD） | `crypto/{aes,sm4}` + `key` 对称部分 |
-| 7 | `asym` | 🚧 | 非对称密钥、签名验签、加解密、KEM | `crypto/{sm2,rsa,ecdsa,ed25519,ed448}` + `crypto/{x25519,x448}` 生成 + `key` 非对称部分 |
-| 8 | `ecdh` | 🚧 | 密钥协商（NIST / secp256k1 / OKP / SM2DH），可加载 `asym` 密钥对象 | `crypto/ecdh` + `crypto/{x25519,x448}` 协商 |
-| 9 | `keystore` | 🚧 | 密钥元数据、存储与轮转 | `key` 的 `Handle`/`Store`/`Rotate` |
-| 10 | `x509` | 🚧 | 证书 + CSR + CRL + OCSP + 链验证（**单包**） | `x509` + `ocsp`（未拆） |
-| 11 | `tls` | 🚧 | TLS / NTLS 传输层 | `tls` |
+| 1 | `meta` | ✅ | 铜锁运行环境与元信息（版本 / 构建信息 / 错误码 / 算法枚举） | —（新增） |
+| 2 | `digest` | ✅ | 摘要算法（by-name 分发 + 类型化入口） | `crypto/{sm3,md5,sha1,sha256,sha512}` |
+| 3 | `mac` | ✅ | 消息认证码（HMAC / CMAC / GMAC / KMAC / SipHash / Poly1305 / EIA3） | `crypto/hmac` |
+| 4 | `kdf` | ✅ | 密钥派生（HKDF / PBKDF2 / Argon2ID / scrypt / …） | `crypto/kdf` + `key` 的 KDF |
+| 5 | `rand` | ✅ | 安全随机数（铜锁 `RAND_bytes`） | `crypto/rand` |
+| 6 | `sym` | ✅ | 对称加密与对称密钥对象（AES / SM4，六种模式 + AEAD） | `crypto/{aes,sm4}` + `key` 对称部分 |
+| 7 | `asym` | ✅ | 非对称密钥、签名验签、加解密、KEM | `crypto/{sm2,rsa,ecdsa,ed25519,ed448}` + `crypto/{x25519,x448}` 生成 + `key` 非对称部分 |
+| 8 | `ecdh` | ✅ | 密钥协商（NIST / secp256k1 / OKP / SM2DH），可加载 `asym` 密钥对象 | `crypto/ecdh` + `crypto/{x25519,x448}` 协商 |
+| 9 | `keystore` | ✅ | 密钥元数据、存储与轮转 | `key` 的 `Handle`/`Store`/`Rotate` |
+| 10 | `x509` | ✅ | 证书 + CSR + CRL + OCSP + 链验证（**单包**） | `x509` + `ocsp`（未拆） |
+| 11 | `tls` | ✅ | TLS / NTLS 传输层 | `tls` |
 | 12 | `asn1` | ✅ | 纯 Go DER viewer（cgo-free） | `asn1` |
-| 13 | `jwk` | 🚧 | JWK（RFC 7517）↔ PEM / JSON | `jwk` |
+| 13 | `jwk` | ✅ | JWK（RFC 7517）↔ PEM / JSON | `jwk` |
 | 14 | `pkcs/pkcs7` | ✅ | PKCS#7 证书袋构建与提取 | `pkcs/pkcs7` |
-| 15 | `pkcs/pkcs12` | 🚧 | PKCS#12 打包、解析、改密 | `pkcs/pkcs12` |
-| 16 | `xml/rsa` | 🚧 | .NET `RSAKeyValue` XML 互转（签名改收 `asym.*`） | `xml/rsa` |
+| 15 | `pkcs/pkcs12` | ✅ | PKCS#12 打包、解析、改密 | `pkcs/pkcs12` |
+| 16 | `xml/rsa` | ✅ | .NET `RSAKeyValue` XML 互转（签名改收 `asym.*`） | `xml/rsa` |
 
 ---
 
@@ -65,7 +65,7 @@
 
 ## 1. `meta` — 铜锁运行环境与元信息
 
-🚧 **当前版本实施中**（目标版本 `0.3.0 - TBD`）｜整包新增
+✅ **已有**｜整包新增（`0.3.0`）
 
 承载 CLI 的 `version` / `info` / `errstr` / `list` 所对应的**元信息查询**能力：运行库版本、构建与运行环境快照、原生错误码解析、可用算法枚举。本包**只做查询**，不含任何密码学运算，也不持有原生句柄，因此**无需 `Close`**。
 
@@ -114,7 +114,7 @@
 
 ## 2. `digest` — 摘要
 
-🚧 **当前版本实施中**｜旧包：`crypto/sm3` `crypto/md5` `crypto/sha1` `crypto/sha256` `crypto/sha512`
+✅ **已有**｜旧包：`crypto/sm3` `crypto/md5` `crypto/sha1` `crypto/sha256` `crypto/sha512`
 
 把 5 个摘要包合并为一个包，并补上 `SHA-224` / `SHA-384`（底层 `EVP_sha224` / `EVP_sha384` **已绑定**，零新增 cgo）。保留 Go `hash.Hash` 惯例接口，同时提供「按算法名分发」的 CLI 式入口。
 
@@ -168,7 +168,7 @@
 
 ## 3. `mac` — 消息认证码
 
-🚧 **当前版本实施中**｜旧包：`crypto/hmac`
+✅ **已有**｜旧包：`crypto/hmac`
 
 把 HMAC 从独立的 `crypto/hmac` 提升为“按算法名分发”的 MAC 包，并预留 CMAC / GMAC / KMAC / SipHash / Poly1305 / EIA3 的位置。签名与验签**不属本包**（见 `asym`）。
 
@@ -222,7 +222,7 @@
 
 ## 4. `kdf` — 密钥派生
 
-🚧 **当前版本实施中**｜旧包：`crypto/kdf` + `key` 的 KDF 部分
+✅ **已有**｜旧包：`crypto/kdf` + `key` 的 KDF 部分
 
 合并 `crypto/kdf`（仅 HKDF/PBKDF2）与 `key` 包里的 `HKDF` / `PBKDF2` / `Argon2ID`，并补上 CLI `kdf` 的按名分发形态。
 
@@ -260,7 +260,7 @@
 
 ## 5. `rand` — 安全随机数
 
-🚧 **当前版本实施中**｜旧包：`crypto/rand`
+✅ **已有**｜旧包：`crypto/rand`
 
 基于铜锁 `RAND_bytes`，与标准库实现独立。
 
@@ -280,7 +280,7 @@
 
 ## 6. `sym` — 对称加密与对称密钥对象
 
-🚧 **当前版本实施中**｜旧包：`crypto/aes` `crypto/sm4` + `key` 对称部分
+✅ **已有**｜旧包：`crypto/aes` `crypto/sm4` + `key` 对称部分
 
 把 AES 与 SM4 合并为一个“按算法名 + 模式”分发的对称加密包（对应 CLI `enc`）。所有 ECB/CBC 一次性入口均为 **PKCS#7 填充**；`NewCipher` 返回**无填充**的 `cipher.Block`。
 
@@ -362,7 +362,7 @@
 
 ## 7. `asym` — 非对称密钥、签名与加解密
 
-🚧 **当前版本实施中**｜旧包：`crypto/sm2` `crypto/rsa` `crypto/ecdsa` `crypto/ed25519` `crypto/ed448` + `crypto/{x25519,x448}`（仅密钥生成）+ `key`（非对称部分）
+✅ **已有**｜旧包：`crypto/sm2` `crypto/rsa` `crypto/ecdsa` `crypto/ed25519` `crypto/ed448` + `crypto/{x25519,x448}`（仅密钥生成）+ `key`（非对称部分）
 
 把 5 个非对称算法包与 `key` 包的非对称部分合并为一个“按算法名分发”的包（对应 CLI `genpkey` + `pkey` + `pkeyutl`）。**密钥协商不属本包**（见 `ecdh`）。
 
@@ -471,7 +471,7 @@
 
 ## 8. `ecdh` — 密钥协商
 
-🚧 **当前版本实施中**｜旧包：`crypto/ecdh` + `crypto/{x25519,x448}`（协商部分）
+✅ **已有**｜旧包：`crypto/ecdh` + `crypto/{x25519,x448}`（协商部分）
 
 语义对齐 Go 标准库 `crypto/ecdh`，并将 `crypto/x25519` / `crypto/x448` 的协商能力（`SharedSecret`）并入。**本包只做密钥协商**；密钥生成、PEM 导入导出、签名验签均在 `asym`。
 
@@ -540,7 +540,7 @@
 
 ## 9. `keystore` — 密钥元数据、存储与轮转
 
-🚧 **当前版本实施中**｜旧包：`key`（`Handle` / `Store` / `Rotate` / `Close` 部分）
+✅ **已有**｜旧包：`key`（`Handle` / `Store` / `Rotate` / `Close` 部分）
 
 从 `key` 拆出的**算法无关**部分：密钥元数据条目、内存存储与轮转。非对称密钥抽象在 `asym`，对称密钥抽象在 `sym`，KDF 在 `kdf`。
 
@@ -593,7 +593,7 @@
 
 ## 10. `x509` — 证书 / CSR / CRL / OCSP 与链验证
 
-🚧 **当前版本实施中**｜旧包：`x509` + `ocsp`（**撤回拆分**，CSR / CRL / OCSP 均不独立成包）
+✅ **已有**｜旧包：`x509` + `ocsp`（**撤回拆分**，CSR / CRL / OCSP 均不独立成包）
 
 把 `Certificate` / `CertificateRequest` / `CRL` / OCSP 收回同一个包（对应 CLI `x509` + `req` + `crl` + `ocsp` + `verify`）。**直接动因**：拆分后 `x509.Store.AddCRL(*crl.CRL)` 与 `crl.NewBuilder(issuer *x509.Certificate)` 构成**循环依赖**，Go 无法编译。文件组织沿用现有布局：`x509.go` / `csr.go` / `crl.go` / `ocsp.go` / `name.go` / `store.go` / `helpers.go`。
 
@@ -751,7 +751,7 @@
 
 ## 11. `tls` — TLS / NTLS 传输层
 
-🚧 **当前版本实施中**｜旧包：`tls`
+✅ **已有**｜旧包：`tls`
 
 客户端与服务端共享 `Config`；NTLS 双证书通过 `NTLS` + 四个证书/密钥字段启用。**默认不验证对端**（`RootCAs` 非 nil 且 `InsecureSkipVerify` 为 false 时才启用 PEER 验证 + 主机名校验）。
 
@@ -817,7 +817,7 @@
 
 ## 12. `asn1` — 纯 Go DER viewer
 
-✅ **已有**（本版不改签名）｜旧包：`asn1`
+✅ **已有**（`asn1` 未变）｜旧包：`asn1`
 
 cgo-free 的只读 DER 解析与转储；`Parse` 对深度设上限（`maxDERDepth = 128`）以防栈溢出。
 
@@ -840,7 +840,7 @@ cgo-free 的只读 DER 解析与转储；`Parse` 对深度设上限（`maxDERDep
 
 ## 13. `jwk` — JWK（RFC 7517）
 
-🚧 **当前版本实施中**｜旧包：`jwk`
+✅ **已有**｜旧包：`jwk`
 
 仅支持 **RSA / EC**；不支持 OKP（Ed25519 / X25519 等）与对称密钥。本版去除 `*core.PKey` 参数（修复 E1-7）。
 
@@ -877,7 +877,7 @@ cgo-free 的只读 DER 解析与转储；`Parse` 对深度设上限（`maxDERDep
 
 ## 14. `pkcs/pkcs7` — PKCS#7
 
-✅ **已有**（本版不改签名）｜旧包：`pkcs/pkcs7`
+✅ **已有**（`pkcs/pkcs7` 未变）｜旧包：`pkcs/pkcs7`
 
 **仅支持「证书袋」（certificates-only）**：不含签名 / 加密流程。
 
@@ -899,7 +899,7 @@ cgo-free 的只读 DER 解析与转储；`Parse` 对深度设上限（`maxDERDep
 
 ## 15. `pkcs/pkcs12` — PKCS#12
 
-🚧 **当前版本实施中**｜旧包：`pkcs/pkcs12`
+✅ **已有**｜旧包：`pkcs/pkcs12`
 
 去除 `key.CoreKey` 与 `*core.PKey`（修复 E1-12），并保留现有的打包/解析/改密三项能力。
 
@@ -927,7 +927,7 @@ cgo-free 的只读 DER 解析与转储；`Parse` 对深度设上限（`maxDERDep
 
 ## 16. `xml/rsa` — .NET `RSAKeyValue` XML
 
-🚧 **当前版本实施中**（签名变更）｜旧包：`xml/rsa`
+✅ **已有**（`0.3.0` 签名变更）｜旧包：`xml/rsa`
 
 与 .NET `RSAKeyValue` 格式双向互转。**密钥参数由 `*crypto/rsa.PrivateKey` /
 `*crypto/rsa.PublicKey` 改为 `asym.PrivateKey` / `asym.PublicKey`**——原签名直接

@@ -21,7 +21,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-## [0.3.0] - TBD
+## [0.3.0] - 2026-09-24
 
 ### Added
 
@@ -59,6 +59,10 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   was previously unexported).
 - `tls`: `CipherSuiteByName(name)` resolves a cipher suite by name or ID.
 - `rand`: `Reader() io.Reader` for `io.Copy` / `io.ReadFull` composition.
+- `asym`: package-level `Close(k Key) error` gives the package its first
+  explicit release path; until now a key holding a handle could only be
+  freed by the finalizer. The `keystore` and `ecdh` suites use it to prove
+  a duplicate stays usable after the source key is released.
 
 ### Changed
 
@@ -77,6 +81,22 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - `tls`: the package no longer imports `internal/native` directly; the
   cipher-suite and error-code lookups now go through `internal/core`,
   restoring the three-layer separation.
+- `meta`: likewise no longer imports `internal/native` — version, build
+  information and error-code text now go through `internal/core` (new
+  `core.ReadBuildEnv` / `core.ErrorString`). **No API-layer package
+  imports the binding layer any more.**
+- `meta`'s public signatures (`Version` / `VersionString` / `VersionNum` /
+  `TongsuoVersionNum` / `ReadBuildInfo` / `ErrorString`) are unchanged.
+- `tls.CipherSuiteByName` matching semantics: names are
+  **case-insensitive** and only the primary name reported by enumeration
+  is matched (not OpenSSL legacy aliases); an ID is the 16-bit wire ID in
+  text form, either decimal (`4865`) or 0x-prefixed hex (`0x1301`).
+- `examples/`: all six examples (`sm2` / `ed25519` / `self-signed-cert` /
+  `ntls-loopback` / `x25519` / `ecdh`) moved to the 16-package layout; run
+  them with `cd examples/<name> && go run .` (each is its own module).
+- `xml/rsa`: the implementation still round-trips through PKCS#1 / SPKI
+  PEM and `asym.LoadPrivateKeyPEM` / `LoadPublicKeyPEM` — **no new cgo**;
+  only the parameter source moved to `asym.Params`.
 
 ### Fixed
 
@@ -138,6 +158,30 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   `*asym.KeyParams` instead of `*core.KeyParams`.
 - **`x509` narrow key interfaces removed.** `x509.PublicKey` /
   `x509.PrivateKey` are gone; use `asym.PublicKey` / `asym.PrivateKey`.
+- **`x509`'s certificate wrapper is gone and certificate ownership
+  changed.** The public `x509.WrapCertificate(*core.Certificate)` both
+  leaked an `internal/` type and broke the documented contract (it
+  **shared** the underlying handle, so a caller's `Close` released the
+  real owner); cross-package wrapping now goes through
+  `internal/certaccess.Wrap`, which round-trips DER and yields an **owned**
+  handle. Consequently the `*x509.Certificate` values returned by
+  `tls.PeerCertificates()` / `tls.PeerEncCertificates()`,
+  `pkcs/pkcs7.Extract` and `pkcs/pkcs12.Bundle` are now **per-caller owned
+  copies** that must each be closed (the `tls` docs already promised this;
+  the implementation now matches).
+- **`xml/rsa`'s four public functions take `asym.*`.**
+  `MarshalPrivate(asym.PrivateKey)` / `MarshalPublic(asym.PublicKey)` /
+  `UnmarshalPrivate(...) (asym.PrivateKey, error)` /
+  `UnmarshalPublic(...) (asym.PublicKey, error)`; the old
+  `*crypto/rsa.PrivateKey` / `*crypto/rsa.PublicKey` signatures went away
+  with the `crypto/rsa` package.
+- **`jwk.Marshal(*core.PKey)` removed**; use
+  `jwk.MarshalKey(k asym.Key)`. `MarshalKey`'s parameter also changed from
+  `key.CoreKey` to `asym.Key`.
+- **`pkcs/pkcs12` private-key types became public interfaces**:
+  `pkcs12.PrivateKey` (formerly a `key.CoreKey` alias) and
+  `pkcs12.Bundle.PrivateKey` (formerly `*core.PKey`) are now
+  `asym.PrivateKey`.
 - **`key.Algorithm` / `key.Key` replaced.** Use `asym.Algorithm` +
   `asym.Key` (asymmetric) or `sym.Algorithm` + `sym.SymmetricKey`
   (symmetric); note the rename `AlgED25519` → `AlgEd25519`.
@@ -150,6 +194,17 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   interfaces, so a third-party key type can no longer be passed to `x509` /
   `tls`. Such a type could not supply a native handle before either, so no
   functionality is lost.
+- Known limitation: `asym.PrivateKey.Public()` returns an object that
+  **shares the private key's underlying handle** (pre-existing behaviour,
+  not introduced here: the old `crypto/rsa` and `key` did the same), so
+  `jwk.MarshalKey(priv.Public())` still exports a JWK **carrying the
+  private components**. For a public JWK, load the public key on its own
+  (`asym.LoadPublicKeyPEM`) and pass that to `MarshalKey`.
+- Known limitation: `x509.Store` holds a native handle but exposes **no
+  public `Close`** (every other handle-owning type in the package has
+  one), so release currently depends on the finalizer; long-running
+  processes should reuse a single `Store` rather than creating one per
+  operation.
 
 ---
 
