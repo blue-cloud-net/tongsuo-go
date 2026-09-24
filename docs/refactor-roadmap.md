@@ -599,3 +599,4 @@ go test -race ./...         # 涉及并发/生命周期时（commit 19/20）
 | 06 | `feat(mac): 命名规范化并补齐 HMAC 全家族` | ✅ | （+953 行；7 文件纯新增） |
 | 07 | `feat(kdf): 合并 HKDF/PBKDF2/Argon2ID` | ✅ | （+498 行；5 文件纯新增） |
 | 08 | `feat(rand): 路径迁移 + Reader()` | ✅ | （+299 行；4 文件纯新增） |
+| 09 | `feat(sym): 合并 AES+SM4 + 密钥对象 + GCM 按名分发` | ✅ | （+约 1450 行；9 文件纯新增；crypto/aes + crypto/sm4 + key/symmetric.go 未删除，留给 commit 21） |
