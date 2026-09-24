@@ -549,7 +549,7 @@
 - ♻️ `func NewHandle(id string, key any) (*Handle, error)` — 构造密钥条目（`id` 非空、`key` 非 nil；`Algorithm` 自动填充，`Version` 起始 1，`Generation` 起始 0）
 - ♻️ `func (h *Handle) Close() error` — 释放条目持有的句柄（幂等）
 - ♻️ `func Close(h *Handle) error` — 包级形式（原 `key.Close(k Key)`）
-- ♻️ `func (h *Handle) MarshalJSON() ([]byte, error)` / ♻️ `func (h *Handle) UnmarshalJSON(data []byte) error` — JSON 序列化（内嵌 PEM）
+- ♻️ `func (h *Handle) MarshalJSON() ([]byte, error)` / ♻️ `func (h *Handle) UnmarshalJSON(data []byte) error` — JSON 序列化（内嵌 PEM）；`UnmarshalJSON` 需先经 `SetDecoder` 注入解码器，否则返回 `ErrNoDecoder`
 - ♻️ `func NewMemoryStore() *MemoryStore` — 创建空的内存密钥存储
 - ♻️ `func (s *MemoryStore) Get(id string) (*Handle, error)` / `Put(h *Handle) error` / `Delete(id string) error` / `List() ([]*Handle, error)` — CRUD
 - ♻️ `func (s *MemoryStore) Rotate(id string, newKey any) (*Handle, error)` — 轮转为 `Version+1` 并归档旧条目
@@ -558,7 +558,19 @@
 **错误**
 
 - ♻️ `var ErrNotFound` — 存储中不存在该 ID（原 `key.ErrNotFound`）
-- ♻️ `var ErrClosed` — 密钥已关闭（原 `key.ErrClosed`）
+- ♻️ `var ErrClosed` — 密钥已关闭（原 `key.ErrClosed`；本包 `Handle.Close` 幂等，不返回它，保留供调用方自有生命周期复用）
+- ➕ `var ErrUnsupported` — 密钥类型不支持该操作（如导出 PEM）
+- ➕ `var ErrNoDecoder` — 未注入 PEM 解码器，无法从 JSON 还原密钥对象
+
+**PEM 解码器注入（因 `Key any` 带来的必要补充）**
+
+`keystore` 不 import `asym` / `sym`（避免反向依赖），因此 **`PEM → 密钥` 这一步无法在本包内部完成**，必须由调用方注入：
+
+- ➕ `type KeyDecoder func(pemBytes []byte) (any, error)` — 典型实现按 PEM 块类型分派到 `asym.LoadPrivateKeyPEM` / `asym.LoadPublicKeyPEM` / `sym.ParseSymmetricKey`
+- ➕ `func (h *Handle) SetDecoder(d KeyDecoder) *Handle` — 注入解码器，使 `json.Unmarshal(data, h)` 可用
+- ➕ `func UnmarshalHandle(data []byte, decode KeyDecoder) (*Handle, error)` — 推荐入口，无须先构造 `Handle`
+
+`MarshalJSON` 方向不需要注入：包内窄接口 `Marshal() / MarshalPrivateKeyPEM() / MarshalPublicKeyPEM()` 已覆盖 `sym` 与 `asym` 的导出方法。
 
 > ⚠️ **待确认的设计点**：`Handle.Key` 用 `any`，以避免 `keystore` 反向依赖 `asym`/`sym`（算法已由 `Handle.Algorithm` 字段承载）。备选方案：让 `asym` / `sym` 的 `Algorithm()` 返回 `string`，则 `keystore` 可定义 `type Key interface{ Algorithm() string }` 获得静态约束。
 >
