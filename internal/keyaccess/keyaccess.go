@@ -11,14 +11,14 @@
 //     import asym 会成环）。
 //
 // 方案：用结构化接口满足 + 集中断言点。消费方把任意 asym 密钥传入 PKey()，
-// 本包通过 interface{ Key() *core.PKey } 或 interface{ CorePKey() *core.PKey }
-// 做类型断言；**取到后必须立即调用 (*core.PKey).Dup() 复制一份**，以免源密钥
+// 本包通过 interface{ CorePKey() *core.PKey }（asym 具体类型）或
+// interface{ Key() *core.PKey }（过渡期 key 包类型）做类型断言；
+// **取到后必须立即调用 (*core.PKey).Dup() 复制一份**，以免源密钥
 // Close 后消费方拿到悬垂指针（roadmap §10 风险项）。
 //
-// 当前临时形态：内部接口形状为 Key() *core.PKey，与现存 key.CoreKey 对齐。
-// 后续 asym 包（commit 10 起）落地后，asym.PrivateKey / asym.PublicKey 实现的具体类型
-// 仍以 CorePKey() 命名（roadmap §5.2 命名约定）；届时本包会同步更新接口形状并
-// 增加 CorePKey 形状的回退断言，保证迁移期兼容性。
+// asym 包已落地（roadmap commit 10～17），其具体类型统一实现
+// CorePKey() *core.PKey（见 asym/corepkey.go）。Key() *core.PKey 形状
+// 仅用于兼容尚未删除的 key 包，将在 roadmap commit 21 移除。
 //
 // Package keyaccess provides a bridge for retrieving the underlying
 // *core.PKey handle from any asym package private key type without
@@ -32,25 +32,37 @@
 // type assertion and reminds every caller to Dup() the result so the
 // source key's Close does not leave a dangling pointer.
 //
-// The internal interface shape today is Key() *core.PKey (matching the
-// existing key.CoreKey). When the asym package lands (commit 10+), the
-// concrete types will expose CorePKey() per roadmap §5.2; this package
-// will then add a CorePKey shape as a fallback assertion to remain
-// compatible across the migration window.
+// The two accepted shapes are CorePKey() *core.PKey (asym's concrete
+// types, see asym/corepkey.go) and Key() *core.PKey (transitional key
+// package types, removed in roadmap commit 21). This package centralises
+// the type assertion and reminds every caller to Dup() the result so the
+// source key's Close does not leave a dangling pointer.
 package keyaccess
 
 import (
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
-// pkeyHolder 是持有一个底层 *core.PKey 句柄的对象所应满足的形状。
+// pkeyHolder 是持有一个底层 *core.PKey 句柄的对象所应满足的两种形状之一。
 //
-// 当前形态为 Key() *core.PKey；asym 包落地后增加 CorePKey() *core.PKey 回退形状。
+// asym 包的具体类型实现 CorePKey() *core.PKey（见 asym/corepkey.go）；
+// 过渡期的 key 包类型实现 Key() *core.PKey。两种形状都支持，
+// 待 key 包删除（roadmap commit 21）后只保留 CorePKey。
 //
-// pkeyHolder is the structural shape that any object holding a *core.PKey
-// must satisfy for keyaccess.PKey to extract it.
+// pkeyHolder is one of the two structural shapes an object holding a
+// *core.PKey may satisfy. asym's concrete types implement
+// CorePKey() *core.PKey (see asym/corepkey.go); the transitional key
+// package types implement Key() *core.PKey. Both shapes are accepted;
+// once the key package is deleted (roadmap commit 21) only CorePKey remains.
 type pkeyHolder interface {
 	Key() *core.PKey
+}
+
+// corePKeyHolder 是 asym 包具体类型满足的形状。
+//
+// corePKeyHolder is the shape satisfied by asym's concrete key types.
+type corePKeyHolder interface {
+	CorePKey() *core.PKey
 }
 
 // PKey 从任意 asym（或过渡期 key 包）密钥对象取出底层 *core.PKey。
@@ -82,6 +94,8 @@ func PKey(v any) (*core.PKey, bool) {
 	switch k := v.(type) {
 	case *core.PKey:
 		return k, true
+	case corePKeyHolder:
+		return k.CorePKey(), true
 	case pkeyHolder:
 		return k.Key(), true
 	}
