@@ -43,7 +43,7 @@ func TestSM2PEMRoundTrip(t *testing.T) {
 	if !bytes.HasPrefix(privPEM, []byte("-----BEGIN PRIVATE KEY-----")) {
 		t.Fatalf("unexpected private PEM header: %q", privPEM[:32])
 	}
-	loaded, err := LoadPrivateKeyPEM(privPEM)
+	loaded, err := LoadSM2PrivateKeyPEM(privPEM)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestSM2PEMRoundTrip(t *testing.T) {
 	if !bytes.HasPrefix(pubPEM, []byte("-----BEGIN PUBLIC KEY-----")) {
 		t.Fatalf("unexpected public PEM header: %q", pubPEM[:32])
 	}
-	loadedPub, err := LoadPublicKeyPEM(pubPEM)
+	loadedPub, err := LoadSM2PublicKeyPEM(pubPEM)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,10 +290,10 @@ func TestSM2EmptyData(t *testing.T) {
 
 // TestSM2LoadInvalidPEM 验证加载非法 PEM 返回错误。
 func TestSM2LoadInvalidPEM(t *testing.T) {
-	if _, err := LoadPrivateKeyPEM([]byte("not a pem")); err == nil {
+	if _, err := LoadSM2PrivateKeyPEM([]byte("not a pem")); err == nil {
 		t.Fatal("expected error for invalid private PEM")
 	}
-	if _, err := LoadPublicKeyPEM([]byte("not a pem")); err == nil {
+	if _, err := LoadSM2PublicKeyPEM([]byte("not a pem")); err == nil {
 		t.Fatal("expected error for invalid public PEM")
 	}
 }

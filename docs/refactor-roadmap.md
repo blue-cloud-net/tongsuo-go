@@ -601,3 +601,4 @@ go test -race ./...         # 涉及并发/生命周期时（commit 19/20）
 | 08 | `feat(rand): 路径迁移 + Reader()` | ✅ | （+299 行；4 文件纯新增） |
 | 09 | `feat(sym): 合并 AES+SM4 + 密钥对象 + GCM 按名分发` | ✅ | （+2028 行；10 文件纯新增；crypto/aes + crypto/sm4 + key/symmetric.go 未删除，留给 commit 21） |
 | 10 | `feat(asym-sm2): 新建 asym 包并实现 SM2 完整入口` | ✅ | （+约 1500 行；6 文件纯新增；jwk/pkcs12 实际不引用 sm2 类型，example_test.go 保留 crypto/sm2 直至 commit 19 x509 收紧窄接口） |
+| 11 | `feat(asym-rsa): 在 asym 包下实现 RSA 全家族入口` | ✅ | （+约 1000 行；4 文件纯新增；SM2 Load* 重命名为 LoadSM2*PrivateKeyPEM/LoadSM2*PublicKeyPEM 以让位；crypto/rsa 暂保留） |

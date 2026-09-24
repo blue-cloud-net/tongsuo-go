@@ -70,12 +70,12 @@ func GenerateSM2() (PrivateKey, error) {
 	return &sm2PrivateKey{key: k}, nil
 }
 
-// LoadPrivateKeyPEM 从 PKCS#8 PEM 加载 SM2 私钥。
+// LoadSM2PrivateKeyPEM 从 PKCS#8 PEM 加载 SM2 私钥。
 // 块头形如 "-----BEGIN PRIVATE KEY-----"。
 //
-// LoadPrivateKeyPEM loads an SM2 private key from a PKCS#8 PEM block
+// LoadSM2PrivateKeyPEM loads an SM2 private key from a PKCS#8 PEM block
 // ("-----BEGIN PRIVATE KEY-----").
-func LoadPrivateKeyPEM(pem []byte) (PrivateKey, error) {
+func LoadSM2PrivateKeyPEM(pem []byte) (PrivateKey, error) {
 	k, err := core.LoadPrivateKeyPEM(pem)
 	if err != nil {
 		return nil, err
@@ -83,11 +83,11 @@ func LoadPrivateKeyPEM(pem []byte) (PrivateKey, error) {
 	return &sm2PrivateKey{key: k}, nil
 }
 
-// LoadPublicKeyPEM 从 SubjectPublicKeyInfo PEM 加载 SM2 公钥。
+// LoadSM2PublicKeyPEM 从 SubjectPublicKeyInfo PEM 加载 SM2 公钥。
 //
-// LoadPublicKeyPEM loads an SM2 public key from a SPKI PEM block
+// LoadSM2PublicKeyPEM loads an SM2 public key from a SPKI PEM block
 // ("-----BEGIN PUBLIC KEY-----").
-func LoadPublicKeyPEM(pem []byte) (PublicKey, error) {
+func LoadSM2PublicKeyPEM(pem []byte) (PublicKey, error) {
 	k, err := core.LoadPublicKeyPEM(pem)
 	if err != nil {
 		return nil, err
