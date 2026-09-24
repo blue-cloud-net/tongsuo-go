@@ -139,12 +139,13 @@ func TestEd25519SeedLengthGuard(t *testing.T) {
 			t.Errorf("公钥长度 %d：err = %v，应为 ErrInvalidPublicKeyLength", n, err)
 		}
 	}
-	// 尚未接入的算法返回 ErrUnsupported（Ed448 / X25519 已接入，见各自测试文件）
-	if _, err := GenerateKeyFromSeed(AlgX448, make([]byte, 56)); !errors.Is(err, ErrUnsupported) {
-		t.Error("AlgX448 应返回 ErrUnsupported")
+	// 未知名算法返回 ErrUnsupported
+	// （Ed25519 / Ed448 / X25519 / X448 均已接入，见各自测试文件）
+	if _, err := GenerateKeyFromSeed(Algorithm("BOGUS"), make([]byte, 32)); !errors.Is(err, ErrUnsupported) {
+		t.Error("未知算法应返回 ErrUnsupported")
 	}
-	if _, err := PublicKeyFromBytes(AlgX448, make([]byte, 56)); !errors.Is(err, ErrUnsupported) {
-		t.Error("AlgX448 应返回 ErrUnsupported")
+	if _, err := PublicKeyFromBytes(Algorithm("BOGUS"), make([]byte, 32)); !errors.Is(err, ErrUnsupported) {
+		t.Error("未知算法应返回 ErrUnsupported")
 	}
 	// Ed25519 的 32 字节长度不得被 Ed448 接受
 	if _, err := GenerateKeyFromSeed(AlgEd448, make([]byte, ed25519SeedSize)); !errors.Is(err, ErrInvalidSeedLength) {

@@ -278,11 +278,4 @@ func TestX25519TypeGuards(t *testing.T) {
 	if _, err := RawPublicKey(nil); err == nil {
 		t.Error("RawPublicKey(nil) 应报错")
 	}
-	// 尚未接入的 X448 仍返回 ErrUnsupported
-	if _, err := GenerateKeyFromSeed(AlgX448, make([]byte, 56)); !errors.Is(err, ErrUnsupported) {
-		t.Error("AlgX448 应返回 ErrUnsupported")
-	}
-	if _, err := PublicKeyFromBytes(AlgX448, make([]byte, 56)); !errors.Is(err, ErrUnsupported) {
-		t.Error("AlgX448 应返回 ErrUnsupported")
-	}
 }

@@ -607,3 +607,4 @@ go test -race ./...         # 涉及并发/生命周期时（commit 19/20）
 | 13.5 | `refactor(asym): 算法无关入口去前缀并消除 internal 类型泄漏` | ✅ | （落实 roadmap §4 的 `asym.LoadPrivateKeyPEM` / `asym.LoadPublicKeyPEM` / `asym.Params → *asym.KeyParams`；新增 load.go + keyparams.go；§5.2 验收 `go doc -all ./asym \| grep -c CorePKey` 归零） |
 | 14 | `feat(asym-ed448): 在 asym 包下实现 Ed448 与 57 字节种子入口` | ✅ | （+约 700 行；4 文件纯新增；GenerateKeyFromSeed / PublicKeyFromBytes 增 AlgEd448 分支；load.go 分发增 *ed448PrivateKey/*ed448PublicKey；RFC 8032 §7.4 Blank 向量逐字节通过；crypto/ed448 暂保留） |
 | 15 | `feat(asym-x25519): 在 asym 包下实现 X25519 生成（协商留 ecdh）` | ✅ | （+约 550 行；4 文件纯新增；无签名入口——X25519 仅协商；生成/编解码全部复用算法无关入口；RFC 7748 §6.1 Alice/Bob 公钥派生向量通过；crypto/x25519 暂保留） |
+| 16 | `feat(asym-x448): 在 asym 包下实现 X448 生成（协商留 ecdh）` | ✅ | （+约 550 行；4 文件纯新增；与 X25519 同构，56 字节；RFC 7748 §6.2 Alice/Bob 公钥派生向量通过；新增 TestAllAlgorithmsRegistered 验证 7 种算法端到端接通；crypto/x448 暂保留） |
