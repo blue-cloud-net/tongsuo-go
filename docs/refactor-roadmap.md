@@ -512,3 +512,83 @@ grep -rln 'internal/keyaccess' --include=*.go .
 | 需重编铜锁方可验证的六项（§6.3） | 本机构建未启用，无法验证 |
 | 把 `internal/core` 的类型提升为公开句柄 | 与 E1 收敛目标冲突（已评估，未采用） |
 | `crypto/cipher` 式包名 | 与标准库 `crypto/cipher` 同名，import 混淆 |
+
+---
+
+## 12. 执行序列与决策锁定（2026-09-24）
+
+> 本节是**实施侧**的执行计划，**不重复** §0–§11 的设计内容；与 §0 决策记录互补——§0 写「做什么 / 为什么」，本节写「按什么顺序做 / 每一刀切在哪」。
+> 实施过程回填于 §13。
+
+### 12.1 决策锁定（与用户拍板定稿）
+
+| # | 决策项 | 结论 | 与 §0 / §3 的差异 |
+|---|--------|------|------------------|
+| D1 | 提交粒度 | **更细：22 个 commit**（§12.2 全序列） | §7 把 16 包骨架压成一个 `0.3.0` 版本；本节按用户偏好拆细，使每步可独立编译/vet/test 通过 |
+| D2 | `asym` 拆分方式 | **按算法拆 7 个小 commit**（sm2 / rsa / ecdsa / ed25519 / ed448 / x25519 / x448 各一） | §3.7 暗示「一次合 7 种算法」；本节按用户偏好按算法拆分。**E1 硬约束在 commit 03 已满足**：因为 `asym.PrivateKey`/`PublicKey` 一开始就是接口 + 具体类型非导出，`CorePKey()` 因宿主类型不导出而不出现在 godoc，无「中间态暴露」 |
+| D3 | CHANGELOG 版本归属 | **塞进现有 `0.3.0 - TBD` 段**，不另开 `0.4.0` | §7 与本节一致；既有 `feat(core-pkey)` / `feat(jwk)` / `test(crypto-rsa)` / `refactor(xml-rsa)` 4 条保留不动，本次重构的 `BREAKING` / `文档` 子段**追加在它们之后** |
+| D4 | Tongsuo CLI 路径 | **不加 PATH，直接用 `/opt/tongsuo/bin/openssl` 绝对路径** | `internal/testutil/openssl.go` 的 `defaultBin` 已是这条路径；环境实测 `/opt/tongsuo/lib64/libcrypto.so*` 与 `libssl.so*` 齐备，`LD_LIBRARY_PATH` 默认可达（commit 02 起每步跑 `go build` / `go test` 前不需任何额外 export） |
+
+### 12.2 22 步执行序列
+
+```
+01 docs(refactor-plan): 在 roadmap 末尾追加 §12 执行序列与决策锁定   [本 commit]
+02 refactor(native-binding): OpenSSL_version index 参数化为 OpenSSLVersionWithIndex
+03 feat(internal-keyaccess): 新建桥接包 + asym 侧契约占位接口
+04 feat(meta): 新建 meta 包（version / build info / errstr）
+05 feat(digest): 合并 sm3+md5+sha1+sha256+sha512，补 SHA-224/384
+06 feat(mac): 命名规范化（NewHMACSM3 等）+ 补齐 6 种 Sum*
+07 feat(kdf): 合并 HKDF/PBKDF2/Argon2ID
+08 feat(rand): 路径迁移 + Reader()
+09 feat(sym): 合并 AES+SM4 + 密钥对象（key 对称部分迁入）
+10 feat(asym-sm2): 迁 sm2 + 同步 jwk/pkcs12 对 sm2 的引用
+11 feat(asym-rsa): 迁 RSA + 同步 jwk/pkcs12 对 RSA 的引用 + xml/rsa
+12 feat(asym-ecdsa): 迁 ECDSA（含 NIST 曲线）+ 同步消费方
+13 feat(asym-ed25519): 迁 Ed25519 + 同步消费方
+14 feat(asym-ed448): 迁 Ed448 + 同步消费方
+15 feat(asym-x25519): 迁 x25519 生成（协商留 ecdh）
+16 feat(asym-x448): 迁 x448 生成（协商留 ecdh）
+17 feat(ecdh): 收 x25519/x448 协商 + 加 LoadPrivateKey/LoadPublicKey
+18 feat(keystore): 从 key 拆 Handle/Store/Rotate
+19 feat(x509): 合并 ocsp + 公开 CRLBuilder/CreateSelfSigned/VerifyHostname
+20 feat(tls): 去 internal/native 直接 import + 改 Key 类型为 asym
+21 chore(refactor): 删除旧 crypto/* + key/* + ocsp 包
+22 docs+changelog: 同步 architecture/api-reference/testing-guide +0.3.0 BREAKING 段
+```
+
+### 12.3 与设计侧的差异（实施期易踩坑处）
+
+1. **commit 03 提前于 commit 04–22**：§3 各包都依赖 `internal/keyaccess`，必须先建桥接包与 `asym` 侧的契约占位接口（即使 `asym` 包本身还没建）；否则 `ecdh` / `x509` / `tls` / `jwk` / `pkcs12` 的取句柄路径无着落。
+2. **commit 10–16 的 `jwk` / `pkcs12` 修复并入 asym 对应 commit**：原计划「13. refactor(jwk) / 14. refactor(pkcs12)」作为独立 commit，会在「asym 改完签名但 jwk 还没改」期间留下编译红；并入后每步可直接 `go build ./...` 通过。
+3. **commit 21 一次性删旧包**：旧 `crypto/*`（17 个）+ `key/` + `ocsp/` 在删完后才能看到「16 个顶级包」目标形态；此 commit 是「公开面收敛完成」的唯一时刻，故 `BREAKING` 条目在 commit 22 的 CHANGELOG 才正式登台（commit 22 是发版 commit）。
+4. **commit 22 是发版 commit**：除文档同步外，还做 `git tag v0.3.0`（不实际推送，仅本地标记）；`scripts/extract_release_notes.py` 跑通即视为发版就绪。
+
+### 12.4 每 commit 提交前自检（AGENTS.md §9.2）
+
+```bash
+gofmt -l .                  # 应为空
+go vet ./...                # 必须 0 输出
+go build ./...              # 必须成功
+go build -tags static ./... # 涉及 cgo/绑定层时（commit 02/03/04 等）
+go test -count=1 ./...      # 必须 ok
+go test -tags tongsuocli ./... # 涉及 CLI 对拍时（commit 04–19）
+go test -race ./...         # 涉及并发/生命周期时（commit 19/20）
+```
+
+### 12.5 禁区（AGENTS.md §6.5 / §10 再次明示）
+
+- ❌ `git push`、`git reset --hard`、`git rebase`、删未提交改动
+- ❌ 把铜锁源码 / 预编译库 / `tongsuo` 二进制塞进仓库
+- ❌ 引入第三方依赖（`go.mod` 只允许标准库 + cgo）
+- ❌ 改测试期望值或放宽断言来「通过」
+
+---
+
+## 13. 执行进度
+
+> 每完成一个 commit 回填一行；commit 22 完成后整张表定格。
+> 状态：`✅ 已提交` / `🚧 进行中` / `⏸ 暂停` / `❌ 回滚`。
+
+| # | commit | 状态 | 备注 |
+|---|--------|------|------|
+| 01 | `docs(refactor-plan): 在 roadmap 末尾追加 §12` | ✅ | 本节 |
