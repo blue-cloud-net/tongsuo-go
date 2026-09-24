@@ -21,10 +21,33 @@ import (
 	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/internal/certaccess"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
+
+// coreCertOf 经 internal/certaccess 取出证书的底层 *core.Certificate 句柄。
+//
+// x509 已弃用 Certificate.Core()（roadmap §5 E1-8：公开签名中不得出现 internal/
+// 类型），跨包取证书句柄统一走桥接包。取不到时返回错误——在正常路径下不应发生，
+// 出现即说明 x509.Certificate 的桥接形状被改动而本包未同步。
+//
+// coreCertOf extracts the underlying *core.Certificate handle through
+// internal/certaccess.
+//
+// x509 deprecated Certificate.Core() (roadmap §5, E1-8: no public signature may
+// mention an internal/ type), so cross-package handle access goes through the
+// bridge package. A failure returns an error; it should not happen on a normal
+// path and would mean x509.Certificate's bridge shape changed without this
+// package being updated.
+func coreCertOf(c *x509.Certificate) (*core.Certificate, error) {
+	h, ok := certaccess.Certificate(c)
+	if !ok || h == nil {
+		return nil, fmt.Errorf("tls: certificate handle unavailable")
+	}
+	return h, nil
+}
 
 // Config 表示 TLS / NTLS 配置。
 //
@@ -758,19 +781,34 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 	// 加载证书与私钥。
 	if ntls {
 		if config.SignCert != nil && config.SignKey != nil {
-			if err := ctx.UseSignCertificate(config.SignCert.Core(), config.SignKey.Key()); err != nil {
+			signCore, err := coreCertOf(config.SignCert)
+			if err != nil {
+				_ = ctx.Close()
+				return nil, err
+			}
+			if err := ctx.UseSignCertificate(signCore, config.SignKey.Key()); err != nil {
 				_ = ctx.Close()
 				return nil, err
 			}
 		}
 		if config.EncCert != nil && config.EncKey != nil {
-			if err := ctx.UseEncryptCertificate(config.EncCert.Core(), config.EncKey.Key()); err != nil {
+			encCore, err := coreCertOf(config.EncCert)
+			if err != nil {
+				_ = ctx.Close()
+				return nil, err
+			}
+			if err := ctx.UseEncryptCertificate(encCore, config.EncKey.Key()); err != nil {
 				_ = ctx.Close()
 				return nil, err
 			}
 		}
 	} else if config.Cert != nil && config.Key != nil {
-		if err := ctx.UseCertificate(config.Cert.Core(), config.Key.Key()); err != nil {
+		certCore, err := coreCertOf(config.Cert)
+		if err != nil {
+			_ = ctx.Close()
+			return nil, err
+		}
+		if err := ctx.UseCertificate(certCore, config.Key.Key()); err != nil {
 			_ = ctx.Close()
 			return nil, err
 		}
@@ -813,7 +851,12 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 				if c == nil {
 					continue
 				}
-				certs = append(certs, c.Core())
+				h, err := coreCertOf(c)
+				if err != nil {
+					_ = ctx.Close()
+					return nil, err
+				}
+				certs = append(certs, h)
 			}
 			if err := ctx.AddVerifyRoots(certs); err != nil {
 				_ = ctx.Close()

@@ -11,10 +11,30 @@ package pkcs12
 import (
 	"fmt"
 
+	"github.com/blue-cloud-net/tongsuo-go/internal/certaccess"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 	"github.com/blue-cloud-net/tongsuo-go/key"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
+
+// coreCertOf 经 internal/certaccess 取出证书的底层 *core.Certificate 句柄。
+//
+// x509 已弃用 Certificate.Core()（roadmap §5 E1-8：公开签名中不得出现 internal/
+// 类型），跳包取证书句柄统一走桥接包；取不到时返回错误。
+//
+// coreCertOf extracts the underlying *core.Certificate handle through
+// internal/certaccess.
+//
+// x509 deprecated Certificate.Core() (roadmap §5, E1-8: no public signature may
+// mention an internal/ type), so cross-package handle access goes through the
+// bridge package. A failure returns an error.
+func coreCertOf(c *x509.Certificate) (*core.Certificate, error) {
+	h, ok := certaccess.Certificate(c)
+	if !ok || h == nil {
+		return nil, fmt.Errorf("pkcs12: certificate handle unavailable")
+	}
+	return h, nil
+}
 
 // PrivateKey 表示可打包进 PKCS#12 的私钥（sm2 / rsa / ecdsa 私钥与
 // key.PrivateKey 均实现）。
@@ -63,10 +83,18 @@ func Pack(cert *x509.Certificate, key PrivateKey, ca []*x509.Certificate, passwo
 	ccerts := make([]*core.Certificate, 0, len(ca))
 	for _, c := range ca {
 		if c != nil {
-			ccerts = append(ccerts, c.Core())
+			h, err := coreCertOf(c)
+			if err != nil {
+				return nil, err
+			}
+			ccerts = append(ccerts, h)
 		}
 	}
-	p12, err := core.CreatePKCS12(password, name, key.Key(), cert.Core(), ccerts)
+	certCore, err := coreCertOf(cert)
+	if err != nil {
+		return nil, err
+	}
+	p12, err := core.CreatePKCS12(password, name, key.Key(), certCore, ccerts)
 	if err != nil {
 		return nil, err
 	}

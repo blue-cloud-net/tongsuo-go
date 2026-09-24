@@ -11,9 +11,29 @@ import (
 	"encoding/pem"
 	"fmt"
 
+	"github.com/blue-cloud-net/tongsuo-go/internal/certaccess"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 	tx509 "github.com/blue-cloud-net/tongsuo-go/x509"
 )
+
+// coreCertOf 经 internal/certaccess 取出证书的底层 *core.Certificate 句柄。
+//
+// x509 已弃用 Certificate.Core()（roadmap §5 E1-8：公开签名中不得出现 internal/
+// 类型），跨包取证书句柄统一走桥接包；取不到时返回错误。
+//
+// coreCertOf extracts the underlying *core.Certificate handle through
+// internal/certaccess.
+//
+// x509 deprecated Certificate.Core() (roadmap §5, E1-8: no public signature may
+// mention an internal/ type), so cross-package handle access goes through the
+// bridge package. A failure returns an error.
+func coreCertOf(c *tx509.Certificate) (*core.Certificate, error) {
+	h, ok := certaccess.Certificate(c)
+	if !ok || h == nil {
+		return nil, fmt.Errorf("pkcs7: certificate handle unavailable")
+	}
+	return h, nil
+}
 
 // Build 构建包含证书集合的 PKCS#7（SignedData，无签名者，仅证书），返回 DER。
 // certs 中的 nil 条目会被静默跳过。
@@ -31,7 +51,11 @@ func Build(certs []*tx509.Certificate) ([]byte, error) {
 		if c == nil {
 			continue
 		}
-		if err := p7.AddCertificate(c.Core()); err != nil {
+		h, err := coreCertOf(c)
+		if err != nil {
+			return nil, err
+		}
+		if err := p7.AddCertificate(h); err != nil {
 			return nil, err
 		}
 	}
