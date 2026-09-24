@@ -65,15 +65,15 @@ func GenerateEd25519() (PrivateKey, error) {
 }
 
 // GenerateKeyFromSeed 从原始私钥种子构造密钥对。
-// alg 目前支持 AlgEd25519（seed 须为 32 字节）；Ed448 / X25519 / X448 在
-// 对应算法落地后接入同一入口。
+// alg 支持 AlgEd25519（seed 须为 32 字节）与 AlgEd448（seed 须为 57 字节）；
+// X25519 / X448 在对应算法落地后接入同一入口。
 // 种子长度不符返回 ErrInvalidSeedLength；alg 不在支持列表返回 ErrUnsupported。
 //
 // 调用方在调用后须自行清零 seed。
 //
 // GenerateKeyFromSeed constructs a key pair from a raw private seed.
-// alg currently supports AlgEd25519 (seed must be 32 bytes); Ed448 /
-// X25519 / X448 will join the same entry point as they land.
+// alg supports AlgEd25519 (seed must be 32 bytes) and AlgEd448 (seed must
+// be 57 bytes); X25519 / X448 will join the same entry point as they land.
 //
 // A wrong seed length returns ErrInvalidSeedLength and an unsupported
 // alg returns ErrUnsupported. The caller is responsible for zeroising
@@ -89,19 +89,28 @@ func GenerateKeyFromSeed(alg Algorithm, seed []byte) (PrivateKey, error) {
 			return nil, err
 		}
 		return &ed25519PrivateKey{key: k}, nil
+	case AlgEd448:
+		if len(seed) != ed448SeedSize {
+			return nil, fmt.Errorf("%w: ed448: got %d, want %d", ErrInvalidSeedLength, len(seed), ed448SeedSize)
+		}
+		k, err := core.NewRawPrivateKey(core.PKeyAlgoED448, seed)
+		if err != nil {
+			return nil, err
+		}
+		return &ed448PrivateKey{key: k}, nil
 	default:
 		return nil, fmt.Errorf("%w: GenerateKeyFromSeed: %s", ErrUnsupported, alg)
 	}
 }
 
 // PublicKeyFromBytes 从原始公钥字节构造公钥。
-// alg 目前支持 AlgEd25519（raw 须为 32 字节）；X25519 / X448 在对应算法
-// 落地后接入同一入口。
+// alg 支持 AlgEd25519（raw 须为 32 字节）与 AlgEd448（raw 须为 57 字节）；
+// X25519 / X448 在对应算法落地后接入同一入口。
 // 字节长度不符返回 ErrInvalidPublicKeyLength；alg 不在支持列表返回 ErrUnsupported。
 //
 // PublicKeyFromBytes constructs a public key from raw public key bytes.
-// alg currently supports AlgEd25519 (raw must be 32 bytes); X25519 /
-// X448 will join the same entry point as they land.
+// alg supports AlgEd25519 (raw must be 32 bytes) and AlgEd448 (raw must be
+// 57 bytes); X25519 / X448 will join the same entry point as they land.
 //
 // A wrong length returns ErrInvalidPublicKeyLength and an unsupported alg
 // returns ErrUnsupported.
@@ -116,13 +125,23 @@ func PublicKeyFromBytes(alg Algorithm, raw []byte) (PublicKey, error) {
 			return nil, err
 		}
 		return &ed25519PublicKey{key: k}, nil
+	case AlgEd448:
+		if len(raw) != ed448SeedSize {
+			return nil, fmt.Errorf("%w: ed448: got %d, want %d", ErrInvalidPublicKeyLength, len(raw), ed448SeedSize)
+		}
+		k, err := core.NewRawPublicKey(core.PKeyAlgoED448, raw)
+		if err != nil {
+			return nil, err
+		}
+		return &ed448PublicKey{key: k}, nil
 	default:
 		return nil, fmt.Errorf("%w: PublicKeyFromBytes: %s", ErrUnsupported, alg)
 	}
 }
 
 // RawPrivateKey 导出原始私钥字节。
-// Ed25519 下为 32 字节种子（RFC 8032 §5.1.2）；其他算法在落地后沿用本入口。
+// Ed25519 下为 32 字节种子、Ed448 下为 57 字节种子（RFC 8032 §5.1.2 / §5.2）；
+// 其他算法在落地后沿用本入口。
 //
 // 调用方须自行清零返回的字节。
 //
@@ -138,7 +157,7 @@ func RawPrivateKey(priv PrivateKey) ([]byte, error) {
 	return priv.corePKey().RawPrivateKey()
 }
 
-// RawPublicKey 导出原始公钥字节（Ed25519 下为 32 字节）。
+// RawPublicKey 导出原始公钥字节（Ed25519 为 32 字节、Ed448 为 57 字节）。
 // 返回的字节不敏感，无需清零。
 //
 // RawPublicKey exports the raw public key bytes (32 bytes for Ed25519).

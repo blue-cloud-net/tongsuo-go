@@ -26,6 +26,8 @@ func wrapPrivateKey(k *core.PKey) (PrivateKey, error) {
 		return &ecPrivateKey{key: k}, nil
 	case string(AlgEd25519):
 		return &ed25519PrivateKey{key: k}, nil
+	case string(AlgEd448):
+		return &ed448PrivateKey{key: k}, nil
 	default:
 		return nil, fmt.Errorf("%w: private key algorithm %q", ErrUnknownAlgorithm, k.Algorithm())
 	}
@@ -51,6 +53,8 @@ func wrapPublicKey(k *core.PKey) (PublicKey, error) {
 		return &ecPublicKey{key: k}, nil
 	case string(AlgEd25519):
 		return &ed25519PublicKey{key: k}, nil
+	case string(AlgEd448):
+		return &ed448PublicKey{key: k}, nil
 	default:
 		return nil, fmt.Errorf("%w: public key algorithm %q", ErrUnknownAlgorithm, k.Algorithm())
 	}

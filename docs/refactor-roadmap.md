@@ -605,3 +605,4 @@ go test -race ./...         # 涉及并发/生命周期时（commit 19/20）
 | 12 | `feat(asym-ecdsa): 在 asym 包下实现 ECDSA 与 NIST 曲线族` | ✅ | （+约 850 行；4 文件纯新增；含 CurveP256/P384/P521/Secp256k1 常量；SM2 曲线名被显式拒绝并指向 GenerateSM2；crypto/ecdsa 暂保留） |
 | 13 | `feat(asym-ed25519): 在 asym 包下实现 Ed25519 与原始种子入口` | ✅ | （+约 900 行；4 文件纯新增；新增 GenerateKeyFromSeed / PublicKeyFromBytes / RawPrivateKey / RawPublicKey 四件通用入口；errors.go 增 ErrInvalidSeedLength / ErrInvalidPublicKeyLength；crypto/ed25519 暂保留） |
 | 13.5 | `refactor(asym): 算法无关入口去前缀并消除 internal 类型泄漏` | ✅ | （落实 roadmap §4 的 `asym.LoadPrivateKeyPEM` / `asym.LoadPublicKeyPEM` / `asym.Params → *asym.KeyParams`；新增 load.go + keyparams.go；§5.2 验收 `go doc -all ./asym \| grep -c CorePKey` 归零） |
+| 14 | `feat(asym-ed448): 在 asym 包下实现 Ed448 与 57 字节种子入口` | ✅ | （+约 700 行；4 文件纯新增；GenerateKeyFromSeed / PublicKeyFromBytes 增 AlgEd448 分支；load.go 分发增 *ed448PrivateKey/*ed448PublicKey；RFC 8032 §7.4 Blank 向量逐字节通过；crypto/ed448 暂保留） |
