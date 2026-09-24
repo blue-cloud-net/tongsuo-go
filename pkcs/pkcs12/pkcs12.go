@@ -134,10 +134,18 @@ func Parse(data []byte, password string) (*Bundle, error) {
 		b.PrivateKey = wrapped
 	}
 	if cert != nil {
-		b.Certificate = x509.WrapCertificate(cert)
+		wrapped, werr := certaccess.Wrap(cert)
+		if werr != nil {
+			return nil, werr
+		}
+		b.Certificate = wrapped
 	}
 	for _, c := range ca {
-		b.CACerts = append(b.CACerts, x509.WrapCertificate(c))
+		wrapped, werr := certaccess.Wrap(c)
+		if werr != nil {
+			return nil, werr
+		}
+		b.CACerts = append(b.CACerts, wrapped)
 	}
 	return b, nil
 }

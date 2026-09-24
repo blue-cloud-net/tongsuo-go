@@ -55,7 +55,10 @@
 package certaccess
 
 import (
+	"fmt"
+
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
+	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
 // coreCertHolder 是 `x509.Certificate` 满足的形状。
@@ -93,4 +96,45 @@ func Certificate(v any) (*core.Certificate, bool) {
 		return c.CoreCertificate(), true
 	}
 	return nil, false
+}
+
+// Wrap 把底层证书句柄换成 API 层的 *x509.Certificate。
+//
+// 实现方式是 **DER 往返**：`MarshalDER` → `x509.LoadCertificateDER`。之所以不直接
+// 构造：`x509` 原先公开的 `WrapCertificate(c *core.Certificate)` 属于「公开签名中
+// 出现 internal/ 类型」的泄漏（roadmap §5 E1 的目标），而把它改为非导出后，包外
+// 消费方（tls / pkcs/pkcs7 / pkcs/pkcs12）就只剩本桥接包可用。DER 往返零新增公开
+// API、零泄漏，代价是每次调用一次编解码。
+//
+// **与旧 WrapCertificate 的语义差异（重要）**：返回的对象**拥有自己的句柄**，
+// 调用方必须对它调用 Close（而旧入口是共享句柄、Close 会连带释放真正的所有者）。
+// 这一点与 tls.peerCertificateChain 已声明的契约（「每个返回的证书是 owned，调用方
+// 负责 Close」）一致——本次改动让实现与契约对齐。传入的 c 不受影响。
+//
+// Wrap turns an underlying certificate handle into an API-layer
+// *x509.Certificate.
+//
+// It performs a DER round trip (MarshalDER → x509.LoadCertificateDER). Building the
+// value directly is not possible: x509's former exported
+// WrapCertificate(c *core.Certificate) was itself the "internal/ type in a public
+// signature" leak roadmap §5 E1 targets, and once it became unexported the
+// out-of-package consumers (tls, pkcs/pkcs7, pkcs/pkcs12) had only this bridge left.
+// The round trip adds no public API and leaks nothing, at the cost of one
+// encode/decode per call.
+//
+// **Semantic difference from the old WrapCertificate (important)**: the returned
+// value **owns its handle**, so the caller must Close it — whereas the old entry
+// point shared the handle and closing it released the true owner's object. This
+// matches the contract tls.peerCertificateChain already declared ("each returned
+// certificate is owned; the caller is responsible for Close"), so this change makes
+// the implementation match the contract. The caller-supplied c is unaffected.
+func Wrap(c *core.Certificate) (*x509.Certificate, error) {
+	if c == nil {
+		return nil, fmt.Errorf("certaccess: nil certificate handle")
+	}
+	der, err := c.MarshalDER()
+	if err != nil {
+		return nil, err
+	}
+	return x509.LoadCertificateDER(der)
 }

@@ -93,7 +93,11 @@ func Extract(data []byte) ([]*tx509.Certificate, error) {
 	}
 	out := make([]*tx509.Certificate, 0, len(certs))
 	for _, c := range certs {
-		out = append(out, tx509.WrapCertificate(c))
+		wrapped, werr := certaccess.Wrap(c)
+		if werr != nil {
+			return nil, werr
+		}
+		out = append(out, wrapped)
 	}
 	return out, nil
 }

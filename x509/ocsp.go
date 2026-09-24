@@ -149,7 +149,11 @@ func ParseOCSPResponse(der []byte, cert, issuer *Certificate) (*Response, error)
 	r.NextUpdate = cs.NextUpdate
 	if certs, err := resp.ResponderCerts(); err == nil {
 		for _, c := range certs {
-			r.ResponderCerts = append(r.ResponderCerts, WrapCertificate(c))
+			wrapped, werr := wrapCertificate(c)
+			if werr != nil {
+				return nil, werr
+			}
+			r.ResponderCerts = append(r.ResponderCerts, wrapped)
 		}
 	}
 	return r, nil

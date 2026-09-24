@@ -90,11 +90,9 @@ type Certificate struct {
 //   - LoadCertificatePEM / LoadCertificateDER / NewCertificate return a
 //     *Certificate whose underlying *core.Certificate is owned solely by
 //     that wrapper. Calling Close releases the native X509.
-//   - WrapCertificate wraps an existing *core.Certificate without taking
-//     ownership; the caller (whoever owns the *core.Certificate) is
-//     responsible for releasing it. Calling Close on a wrapped certificate
-//     is safe but has no effect: the first close (from the true owner)
-//     wins, and Handle.Close is idempotent.
+//   - Certificates obtained through the internal bridge
+//     (internal/certaccess.Wrap, tls peer chains, pkcs7 / pkcs12 parsing)
+//     also own their handles and must be Closed by whoever receives them.
 //   - Config.Cert (TLS) is installed into SSL_CTX with X509_up_ref, so
 //     closing the original *Certificate is safe.
 func (c *Certificate) Close() error {
@@ -158,11 +156,43 @@ func LoadCertificateDER(der []byte) (*Certificate, error) {
 	return &Certificate{cert: c}, nil
 }
 
-// WrapCertificate 用底层核心证书构造 Certificate（供内部跨包使用，如 pkcs/pkcs12、pkcs/pkcs7）。
+// wrapCertificate 用底层核心证书构造 Certificate（包内辅助）。
 //
-// WrapCertificate wraps an underlying *core.Certificate into the API-layer Certificate type for cross-package use (for example by pkcs/pkcs12 and pkcs/pkcs7).
-func WrapCertificate(c *core.Certificate) *Certificate {
-	return &Certificate{cert: c}
+// 实现方式是 **DER 往返**（`MarshalDER` → `LoadCertificateDER`），因此返回的
+// *Certificate **拥有自己的句柄**，调用方需调用 Close；传入的 c 不受影响。
+//
+// 之所以保留为包内函数：原公开的 `WrapCertificate(c *core.Certificate)` 属于
+// 「公开签名中出现 internal/ 类型」的泄漏（roadmap §5 E1 的目标），包外消费方改用
+// `internal/certaccess.Wrap`（同样 DER 往返）。
+//
+// ⚠️ 与旧入口的语义差异：旧 `WrapCertificate` 是**共享句柄**（Close 会连带释放真正
+// 的所有者），本函数产出 owned 副本 —— 这与 tls.peerCertificateChain 已声明的契约
+// 对齐（「每个返回的证书是 owned，调用方负责 Close」）。
+//
+// wrapCertificate builds a Certificate from an underlying core certificate
+// (package-private helper).
+//
+// It performs a DER round trip (MarshalDER → LoadCertificateDER), so the returned
+// *Certificate **owns its handle** and the caller must Close it; the supplied c is
+// unaffected.
+//
+// It stays package-private because the former exported
+// WrapCertificate(c *core.Certificate) was the "internal/ type in a public
+// signature" leak roadmap §5 E1 targets; out-of-package consumers now use
+// internal/certaccess.Wrap (also a DER round trip).
+//
+// ⚠️ Semantic difference from the old entry point: WrapCertificate shared the
+// handle (so Close released the true owner's object), whereas this produces an
+// owned copy — matching the contract tls.peerCertificateChain already declared.
+func wrapCertificate(c *core.Certificate) (*Certificate, error) {
+	if c == nil {
+		return nil, fmt.Errorf("x509: nil certificate handle")
+	}
+	der, err := c.MarshalDER()
+	if err != nil {
+		return nil, err
+	}
+	return LoadCertificateDER(der)
 }
 
 // MarshalPEM 导出证书为 PEM。
