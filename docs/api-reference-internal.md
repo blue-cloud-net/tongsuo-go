@@ -148,6 +148,7 @@ internal/testutil ← 仅被 *_test.go 使用
 - `func (c *Certificate) Extensions() []Extension` — 全部扩展
 - `func (c *Certificate) Fingerprint(md *Digest) (string, error)` — 指纹
 - `func (c *Certificate) PublicKey() (*PKey, error)` — 提取公钥
+- `func (c *Certificate) VerifyHostname(host string) error` — 主机名 / IP 校验（`X509_check_host` / `X509_check_ip_asc`，等价 `verify -verify_hostname`）
 - `func (c *Certificate) Signature() []byte` / `SignatureAlgorithm() string` / `SignatureAlgorithmOID() string` — 签名信息
 - `func (c *Certificate) MarshalDER() ([]byte, error)` / `Close() error` — 导出与释放
 - `type Extension struct { …（内部字段） }` — 单个扩展
@@ -163,7 +164,12 @@ internal/testutil ← 仅被 *_test.go 使用
 - `func (r *CertificateRequest) Signature() []byte` / `SignatureAlgorithm() string` / `SignatureAlgorithmOID() string` — 签名信息
 - `func (r *CertificateRequest) Close() error` — 释放
 - `type RevokedEntry struct { …（内部字段） }` / `type CRL struct { …（内部字段） }` — 吊销记录与 CRL
-- `func NewCRL(issuer *Name, priv *PKey, thisUpdate, nextUpdate time.Time) (*CRL, error)` — **签发 CRL**（⚠️ 公开 `x509` 包未暴露此能力）
+- `func NewCRL(issuer *Name, priv *PKey, thisUpdate, nextUpdate time.Time) (*CRL, error)` — **一次签发 CRL**（= `NewCRLForIssuer` + 设时间窗/Number 1 + `Sign`）
+- `func NewCRLForIssuer(issuer *Name) (*CRL, error)` — 新建空 v2 CRL 并设 issuer（供公开 `x509.CRLBuilder` 分步组装；不写时间/Number、不签名）
+- `func (c *CRL) SetThisUpdate(t time.Time) error` / `SetNextUpdate(t time.Time) error` / `SetNumber(n int64) error` — 构建器元数据
+- `func (c *CRL) AddRevokedEntry(serial int64, at time.Time, reason int) error` — 追加吊销条目（`reason < 0` 则不写 crlReasons；成功即把 `X509_REVOKED` 所有权转交 CRL）
+- `func (c *CRL) SortRevokedEntries() error` — 按序列号排序（CRL 构建器未暴露此步）
+- `func (c *CRL) Sign(priv *PKey) error` — 分步签名（SM2/RSA/ECDSA/Ed25519/Ed448）
 - `func LoadCRLPEM(pem []byte) (*CRL, error)` / `LoadCRLDER(der []byte) (*CRL, error)` — 加载
 - `func (c *CRL) MarshalPEM() ([]byte, error)` / `MarshalDER() ([]byte, error)` — 导出
 - `func (c *CRL) AddAuthorityKeyID(issuer *Certificate) error` — 附加 AKID
@@ -173,9 +179,9 @@ internal/testutil ← 仅被 *_test.go 使用
 - `func RevocationCheck(cert *Certificate, crls []*CRL) error` — 吊销检查
 - `type VerifyError struct { …（内部字段） }` — `X509_verify_cert` 失败信息（⚠️ 通过 `x509` 包同名类型转出）
 - `func VerifyErrorMessage(code int) string` — 错误码 → 文本
-- `type Store struct { …（内部字段） }` — `X509_STORE` 包装（⚠️ 通过 `x509.Store.Core()` 泄漏）
+- `type Store struct { …（内部字段） }` — `X509_STORE` 包装（⚠️ 通过 `x509.Store` 持有；公开层无 `Close`，见 `docs/issues/2026-09-24/P1010`）
 - `func NewStore() (*Store, error)` — 创建
-- `func (s *Store) AddCert(c *Certificate) error` / `AddCRL(c *CRL) error` / `SetFlags(flags uint64) error` / `Close() error` — 操作与释放
+- `func (s *Store) AddCert(c *Certificate) error` / `AddCRL(c *CRL) error` / `SetFlags(flags uint64) error` / `SetTime(t time.Time) error` / `Close() error` — 操作与释放（`SetTime` 写 `X509_VERIFY_PARAM_set_time`，对该 Store 后续每次 `ChainVerify` 生效）
 - `func ChainVerify(cert *Certificate, store *Store, intermediates []*Certificate) ([]*Certificate, error)` — 链验证并返回完整链
 
 ### 1.7 容器（PKCS#7 / PKCS#12）
@@ -310,8 +316,16 @@ internal/testutil ← 仅被 *_test.go 使用
 - **扩展**：`X509V3_EXT_conf_nid` `_ctx` `_crl` `_ctx_crl`、`X509_add_ext`、`X509_EXTENSION_free/get_object/get_critical/get_data`、`X509_get_ext_count` `X509_get_ext`、`X509_sk_X509_EXTENSION_*`、`ASN1_STRING_data_bytes`、`ASN1_INTEGER_free` `ASN1_INTEGER_get`
 - **扩展语义读取**：`X509_get_san` `X509_get_key_usage` `X509_get_eku` `X509_get_basic_constraints`、`X509_get0_subject_key_id` `X509_get0_authority_key_id`、`X509_GENERAL_NAMES_{free,num,value}` `X509_GENERAL_NAME_{type,to_string}`、`X509_EXTENDED_KEY_USAGE_{free,num,value}`、`X509_BASIC_CONSTRAINTS_{free,ca,pathlen}`、`X509_ASN1_BIT_STRING_free` `ASN1_BIT_STRING_get_bit`
 - **CSR**：`X509_REQ_new` `free` `set_pubkey` `get_pubkey` `set_subject_name` `get_subject_name` `sign` `sign_ctx` `verify`、`X509_REQ_add_extensions` `get_extensions`、`X509_REQ_set/get_challenge_password`、`I2d_X509_REQ` `D2i_X509_REQ` `I2d_X509_REQ_INFO`、`X509_REQ_get0_signature` `_get_signature_info`、`X_PEM_read_bio_X509_REQ` `X_PEM_write_bio_X509_REQ`
-- **Store 与链验证**：`X509_STORE_new` `free` `add_cert` `add_crl` `set_flags`、`X509_STORE_CTX_new` `free` `init` `set0_untrusted` `get_error` `get_error_depth` `get_current_cert` `get0_chain`、`X509_verify_cert` `X509_verify_cert_error_string`、`X509_sk_X509_*`
-- **CRL**：`X509_CRL_new` `free` `verify` `sign` `sign_ctx`、`X509_CRL_set_version` `set_issuer_name` `set1_lastUpdate` `set1_nextUpdate` `set_crl_number`、`X509_CRL_get_version` `get0_lastUpdate` `get0_nextUpdate` `get_issuer` `get_REVOKED` `get_ext_count` `get_ext` `get0_authority_key_id` `get_crl_number` `get_signature_info`、`X509_sk_X509_REVOKED_{num,value}`、`X509_REVOKED_get0_serialNumber` `_get0_revocationDate` `_crl_reason`、`I2d_X509_CRL` `D2i_X509_CRL`、`X_PEM_read_bio_X509_CRL` `X_PEM_write_bio_X509_CRL`
+- **Store 与链验证**：`X509_STORE_new` `free` `add_cert` `add_crl` `set_flags` `get0_param`、`X509_VERIFY_PARAM_set_time`、`X509_STORE_CTX_new` `free` `init` `set0_untrusted` `get_error` `get_error_depth` `get_current_cert` `get0_chain`、`X509_verify_cert` `X509_verify_cert_error_string`、`X509_sk_X509_*`
+- **主机名校验**：`X509_check_host` `X509_check_ip_asc`
+- **CRL**：`X509_CRL_new` `free` `verify` `sign` `sign_ctx` `sort` `add0_revoked`、`X509_CRL_set_version` `set_issuer_name` `set1_lastUpdate` `set1_nextUpdate` `set_crl_number`、`X509_CRL_get_version` `get0_lastUpdate` `get0_nextUpdate` `get_issuer` `get_REVOKED` `get_ext_count` `get_ext` `get0_authority_key_id` `get_crl_number` `get_signature_info`、`X509_sk_X509_REVOKED_{num,value}`、`X509_REVOKED_new` `free` `set_serial_int` `set_revocation_date` `set_reason`、`X509_REVOKED_get0_serialNumber` `_get0_revocationDate` `_crl_reason`、`I2d_X509_CRL` `D2i_X509_CRL`、`X_PEM_read_bio_X509_CRL` `X_PEM_write_bio_X509_CRL`
+
+> ⚠️ **所有权实测（铜锁 8.5）**：`X509_REVOKED_set_serialNumber` /
+> `X509_REVOKED_set_revocationDate` 会**复制**入参（而非接管指针），因此
+> `X509_REVOKED_set_serial_int` / `set_revocation_date` 自行创建并释放临时
+> `ASN1_INTEGER` / `ASN1_TIME`（与 `X509_set_serial_int` 同形）；而
+> `X509_CRL_add0_revoked` 是**接管** `X509_REVOKED` 指针（add0 语义），成功即
+> 不得再 `X509_REVOKED_free`。
 
 ### 2.12 `binding_pkcs.go` — PKCS#12 / PKCS#7
 

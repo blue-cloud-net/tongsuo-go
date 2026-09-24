@@ -631,6 +631,14 @@
 
 - ♻️ `OCSPGood = 0` / ♻️ `OCSPRevoked = 1` / ♻️ `OCSPUnknown = 2` — 原 `ocsp.Good` / `ocsp.Revoked` / `ocsp.Unknown`
 
+**常量｜CRL 吊销原因码（RFC 5280 §5.3.1，对应 `openssl crl -crl_reason`）**
+
+- 🆕 `ReasonUnspecified = 0` / `ReasonKeyCompromise = 1` / `ReasonCACompromise = 2` /
+  `ReasonAffiliationChanged = 3` / `ReasonSuperseded = 4` / `ReasonCessationOfOperation = 5` /
+  `ReasonCertificateHold = 6` / `ReasonRemoveFromCRL = 8` / `ReasonPrivilegeWithdrawn = 9` /
+  `ReasonAACompromise = 10` — 类型为 `RevocationReason`；7 为 RFC 5280 保留值，
+  刻意不提供常量且 `Revoke` 会拒绝
+
 **证书加载与导出**
 
 - ♻️ `func LoadCertificatePEM(pemBytes []byte) (*Certificate, error)` — 从 PEM 加载
@@ -701,6 +709,7 @@
 - 🆕 `func (b *CRLBuilder) SetNumber(n int64) error` / `SetThisUpdate(t time.Time) error` / `SetNextUpdate(t time.Time) error` — 设置元数据
 - 🆕 `func (b *CRLBuilder) Revoke(cert *Certificate, at time.Time, reason RevocationReason) error` — 追加一条吊销记录
 - 🆕 `func (b *CRLBuilder) Sign(signer asym.PrivateKey) (*CRL, error)` — 签发并返回可导出的 CRL
+- 🆕 `func (b *CRLBuilder) Close() error` — 释放尚未签发的句柄（幂等；已签发后为 no-op，因句柄已转移给 `*CRL`）
 - ♻️ `func RevocationCheck(cert *Certificate, crls []*CRL) error` — 在给定 CRL 集合中检查吊销状态
 
 **OCSP**

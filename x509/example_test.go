@@ -130,3 +130,67 @@ func ExampleCreateSelfSigned() {
 	// true
 	// true true
 }
+
+// ExampleNewCRLBuilder 演示分步构建并签发 CRL（等价 `openssl ca -gencrl`）。
+//
+// 构建器自动取 CA 证书的 subject 作为 CRL 签发者并补齐 AKID；签发后句柄转移给
+// 返回的 *CRL，构建器随之失效。CRL 的 issuer / 签名 / 到期状态本身在链验证之外，
+// 使用前请先用 CRL.Verify 建立信任（见 RevocationCheck 的信任前提说明）。
+//
+// ExampleNewCRLBuilder demonstrates building and signing a CRL step by step
+// (the equivalent of `openssl ca -gencrl`).
+//
+// The builder takes the CA certificate's subject as the CRL issuer and adds the
+// AKID automatically; after signing, ownership of the handle moves to the
+// returned *CRL and the builder expires. A CRL's issuer, signature and expiry
+// are outside chain validation, so establish trust with CRL.Verify first (see
+// the trust precondition documented on RevocationCheck).
+func ExampleNewCRLBuilder() {
+	priv, err := asym.GenerateSM2()
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = asym.Close(priv) }()
+
+	now := time.Now()
+	ca, err := x509.CreateSelfSigned(x509.NewName().Add("CN", "Example CA"),
+		1, now.Add(-time.Hour), now.Add(365*24*time.Hour), priv.Public(), priv)
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = ca.Close() }()
+
+	b, err := x509.NewCRLBuilder(ca)
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = b.Close() }()
+	if err := b.SetNumber(12); err != nil {
+		panic(err)
+	}
+	if err := b.SetThisUpdate(now.Add(-time.Minute)); err != nil {
+		panic(err)
+	}
+	if err := b.SetNextUpdate(now.Add(24 * time.Hour)); err != nil {
+		panic(err)
+	}
+	if err := b.Revoke(ca, now, x509.ReasonKeyCompromise); err != nil {
+		panic(err)
+	}
+
+	crl, err := b.Sign(priv)
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = crl.Close() }()
+
+	for _, e := range crl.RevokedEntries() {
+		fmt.Printf("serial=%d reason=%s\n", e.Serial, e.Reason)
+	}
+	fmt.Println("number:", crl.Number())
+	fmt.Println("verify:", crl.Verify(ca) == nil)
+	// Output:
+	// serial=1 reason=keyCompromise
+	// number: 12
+	// verify: true
+}

@@ -13,11 +13,11 @@
 // 内部按职责拆分为多个文件：
 //
 //	x509.go    — Certificate 主类型、Extension 类型、
-//	             CreateCertificate / CreateSelfSigned、Set* 构建方法、Add* 扩展方法、签/验
+//	             CreateCertificate / CreateSelfSigned、Set* 构建方法、Add* 扩展方法、签/验 / VerifyHostname
 //	name.go    — Name / NameEntry / NewName
 //	csr.go     — CertificateRequest（含 New/NewEmptyCertificateRequest 与所有 CSR 方法）
-//	store.go   — Store / VerifyError / NewStore / ChainVerify
-//	crl.go     — CRL / RevokedEntry / ParseCRL / RevocationCheck
+//	store.go   — Store / VerifyError / NewStore / ChainVerify / SetTime
+//	crl.go     — CRL / RevokedEntry / CRLBuilder / RevocationReason / ParseCRL / RevocationCheck
 //	ocsp.go    — OCSP 请求/响应：CreateOCSPRequest / ParseOCSPResponse / Response
 //	helpers.go — convertEntries / convertExtensions（内部转换辅助）
 //
@@ -603,6 +603,40 @@ func (c *Certificate) PublicKey() (asym.PublicKey, error) {
 	// 句柄用完即弃：wrapCorePublicKey 走 PEM 往返，asym 侧得到的是独立对象。
 	defer func() { _ = k.Close() }()
 	return wrapCorePublicKey(k)
+}
+
+// VerifyHostname 校验证书是否对给定主机名或 IP 地址有效（对应
+// `openssl verify -verify_hostname`）。
+//
+// host 为 IP 文本（IPv4 点分 / IPv6 冒号）时只比对 SAN 的 iPAddress 条目；否则先
+// 比对 SAN 的 dNSName 条目，无 SAN 时回退比对 subject CN，并允许通配符
+// （`*.example.com`）。
+//
+// ⚠️ 本函数只做「名字匹配」，**不**验证证书链、有效期或用途；客户端的正确顺序是
+// 先 ChainVerify 建立信任，再调用本函数。对任意自签证书，本函数都可能返回 nil。
+//
+// 匹配返回 nil；不匹配返回描述性错误；host 为空返回 "x509: empty hostname"。
+//
+// VerifyHostname checks whether the certificate is valid for the given host
+// name or IP address (equivalent to `openssl verify -verify_hostname`).
+//
+// When host is an IP literal (dotted IPv4 or colon IPv6) only the iPAddress
+// SAN entries are compared; otherwise the dNSName SAN entries are compared
+// first, falling back to the subject CN when no SAN is present, with
+// wildcards such as `*.example.com` allowed.
+//
+// ⚠️ This performs name matching only. It does **not** validate the chain, the
+// validity window or the key usage; the correct client-side order is to
+// establish trust with ChainVerify first and then call this. For any
+// self-signed certificate it may return nil.
+//
+// A match returns nil; a mismatch returns a descriptive error; an empty host
+// returns "x509: empty hostname".
+func (c *Certificate) VerifyHostname(host string) error {
+	if c == nil || c.cert == nil {
+		return fmt.Errorf("x509: nil certificate")
+	}
+	return c.cert.VerifyHostname(host)
 }
 
 // Verify 使用签发者公钥验证证书签名。

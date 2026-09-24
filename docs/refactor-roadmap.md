@@ -357,9 +357,16 @@ graph TD
 | `meta` 的版本 / 构建信息 | 仅需把 `OpenSSL_version` 的 index 参数化（`binding_version.go:13`） |
 | `meta` 的错误码解析 | `native.ErrorString` / `ErrGetLib` / `ErrGetReason` 已存在 |
 | `asym.LoadPrivateKeyPEM` 的 EC SEC1 回退 | `X_PEM_read_bio_PrivateKey` 已能读 SEC1，只是 Go 侧未回退 |
-| `x509.VerifyHostname` / `Store.SetTime` / `CreateSelfSigned` | `X509_VERIFY_PARAM_*` / `X509_STORE_CTX_set_time` / 现有 `X509_*` 组合 |
-| `x509.CRLBuilder` | `internal/core.NewCRL` 等已实现，仅未导出 |
+| `x509.CreateSelfSigned` | 现有 `X509_*` 组合（`X509_set_issuer_name` / `X509V3_EXT_conf_nid` 等） |
 | `tls.NewListener` | Go 侧实现 |
+
+> ⚠️ **订正（2026-09-24，见 `docs/issues/2026-09-24/P1005`）**：本表早期版本把
+> `x509.VerifyHostname` / `Store.SetTime` / `CRLBuilder` 一并列为档位一，但实测
+> 三者都需要新增 cgo 绑定，已下移到 §6.2：
+> `X509_VERIFY_PARAM_*` / `X509_STORE_CTX_set_time` / `X509_check_host` 根本
+> 不存在，且吊销条目**写入侧**绑定（`X509_REVOKED_*` / `X509_CRL_add0_revoked`）
+> 全缺 —— `internal/core.NewCRL` 是「立即签名 + CRL Number 硬编码 1」，不是构建器。
+> 档位一实际只剩 `CreateSelfSigned` 一项。
 
 ### 6.2 档位二：需新增 cgo 绑定
 
@@ -381,6 +388,9 @@ graph TD
 | PKCS#7 签名族 | `PKCS7_sign` / `PKCS7_verify` / `PKCS7_encrypt` / `PKCS7_decrypt`、`PKCS7_set_type`（后者已绑定） | `pkcs/pkcs7` |
 | CMS / TS | `CMS_*` / `TS_*` | 规划中（见 §11） |
 | OCSP nonce | `OCSP_REQUEST_add1_nonce` / `OCSP_check_nonce` | `x509` |
+| CRL 写入侧 | `X509_REVOKED_new` / `X509_REVOKED_set_serialNumber` / `X509_REVOKED_set_revocationDate` / `X509_REVOKED_add1_ext_i2d` / `X509_CRL_add0_revoked` / `X509_CRL_sort` | `x509.CRLBuilder` |
+| 主机名校验 | `X509_check_host` / `X509_check_ip_asc` | `x509.Certificate.VerifyHostname` |
+| 验证时刻 | `X509_STORE_get0_param` / `X509_VERIFY_PARAM_set_time` | `x509.Store.SetTime` |
 
 ### 6.3 档位三：需重编铜锁方可验证（本机构建未启用）
 
@@ -618,3 +628,4 @@ go test -race ./...         # 涉及并发/生命周期时（commit 19/20）
 | 19c | `refactor(x509): 删除窄接口与 internal 泄漏入口，统一 asym 密钥接口` | ✅ | （落实 §5 E1-8/E1-9/E1-10/E1-11：删 `x509.PublicKey`/`PrivateKey` 窄接口、`Certificate.Core()`、`Store.Core()`、`Certificate.PublicKeyPKey()`、`CSR.PublicKeyPKey()`；`SetPublicKey`/`Sign`/`Verify`/`CreateCertificate`/`NewCertificateRequest`/`CSR.SetPublicKey`/`CSR.Sign` 改用 `asym.*`；`Certificate.PublicKey()` / `CSR.PublicKey()` 改返回 `asym.PublicKey`（**PEM 往返**实现：`MarshalPublicKeyPEM` → `asym.LoadPublicKeyPEM`，因 `asym.wrapPublicKey` 非导出且不能为 `asym` 新增收 `*core.PKey` 的公开入口）；helpers.go 新增 `corePublicKey`/`corePrivateKey`/`wrapCorePublicKey`；`grep -c 'core\.PKey'` 于 `go doc -all ./x509` 归零。**必要连带**：`tls.Config.Key/SignKey/EncKey` 改为 `asym.PrivateKey`（原为 `*sm2.PrivateKey`，属 §3.11 的一部分，被本次改动逼出）+ tls 新增 `corePrivateKeyForTLS`；删除两个断言已废弃设计的测试（`key/x509_compat_test.go` 把 `key.PublicKey` 编译期耦合到 `x509.PublicKey`、`key/integration_test.go` 断言统合密钥可贯穿 x509/pkcs12，均属 E1-1/E1-11 刻意移除的耦合）。**迁移手法**：新建 `internal/testutil/legacykeys/{sm2,rsa,ecdsa,ed25519,ed448}` 测试替身（`GenerateKey` 签名对齐已删的 `crypto/*`，返回内嵌 `asym.PrivateKey` 且补 `Key()`/`CorePKey()` 的包装类型），使 x509 2600+ 行遗留测试**只改 import 路径**即编译——属**测试专用技术债**，待遗留测试体改写为直接调用 `asym.Generate*` 后删除） |
 | 19f | `refactor(jwk-pkcs12): 收敛剩余 internal 类型泄漏（E1-1/E1-7/E1-12）` | ✅ | （`jwk`：删 `Marshal(*core.PKey)` 收回为包内 `marshalCore`，`MarshalKey` 由 `key.CoreKey` 改收 `asym.Key`（经 keyaccess），示例改用 `MarshalKey`；`pkcs12`：`PrivateKey` 别名与 `Bundle.PrivateKey` 由 `key.CoreKey`/`*core.PKey` 改为 `asym.PrivateKey`（解析时经 keyaccess 的 PEM 往返包装）；`internal/keyaccess` 新增**反向**桥接 `WrapPublicKey`/`WrapPrivateKey`（句柄 → asym 对象，PEM 往返），并让 x509 的 `wrapCorePublicKey` 委派给它（实现只留一份）。验收：`go doc -all` 中 `core.*` 泄漏 `jwk` 1→0、`pkcs12` 7→0。**新发现 P1008（P0 安全）**：`asym.PrivateKey.Public()` 与私钥共享底层 EVP_PKEY（既有行为，旧 `crypto/rsa`、`key` 同样如此），导致 `jwk.MarshalKey(priv.Public())` **静默导出私钥 JWK**；已在 `jwk_test.go` 用断言钉住当前行为并归档，修复方案需用户裁决） |
 | 19g | `refactor(x509-certaccess): 删除公开 WrapCertificate，改经 certaccess.Wrap（DER 往返）` | ✅ | （清除 roadmap §5 E1 清单**未列出**的一处泄漏：`x509.WrapCertificate(c *core.Certificate)` 公开签名含 internal 类型。改动：`x509.WrapCertificate` 收回为包内 `wrapCertificate`（ocsp 使用），`internal/certaccess` 新增 `Wrap(c) (*x509.Certificate, error)` 用 **DER 往返**（`MarshalDER` → `x509.LoadCertificateDER`）实现；消费方 `tls/chain.go`、`pkcs12`、`pkcs7` 改经 certaccess（4 处）。**语义修正**：旧 `WrapCertificate` 是共享句柄，与 `tls.peerCertificateChain` 已声明的契约（「每个返回的证书是 owned，调用方负责 Close」）**不符**——Close 会连带释放真正的所有者；新实现产出 owned 副本，让实现与契约对齐（属 BREAKING，列入 commit 22 的 CHANGELOG 段）。验收：`go doc -all ./x509` 的**签名级**泄漏 2→1（仅剩已文档化的 `CoreCertificate()` 残余）。**顺带归档 P1009**（roadmap §3.12 称 `xml/rsa` 不改签名不成立 + api-reference §16 无符号清单，阻塞 commit 21）） |
+| 19e | `feat(x509): 公开 CRLBuilder / VerifyHostname / Store.SetTime` | ✅ | （闭合 §12.2 步 19 的剩余三个目标，也是 **P1005 订正**的落实：三者均属档位二，需新增 cgo。**native**：新增 `X509_REVOKED_new/free`、`X509_REVOKED_set_serial_int`、`set_revocation_date`、`set_reason`（`add1_ext_i2d`）、`X509_CRL_add0_revoked`、`X509_CRL_sort`、`X509_check_host`、`X509_check_ip_asc`、`X509_STORE_set_verify_time`；**实测所有权**：铜锁 8.5 的 `X509_REVOKED_set_serialNumber` / `set_revocationDate` 都是**复制**入参而非接管指针（临时 `ASN1_INTEGER` / `ASN1_TIME` 由本侧释放），与 `X509_set_serial_int` 同形。**core**：`NewCRLForIssuer` 拆出「分配 + v2 + issuer」三步，把 `NewCRL` 改为对其 + `SetThisUpdate`/`SetNextUpdate`/`SetNumber`/`Sign` 的组合（既有行为与错误串逐字保持）；新增 `AddRevokedEntry`（失败路径自行释放 `X509_REVOKED`，成功即所有权转移）、`SortRevokedEntries`、`Certificate.VerifyHostname`（IP 文本走 `X509_check_ip_asc`，否则 `X509_check_host`）、`Store.SetTime`。**公开面**：`RevocationReason` + 10 个原因码常量、`CRLBuilder`（`NewCRLBuilder` 自动取 CA **subject** 作 issuer 并补 AKID、`SetNumber`/`SetThisUpdate`/`SetNextUpdate`/`Revoke`/`Sign`/`Close`；`Sign` 后句柄转移、builder 失效；未设 thisUpdate 即签名报错，未设 Number 默认 1）、`Certificate.VerifyHostname`、`Store.SetTime`。**测试**：单元用例覆盖完整流程（Number/时间窗/两条吊销记录/AKID/`Revoke` 后失效/`RevocationCheck`/PEM+DER 往返）、5 种算法签名可验证、错误路径与 nil 安全性、`SetTime` 使已过期链在历史时刻通过（对照当前时刻报 code 10）、主机名/IP/通配符/CN 回退；`ExampleNewCRLBuilder`；CLI 双向对拍（`openssl crl -text` 读出十六进制序列号与原因长名、`-crlnumber` 得 `0x63`、`crl -verify -CAfile` 得 `verify OK`、DER 亦可解析；反向解析已由既有 `TestCLICrlParse` 覆盖）） |

@@ -3,6 +3,7 @@ package x509
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
@@ -88,6 +89,37 @@ func (s *Store) SetCRLCheckAll() error {
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (s *Store) SetFlags(flags uint64) error {
 	return s.store.SetFlags(flags)
+}
+
+// SetTime 指定该信任存储的验证时刻（对应 `openssl verify -attime`）。
+//
+// 设置后对本存储上**后续每次** ChainVerify 都生效（不限于下一次调用），可反复
+// 覆盖；典型用途是以固定历史时刻验证已过期 / 尚未生效的证书链。
+//
+// ⚠️ 安全提示：验证时刻回拨会让已过期的证书通过链验证。仅在确有必要时（离线复核
+// 历史签名、验证归档数据）使用，不要用它掩盖真实的过期状态。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// SetTime sets the verification time of the store (equivalent to
+// `openssl verify -attime`).
+//
+// Once set it affects **every subsequent** ChainVerify performed with this
+// store (not just the next call) and may be overwritten repeatedly. The
+// typical use is validating a chain as of a fixed historical instant, for
+// certificates that have expired or are not yet valid.
+//
+// ⚠️ Security note: rolling the verification time back lets an expired
+// certificate pass chain validation. Use it only when genuinely required
+// (replaying a historical signature, validating archived data) and never to
+// mask a real expiry.
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (s *Store) SetTime(t time.Time) error {
+	if s == nil || s.store == nil {
+		return fmt.Errorf("x509: nil store")
+	}
+	return s.store.SetTime(t)
 }
 
 // VerifyError 表示证书链验证失败详情。
