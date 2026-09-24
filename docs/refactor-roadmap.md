@@ -592,3 +592,4 @@ go test -race ./...         # 涉及并发/生命周期时（commit 19/20）
 | # | commit | 状态 | 备注 |
 |---|--------|------|------|
 | 01 | `docs(refactor-plan): 在 roadmap 末尾追加 §12` | ✅ | 本节 |
+| 02 | `refactor(native-binding): 参数化 OpenSSL_version 调用` | ✅ | （+41 行） |
