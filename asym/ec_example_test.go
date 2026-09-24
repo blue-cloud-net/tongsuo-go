@@ -13,7 +13,7 @@ func ExampleGenerateEC() {
 		fmt.Println("err:", err)
 		return
 	}
-	params, err := asym.ECParams(priv)
+	params, err := asym.Params(priv)
 	if err != nil {
 		fmt.Println("err:", err)
 		return
@@ -40,8 +40,8 @@ func ExampleSignECDSA() {
 	// Output: ok
 }
 
-// ExampleLoadECPrivateKeyPEM 演示 ECDSA 私钥 PEM 导出与重新加载。
-func ExampleLoadECPrivateKeyPEM() {
+// ExampleLoadPrivateKeyPEM 演示 ECDSA 私钥 PEM 导出与重新加载。
+func ExampleLoadPrivateKeyPEM() {
 	priv, _ := asym.GenerateEC(asym.CurveSecp256k1)
 
 	pem, err := priv.MarshalPrivateKeyPEM()
@@ -49,12 +49,12 @@ func ExampleLoadECPrivateKeyPEM() {
 		fmt.Println("marshal err:", err)
 		return
 	}
-	loaded, err := asym.LoadECPrivateKeyPEM(pem)
+	loaded, err := asym.LoadPrivateKeyPEM(pem)
 	if err != nil {
 		fmt.Println("load err:", err)
 		return
 	}
-	params, err := asym.ECParams(loaded)
+	params, err := asym.Params(loaded)
 	if err != nil {
 		fmt.Println("params err:", err)
 		return

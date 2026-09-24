@@ -16,9 +16,12 @@ func TestGenerateEC(t *testing.T) {
 			if priv.Algorithm() != AlgEC {
 				t.Errorf("alg = %s, want EC", priv.Algorithm())
 			}
-			params, err := ECParams(priv)
+			params, err := Params(priv)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if params.Type != string(AlgEC) {
+				t.Errorf("params.Type = %q, want EC", params.Type)
 			}
 			if params.Curve != curve {
 				t.Errorf("curve = %q, want %q", params.Curve, curve)
@@ -75,7 +78,7 @@ func TestECPEMRoundtrip(t *testing.T) {
 	if !bytes.HasPrefix(privPEM, []byte("-----BEGIN PRIVATE KEY-----")) {
 		t.Fatalf("私钥 PEM 头异常：%q", privPEM[:32])
 	}
-	loaded, err := LoadECPrivateKeyPEM(privPEM)
+	loaded, err := LoadPrivateKeyPEM(privPEM)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +102,7 @@ func TestECPEMRoundtrip(t *testing.T) {
 	if !bytes.HasPrefix(pubPEM, []byte("-----BEGIN PUBLIC KEY-----")) {
 		t.Fatalf("公钥 PEM 头异常：%q", pubPEM[:32])
 	}
-	loadedPub, err := LoadECPublicKeyPEM(pubPEM)
+	loadedPub, err := LoadPublicKeyPEM(pubPEM)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,14 +121,14 @@ func TestECEncryptedPEM(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	enc, err := MarshalECPrivateKeyEncryptedPEM(priv, "password")
+	enc, err := MarshalEncryptedPrivateKeyPEM(priv, "password")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.HasPrefix(enc, []byte("-----BEGIN ENCRYPTED PRIVATE KEY-----")) {
 		t.Fatalf("加密 PEM 头异常：%q", enc[:32])
 	}
-	loaded, err := LoadECPrivateKeyPEMEncrypted(enc, "password")
+	loaded, err := LoadEncryptedPrivateKeyPEM(enc, "password")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,16 +142,16 @@ func TestECEncryptedPEM(t *testing.T) {
 		t.Fatalf("用原公钥验签失败：%v", err)
 	}
 
-	if _, err := LoadECPrivateKeyPEMEncrypted(enc, "wrong"); err == nil {
+	if _, err := LoadEncryptedPrivateKeyPEM(enc, "wrong"); err == nil {
 		t.Error("错误口令应报错")
 	}
 
 	// 指定 cipher 导出
-	enc2, err := MarshalECPrivateKeyEncryptedPEMWithCipher(priv, "aes-128-cbc", "pw")
+	enc2, err := MarshalEncryptedPrivateKeyPEMWithCipher(priv, "aes-128-cbc", "pw")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadECPrivateKeyPEMEncrypted(enc2, "pw"); err != nil {
+	if _, err := LoadEncryptedPrivateKeyPEM(enc2, "pw"); err != nil {
 		t.Fatalf("aes-128-cbc 加密 PEM 加载失败：%v", err)
 	}
 }
@@ -230,7 +233,7 @@ func TestECPublicParams(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 共享句柄视图：X / Y / Curve 可用（D 是否为空不在此断言）
-	shared, err := ECPublicParams(priv.Public())
+	shared, err := Params(priv.Public())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,11 +249,11 @@ func TestECPublicParams(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pub, err := LoadECPublicKeyPEM(pubPEM)
+	pub, err := LoadPublicKeyPEM(pubPEM)
 	if err != nil {
 		t.Fatal(err)
 	}
-	params, err := ECPublicParams(pub)
+	params, err := Params(pub)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,14 +278,14 @@ func TestECMatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	match, err := ECMatch(a, b.corePKey())
+	match, err := Match(a, b.Public())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if match {
 		t.Error("不同密钥不应匹配")
 	}
-	match, err = ECMatch(a, a.Public().corePKey())
+	match, err = Match(a, a.Public())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,52 +294,20 @@ func TestECMatch(t *testing.T) {
 	}
 }
 
-// TestECLoadTypeMismatch 验证非 EC PEM 被拒绝。
-func TestECLoadTypeMismatch(t *testing.T) {
-	// SM2 PEM
-	sm2Priv, err := GenerateSM2()
-	if err != nil {
-		t.Fatal(err)
-	}
-	sm2PEM, err := sm2Priv.MarshalPrivateKeyPEM()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadECPrivateKeyPEM(sm2PEM); err == nil {
-		t.Error("SM2 私钥 PEM 应被 EC 加载器拒绝")
-	}
-	if _, err := LoadECPublicKeyPEM(sm2PEM); err == nil {
-		t.Error("SM2 私钥 PEM 应被 EC 公钥加载器拒绝")
-	}
-
-	// RSA PEM
-	rsaPriv, err := GenerateRSA(2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rsaPEM, err := rsaPriv.MarshalPrivateKeyPEM()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadECPrivateKeyPEM(rsaPEM); err == nil {
-		t.Error("RSA 私钥 PEM 应被 EC 加载器拒绝")
-	}
-}
-
 // TestECLoadInvalidPEM 验证非法 PEM 返回错误。
 func TestECLoadInvalidPEM(t *testing.T) {
-	if _, err := LoadECPrivateKeyPEM([]byte("not a pem")); err == nil {
+	if _, err := LoadPrivateKeyPEM([]byte("not a pem")); err == nil {
 		t.Error("非法私钥 PEM 应报错")
 	}
-	if _, err := LoadECPublicKeyPEM([]byte("not a pem")); err == nil {
+	if _, err := LoadPublicKeyPEM([]byte("not a pem")); err == nil {
 		t.Error("非法公钥 PEM 应报错")
 	}
-	if _, err := LoadECPrivateKeyPEMEncrypted([]byte("not a pem"), "pw"); err == nil {
+	if _, err := LoadEncryptedPrivateKeyPEM([]byte("not a pem"), "pw"); err == nil {
 		t.Error("非法加密 PEM 应报错")
 	}
 }
 
-// TestECTypeGuards 验证非 EC 密钥传入 EC 函数时报错。
+// TestECTypeGuards 验证非 EC 密钥传入 ECDSA 签名函数时报错。
 func TestECTypeGuards(t *testing.T) {
 	sm2Priv, err := GenerateSM2()
 	if err != nil {
@@ -348,25 +319,13 @@ func TestECTypeGuards(t *testing.T) {
 	if err := VerifyECDSA(sm2Priv.Public(), []byte("x"), []byte{1}); err == nil {
 		t.Error("SM2 公钥调用 VerifyECDSA 应报错")
 	}
-	if _, err := ECParams(sm2Priv); err == nil {
-		t.Error("SM2 密钥调用 ECParams 应报错")
-	}
-	if _, err := ECPublicParams(sm2Priv.Public()); err == nil {
-		t.Error("SM2 公钥调用 ECPublicParams 应报错")
-	}
-	if _, err := ECMatch(sm2Priv, nil); err == nil {
-		t.Error("SM2 密钥调用 ECMatch 应报错")
-	}
 
 	rsaPriv, err := GenerateRSA(2048)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := MarshalECPrivateKeyEncryptedPEM(rsaPriv, "pw"); err == nil {
-		t.Error("RSA 密钥调用 EC 加密导出应报错")
-	}
-	if _, err := MarshalECPrivateKeyEncryptedPEMWithCipher(rsaPriv, "aes-128-cbc", "pw"); err == nil {
-		t.Error("RSA 密钥调用 EC 加密导出（指定 cipher）应报错")
+	if _, err := SignECDSA(rsaPriv, []byte("x")); err == nil {
+		t.Error("RSA 密钥调用 SignECDSA 应报错")
 	}
 
 	// nil 守卫
@@ -375,20 +334,5 @@ func TestECTypeGuards(t *testing.T) {
 	}
 	if err := VerifyECDSA(nil, nil, nil); err == nil {
 		t.Error("VerifyECDSA(nil) 应报错")
-	}
-	if _, err := ECParams(nil); err == nil {
-		t.Error("ECParams(nil) 应报错")
-	}
-	if _, err := ECPublicParams(nil); err == nil {
-		t.Error("ECPublicParams(nil) 应报错")
-	}
-	if _, err := ECMatch(nil, nil); err == nil {
-		t.Error("ECMatch(nil) 应报错")
-	}
-	if _, err := MarshalECPrivateKeyEncryptedPEM(nil, "pw"); err == nil {
-		t.Error("MarshalECPrivateKeyEncryptedPEM(nil) 应报错")
-	}
-	if _, err := MarshalECPrivateKeyEncryptedPEMWithCipher(nil, "aes-128-cbc", "pw"); err == nil {
-		t.Error("MarshalECPrivateKeyEncryptedPEMWithCipher(nil) 应报错")
 	}
 }

@@ -150,93 +150,6 @@ func RawPublicKey(pub PublicKey) ([]byte, error) {
 	return pub.corePKey().RawPublicKey()
 }
 
-// LoadEd25519PrivateKeyPEM 从 PEM（PKCS#8）加载 Ed25519 私钥。
-// 算法标识非 Ed25519 时返回错误。
-//
-// LoadEd25519PrivateKeyPEM loads an Ed25519 private key from a PKCS#8 PEM
-// block. Returns an error when the embedded algorithm is not Ed25519.
-func LoadEd25519PrivateKeyPEM(pem []byte) (PrivateKey, error) {
-	k, err := core.LoadPrivateKeyPEM(pem)
-	if err != nil {
-		return nil, err
-	}
-	if !isEd25519Key(k) {
-		alg := k.Algorithm()
-		k.Close()
-		return nil, fmt.Errorf("asym: ed25519: PEM private key is not Ed25519 (got %s)", alg)
-	}
-	return &ed25519PrivateKey{key: k}, nil
-}
-
-// LoadEd25519PrivateKeyPEMEncrypted 从加密 PEM（"BEGIN ENCRYPTED PRIVATE KEY"）加载 Ed25519 私钥。
-// 口令错误或算法非 Ed25519 时返回错误。
-//
-// LoadEd25519PrivateKeyPEMEncrypted loads an Ed25519 private key from an
-// encrypted PEM block (AES-256-CBC + PBKDF2).
-func LoadEd25519PrivateKeyPEMEncrypted(pem []byte, pass string) (PrivateKey, error) {
-	k, err := core.LoadPrivateKeyPEMEncrypted(pem, pass)
-	if err != nil {
-		return nil, err
-	}
-	if !isEd25519Key(k) {
-		alg := k.Algorithm()
-		k.Close()
-		return nil, fmt.Errorf("asym: ed25519: encrypted PEM private key is not Ed25519 (got %s)", alg)
-	}
-	return &ed25519PrivateKey{key: k}, nil
-}
-
-// LoadEd25519PublicKeyPEM 从 PEM（SubjectPublicKeyInfo）加载 Ed25519 公钥。
-// 算法非 Ed25519 时返回错误。
-//
-// LoadEd25519PublicKeyPEM loads an Ed25519 public key from a SPKI PEM block.
-func LoadEd25519PublicKeyPEM(pem []byte) (PublicKey, error) {
-	k, err := core.LoadPublicKeyPEM(pem)
-	if err != nil {
-		return nil, err
-	}
-	if !isEd25519Key(k) {
-		alg := k.Algorithm()
-		k.Close()
-		return nil, fmt.Errorf("asym: ed25519: PEM public key is not Ed25519 (got %s)", alg)
-	}
-	return &ed25519PublicKey{key: k}, nil
-}
-
-// MarshalEd25519PrivateKeyEncryptedPEM 用口令加密导出 Ed25519 私钥（AES-256-CBC + PBKDF2）。
-//
-// MarshalEd25519PrivateKeyEncryptedPEM encodes an Ed25519 private key as an
-// encrypted PEM block (AES-256-CBC + PBKDF2).
-func MarshalEd25519PrivateKeyEncryptedPEM(priv PrivateKey, pass string) ([]byte, error) {
-	if priv == nil {
-		return nil, fmt.Errorf("asym: ed25519: nil private key")
-	}
-	k, ok := priv.(*ed25519PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("asym: ed25519: EncryptedPEM requires an Ed25519 key, got %s", priv.Algorithm())
-	}
-	return k.key.MarshalEncryptedPEM(pass)
-}
-
-// MarshalEd25519PrivateKeyEncryptedPEMWithCipher 用指定 cipher 加密导出 Ed25519 私钥。
-// cipher 取 OpenSSL 通用名（如 "aes-128-cbc"、"aes-256-cbc"、"des-ede3-cbc"）；
-// cipher == "" 与 MarshalEd25519PrivateKeyEncryptedPEM 等价。
-func MarshalEd25519PrivateKeyEncryptedPEMWithCipher(priv PrivateKey, cipher, pass string) ([]byte, error) {
-	if priv == nil {
-		return nil, fmt.Errorf("asym: ed25519: nil private key")
-	}
-	k, ok := priv.(*ed25519PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("asym: ed25519: EncryptedPEMWithCipher requires an Ed25519 key, got %s", priv.Algorithm())
-	}
-	return k.key.MarshalEncryptedPEMWithCipher(cipher, pass)
-}
-
-// isEd25519Key 报告 *core.PKey 的底层算法是否为 Ed25519。
-func isEd25519Key(k *core.PKey) bool {
-	return k != nil && k.Algorithm() == "ED25519"
-}
-
 // SignEd25519 使用 Ed25519 对 msg 签名，返回 64 字节签名。
 // Ed25519 采用 RFC 8032 的「纯签名」语义：msg 原样参与签名，内部不做任何
 // 预哈希；调用方也**不得**预先哈希 msg，否则将破坏与其它实现的互通。
@@ -271,21 +184,4 @@ func VerifyEd25519(pub PublicKey, msg, sig []byte) error {
 		return fmt.Errorf("asym: ed25519: VerifyEd25519 requires an Ed25519 key, got %s", pub.Algorithm())
 	}
 	return pub.corePKey().VerifyMessage(msg, sig)
-}
-
-// Ed25519Match 判断 priv 的公钥分量是否与 other 相等；nil-safe。
-//
-// Ed25519Match reports whether the public component of priv equals other's.
-func Ed25519Match(priv PrivateKey, other *core.PKey) (bool, error) {
-	if priv == nil {
-		return false, fmt.Errorf("asym: ed25519: nil private key")
-	}
-	if priv.Algorithm() != AlgEd25519 {
-		return false, fmt.Errorf("asym: ed25519: Ed25519Match requires an Ed25519 key, got %s", priv.Algorithm())
-	}
-	k := priv.corePKey()
-	if k == nil {
-		return false, nil
-	}
-	return k.PublicEqual(other), nil
 }

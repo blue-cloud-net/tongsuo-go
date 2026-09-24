@@ -67,81 +67,9 @@ func MarshalRSAPrivateKeyPKCS1PEM(priv PrivateKey) ([]byte, error) {
 	return k.key.MarshalPrivateKeyPKCS1PEM()
 }
 
-// MarshalRSAPrivateKeyEncryptedPEM 用口令加密导出 RSA 私钥（AES-256-CBC + PBKDF2）。
-//
-// MarshalRSAPrivateKeyEncryptedPEM encodes an RSA private key as an
-// encrypted PEM block (AES-256-CBC + PBKDF2) using the given passphrase.
-func MarshalRSAPrivateKeyEncryptedPEM(priv PrivateKey, pass string) ([]byte, error) {
-	if priv == nil {
-		return nil, fmt.Errorf("asym: rsa: nil private key")
-	}
-	k, ok := priv.(*rsaPrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("asym: rsa: EncryptedPEM requires an RSA key, got %s", priv.Algorithm())
-	}
-	return k.key.MarshalEncryptedPEM(pass)
-}
-
-// MarshalRSAPrivateKeyEncryptedPEMWithCipher 用指定 cipher 加密导出 RSA 私钥。
-// cipher 取 OpenSSL 通用名（如 "aes-128-cbc"、"aes-256-cbc"、"des-ede3-cbc"）；
-// cipher == "" 与 MarshalRSAPrivateKeyEncryptedPEM 等价。
-func MarshalRSAPrivateKeyEncryptedPEMWithCipher(priv PrivateKey, cipher, pass string) ([]byte, error) {
-	if priv == nil {
-		return nil, fmt.Errorf("asym: rsa: nil private key")
-	}
-	k, ok := priv.(*rsaPrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("asym: rsa: EncryptedPEMWithCipher requires an RSA key, got %s", priv.Algorithm())
-	}
-	return k.key.MarshalEncryptedPEMWithCipher(cipher, pass)
-}
-
 // MarshalPublicKeyPEM 实现 PublicKey 接口。
 func (k *rsaPublicKey) MarshalPublicKeyPEM() ([]byte, error) {
 	return k.key.MarshalPublicKeyPEM()
-}
-
-// RSAParams 返回 RSA 私钥参数。
-//
-// RSAParams returns the RSA parameters of the private key.
-func RSAParams(priv PrivateKey) (*core.KeyParams, error) {
-	if priv == nil {
-		return nil, fmt.Errorf("asym: rsa: nil private key")
-	}
-	k, ok := priv.(*rsaPrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("asym: rsa: Params requires an RSA key, got %s", priv.Algorithm())
-	}
-	return k.key.Params(), nil
-}
-
-// RSAPublicParams 返回 RSA 公钥参数。
-func RSAPublicParams(pub PublicKey) (*core.KeyParams, error) {
-	if pub == nil {
-		return nil, fmt.Errorf("asym: rsa: nil public key")
-	}
-	k, ok := pub.(*rsaPublicKey)
-	if !ok {
-		return nil, fmt.Errorf("asym: rsa: Params requires an RSA key, got %s", pub.Algorithm())
-	}
-	return k.key.Params(), nil
-}
-
-// RSAMatch 判断本私钥公钥分量是否与 other 一致；nil-safe。
-//
-// RSAMatch reports whether the public component of priv equals other's.
-func RSAMatch(priv PrivateKey, other *core.PKey) (bool, error) {
-	if priv == nil {
-		return false, fmt.Errorf("asym: rsa: nil private key")
-	}
-	k, ok := priv.(*rsaPrivateKey)
-	if !ok {
-		return false, fmt.Errorf("asym: rsa: Match requires an RSA key, got %s", priv.Algorithm())
-	}
-	if k.key == nil {
-		return false, nil
-	}
-	return k.key.PublicEqual(other), nil
 }
 
 // GenerateRSA 生成 bits 位 RSA 密钥对。bits 须 >= 1024。
@@ -157,86 +85,6 @@ func GenerateRSA(bits int) (PrivateKey, error) {
 		return nil, err
 	}
 	return &rsaPrivateKey{key: k}, nil
-}
-
-// LoadPrivateKeyPEM 从 PEM 加载 RSA 私钥（PKCS#8 或 PKCS#1）。
-// 解析非加密 PEM 块：PKCS#8（"-----BEGIN PRIVATE KEY-----"）优先，
-// 失败后再尝试 PKCS#1（"-----BEGIN RSA PRIVATE KEY-----"）。
-// 加载后会校验算法确为 RSA。
-//
-// LoadPrivateKeyPEM parses an unencrypted PEM block carrying either a
-// PKCS#8 or a legacy PKCS#1 RSA private key. PKCS#8 is tried first;
-// on PKCS#8 failure PKCS#1 is attempted. The underlying algorithm is
-// verified to be RSA.
-func LoadPrivateKeyPEM(pem []byte) (PrivateKey, error) {
-	k, err := core.LoadPrivateKeyPEM(pem)
-	if err == nil {
-		if !isRSAKey(k) {
-			alg := k.Algorithm()
-			k.Close()
-			return nil, fmt.Errorf("asym: rsa: PEM private key is not RSA (got %s)", alg)
-		}
-		return &rsaPrivateKey{key: k}, nil
-	}
-	k2, err2 := core.LoadPrivateKeyPKCS1PEM(pem)
-	if err2 != nil {
-		return nil, fmt.Errorf("asym: rsa: LoadPrivateKeyPEM: pkcs8: %v; pkcs1: %v", err, err2)
-	}
-	if !isRSAKey(k2) {
-		alg := k2.Algorithm()
-		k2.Close()
-		return nil, fmt.Errorf("asym: rsa: PEM private key is not RSA (got %s)", alg)
-	}
-	return &rsaPrivateKey{key: k2}, nil
-}
-
-// LoadEncryptedPrivateKeyPEM 从加密 PEM（"BEGIN ENCRYPTED PRIVATE KEY"）加载 RSA 私钥。
-// pass 为口令；口令错误或算法非 RSA 时返回错误。
-//
-// LoadEncryptedPrivateKeyPEM parses an encrypted PEM block (AES-256-CBC +
-// PBKDF2) using the given passphrase.
-func LoadEncryptedPrivateKeyPEM(pem []byte, pass string) (PrivateKey, error) {
-	k, err := core.LoadPrivateKeyPEMEncrypted(pem, pass)
-	if err != nil {
-		return nil, err
-	}
-	if !isRSAKey(k) {
-		alg := k.Algorithm()
-		k.Close()
-		return nil, fmt.Errorf("asym: rsa: encrypted PEM private key is not RSA (got %s)", alg)
-	}
-	return &rsaPrivateKey{key: k}, nil
-}
-
-// LoadPublicKeyPEM 从 PEM（SubjectPublicKeyInfo）加载 RSA 公钥。
-// 算法非 RSA 时返回错误。
-//
-// LoadPublicKeyPEM parses a SPKI PEM block ("-----BEGIN PUBLIC KEY-----")
-// carrying an RSA public key.
-func LoadPublicKeyPEM(pem []byte) (PublicKey, error) {
-	k, err := core.LoadPublicKeyPEM(pem)
-	if err != nil {
-		return nil, err
-	}
-	if !isRSAKey(k) {
-		alg := k.Algorithm()
-		k.Close()
-		return nil, fmt.Errorf("asym: rsa: PEM public key is not RSA (got %s)", alg)
-	}
-	return &rsaPublicKey{key: k}, nil
-}
-
-// ChangePassword 读取旧口令加密的 PEM 并导出为新口令加密。
-//
-// ChangePassword decrypts an encrypted private-key PEM with oldPass and
-// returns a freshly encrypted PEM under newPass.
-func ChangePassword(pemBytes []byte, oldPass, newPass string) ([]byte, error) {
-	return core.ChangePrivateKeyPassword(pemBytes, oldPass, newPass)
-}
-
-// isRSAKey 报告 *core.PKey 的底层算法是否为 RSA。
-func isRSAKey(k *core.PKey) bool {
-	return k != nil && k.Algorithm() == "RSA"
 }
 
 // digestForRSAHash 按名称解析 RSA 签名摘要；空串默认 SHA-256。

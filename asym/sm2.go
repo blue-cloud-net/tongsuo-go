@@ -70,31 +70,6 @@ func GenerateSM2() (PrivateKey, error) {
 	return &sm2PrivateKey{key: k}, nil
 }
 
-// LoadSM2PrivateKeyPEM 从 PKCS#8 PEM 加载 SM2 私钥。
-// 块头形如 "-----BEGIN PRIVATE KEY-----"。
-//
-// LoadSM2PrivateKeyPEM loads an SM2 private key from a PKCS#8 PEM block
-// ("-----BEGIN PRIVATE KEY-----").
-func LoadSM2PrivateKeyPEM(pem []byte) (PrivateKey, error) {
-	k, err := core.LoadPrivateKeyPEM(pem)
-	if err != nil {
-		return nil, err
-	}
-	return &sm2PrivateKey{key: k}, nil
-}
-
-// LoadSM2PublicKeyPEM 从 SubjectPublicKeyInfo PEM 加载 SM2 公钥。
-//
-// LoadSM2PublicKeyPEM loads an SM2 public key from a SPKI PEM block
-// ("-----BEGIN PUBLIC KEY-----").
-func LoadSM2PublicKeyPEM(pem []byte) (PublicKey, error) {
-	k, err := core.LoadPublicKeyPEM(pem)
-	if err != nil {
-		return nil, err
-	}
-	return &sm2PublicKey{key: k}, nil
-}
-
 // Sign 使用 SM2withSM3 对 data 签名，返回 ASN.1 DER 签名。
 // id 传 nil 时回退到 DefaultSM2ID。
 //

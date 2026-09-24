@@ -2,7 +2,6 @@ package asym
 
 import (
 	"bytes"
-	"errors"
 	"testing"
 )
 
@@ -49,7 +48,7 @@ func TestRSAPEMRoundtrip(t *testing.T) {
 		t.Fatal("PKCS#8 roundtrip mismatch")
 	}
 
-	// PKCS#1 私钥
+	// PKCS#1 私钥（传统格式；由算法无关加载器统一读入）
 	pkcs1, err := MarshalRSAPrivateKeyPKCS1PEM(priv)
 	if err != nil {
 		t.Fatal(err)
@@ -57,8 +56,19 @@ func TestRSAPEMRoundtrip(t *testing.T) {
 	if !bytes.HasPrefix(pkcs1, []byte("-----BEGIN RSA PRIVATE KEY-----")) {
 		t.Fatalf("unexpected PKCS#1 header: %q", pkcs1[:32])
 	}
-	if _, err := LoadPrivateKeyPEM(pkcs1); err != nil {
+	fromPKCS1, err := LoadPrivateKeyPEM(pkcs1)
+	if err != nil {
 		t.Fatalf("PKCS#1 load: %v", err)
+	}
+	if fromPKCS1.Algorithm() != AlgRSA {
+		t.Fatalf("PKCS#1 加载后 alg = %s, want RSA", fromPKCS1.Algorithm())
+	}
+	rePKCS8, err := fromPKCS1.MarshalPrivateKeyPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(rePKCS8, privPEM) {
+		t.Fatal("PKCS#1 → PKCS#8 往返不一致")
 	}
 
 	// 公钥
@@ -211,7 +221,7 @@ func TestRSAEncryptedPEM(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	enc, err := MarshalRSAPrivateKeyEncryptedPEM(priv, "password")
+	enc, err := MarshalEncryptedPrivateKeyPEM(priv, "password")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,12 +259,15 @@ func TestRSAParams(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := RSAParams(priv)
+	p, err := Params(priv)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if p == nil {
 		t.Fatal("Params is nil")
+	}
+	if p.Type != string(AlgRSA) {
+		t.Errorf("params.Type = %q, want RSA", p.Type)
 	}
 	if p.N == nil || p.E == nil {
 		t.Error("N or E missing")
@@ -262,8 +275,7 @@ func TestRSAParams(t *testing.T) {
 	if p.D == nil || p.P == nil || p.Q == nil {
 		t.Error("D/P/Q missing for private key")
 	}
-	pub := priv.Public()
-	pp, err := RSAPublicParams(pub)
+	pp, err := Params(priv.Public())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,39 +284,23 @@ func TestRSAParams(t *testing.T) {
 	}
 }
 
-// TestRSAMatch 验证私钥与另一私钥公钥分量相等性判断。
+// TestRSAMatch 验证私钥与公钥分量相等性判断。
 func TestRSAMatch(t *testing.T) {
 	a, _ := GenerateRSA(2048)
 	b, _ := GenerateRSA(2048)
-	match, err := RSAMatch(a, b.corePKey())
+	match, err := Match(a, b.Public())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if match {
 		t.Fatal("different keys should not match")
 	}
-	match, err = RSAMatch(a, a.Public().corePKey())
+	match, err = Match(a, a.Public())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !match {
 		t.Fatal("self match should be true")
-	}
-}
-
-// TestRSALoadTypeMismatch 验证非 RSA PEM 拒绝。
-func TestRSALoadTypeMismatch(t *testing.T) {
-	// SM2 私钥 PEM 喂给 RSA Load
-	sm2Priv, err := GenerateSM2()
-	if err != nil {
-		t.Fatal(err)
-	}
-	pem, err := sm2Priv.MarshalPrivateKeyPEM()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadPrivateKeyPEM(pem); err == nil {
-		t.Fatal("LoadPrivateKeyPEM should reject non-RSA PEM")
 	}
 }
 
@@ -327,7 +323,7 @@ func TestRSATypeGuards(t *testing.T) {
 	if _, err := EncryptPKCS1v15(sm2.Public(), []byte("x")); err == nil {
 		t.Fatal("EncryptPKCS1v15 with SM2 should fail")
 	}
-	if errors.Is(nil, ErrUnknownAlgorithm) {
-		t.Fatal("sentinel leak")
+	if _, err := MarshalRSAPrivateKeyPKCS1PEM(sm2); err == nil {
+		t.Fatal("MarshalRSAPrivateKeyPKCS1PEM with SM2 should fail")
 	}
 }

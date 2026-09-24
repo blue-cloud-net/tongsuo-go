@@ -23,12 +23,12 @@ const (
 )
 
 // sm2CurveNames 是 ECDSA 入口明确拒绝的曲线名。
-// SM2 曲线在 asym 中有专属入口（GenerateSM2 / LoadSM2PrivateKeyPEM 等），
+// SM2 曲线在 asym 中有专属入口（GenerateSM2 等），
 // 其密钥算法标识为 AlgSM2；此处拒绝以免同一个 SM2 密钥存在两种表示。
 //
 // sm2CurveNames lists the curve names the ECDSA entry points reject.
 // The SM2 curve has dedicated entry points in asym (GenerateSM2,
-// LoadSM2PrivateKeyPEM, ...) and its keys report AlgSM2; rejecting it
+// LoadSM2PrivateKeyPEM-style loaders) and its keys report AlgSM2;
 // here avoids two representations of the same SM2 key.
 var sm2CurveNames = map[string]bool{
 	"sm2":       true,
@@ -98,94 +98,6 @@ func GenerateEC(curve string) (PrivateKey, error) {
 	return &ecPrivateKey{key: k}, nil
 }
 
-// LoadECPrivateKeyPEM 从 PEM（PKCS#8）加载 ECDSA 私钥。
-// 算法标识非 EC（如 SM2 / RSA / Ed25519）时返回错误。
-//
-// LoadECPrivateKeyPEM loads an ECDSA private key from a PKCS#8 PEM block.
-// Returns an error when the embedded algorithm is not EC (for example
-// SM2 / RSA / Ed25519).
-func LoadECPrivateKeyPEM(pem []byte) (PrivateKey, error) {
-	k, err := core.LoadPrivateKeyPEM(pem)
-	if err != nil {
-		return nil, err
-	}
-	if !isECKey(k) {
-		alg := k.Algorithm()
-		k.Close()
-		return nil, fmt.Errorf("asym: ec: PEM private key is not EC (got %s)", alg)
-	}
-	return &ecPrivateKey{key: k}, nil
-}
-
-// LoadECPrivateKeyPEMEncrypted 从加密 PEM（"BEGIN ENCRYPTED PRIVATE KEY"）加载 ECDSA 私钥。
-// 口令错误或算法非 EC 时返回错误。
-//
-// LoadECPrivateKeyPEMEncrypted loads an ECDSA private key from an
-// encrypted PEM block (AES-256-CBC + PBKDF2).
-func LoadECPrivateKeyPEMEncrypted(pem []byte, pass string) (PrivateKey, error) {
-	k, err := core.LoadPrivateKeyPEMEncrypted(pem, pass)
-	if err != nil {
-		return nil, err
-	}
-	if !isECKey(k) {
-		alg := k.Algorithm()
-		k.Close()
-		return nil, fmt.Errorf("asym: ec: encrypted PEM private key is not EC (got %s)", alg)
-	}
-	return &ecPrivateKey{key: k}, nil
-}
-
-// LoadECPublicKeyPEM 从 PEM（SubjectPublicKeyInfo）加载 ECDSA 公钥。
-// 算法非 EC 时返回错误。
-//
-// LoadECPublicKeyPEM loads an ECDSA public key from a SPKI PEM block.
-func LoadECPublicKeyPEM(pem []byte) (PublicKey, error) {
-	k, err := core.LoadPublicKeyPEM(pem)
-	if err != nil {
-		return nil, err
-	}
-	if !isECKey(k) {
-		alg := k.Algorithm()
-		k.Close()
-		return nil, fmt.Errorf("asym: ec: PEM public key is not EC (got %s)", alg)
-	}
-	return &ecPublicKey{key: k}, nil
-}
-
-// MarshalECPrivateKeyEncryptedPEM 用口令加密导出 ECDSA 私钥（AES-256-CBC + PBKDF2）。
-//
-// MarshalECPrivateKeyEncryptedPEM encodes an ECDSA private key as an
-// encrypted PEM block (AES-256-CBC + PBKDF2) using the given passphrase.
-func MarshalECPrivateKeyEncryptedPEM(priv PrivateKey, pass string) ([]byte, error) {
-	if priv == nil {
-		return nil, fmt.Errorf("asym: ec: nil private key")
-	}
-	k, ok := priv.(*ecPrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("asym: ec: EncryptedPEM requires an EC key, got %s", priv.Algorithm())
-	}
-	return k.key.MarshalEncryptedPEM(pass)
-}
-
-// MarshalECPrivateKeyEncryptedPEMWithCipher 用指定 cipher 加密导出 ECDSA 私钥。
-// cipher 取 OpenSSL 通用名（如 "aes-128-cbc"、"aes-256-cbc"、"des-ede3-cbc"）；
-// cipher == "" 与 MarshalECPrivateKeyEncryptedPEM 等价。
-func MarshalECPrivateKeyEncryptedPEMWithCipher(priv PrivateKey, cipher, pass string) ([]byte, error) {
-	if priv == nil {
-		return nil, fmt.Errorf("asym: ec: nil private key")
-	}
-	k, ok := priv.(*ecPrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("asym: ec: EncryptedPEMWithCipher requires an EC key, got %s", priv.Algorithm())
-	}
-	return k.key.MarshalEncryptedPEMWithCipher(cipher, pass)
-}
-
-// isECKey 报告 *core.PKey 的底层算法是否为 EC（不含 SM2）。
-func isECKey(k *core.PKey) bool {
-	return k != nil && k.Algorithm() == "EC"
-}
-
 // SignECDSA 使用 ECDSA-SHA256 对 data 签名，返回 ASN.1 DER 签名。
 // 摘要固定为 SHA-256（由铜锁 EVP 管线决定）；需要其它摘要的调用方须自行
 // 预哈希后再调用。
@@ -218,49 +130,4 @@ func VerifyECDSA(pub PublicKey, data, sig []byte) error {
 		return fmt.Errorf("asym: ec: VerifyECDSA requires an EC key, got %s", pub.Algorithm())
 	}
 	return pub.corePKey().VerifyDigest(data, sig, core.SHA256())
-}
-
-// ECParams 返回 ECDSA 私钥参数（Curve / X / Y 公钥点 / D 私钥标量）。
-//
-// ECParams returns the EC parameters of the private key: the Curve
-// identifier, the (X, Y) public affine coordinates and the D scalar.
-func ECParams(priv PrivateKey) (*core.KeyParams, error) {
-	if priv == nil {
-		return nil, fmt.Errorf("asym: ec: nil private key")
-	}
-	if priv.Algorithm() != AlgEC {
-		return nil, fmt.Errorf("asym: ec: ECParams requires an EC key, got %s", priv.Algorithm())
-	}
-	return priv.corePKey().Params(), nil
-}
-
-// ECPublicParams 返回 ECDSA 公钥参数（Curve / X / Y）。
-//
-// ECPublicParams returns the EC parameters of the public key: the Curve
-// identifier and the (X, Y) public affine coordinates.
-func ECPublicParams(pub PublicKey) (*core.KeyParams, error) {
-	if pub == nil {
-		return nil, fmt.Errorf("asym: ec: nil public key")
-	}
-	if pub.Algorithm() != AlgEC {
-		return nil, fmt.Errorf("asym: ec: ECPublicParams requires an EC key, got %s", pub.Algorithm())
-	}
-	return pub.corePKey().Params(), nil
-}
-
-// ECMatch 判断 priv 的公钥分量是否与 other 相等；nil-safe。
-//
-// ECMatch reports whether the public component of priv equals other's.
-func ECMatch(priv PrivateKey, other *core.PKey) (bool, error) {
-	if priv == nil {
-		return false, fmt.Errorf("asym: ec: nil private key")
-	}
-	if priv.Algorithm() != AlgEC {
-		return false, fmt.Errorf("asym: ec: ECMatch requires an EC key, got %s", priv.Algorithm())
-	}
-	k := priv.corePKey()
-	if k == nil {
-		return false, nil
-	}
-	return k.PublicEqual(other), nil
 }

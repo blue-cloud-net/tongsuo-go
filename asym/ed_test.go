@@ -42,12 +42,11 @@ func TestGenerateEd25519(t *testing.T) {
 // TestEd25519RFC8032Vectors 用 RFC 8032 §7.1 标准向量验证公钥派生与签名。
 func TestEd25519RFC8032Vectors(t *testing.T) {
 	cases := []struct {
-		name   string
-		seed   string
-		pub    string
-		msg    string
-		sig    string
-		msgLen int
+		name string
+		seed string
+		pub  string
+		msg  string
+		sig  string
 	}{
 		{
 			name: "TEST1-empty-message",
@@ -162,7 +161,7 @@ func TestEd25519PEMRoundtrip(t *testing.T) {
 	if !bytes.HasPrefix(privPEM, []byte("-----BEGIN PRIVATE KEY-----")) {
 		t.Fatalf("私钥 PEM 头异常：%q", privPEM[:32])
 	}
-	loaded, err := LoadEd25519PrivateKeyPEM(privPEM)
+	loaded, err := LoadPrivateKeyPEM(privPEM)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +180,7 @@ func TestEd25519PEMRoundtrip(t *testing.T) {
 	if !bytes.HasPrefix(pubPEM, []byte("-----BEGIN PUBLIC KEY-----")) {
 		t.Fatalf("公钥 PEM 头异常：%q", pubPEM[:32])
 	}
-	loadedPub, err := LoadEd25519PublicKeyPEM(pubPEM)
+	loadedPub, err := LoadPublicKeyPEM(pubPEM)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,14 +203,14 @@ func TestEd25519EncryptedPEM(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	enc, err := MarshalEd25519PrivateKeyEncryptedPEM(priv, "password")
+	enc, err := MarshalEncryptedPrivateKeyPEM(priv, "password")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.HasPrefix(enc, []byte("-----BEGIN ENCRYPTED PRIVATE KEY-----")) {
 		t.Fatalf("加密 PEM 头异常：%q", enc[:32])
 	}
-	loaded, err := LoadEd25519PrivateKeyPEMEncrypted(enc, "password")
+	loaded, err := LoadEncryptedPrivateKeyPEM(enc, "password")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,15 +222,15 @@ func TestEd25519EncryptedPEM(t *testing.T) {
 	if err := VerifyEd25519(priv.Public(), msg, sig); err != nil {
 		t.Fatalf("用原公钥验签失败：%v", err)
 	}
-	if _, err := LoadEd25519PrivateKeyPEMEncrypted(enc, "wrong"); err == nil {
+	if _, err := LoadEncryptedPrivateKeyPEM(enc, "wrong"); err == nil {
 		t.Error("错误口令应报错")
 	}
 
-	enc2, err := MarshalEd25519PrivateKeyEncryptedPEMWithCipher(priv, "aes-128-cbc", "pw")
+	enc2, err := MarshalEncryptedPrivateKeyPEMWithCipher(priv, "aes-128-cbc", "pw")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadEd25519PrivateKeyPEMEncrypted(enc2, "pw"); err != nil {
+	if _, err := LoadEncryptedPrivateKeyPEM(enc2, "pw"); err != nil {
 		t.Fatalf("aes-128-cbc 加密 PEM 加载失败：%v", err)
 	}
 }
@@ -336,14 +335,14 @@ func TestEd25519Match(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	match, err := Ed25519Match(a, b.corePKey())
+	match, err := Match(a, b.Public())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if match {
 		t.Error("不同密钥不应匹配")
 	}
-	match, err = Ed25519Match(a, a.Public().corePKey())
+	match, err = Match(a, a.Public())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,45 +351,15 @@ func TestEd25519Match(t *testing.T) {
 	}
 }
 
-// TestEd25519LoadTypeMismatch 验证非 Ed25519 PEM 被拒绝。
-func TestEd25519LoadTypeMismatch(t *testing.T) {
-	rsaPriv, err := GenerateRSA(2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rsaPEM, err := rsaPriv.MarshalPrivateKeyPEM()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadEd25519PrivateKeyPEM(rsaPEM); err == nil {
-		t.Error("RSA 私钥 PEM 应被 Ed25519 加载器拒绝")
-	}
-	if _, err := LoadEd25519PublicKeyPEM(rsaPEM); err == nil {
-		t.Error("RSA 私钥 PEM 应被 Ed25519 公钥加载器拒绝")
-	}
-
-	ecPriv, err := GenerateEC(CurveP256)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ecPEM, err := ecPriv.MarshalPrivateKeyPEM()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadEd25519PrivateKeyPEM(ecPEM); err == nil {
-		t.Error("EC 私钥 PEM 应被 Ed25519 加载器拒绝")
-	}
-}
-
 // TestEd25519LoadInvalidPEM 验证非法 PEM 返回错误。
 func TestEd25519LoadInvalidPEM(t *testing.T) {
-	if _, err := LoadEd25519PrivateKeyPEM([]byte("not a pem")); err == nil {
+	if _, err := LoadPrivateKeyPEM([]byte("not a pem")); err == nil {
 		t.Error("非法私钥 PEM 应报错")
 	}
-	if _, err := LoadEd25519PublicKeyPEM([]byte("not a pem")); err == nil {
+	if _, err := LoadPublicKeyPEM([]byte("not a pem")); err == nil {
 		t.Error("非法公钥 PEM 应报错")
 	}
-	if _, err := LoadEd25519PrivateKeyPEMEncrypted([]byte("not a pem"), "pw"); err == nil {
+	if _, err := LoadEncryptedPrivateKeyPEM([]byte("not a pem"), "pw"); err == nil {
 		t.Error("非法加密 PEM 应报错")
 	}
 }
@@ -407,15 +376,6 @@ func TestEd25519TypeGuards(t *testing.T) {
 	if err := VerifyEd25519(ecPriv.Public(), []byte("x"), []byte{1}); err == nil {
 		t.Error("EC 公钥调用 VerifyEd25519 应报错")
 	}
-	if _, err := Ed25519Match(ecPriv, nil); err == nil {
-		t.Error("EC 密钥调用 Ed25519Match 应报错")
-	}
-	if _, err := MarshalEd25519PrivateKeyEncryptedPEM(ecPriv, "pw"); err == nil {
-		t.Error("EC 密钥调用 Ed25519 加密导出应报错")
-	}
-	if _, err := MarshalEd25519PrivateKeyEncryptedPEMWithCipher(ecPriv, "aes-128-cbc", "pw"); err == nil {
-		t.Error("EC 密钥调用 Ed25519 加密导出（指定 cipher）应报错")
-	}
 
 	if _, err := SignEd25519(nil, nil); err == nil {
 		t.Error("SignEd25519(nil) 应报错")
@@ -428,14 +388,5 @@ func TestEd25519TypeGuards(t *testing.T) {
 	}
 	if _, err := RawPublicKey(nil); err == nil {
 		t.Error("RawPublicKey(nil) 应报错")
-	}
-	if _, err := Ed25519Match(nil, nil); err == nil {
-		t.Error("Ed25519Match(nil) 应报错")
-	}
-	if _, err := MarshalEd25519PrivateKeyEncryptedPEM(nil, "pw"); err == nil {
-		t.Error("MarshalEd25519PrivateKeyEncryptedPEM(nil) 应报错")
-	}
-	if _, err := MarshalEd25519PrivateKeyEncryptedPEMWithCipher(nil, "aes-128-cbc", "pw"); err == nil {
-		t.Error("MarshalEd25519PrivateKeyEncryptedPEMWithCipher(nil) 应报错")
 	}
 }
