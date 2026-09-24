@@ -25,11 +25,6 @@ func NewStore() *Store {
 	return &Store{store: s}
 }
 
-// Core 返回底层核心信任存储（供内部跨包使用，如 ocsp）。
-//
-// Core returns the underlying *core.Store for cross-package use (for example by the ocsp package).
-func (s *Store) Core() *core.Store { return s.store }
-
 // AddCert 向存储添加信任证书（如 Root CA 证书）。
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。

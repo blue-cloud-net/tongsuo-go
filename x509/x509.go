@@ -6,9 +6,13 @@
 // 自 v0.3.0 起本包同时收口 PKI 家族：原独立 `ocsp` 包已并入（`ocsp.go`），
 // 证书 / CSR / CRL / OCSP / 链验证均在同一包内（roadmap §3.10）。
 //
+// 密钥参数一律使用 `asym.PublicKey` / `asym.PrivateKey`：原 `x509.PublicKey` /
+// `x509.PrivateKey` 窄接口已删除，公开签名中不再出现 `internal/` 类型
+// （roadmap §5 E1-8/E1-9/E1-10/E1-11）。
+//
 // 内部按职责拆分为多个文件：
 //
-//	x509.go    — Certificate 主类型、Extension 类型、PublicKey/PrivateKey 接口、
+//	x509.go    — Certificate 主类型、Extension 类型、
 //	             CreateCertificate / CreateSelfSigned、Set* 构建方法、Add* 扩展方法、签/验
 //	name.go    — Name / NameEntry / NewName
 //	csr.go     — CertificateRequest（含 New/NewEmptyCertificateRequest 与所有 CSR 方法）
@@ -29,11 +33,16 @@
 // CSR, CRL, OCSP and chain verification all live in one package
 // (roadmap §3.10).
 //
+// Key parameters are always asym.PublicKey / asym.PrivateKey: the former narrow
+// x509.PublicKey / x509.PrivateKey interfaces were removed, so no public
+// signature mentions an internal/ type any more (roadmap §5, E1-8 / E1-9 / E1-10
+// / E1-11).
+//
 // The package is split across files by responsibility:
 //
-//	x509.go    — Certificate main type, Extension type, PublicKey /
-//	             PrivateKey interfaces, CreateCertificate / CreateSelfSigned,
-//	             Set* builders, Add* extension methods, sign / verify
+//	x509.go    — Certificate main type, Extension type,
+//	             CreateCertificate / CreateSelfSigned, Set* builders,
+//	             Add* extension methods, sign / verify
 //	name.go    — Name / NameEntry / NewName
 //	csr.go     — CertificateRequest (New / NewEmptyCertificateRequest and
 //	             all CSR methods)
@@ -51,9 +60,7 @@ import (
 	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/asym"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
-	"github.com/blue-cloud-net/tongsuo-go/internal/keyaccess"
 )
 
 // Certificate 表示一张 X.509 证书。
@@ -102,20 +109,6 @@ func (c *Certificate) Close() error {
 	c.closed = true
 	return c.cert.Close()
 }
-
-// Core 返回底层核心证书对象（供内部跨包使用，如 tls）。
-//
-// 已弃用：roadmap §5 E1-8 要求删除该入口（公开签名不得出现 internal/ 类型）。
-// 消费方（tls / pkcs/pkcs7 / pkcs/pkcs12）请改用 internal/certaccess 的
-// Certificate() 取句柄，本方法将在后续改动中移除。
-//
-// Core returns the underlying core.Certificate for cross-package use (for example by the tls package).
-//
-// Deprecated: roadmap §5 E1-8 removes this entry point because no public
-// signature may mention an internal/ type. Consumers (tls, pkcs/pkcs7,
-// pkcs/pkcs12) should obtain the handle through internal/certaccess instead;
-// this method will be removed in a follow-up change.
-func (c *Certificate) Core() *core.Certificate { return c.cert }
 
 // CoreCertificate 返回底层核心证书对象（供 internal/certaccess 桥接使用）。
 //
@@ -510,18 +503,20 @@ func (c *Certificate) SetValidity(notBefore, notAfter time.Time) error {
 	return c.cert.SetValidity(notBefore, notAfter)
 }
 
-// SetPublicKey 设置证书公钥（支持 SM2 / RSA / ECDSA）。
+// SetPublicKey 设置证书公钥（支持 SM2 / RSA / ECDSA 等 asym 包提供的算法）。
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
-// SetPublicKey sets the certificate public key (SM2 / RSA / ECDSA are supported).
+// SetPublicKey sets the certificate public key (any algorithm the asym package
+// provides, such as SM2 / RSA / ECDSA).
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
-func (c *Certificate) SetPublicKey(pub PublicKey) error {
-	if pub == nil {
-		return fmt.Errorf("x509: nil public key")
+func (c *Certificate) SetPublicKey(pub asym.PublicKey) error {
+	k, err := corePublicKey(pub)
+	if err != nil {
+		return err
 	}
-	return c.cert.SetPublicKey(pub.Key())
+	return c.cert.SetPublicKey(k)
 }
 
 // AddBasicConstraints 添加 BasicConstraints 扩展（必须在 Sign 之前调用）。
@@ -536,44 +531,48 @@ func (c *Certificate) AddBasicConstraints(isCA bool) error {
 }
 
 // Sign 使用签名私钥对证书签名（须先配置好版本/序列号/主题/签发者/有效期/公钥/扩展）。
-// signer 支持 SM2 / RSA / ECDSA，摘要按密钥类型自动选择。
+// signer 支持 asym 包提供的算法，摘要按密钥类型自动选择。
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
-// Sign signs the certificate with signer after version, serial, subject, issuer, validity, public key, and extensions have been configured. signer supports SM2 / RSA / ECDSA, and the digest is chosen automatically based on the key type.
+// Sign signs the certificate with signer after version, serial, subject, issuer, validity, public key, and extensions have been configured. signer may be any algorithm the asym package provides, and the digest is chosen automatically based on the key type.
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
-func (c *Certificate) Sign(signer PrivateKey) error {
-	if signer == nil {
-		return fmt.Errorf("x509: nil signer")
+func (c *Certificate) Sign(signer asym.PrivateKey) error {
+	k, err := corePrivateKey(signer)
+	if err != nil {
+		return err
 	}
-	return c.cert.Sign(signer.Key(), nil)
+	return c.cert.Sign(k, nil)
 }
 
-// PublicKey 返回证书公钥（SM2 包装；RSA/ECDSA 证书请用 PublicKeyPKey）。
+// PublicKey 返回证书公钥，以 asym.PublicKey 呈现（适用任意算法）。
+//
+// 返回的对象**拥有**自己的底层句柄，使用完毕应调用 asym.Close 释放；不要依赖
+// finalizer（AGENTS.md §4.4）。本方法取代了原 `PublicKey()`（返回 SM2 包装）与
+// `PublicKeyPKey()`（返回底层原生句柄）两个入口（roadmap §5 E1-9），公开签名中不再
+// 出现 internal/ 类型。
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
-// PublicKey returns the certificate public key wrapped as *sm2.PublicKey. For RSA or ECDSA certificates use PublicKeyPKey.
+// PublicKey returns the certificate public key as an asym.PublicKey, which works
+// for any algorithm.
+//
+// The returned value **owns** its underlying handle and should be released with
+// asym.Close rather than relying on finalizers (AGENTS.md §4.4). It replaces the
+// former `PublicKey()` (which returned an SM2 wrapper) and `PublicKeyPKey()`
+// (which returned the raw native handle) (roadmap §5, E1-9), and no public
+// signature mentions an internal/ type any more.
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
-func (c *Certificate) PublicKey() (*sm2.PublicKey, error) {
+func (c *Certificate) PublicKey() (asym.PublicKey, error) {
 	k, err := c.cert.PublicKey()
 	if err != nil {
 		return nil, err
 	}
-	return sm2.PublicKeyFromPKey(k), nil
-}
-
-// PublicKeyPKey 返回证书公钥的底层核心密钥（适用任意算法，调用方负责 Close）。
-//
-// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
-//
-// PublicKeyPKey returns the certificate public key as the underlying *core.PKey, which works for any algorithm. The caller is responsible for closing it.
-//
-// On failure, it returns an error wrapping an OpError describing the operation.
-func (c *Certificate) PublicKeyPKey() (*core.PKey, error) {
-	return c.cert.PublicKey()
+	// 句柄用完即弃：wrapCorePublicKey 走 PEM 往返，asym 侧得到的是独立对象。
+	defer func() { _ = k.Close() }()
+	return wrapCorePublicKey(k)
 }
 
 // Verify 使用签发者公钥验证证书签名。
@@ -583,11 +582,12 @@ func (c *Certificate) PublicKeyPKey() (*core.PKey, error) {
 // Verify checks the certificate signature against signerPub.
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
-func (c *Certificate) Verify(signerPub PublicKey) error {
-	if signerPub == nil {
-		return fmt.Errorf("x509: nil public key")
+func (c *Certificate) Verify(signerPub asym.PublicKey) error {
+	k, err := corePublicKey(signerPub)
+	if err != nil {
+		return err
 	}
-	return c.cert.Verify(signerPub.Key())
+	return c.cert.Verify(k)
 }
 
 // SelfSigned 报告证书是否为自签（主题与签发者名字完全一致，且签名可被自身公钥验证通过）。
@@ -630,33 +630,36 @@ func (c *Certificate) SignatureAlgorithm() string { return c.cert.SignatureAlgor
 // SignatureAlgorithmOID returns the signature algorithm OID as a dotted string (for example "1.2.156.10197.1.501" for SM2-with-SM3 or "1.2.840.113549.1.1.11" for sha256WithRSAEncryption), or "" when the OID cannot be read.
 func (c *Certificate) SignatureAlgorithmOID() string { return c.cert.SignatureAlgorithmOID() }
 
-// PublicKey 表示可作为证书公钥的非对称密钥（SM2 / RSA / ECDSA）。
+// 窄接口 `PublicKey` / `PrivateKey` 已删除（roadmap §5 E1-11）：公开签名一律直接
+// 用 `asym.PublicKey` / `asym.PrivateKey`，跨包取底层句柄经 `internal/keyaccess`
+// （见 helpers.go 的 corePublicKey / corePrivateKey / wrapCorePublicKey）。
 //
-// PublicKey is the interface satisfied by asymmetric keys usable as a certificate public key (SM2 / RSA / ECDSA).
-type PublicKey interface {
-	Key() *core.PKey
-}
-
-// PrivateKey 表示可作为证书签名密钥的非对称密钥（SM2 / RSA / ECDSA）。
-//
-// PrivateKey is the interface satisfied by asymmetric keys usable as a certificate signing key (SM2 / RSA / ECDSA).
-type PrivateKey interface {
-	Key() *core.PKey
-}
+// The narrow PublicKey / PrivateKey interfaces were removed (roadmap §5, E1-11):
+// public signatures now use asym.PublicKey / asym.PrivateKey directly, and
+// cross-package handle access goes through internal/keyaccess (see corePublicKey /
+// corePrivateKey / wrapCorePublicKey in helpers.go).
 
 // CreateCertificate 创建一张由 signer 签发的证书。
 // subject 为主题；issuer 为签发者（自签时与 subject 相同）；serial 为序列号；
 // notBefore/notAfter 为有效期；pub 为证书公钥；signer 为签发私钥
-// （自签时与 pub 对应，CA 签发时为 CA 私钥）。pub/signer 支持 SM2 / RSA / ECDSA。
+// （自签时与 pub 对应，CA 签发时为 CA 私钥）。pub/signer 为 asym 包提供的密钥。
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
-// CreateCertificate builds and signs a certificate with signer. subject is the subject name; issuer is the issuer name (use the same value as subject for a self-signed certificate); serial is the certificate serial number; notBefore and notAfter define the validity window; pub is the certificate public key; signer is the issuer private key (paired with pub for self-signed certificates, or the CA key when issued by a CA). pub and signer support SM2 / RSA / ECDSA.
+// CreateCertificate builds and signs a certificate with signer. subject is the subject name; issuer is the issuer name (use the same value as subject for a self-signed certificate); serial is the certificate serial number; notBefore and notAfter define the validity window; pub is the certificate public key; signer is the issuer private key (paired with pub for self-signed certificates, or the CA key when issued by a CA). pub and signer are asym package keys.
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func CreateCertificate(subject, issuer *Name, serial int64, notBefore, notAfter time.Time,
-	pub PublicKey, signer PrivateKey) (ret *Certificate, retErr error) {
-	if subject == nil || issuer == nil || pub == nil || signer == nil {
+	pub asym.PublicKey, signer asym.PrivateKey) (ret *Certificate, retErr error) {
+	pubKey, err := corePublicKey(pub)
+	if err != nil {
+		return nil, err
+	}
+	signKey, err := corePrivateKey(signer)
+	if err != nil {
+		return nil, err
+	}
+	if subject == nil || issuer == nil {
 		return nil, fmt.Errorf("x509: nil parameter")
 	}
 	cert, err := core.NewCertificate()
@@ -684,14 +687,23 @@ func CreateCertificate(subject, issuer *Name, serial int64, notBefore, notAfter 
 	if err := cert.SetValidity(notBefore, notAfter); err != nil {
 		return nil, err
 	}
-	if err := cert.SetPublicKey(pub.Key()); err != nil {
+	if err := cert.SetPublicKey(pubKey); err != nil {
 		return nil, err
 	}
-	if err := cert.Sign(signer.Key(), nil); err != nil { // nil → 按密钥类型自动选摘要
+	if err := cert.Sign(signKey, nil); err != nil { // nil → 按密钥类型自动选摘要
 		return nil, err
 	}
 	return &Certificate{cert: cert}, nil
 }
+
+// PublicKey/PrivateKey 窄接口已删除（roadmap §5 E1-11）：公开签名一律直接用
+// asym.PublicKey / asym.PrivateKey，跨包取底层句柄经 internal/keyaccess（见
+// helpers.go 的 corePublicKey / corePrivateKey）。
+//
+// The narrow PublicKey / PrivateKey interfaces were removed (roadmap §5, E1-11):
+// public signatures now use asym.PublicKey / asym.PrivateKey directly, and
+// cross-package handle access goes through internal/keyaccess (see corePublicKey
+// / corePrivateKey in helpers.go).
 
 // CreateSelfSigned 一步生成自签证书（等价于 `openssl req -x509`）。
 // subject 同时作为主题与签发者；serial 为序列号；notBefore/notAfter 为有效期；
@@ -730,15 +742,14 @@ func CreateSelfSigned(subject *Name, serial int64, notBefore, notAfter time.Time
 	if subject == nil || pub == nil || signer == nil {
 		return nil, fmt.Errorf("x509: nil parameter")
 	}
-	pubKey, ok := keyaccess.PKey(pub)
-	if !ok || pubKey == nil {
-		return nil, fmt.Errorf("x509: unsupported public key type %T", pub)
+	pubKey, err := corePublicKey(pub)
+	if err != nil {
+		return nil, err
 	}
-	signKey, ok := keyaccess.PKey(signer)
-	if !ok || signKey == nil {
-		return nil, fmt.Errorf("x509: unsupported signer type %T", signer)
+	signKey, err := corePrivateKey(signer)
+	if err != nil {
+		return nil, err
 	}
-
 	cert, err := core.NewCertificate()
 	if err != nil {
 		return nil, err

@@ -7,12 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/ecdsa"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/ed25519"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/ed448"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
+	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/ecdsa"
+	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/ed25519"
+	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/ed448"
+	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/rsa"
+	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/sm2"
 )
 
 // TestSelfSignedCert 验证自签证书创建、字段读取、自验签与 PEM 往返。
@@ -965,12 +966,12 @@ func TestCreateCertificateRSA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pk, err := loaded.PublicKeyPKey()
+	pk, err := loaded.PublicKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pk.Close()
-	if pk.Algorithm() != "RSA" {
+	defer func() { _ = asym.Close(pk) }()
+	if string(pk.Algorithm()) != "RSA" {
 		t.Fatalf("loaded cert pubkey algorithm = %q, want RSA", pk.Algorithm())
 	}
 	if err := loaded.Verify(priv.Public()); err != nil {
@@ -1254,46 +1255,53 @@ func TestNameHelpers(t *testing.T) {
 	}
 }
 
-// TestCSRPublicKeyPKey 验证 CSR.PublicKeyPKey 在 SM2 / RSA / ECDSA 上均工作。
-func TestCSRPublicKeyPKey(t *testing.T) {
+// TestCSRPublicKey 验证 CSR.PublicKey 在 SM2 / RSA / ECDSA 上均返回正确的
+// asym 算法标识（原 TestCSRPublicKeyPKey，随 roadmap §5 E1-9 改为 asym.PublicKey）。
+func TestCSRPublicKey(t *testing.T) {
 	// SM2
 	sm2priv, _ := sm2.GenerateKey()
 	req, _ := NewCertificateRequest(NewName().Add("CN", "sm2.example.com"),
 		sm2priv.Public(), sm2priv)
-	pk, err := req.PublicKeyPKey()
+	pk, err := req.PublicKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pk.Algorithm() != "SM2" {
-		t.Fatalf("SM2 CSR PublicKeyPKey algo = %q, want SM2", pk.Algorithm())
+	if string(pk.Algorithm()) != "SM2" {
+		t.Fatalf("SM2 CSR PublicKey algo = %q, want SM2", pk.Algorithm())
 	}
-	pk.Close()
+	if err := asym.Close(pk); err != nil {
+		t.Fatal(err)
+	}
 
 	// RSA
 	rsapriv, _ := rsa.GenerateKey(2048)
 	req, _ = NewCertificateRequest(NewName().Add("CN", "rsa.example.com"),
 		rsapriv.Public(), rsapriv)
-	pk, err = req.PublicKeyPKey()
+	pk, err = req.PublicKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pk.Algorithm() != "RSA" {
-		t.Fatalf("RSA CSR PublicKeyPKey algo = %q, want RSA", pk.Algorithm())
+	if string(pk.Algorithm()) != "RSA" {
+		t.Fatalf("RSA CSR PublicKey algo = %q, want RSA", pk.Algorithm())
 	}
-	pk.Close()
+	if err := asym.Close(pk); err != nil {
+		t.Fatal(err)
+	}
 
 	// ECDSA
 	ecpriv, _ := ecdsa.GenerateKey("prime256v1")
 	req, _ = NewCertificateRequest(NewName().Add("CN", "ec.example.com"),
 		ecpriv.Public(), ecpriv)
-	pk, err = req.PublicKeyPKey()
+	pk, err = req.PublicKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pk.Algorithm() != "EC" {
-		t.Fatalf("ECDSA CSR PublicKeyPKey algo = %q, want EC", pk.Algorithm())
+	if string(pk.Algorithm()) != "EC" {
+		t.Fatalf("ECDSA CSR PublicKey algo = %q, want EC", pk.Algorithm())
 	}
-	pk.Close()
+	if err := asym.Close(pk); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestStoreSetFlags 验证 Store.SetFlags 通用方法（传入 0 应不报错）。
@@ -1432,7 +1440,7 @@ func TestCRLAKID(t *testing.T) {
 	defer coreCRL.Close()
 
 	// 手工添加 AuthorityKeyIdentifier 扩展（keyid 取自 CA 的 SKID）
-	if err := coreCRL.AddAuthorityKeyID(caCert.Core()); err != nil {
+	if err := coreCRL.AddAuthorityKeyID(caCert.cert); err != nil {
 		t.Fatalf("AddAuthorityKeyID: %v", err)
 	}
 
@@ -1662,12 +1670,12 @@ func TestCreateCertificateEd25519(t *testing.T) {
 	if err := loaded.Verify(asX509PubKey(priv.Key())); err != nil {
 		t.Fatal("loaded Ed25519 cert verify failed")
 	}
-	pk, err := loaded.PublicKeyPKey()
+	pk, err := loaded.PublicKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pk.Close()
-	if pk.Algorithm() != "ED25519" {
+	defer func() { _ = asym.Close(pk) }()
+	if string(pk.Algorithm()) != "ED25519" {
 		t.Fatalf("loaded pubkey algorithm = %q, want ED25519", pk.Algorithm())
 	}
 }

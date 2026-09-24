@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/asym"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/sm2"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 

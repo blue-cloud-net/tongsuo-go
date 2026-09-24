@@ -20,12 +20,37 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/internal/certaccess"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
+	"github.com/blue-cloud-net/tongsuo-go/internal/keyaccess"
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
+
+// corePrivateKeyForTLS 经 internal/keyaccess 取出私钥的底层 *core.PKey 句柄。
+//
+// Config 的 Key / SignKey / EncKey 现在是 asym.PrivateKey（roadmap §3.11），
+// 而 `SSL_CTX_use_certificate` / `SSL_CTX_use_PrivateKey` 需要原生句柄。
+// 取到的句柄**只借用**（调用期间源密钥一直存活），因此无需 Dup。
+//
+// corePrivateKeyForTLS extracts the underlying *core.PKey handle of a private key
+// through internal/keyaccess.
+//
+// Config's Key / SignKey / EncKey are asym.PrivateKey now (roadmap §3.11), while
+// SSL_CTX_use_certificate / SSL_CTX_use_PrivateKey need the native handle. The
+// handle is only borrowed (the source key stays alive for the call), so no Dup is
+// required.
+func corePrivateKeyForTLS(priv asym.PrivateKey) (*core.PKey, error) {
+	if priv == nil {
+		return nil, fmt.Errorf("tls: nil private key")
+	}
+	k, ok := keyaccess.PKey(priv)
+	if !ok || k == nil {
+		return nil, fmt.Errorf("tls: unsupported private key type %T", priv)
+	}
+	return k, nil
+}
 
 // coreCertOf 经 internal/certaccess 取出证书的底层 *core.Certificate 句柄。
 //
@@ -79,14 +104,14 @@ func coreCertOf(c *x509.Certificate) (*core.Certificate, error) {
 type Config struct {
 	// Cert 与 Key 为 TLS 证书与私钥（服务端必填；客户端用作客户端证书时可选）。
 	Cert *x509.Certificate
-	Key  *sm2.PrivateKey
+	Key  asym.PrivateKey
 
 	// NTLS 启用国密双证书（须同时提供签名证书与加密证书）。
 	NTLS     bool
 	SignCert *x509.Certificate
-	SignKey  *sm2.PrivateKey
+	SignKey  asym.PrivateKey
 	EncCert  *x509.Certificate
-	EncKey   *sm2.PrivateKey
+	EncKey   asym.PrivateKey
 
 	// MinVersion / MaxVersion 为协议版本范围（0 表示不限制）。
 	MinVersion uint16
@@ -786,7 +811,12 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 				_ = ctx.Close()
 				return nil, err
 			}
-			if err := ctx.UseSignCertificate(signCore, config.SignKey.Key()); err != nil {
+			signKey, err := corePrivateKeyForTLS(config.SignKey)
+			if err != nil {
+				_ = ctx.Close()
+				return nil, err
+			}
+			if err := ctx.UseSignCertificate(signCore, signKey); err != nil {
 				_ = ctx.Close()
 				return nil, err
 			}
@@ -797,7 +827,12 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 				_ = ctx.Close()
 				return nil, err
 			}
-			if err := ctx.UseEncryptCertificate(encCore, config.EncKey.Key()); err != nil {
+			encKey, err := corePrivateKeyForTLS(config.EncKey)
+			if err != nil {
+				_ = ctx.Close()
+				return nil, err
+			}
+			if err := ctx.UseEncryptCertificate(encCore, encKey); err != nil {
 				_ = ctx.Close()
 				return nil, err
 			}
@@ -808,7 +843,12 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 			_ = ctx.Close()
 			return nil, err
 		}
-		if err := ctx.UseCertificate(certCore, config.Key.Key()); err != nil {
+		keyCore, err := corePrivateKeyForTLS(config.Key)
+		if err != nil {
+			_ = ctx.Close()
+			return nil, err
+		}
+		if err := ctx.UseCertificate(certCore, keyCore); err != nil {
 			_ = ctx.Close()
 			return nil, err
 		}

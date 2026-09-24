@@ -14,9 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/ed25519"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/internal/testutil"
+	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/ed25519"
+	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/sm2"
 )
 
 func runOpenSSLFile(t *testing.T, args ...string) []byte {
@@ -759,10 +760,8 @@ func TestCLIECCertEd25519(t *testing.T) {
 	}
 
 	// 写入公钥 PEM 供后续对拍使用；pkeyutl verify 已由 ed25519 包测试覆盖。
-	pub, err := priv.Public()
-	if err != nil {
-		t.Fatal(err)
-	}
+	// 注：asym.PrivateKey.Public() 只返回一个值（不再有 error）。
+	pub := priv.Public()
 	pubPath := filepath.Join(dir, "ed_pub.pem")
 	if err := os.WriteFile(pubPath, mustPubPEM(pub), 0o600); err != nil {
 		t.Fatal(err)
@@ -772,9 +771,13 @@ func TestCLIECCertEd25519(t *testing.T) {
 	t.Logf("openssl verify self-signed ed25519 cert output: %s", out2)
 }
 
-// mustPubPEM 把 ed25519.PublicKey 序列化到 PEM。
-func mustPubPEM(pub *ed25519.PublicKey) []byte {
-	pb, err := pub.MarshalPEM()
+// mustPubPEM 把公钥序列化到 PEM。
+//
+// 参数改为 asym.PublicKey：原 crypto/ed25519.PublicKey 包装已被 asym 取代。
+//
+// mustPubPEM serializes a public key to PEM.
+func mustPubPEM(pub asym.PublicKey) []byte {
+	pb, err := pub.MarshalPublicKeyPEM()
 	if err != nil {
 		panic(err)
 	}

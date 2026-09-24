@@ -305,10 +305,10 @@ func (c *CRL) Verify(issuer *Certificate) error {
 	if issuer == nil {
 		return fmt.Errorf("x509: nil issuer certificate")
 	}
-	pub, err := issuer.PublicKeyPKey()
+	pub, err := issuer.cert.PublicKey()
 	if err != nil {
 		return err
 	}
-	defer pub.Close()
+	defer func() { _ = pub.Close() }()
 	return c.crl.Verify(pub)
 }

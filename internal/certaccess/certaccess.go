@@ -58,24 +58,16 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
-// certHolder 是持有一个底层 *core.Certificate 句柄的对象所应满足的两种形状之一。
+// coreCertHolder 是 `x509.Certificate` 满足的形状。
 //
-// `x509.Certificate` 提供 `CoreCertificate()`；过渡期若仍有旧式
-// `Core() *core.Certificate`，同样接受，待 roadmap commit 19 删除后再收敛。
+// 过渡期曾同时接受旧式 `Core() *core.Certificate`；该入口已随 roadmap §5 E1-8
+// 删除，故形状收敛为单一。
 //
-// certHolder is one of the two structural shapes an object holding a
-// *core.Certificate may satisfy.
+// coreCertHolder is the shape satisfied by x509.Certificate.
 //
-// x509.Certificate provides CoreCertificate(); a legacy
-// Core() *core.Certificate is also accepted during the migration window and
-// will be narrowed once roadmap commit 19 removes it.
-type certHolder interface {
-	Core() *core.Certificate
-}
-
-// coreCertHolder 是 `x509.Certificate` 现行满足的形状。
-//
-// coreCertHolder is the shape currently satisfied by x509.Certificate.
+// A legacy Core() *core.Certificate used to be accepted during the migration
+// window; that accessor was removed per roadmap §5 E1-8, so the shape is now
+// narrowed to a single one.
 type coreCertHolder interface {
 	CoreCertificate() *core.Certificate
 }
@@ -99,8 +91,6 @@ func Certificate(v any) (*core.Certificate, bool) {
 		return c, true
 	case coreCertHolder:
 		return c.CoreCertificate(), true
-	case certHolder:
-		return c.Core(), true
 	}
 	return nil, false
 }

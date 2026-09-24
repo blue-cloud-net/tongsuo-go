@@ -47,7 +47,7 @@ func TestCLIInterop(t *testing.T) {
 	}
 
 	// openssl pkcs12 -export → 本库 Parse
-	keyPEM, _ := priv.MarshalPEM()
+	keyPEM, _ := priv.MarshalPrivateKeyPEM()
 	certPEM, _ := leaf.MarshalPEM()
 	keyFile := filepath.Join(dir, "key.pem")
 	certFile := filepath.Join(dir, "cert.pem")

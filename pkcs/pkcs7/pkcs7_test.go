@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
+	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/rsa"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/internal/testutil"
 )
 
@@ -171,9 +172,12 @@ func mustPEM(t *testing.T, cert interface{ MarshalPEM() ([]byte, error) }) []byt
 	return pem
 }
 
-func mustKeyPEM(t *testing.T, key interface{ MarshalPEM() ([]byte, error) }) []byte {
+// mustKeyPEM 把 asym 私钥导出为 PEM。
+//
+// mustKeyPEM serializes an asym private key to PEM.
+func mustKeyPEM(t *testing.T, key asym.PrivateKey) []byte {
 	t.Helper()
-	pem, err := key.MarshalPEM()
+	pem, err := key.MarshalPrivateKeyPEM()
 	if err != nil {
 		t.Fatal(err)
 	}
