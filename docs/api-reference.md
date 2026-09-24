@@ -443,6 +443,12 @@
 - 🆕 该方法**不得**出现在任何导出接口中（`Key` / `PrivateKey` / `PublicKey` 均不含它）—— 否则即成为公开 API
 - 契约为**结构化接口**：`internal/keyaccess` 只声明形状（`interface{ CorePKey() *core.PKey }`）并做类型断言，**无注册表、无全局状态、无 `init()` 顺序依赖**；`asym` **不需要** import `keyaccess`
 
+**生命周期**
+
+- ➕ `func Close(k Key) error` — 释放密钥持有的底层原生句柄（幂等；`k` 为 nil 或未持句柄时返回 nil）。之前本包**完全没有释放入口**，释放只能靠 finalizer 兜底，违反 AGENTS.md §4.4；缺口记录见 `docs/issues/2026-09-24/P1006`
+  - ⚠️ **别名陷阱**：`priv.Public()` 返回的公钥**共享同一底层句柄**（不做 Dup），对二者之一 `Close` 即释放该共享句柄、另一个随之失效；需要「销毁别名不影响原件」时请经 `internal/keyaccess` 取句柄后自行 `EVP_PKEY_dup`（`ecdh` 即如此），而不要依赖 `Public()`
+  - 取包级函数而非接口方法的理由：三个接口刻意保持最小，把 `Close` 做成接口方法会让「可关闭」成为公开契约并需在 14 个具体类型上各补实现；包级函数返回值只有 `error`、**不暴露句柄**，导出面最小
+
 **规划中**
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
@@ -607,8 +613,14 @@
 - ♻️ `type RevokedEntry struct { …（内部字段） }` — CRL 中的一条吊销记录
 - 🆕 `type CRLBuilder struct { …（内部字段） }` — CRL 构建器（原拟名 `crl.Builder`，加 `CRL` 前缀避免与本包其他构建器混淆）
 - 🆕 `type RevocationReason int` — 吊销原因码（对应 `crl -crl_reason`）
-- ♻️ `type Request struct { …（内部字段） }` — OCSP 请求（原 `ocsp` 包的隐式类型，本版显式命名）
 - ♻️ `type Response struct { Status int; StatusText string; ProducedAt time.Time; CertStatus int; CertStatusText string; RevocationTime time.Time; RevocationReason int; ReasonText string; ThisUpdate time.Time; NextUpdate time.Time; ResponderCerts []*Certificate }` — OCSP 响应
+
+> ℹ️ **不引入 `type Request`**（修正）：本文件早期版本在类型清单里列过
+> `type Request struct{…}`，但同节 `CreateOCSPRequest` 的签名是 `(cert, issuer
+> *Certificate, hash string) ([]byte, error)`，不返回 `*Request`；而原 `ocsp` 包也
+> 不存在所谓「隐式请求类型」（`ocsp.CreateRequest` 返回的就是 `[]byte`）。二者矛盾，
+> 已按可执行的那一条收敛：**OCSP 请求在公开层就是一段 DER 字节**，调用方直接 POST，
+> 无需句柄语义。详见 `docs/issues/2026-09-24/P1007`。
 
 **类型｜链验证**
 

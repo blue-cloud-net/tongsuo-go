@@ -26,14 +26,11 @@ func mustHex(t *testing.T, s string) []byte {
 	return b
 }
 
-// genOnCurve 在指定曲线上生成密钥对。
-// 生成统一走 asym（本包不提供生成入口），再用 LoadPrivateKey / LoadPublicKey
-// 转成 ecdh 对象。
+// genAsymOnCurve 在指定曲线上生成 asym 私钥（本包生成入口统一走 asym）。
 //
-// genOnCurve generates a key pair on the named curve. Generation goes
-// through asym (this package has no generation entry point) and the result
-// is wrapped with LoadPrivateKey / LoadPublicKey.
-func genOnCurve(t *testing.T, name string) (*ecdh.PrivateKey, *ecdh.PublicKey) {
+// genAsymOnCurve generates an asym private key on the named curve
+// (generation always goes through asym).
+func genAsymOnCurve(t *testing.T, name string) asym.PrivateKey {
 	t.Helper()
 	var (
 		ak  asym.PrivateKey
@@ -58,6 +55,19 @@ func genOnCurve(t *testing.T, name string) (*ecdh.PrivateKey, *ecdh.PublicKey) {
 	if err != nil {
 		t.Fatalf("generate on %s: %v", name, err)
 	}
+	return ak
+}
+
+// genOnCurve 在指定曲线上生成密钥对。
+// 生成统一走 asym（本包不提供生成入口），再用 LoadPrivateKey / LoadPublicKey
+// 转成 ecdh 对象。
+//
+// genOnCurve generates a key pair on the named curve. Generation goes
+// through asym (this package has no generation entry point) and the result
+// is wrapped with LoadPrivateKey / LoadPublicKey.
+func genOnCurve(t *testing.T, name string) (*ecdh.PrivateKey, *ecdh.PublicKey) {
+	t.Helper()
+	ak := genAsymOnCurve(t, name)
 	priv, err := ecdh.LoadPrivateKey(ak)
 	if err != nil {
 		t.Fatalf("LoadPrivateKey on %s: %v", name, err)
@@ -67,6 +77,65 @@ func genOnCurve(t *testing.T, name string) (*ecdh.PrivateKey, *ecdh.PublicKey) {
 		t.Fatalf("LoadPublicKey on %s: %v", name, err)
 	}
 	return priv, pub
+}
+
+// TestLifecycleIndependenceFromSourceKey 验证 ecdh 对象与源 asym 密钥的生命周期独立。
+//
+// LoadPrivateKey / LoadPublicKey 会立即 Dup 底层句柄（internal/keyaccess 契约），
+// 因此 asym 侧 Close() 之后 ecdh 侧仍应能正常协商与导出——这正是 roadmap §10 风险项
+// 要求的用例：若漏了 Dup，这里会拿到悬垂句柄。
+//
+// TestLifecycleIndependenceFromSourceKey verifies that ecdh objects are
+// lifecycle-independent from the source asym keys.
+//
+// LoadPrivateKey / LoadPublicKey immediately Dup the underlying handle per the
+// internal/keyaccess contract, so after the asym side is closed the ecdh side
+// must still derive and export correctly. This is the case roadmap §10 calls
+// for: without the Dup it would hold a dangling handle.
+func TestLifecycleIndependenceFromSourceKey(t *testing.T) {
+	for _, name := range ecdh.Curves() {
+		t.Run(name, func(t *testing.T) {
+			aliceAsym := genAsymOnCurve(t, name)
+			bobAsym := genAsymOnCurve(t, name)
+
+			// 先在本包侧取对象（内部会 Dup）
+			alice, err := ecdh.LoadPrivateKey(aliceAsym)
+			if err != nil {
+				t.Fatalf("LoadPrivateKey: %v", err)
+			}
+			bobPub, err := ecdh.LoadPublicKey(bobAsym.Public())
+			if err != nil {
+				t.Fatalf("LoadPublicKey: %v", err)
+			}
+			want, err := ecdh.SharedSecret(alice, bobPub)
+			if err != nil {
+				t.Fatalf("释放前协商失败：%v", err)
+			}
+
+			// 释放全部源 asym 对象（含 Public() 别名共享的那个句柄）
+			if err := asym.Close(aliceAsym); err != nil {
+				t.Fatalf("Close(aliceAsym): %v", err)
+			}
+			if err := asym.Close(bobAsym); err != nil {
+				t.Fatalf("Close(bobAsym): %v", err)
+			}
+
+			// ecdh 侧必须仍然可用
+			got, err := ecdh.SharedSecret(alice, bobPub)
+			if err != nil {
+				t.Fatalf("asym 侧 Close 后协商失败（Dup 遗漏？）：%v", err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Error("asym 侧 Close 后协商结果发生变化")
+			}
+			if _, err := alice.MarshalPEM(); err != nil {
+				t.Errorf("asym 侧 Close 后导出私钥 PEM 失败：%v", err)
+			}
+			if _, err := bobPub.MarshalPEM(); err != nil {
+				t.Errorf("asym 侧 Close 后导出公钥 PEM 失败：%v", err)
+			}
+		})
+	}
 }
 
 // TestCurves 验证 Curves() 返回稳定且完整的曲线名集合。
