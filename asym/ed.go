@@ -65,15 +65,15 @@ func GenerateEd25519() (PrivateKey, error) {
 }
 
 // GenerateKeyFromSeed 从原始私钥种子构造密钥对。
-// alg 支持 AlgEd25519（seed 须为 32 字节）与 AlgEd448（seed 须为 57 字节）；
-// X25519 / X448 在对应算法落地后接入同一入口。
+// alg 支持 AlgEd25519（seed 须为 32 字节）、AlgEd448（57 字节）与
+// AlgX25519（32 字节）；X448 在对应算法落地后接入同一入口。
 // 种子长度不符返回 ErrInvalidSeedLength；alg 不在支持列表返回 ErrUnsupported。
 //
 // 调用方在调用后须自行清零 seed。
 //
 // GenerateKeyFromSeed constructs a key pair from a raw private seed.
-// alg supports AlgEd25519 (seed must be 32 bytes) and AlgEd448 (seed must
-// be 57 bytes); X25519 / X448 will join the same entry point as they land.
+// alg supports AlgEd25519 (32 bytes), AlgEd448 (57 bytes) and AlgX25519
+// (32 bytes); X448 will join the same entry point as it lands.
 //
 // A wrong seed length returns ErrInvalidSeedLength and an unsupported
 // alg returns ErrUnsupported. The caller is responsible for zeroising
@@ -98,19 +98,28 @@ func GenerateKeyFromSeed(alg Algorithm, seed []byte) (PrivateKey, error) {
 			return nil, err
 		}
 		return &ed448PrivateKey{key: k}, nil
+	case AlgX25519:
+		if len(seed) != x25519KeySize {
+			return nil, fmt.Errorf("%w: x25519: got %d, want %d", ErrInvalidSeedLength, len(seed), x25519KeySize)
+		}
+		k, err := core.NewRawPrivateKey(core.PKeyAlgoX25519, seed)
+		if err != nil {
+			return nil, err
+		}
+		return &x25519PrivateKey{key: k}, nil
 	default:
 		return nil, fmt.Errorf("%w: GenerateKeyFromSeed: %s", ErrUnsupported, alg)
 	}
 }
 
 // PublicKeyFromBytes 从原始公钥字节构造公钥。
-// alg 支持 AlgEd25519（raw 须为 32 字节）与 AlgEd448（raw 须为 57 字节）；
-// X25519 / X448 在对应算法落地后接入同一入口。
+// alg 支持 AlgEd25519（raw 须为 32 字节）、AlgEd448（57 字节）与
+// AlgX25519（32 字节）；X448 在对应算法落地后接入同一入口。
 // 字节长度不符返回 ErrInvalidPublicKeyLength；alg 不在支持列表返回 ErrUnsupported。
 //
 // PublicKeyFromBytes constructs a public key from raw public key bytes.
-// alg supports AlgEd25519 (raw must be 32 bytes) and AlgEd448 (raw must be
-// 57 bytes); X25519 / X448 will join the same entry point as they land.
+// alg supports AlgEd25519 (32 bytes), AlgEd448 (57 bytes) and AlgX25519
+// (32 bytes); X448 will join the same entry point as they land.
 //
 // A wrong length returns ErrInvalidPublicKeyLength and an unsupported alg
 // returns ErrUnsupported.
@@ -134,6 +143,15 @@ func PublicKeyFromBytes(alg Algorithm, raw []byte) (PublicKey, error) {
 			return nil, err
 		}
 		return &ed448PublicKey{key: k}, nil
+	case AlgX25519:
+		if len(raw) != x25519KeySize {
+			return nil, fmt.Errorf("%w: x25519: got %d, want %d", ErrInvalidPublicKeyLength, len(raw), x25519KeySize)
+		}
+		k, err := core.NewRawPublicKey(core.PKeyAlgoX25519, raw)
+		if err != nil {
+			return nil, err
+		}
+		return &x25519PublicKey{key: k}, nil
 	default:
 		return nil, fmt.Errorf("%w: PublicKeyFromBytes: %s", ErrUnsupported, alg)
 	}
