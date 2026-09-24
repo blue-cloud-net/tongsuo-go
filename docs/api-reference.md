@@ -125,7 +125,7 @@
 - ♻️ `SHA1Size = 20`、`SHA1BlockSize = 64` — 原 `crypto/sha1.Size` / `sha1.BlockSize`
 - 🆕 `SHA224Size = 28`、`SHA224BlockSize = 64`
 - ♻️ `SHA256Size = 32`、`SHA256BlockSize = 64` — 原 `crypto/sha256.Size` / `sha256.BlockSize`
-- 🆕 `SHA384Size = 48`、`SHA384BlockSize = 64`
+- 🆕 `SHA384Size = 48`、`SHA384BlockSize = 128`（SHA-512 家族）
 - ♻️ `SHA512Size = 64`、`SHA512BlockSize = 128` — 原 `crypto/sha512.Size` / `sha512.BlockSize`
 
 **函数｜按算法名分发（新增）**
