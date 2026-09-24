@@ -3,7 +3,7 @@ package rsa_test
 import (
 	"fmt"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	rsaxml "github.com/blue-cloud-net/tongsuo-go/xml/rsa"
 )
 
@@ -19,7 +19,7 @@ import (
 // when interoperating with .NET systems that need to transport an RSA
 // private key across language boundaries.
 func ExampleMarshalPrivate() {
-	priv, _ := rsa.GenerateKey(2048)
+	priv, _ := asym.GenerateRSA(2048)
 	xmlBytes, err := rsaxml.MarshalPrivate(priv)
 	if err != nil {
 		panic(err)
@@ -36,13 +36,17 @@ func ExampleMarshalPrivate() {
 // the full set of fields; missing D, P or Q (or any other required
 // field) results in an error.
 func ExampleUnmarshalPrivate() {
-	priv, _ := rsa.GenerateKey(2048)
+	priv, _ := asym.GenerateRSA(2048)
 	xmlBytes, _ := rsaxml.MarshalPrivate(priv)
 
 	loaded, err := rsaxml.UnmarshalPrivate(xmlBytes)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(loaded.Public().Params().N.BitLen())
+	p, err := asym.Params(loaded)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(p.N.BitLen())
 	// Output: 2048
 }

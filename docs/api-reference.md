@@ -39,7 +39,7 @@
 | 13 | `jwk` | 🚧 | JWK（RFC 7517）↔ PEM / JSON | `jwk` |
 | 14 | `pkcs/pkcs7` | ✅ | PKCS#7 证书袋构建与提取 | `pkcs/pkcs7` |
 | 15 | `pkcs/pkcs12` | 🚧 | PKCS#12 打包、解析、改密 | `pkcs/pkcs12` |
-| 16 | `xml/rsa` | ✅ | .NET `RSAKeyValue` XML 互转 | `xml/rsa` |
+| 16 | `xml/rsa` | 🚧 | .NET `RSAKeyValue` XML 互转（签名改收 `asym.*`） | `xml/rsa` |
 
 ---
 
@@ -927,15 +927,21 @@ cgo-free 的只读 DER 解析与转储；`Parse` 对深度设上限（`maxDERDep
 
 ## 16. `xml/rsa` — .NET `RSAKeyValue` XML
 
-✅ **已有**（本版不改签名）｜旧包：`xml/rsa`
+🚧 **当前版本实施中**（签名变更）｜旧包：`xml/rsa`
 
-与 .NET `RSAKeyValue` 格式双向互转，输入输出均使用 **Go 标准库 `crypto/rsa`** 类型（与本库 `asym` 解耦）。
+与 .NET `RSAKeyValue` 格式双向互转。**密钥参数由 `*crypto/rsa.PrivateKey` /
+`*crypto/rsa.PublicKey` 改为 `asym.PrivateKey` / `asym.PublicKey`**——原签名直接
+引用本库自己的 `crypto/rsa`（commit 21 删除），不换不可能；实现内部仍以 PKCS#1 /
+SPKI PEM 往返 + `asym.Load*KeyPEM` 落地，**零新增 API、零新增 cgo**（详见
+`docs/issues/2026-09-24/P1009`）。
 
 **函数**
 
-- `func MarshalPrivate(priv *trsa.PrivateKey) ([]byte, error)` — Go 标准库 RSA 私钥 → XML
-- `func MarshalPublic(pub *trsa.PublicKey) ([]byte, error)` — Go 标准库 RSA 公钥 → XML
-- `func UnmarshalPrivate(data []byte) (*trsa.PrivateKey, error)` — XML → Go 标准库 RSA 私钥
-- `func UnmarshalPublic(data []byte) (*trsa.PublicKey, error)` — XML → Go 标准库 RSA 公钥
+- ♻️ `func MarshalPrivate(priv asym.PrivateKey) ([]byte, error)` — RSA 私钥 → XML（`Modulus` / `Exponent` / `D` / `P` / `Q` / `DP` / `DQ` / `InverseQ`）
+- ♻️ `func MarshalPublic(pub asym.PublicKey) ([]byte, error)` — RSA 公钥 → XML（仅 `Modulus` / `Exponent`）
+- ♻️ `func UnmarshalPrivate(data []byte) (asym.PrivateKey, error)` — XML → RSA 私钥（缺 `Modulus` / `Exponent` / `D` 报错）
+- ♻️ `func UnmarshalPublic(data []byte) (asym.PublicKey, error)` — XML → RSA 公钥（缺 `Modulus` / `Exponent` 报错）
 
-> 与 `asym` 的桥接：需 XML 与铜锁密钥互转时，调用方自行经 PEM 往返（`asym` 的 PKCS#1 PEM ↔ 标准库 `x509.ParsePKCS1PrivateKey`）。
+> 参数读取经 `asym.Params`（`N/E/D/P/Q/Dmp1/Dmq1/Iqmp`），与 `asym` 不再「解耦」；
+> 非 RSA 密钥（`Params().Type != "RSA"`）返回错误。包名仍为 `rsa`，与**标准库**
+> `crypto/rsa` 同名，调用方同时使用时需给其中之一取别名。
