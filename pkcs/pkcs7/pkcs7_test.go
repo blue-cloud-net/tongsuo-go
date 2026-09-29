@@ -5,14 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/rsa"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
 // makeCert 构建一张自签证书（RSA）。
 func makeCert(t *testing.T, cn string, serial int64) *x509.Certificate {
 	t.Helper()
-	priv, err := rsa.GenerateKey(2048)
+	priv, err := asym.GenerateRSA(2048)
 	if err != nil {
 		t.Fatal(err)
 	}

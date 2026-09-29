@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
-	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/sm2"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
@@ -99,7 +99,7 @@ func serveHandshakeAsync(t *testing.T, ln net.Listener, srv *Server) {
 // testServerConfig 生成 SM2 自签服务器证书配置。
 func testServerConfig(t *testing.T) *Config {
 	t.Helper()
-	priv, err := sm2.GenerateKey()
+	priv, err := asym.GenerateSM2()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,16 +136,16 @@ func testServerConfig(t *testing.T) *Config {
 // testNTLSConfig 生成 NTLS 双证书配置（签名证书 + 加密证书）。
 func testNTLSConfig(t *testing.T) *Config {
 	t.Helper()
-	signPriv, err := sm2.GenerateKey()
+	signPriv, err := asym.GenerateSM2()
 	if err != nil {
 		t.Fatal(err)
 	}
-	encPriv, err := sm2.GenerateKey()
+	encPriv, err := asym.GenerateSM2()
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	build := func(cn string, priv *sm2.PrivateKey) *x509.Certificate {
+	build := func(cn string, priv asym.PrivateKey) *x509.Certificate {
 		subject := x509.NewName().Add("CN", cn)
 		cert := x509.NewCertificate()
 		if err := cert.SetVersion(2); err != nil {
@@ -1269,7 +1269,7 @@ func TestNTLSVersionConstant(t *testing.T) {
 
 // TestCertificateCloseIdempotent 验证公开 x509.Certificate 的 Close 幂等。
 func TestCertificateCloseIdempotent(t *testing.T) {
-	priv, err := sm2.GenerateKey()
+	priv, err := asym.GenerateSM2()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1298,9 +1298,9 @@ func TestCertificateCloseIdempotent(t *testing.T) {
 // 中间+叶两证，故意以「中间在前、叶在后」的顺序传入，验证 rebuildChain
 // 输出 [叶, 中间]。
 func TestRebuildChainReshuffled(t *testing.T) {
-	caPriv, _ := sm2.GenerateKey()
-	midPriv, _ := sm2.GenerateKey()
-	leafPriv, _ := sm2.GenerateKey()
+	caPriv, _ := asym.GenerateSM2()
+	midPriv, _ := asym.GenerateSM2()
+	leafPriv, _ := asym.GenerateSM2()
 	now := time.Now()
 	caSubj := x509.NewName().Add("CN", "test-root-ca")
 	ca, err := x509.CreateCertificate(caSubj, caSubj, 1,

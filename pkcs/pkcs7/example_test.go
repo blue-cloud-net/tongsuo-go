@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/pkcs/pkcs7"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
@@ -19,8 +19,8 @@ import (
 // the .p7b extension; equivalent to `openssl crl2pkcs7 -nocrl`.
 func ExampleBuild() {
 	// 生成两张自签证书模拟证书链
-	caPriv, _ := sm2.GenerateKey()
-	leafPriv, _ := sm2.GenerateKey()
+	caPriv, _ := asym.GenerateSM2()
+	leafPriv, _ := asym.GenerateSM2()
 
 	now := time.Now()
 	caName := x509.NewName().Add("CN", "Test CA")
@@ -53,7 +53,7 @@ func ExampleMarshalPEM() {
 // PKCS#7 data.
 func ExampleExtract() {
 	// 用 Build 构造 DER 后转 PEM，再用 Extract 提取——形成完整往返
-	caPriv, _ := sm2.GenerateKey()
+	caPriv, _ := asym.GenerateSM2()
 	caName := x509.NewName().Add("CN", "Test CA")
 	caCert, _ := x509.CreateCertificate(caName, caName, 1,
 		time.Now(), time.Now().Add(time.Hour), caPriv.Public(), caPriv)

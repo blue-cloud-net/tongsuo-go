@@ -6,16 +6,15 @@ import (
 
 	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/internal/keyaccess"
-	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/rsa"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
 // buildTestCert 构建 CA 签发叶证书（RSA）。
-func buildTestCert(t *testing.T) (leaf *x509.Certificate, leafPriv *rsa.PrivateKey, caCert *x509.Certificate) {
+func buildTestCert(t *testing.T) (leaf *x509.Certificate, leafPriv asym.PrivateKey, caCert *x509.Certificate) {
 	t.Helper()
 	now := time.Now()
 
-	caPriv, err := rsa.GenerateKey(2048)
+	caPriv, err := asym.GenerateRSA(2048)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +45,7 @@ func buildTestCert(t *testing.T) (leaf *x509.Certificate, leafPriv *rsa.PrivateK
 		t.Fatal(err)
 	}
 
-	leafPriv, err = rsa.GenerateKey(2048)
+	leafPriv, err = asym.GenerateRSA(2048)
 	if err != nil {
 		t.Fatal(err)
 	}

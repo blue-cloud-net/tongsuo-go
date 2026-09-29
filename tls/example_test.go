@@ -5,7 +5,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/tls"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
@@ -23,8 +23,8 @@ import (
 // deployments should keep the signing and encryption keys distinct.
 func ExampleDial() {
 	// 生成密钥
-	signPriv, _ := sm2.GenerateKey()
-	encPriv, _ := sm2.GenerateKey()
+	signPriv, _ := asym.GenerateSM2()
+	encPriv, _ := asym.GenerateSM2()
 
 	// 自签证书（实际应用：CA 签发）
 	now := time.Now()

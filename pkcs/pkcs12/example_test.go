@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/pkcs/pkcs12"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
@@ -23,7 +23,7 @@ import (
 // an integrity MAC); all confidentiality relies on the password, so choose
 // a high-entropy password and store it securely.
 func ExamplePack() {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := x509.NewName().Add("CN", "example.com")
 	cert, _ := x509.CreateCertificate(subject, subject, 1,
@@ -44,7 +44,7 @@ func ExamplePack() {
 // returned Bundle carries a PrivateKey wrapping the core PKey, the leaf
 // Certificate, and the CACerts chain.
 func ExampleParse() {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := x509.NewName().Add("CN", "example.com")
 	cert, _ := x509.CreateCertificate(subject, subject, 1,
@@ -65,7 +65,7 @@ func ExampleParse() {
 // ExampleChangePassword demonstrates changing the PKCS#12 password; both
 // input and output are DER.
 func ExampleChangePassword() {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := x509.NewName().Add("CN", "example.com")
 	cert, _ := x509.CreateCertificate(subject, subject, 1,
