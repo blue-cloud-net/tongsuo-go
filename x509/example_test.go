@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/asym"
-	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/sm2"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
@@ -18,7 +17,7 @@ import (
 //
 // Using the same subject name for both subject and signer yields a self-signed certificate. The returned certificate can be exported with MarshalPEM and self-verified with Verify.
 func ExampleCreateCertificate() {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 
 	subject := x509.NewName().Add("CN", "example.com").Add("O", "Example Org").Add("C", "CN")
@@ -47,7 +46,7 @@ func ExampleCreateCertificate() {
 //
 // The alg parameter accepts sha1, sha256, sm3, md5, sha384, and sha512.
 func ExampleCertificate_Fingerprint() {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	subject := x509.NewName().Add("CN", "example.com")
 	cert, _ := x509.CreateCertificate(subject, subject, 1,
 		time.Now(), time.Now().Add(time.Hour), priv.Public(), priv)
@@ -64,7 +63,7 @@ func ExampleCertificate_Fingerprint() {
 //
 // ExampleCertificate_MarshalPEM demonstrates a PEM round trip for a certificate.
 func ExampleCertificate_MarshalPEM() {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	subject := x509.NewName().Add("CN", "example.com")
 	cert, _ := x509.CreateCertificate(subject, subject, 1,
 		time.Now(), time.Now().Add(time.Hour), priv.Public(), priv)
@@ -85,7 +84,7 @@ func ExampleCertificate_MarshalPEM() {
 //
 // ExampleNewCertificateRequest demonstrates generating a CSR and verifying its signature.
 func ExampleNewCertificateRequest() {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	subject := x509.NewName().Add("CN", "example.com").Add("O", "Example Org")
 
 	csr, err := x509.NewCertificateRequest(subject, priv.Public(), priv)

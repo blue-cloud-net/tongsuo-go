@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/rsa"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
@@ -16,7 +16,7 @@ import (
 func buildCerts(t *testing.T) (leaf *x509.Certificate, caCert *x509.Certificate) {
 	t.Helper()
 	now := time.Now()
-	caPriv, err := rsa.GenerateKey(2048)
+	caPriv, err := asym.GenerateRSA(2048)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func buildCerts(t *testing.T) (leaf *x509.Certificate, caCert *x509.Certificate)
 		t.Fatal(err)
 	}
 
-	leafPriv, err := rsa.GenerateKey(2048)
+	leafPriv, err := asym.GenerateRSA(2048)
 	if err != nil {
 		t.Fatal(err)
 	}

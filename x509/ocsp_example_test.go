@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/sm2"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
@@ -16,7 +17,7 @@ import (
 // package does not perform the HTTP transport — the application layer
 // is expected to POST the DER bytes.
 func ExampleCreateOCSPRequest() {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	subject := x509.NewName().Add("CN", "example.com")
 	cert, _ := x509.CreateCertificate(subject, subject, 1,
 		time.Now(), time.Now().Add(time.Hour), priv.Public(), priv)

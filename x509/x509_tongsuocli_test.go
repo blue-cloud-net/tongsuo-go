@@ -16,14 +16,12 @@ import (
 
 	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/internal/testutil"
-	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/ed25519"
-	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/sm2"
 )
 
 // TestCLICertVerify 本库签发证书 → 铜锁 openssl verify 验证通过。
 func TestCLICertVerify(t *testing.T) {
-	caPriv, _ := sm2.GenerateKey()
-	leafPriv, _ := sm2.GenerateKey()
+	caPriv, _ := asym.GenerateSM2()
+	leafPriv, _ := asym.GenerateSM2()
 	now := time.Now()
 
 	caSubject := NewName().Add("CN", "Tongsuo-Go Test CA")
@@ -79,7 +77,7 @@ func TestCLICertVerify(t *testing.T) {
 
 // TestCLISubjectIssuer 与 openssl x509 对比主题/签发者/序列号。
 func TestCLISubjectIssuer(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := NewName().Add("CN", "cli.example.com").Add("O", "CLI Org")
 	cert, err := CreateCertificate(subject, subject, 42,
@@ -109,7 +107,7 @@ func TestCLISubjectIssuer(t *testing.T) {
 
 // TestCLICSRVerify 本库生成 CSR → 铜锁 openssl req -verify 通过，并可用 openssl 签发。
 func TestCLICSRVerify(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	subject := NewName().Add("CN", "cli-csr.example.com")
 	req, err := NewCertificateRequest(subject, priv.Public(), priv)
 	if err != nil {
@@ -130,7 +128,7 @@ func TestCLICSRVerify(t *testing.T) {
 
 // TestCLIFingerprint 本库指纹与 openssl x509 -fingerprint -sha256 一致。
 func TestCLIFingerprint(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := NewName().Add("CN", "fp-cli.example.com")
 	cert, err := CreateCertificate(subject, subject, 11,
@@ -163,7 +161,7 @@ func TestCLIFingerprint(t *testing.T) {
 
 // TestCLIDer 本库 DER 导出/导入与 openssl 互通（-inform DER / -outform DER）。
 func TestCLIDer(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := NewName().Add("CN", "der-cli.example.com")
 	cert, err := CreateCertificate(subject, subject, 12,
@@ -215,7 +213,7 @@ func TestCLIDer(t *testing.T) {
 
 // TestCLISANText 本库构建的 SAN 扩展与 openssl x509 -text 一致。
 func TestCLISANText(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := NewName().Add("CN", "san-cli.example.com")
 	cert := NewCertificate()
@@ -268,7 +266,7 @@ func TestCLISANText(t *testing.T) {
 
 // TestCLICSRText 本库构建的 CSR（SAN + 挑战密码 + 多字段）与 openssl req -text 一致。
 func TestCLICSRText(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	subject := NewName().Add("CN", "csr-cli.example.com").Add("O", "CLI CSR Org").Add("C", "CN")
 	req := NewEmptyCertificateRequest()
 	if err := req.SetSubject(subject); err != nil {
@@ -495,7 +493,7 @@ func TestCLIRevocationCheck(t *testing.T) {
 // 短名 Tongsuo "SM2-SM3" 与 OpenSSL "SM2-with-SM3" 不一致，故仅校验：算法名非空、
 // 签名算法 OID 与 openssl x509 -text 输出相符（对 SM2 走文本匹配，对 RSA/ECDSA 走 OID 文本匹配）。
 func TestCLICertSignatureInfo(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := NewName().Add("CN", "siginfo-cli.example.com")
 	cert, err := CreateCertificate(subject, subject, 33,
@@ -542,7 +540,7 @@ func TestCLICertSignatureInfo(t *testing.T) {
 
 // TestCLICSRSignatureInfo 本库 CSR 签名三件套与 openssl req -text 一致。
 func TestCLICSRSignatureInfo(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	subject := NewName().Add("CN", "csrsig-cli.example.com")
 	req, err := NewCertificateRequest(subject, priv.Public(), priv)
 	if err != nil {
@@ -709,7 +707,7 @@ authorityKeyIdentifier = keyid:always
 
 // TestCLIECCertEd25519 验证 Ed25519 自签证书 → openssl x509 读 + openssl verify 通过。
 func TestCLIECCertEd25519(t *testing.T) {
-	priv, err := ed25519.GenerateKey()
+	priv, err := asym.GenerateEd25519()
 	if err != nil {
 		t.Fatal(err)
 	}
