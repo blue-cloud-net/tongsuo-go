@@ -47,6 +47,64 @@ func RunOpenSSL(args []string, stdin []byte) ([]byte, error) {
 	return cmd.Output()
 }
 
+// RunOpenSSLCombined 调用铜锁 openssl 命令并返回**合并输出**（stdout + stderr）。
+// 与 RunOpenSSL 的差别是保留 stderr —— `openssl verify` / `crl -verify` 一类子命令的
+// 结果信息写在 stderr；本函数不含任何断言逻辑。
+//
+// RunOpenSSLCombined invokes the Tongsuo openssl command and returns its
+// combined output (stdout + stderr). Unlike RunOpenSSL it keeps stderr, which
+// subcommands such as `openssl verify` and `crl -verify` write their result to.
+// No assertions are performed.
+func RunOpenSSLCombined(args []string, stdin []byte) ([]byte, error) {
+	cmd := exec.Command(OpenSSLBin(), args...)
+	cmd.Stdin = bytes.NewReader(stdin)
+	return cmd.CombinedOutput()
+}
+
+// RunOpenSSLCombinedIn 等同 RunOpenSSLCombined，但在 dir 目录下执行进程。
+// openssl 的 ca / ocsp / crl 等子命令依赖目录内的相对路径配置，必须指定工作目录。
+//
+// RunOpenSSLCombinedIn is RunOpenSSLCombined with the process working directory
+// set to dir. Subcommands such as ca / ocsp / crl rely on relative paths inside
+// that directory, so the working directory must be set explicitly.
+func RunOpenSSLCombinedIn(dir string, args []string, stdin []byte) ([]byte, error) {
+	cmd := exec.Command(OpenSSLBin(), args...)
+	cmd.Dir = dir
+	cmd.Stdin = bytes.NewReader(stdin)
+	return cmd.CombinedOutput()
+}
+
+// MustRunOpenSSL 在铜锁 CLI 可用时运行 openssl 并返回合并输出；CLI 缺失则跳过当前
+// 测试，命令失败则用 t.Fatalf 报错（错误信息含合并输出）。对拍测试的统一入口。
+//
+// MustRunOpenSSL runs openssl when the Tongsuo CLI is available and returns the
+// combined output. It skips the current test when the CLI is missing and fails it
+// with t.Fatalf (including the combined output) when the command exits non-zero.
+// This is the single entry point for interop tests.
+func MustRunOpenSSL(t *testing.T, args ...string) []byte {
+	t.Helper()
+	SkipIfNoOpenSSL(t)
+	out, err := RunOpenSSLCombined(args, nil)
+	if err != nil {
+		t.Fatalf("openssl %v: %v\n%s", args, err, out)
+	}
+	return out
+}
+
+// MustRunOpenSSLInDir 等同 MustRunOpenSSL，但在 dir 目录下执行进程。
+//
+// MustRunOpenSSLInDir is MustRunOpenSSL with the process working directory set
+// to dir.
+func MustRunOpenSSLInDir(t *testing.T, dir string, args ...string) []byte {
+	t.Helper()
+	SkipIfNoOpenSSL(t)
+	out, err := RunOpenSSLCombinedIn(dir, args, nil)
+	if err != nil {
+		t.Fatalf("openssl %v: %v\n%s", args, err, out)
+	}
+	return out
+}
+
 // OpenSSLAvailable 报告 OpenSSLBin 返回的路径是否存在且可执行。
 // 供 tongsuocli 对比测试在缺少铜锁 CLI 时安全跳过（OpenSSLBin 永远不会返回
 // 空串，因此不能靠空串判断）。

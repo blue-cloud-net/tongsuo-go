@@ -10,24 +10,12 @@ package x509_test
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/testutil"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
-
-func runOpenSSL(t *testing.T, dir string, args ...string) []byte {
-	t.Helper()
-	cmd := exec.Command(testutil.OpenSSLBin(), args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("openssl %v: %v\n%s", args, err, out)
-	}
-	return out
-}
 
 // setupOCSPEnv 搭建 openssl CA + 叶证书环境，返回目录。
 func setupOCSPEnv(t *testing.T) string {
@@ -58,11 +46,11 @@ policy = policy_any
 commonName = supplied
 `
 	must(os.WriteFile(dir+"/openssl.cnf", []byte(cnf), 0o600))
-	runOpenSSL(t, dir, "req", "-new", "-x509", "-nodes", "-keyout", "ca.key",
+	testutil.MustRunOpenSSLInDir(t, dir, "req", "-new", "-x509", "-nodes", "-keyout", "ca.key",
 		"-out", "ca.pem", "-subj", "/CN=OCSP Test CA", "-days", "3650")
-	runOpenSSL(t, dir, "req", "-new", "-nodes", "-keyout", "leaf.key",
+	testutil.MustRunOpenSSLInDir(t, dir, "req", "-new", "-nodes", "-keyout", "leaf.key",
 		"-out", "leaf.csr", "-subj", "/CN=leaf.ocsp.dev")
-	runOpenSSL(t, dir, "ca", "-batch", "-config", "openssl.cnf", "-in", "leaf.csr", "-out", "leaf.pem")
+	testutil.MustRunOpenSSLInDir(t, dir, "ca", "-batch", "-config", "openssl.cnf", "-in", "leaf.csr", "-out", "leaf.pem")
 	return dir
 }
 
@@ -70,7 +58,7 @@ commonName = supplied
 func respond(t *testing.T, dir, reqName, respName string) []byte {
 	t.Helper()
 	respFile := filepath.Join(dir, respName)
-	runOpenSSL(t, dir, "ocsp", "-index", "demoCA/index.txt",
+	testutil.MustRunOpenSSLInDir(t, dir, "ocsp", "-index", "demoCA/index.txt",
 		"-rsigner", "ca.pem", "-rkey", "ca.key", "-CA", "ca.pem",
 		"-issuer", "ca.pem", "-cert", "leaf.pem",
 		"-reqin", reqName, "-respout", respName, "-noverify")
@@ -138,7 +126,7 @@ func TestCLIOCSPRevoked(t *testing.T) {
 	leaf, _ := x509.LoadCertificatePEM(leafPEM)
 
 	// 吊销叶证书
-	runOpenSSL(t, dir, "ca", "-config", "openssl.cnf", "-revoke", "leaf.pem", "-crl_reason", "keyCompromise")
+	testutil.MustRunOpenSSLInDir(t, dir, "ca", "-config", "openssl.cnf", "-revoke", "leaf.pem", "-crl_reason", "keyCompromise")
 
 	reqDER, _ := x509.CreateOCSPRequest(leaf, caCert, "sha1")
 	if err := os.WriteFile(filepath.Join(dir, "req2.der"), reqDER, 0o600); err != nil {

@@ -5,23 +5,12 @@ package pkcs7
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/testutil"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
-
-func runOpenSSL(t *testing.T, args ...string) []byte {
-	t.Helper()
-	cmd := exec.Command(testutil.OpenSSLBin(), args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("openssl %v: %v\n%s", args, err, out)
-	}
-	return out
-}
 
 // TestCLIInterop 本库 PKCS7 ↔ openssl crl2pkcs7 / pkcs7 互通。
 func TestCLIInterop(t *testing.T) {
@@ -38,7 +27,7 @@ func TestCLIInterop(t *testing.T) {
 	if err := os.WriteFile(p7File, MarshalPEM(der), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out := runOpenSSL(t, "pkcs7", "-in", p7File, "-print_certs", "-noout")
+	out := testutil.MustRunOpenSSL(t, "pkcs7", "-in", p7File, "-print_certs", "-noout")
 	if !bytes.Contains(out, []byte("cli-a.pkcs7.dev")) || !bytes.Contains(out, []byte("cli-b.pkcs7.dev")) {
 		t.Fatalf("openssl pkcs7 print_certs missing certs: %s", out)
 	}
@@ -50,7 +39,7 @@ func TestCLIInterop(t *testing.T) {
 		t.Fatal(err)
 	}
 	osslP7 := filepath.Join(dir, "ossl.p7b")
-	runOpenSSL(t, "crl2pkcs7", "-nocrl", "-certfile", certFile, "-out", osslP7)
+	testutil.MustRunOpenSSL(t, "crl2pkcs7", "-nocrl", "-certfile", certFile, "-out", osslP7)
 	osslData, _ := os.ReadFile(osslP7)
 	certs, err := Extract(osslData)
 	if err != nil {

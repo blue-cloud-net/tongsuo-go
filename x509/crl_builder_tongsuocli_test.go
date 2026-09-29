@@ -4,7 +4,6 @@ package x509_test
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,21 +13,6 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/internal/testutil"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
-
-// runOpenSSLCmd 在 dir 下运行铜锁 openssl 并返回合并输出（stdout + stderr）。
-//
-// runOpenSSLCmd runs the Tongsuo openssl CLI inside dir and returns the
-// combined output (stdout + stderr).
-func runOpenSSLCmd(t *testing.T, dir string, args ...string) []byte {
-	t.Helper()
-	cmd := exec.Command(testutil.OpenSSLBin(), args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("openssl %v: %v\n%s", args, err, out)
-	}
-	return out
-}
 
 // TestCLICRLBuilderInterop 验证本库 CRLBuilder 产出的 CRL 能被铜锁 openssl CLI
 // 独立读取与验签：`crl -text` 读出吊销序列号与原因、CRL Number；`crl -verify`
@@ -45,9 +29,7 @@ func runOpenSSLCmd(t *testing.T, dir string, args ...string) []byte {
 // `openssl ca -gencrl` output) is covered by TestCLICrlParse, so together they
 // form a bidirectional interop check.
 func TestCLICRLBuilderInterop(t *testing.T) {
-	if !testutil.OpenSSLAvailable() {
-		t.Skip("Tongsuo openssl CLI not available")
-	}
+	testutil.SkipIfNoOpenSSL(t)
 
 	dir := t.TempDir()
 	now := time.Now().Truncate(time.Second)
@@ -115,7 +97,7 @@ func TestCLICRLBuilderInterop(t *testing.T) {
 	// 1) openssl 读取文本形式：吊销序列号（十六进制）、原因长名、CRL Number 与 AKID。
 	//    注意 openssl 的 `crl -text` 用十六进制打印序列号（无 0x 前缀），原因码打印
 	//    「长名」（带空格），与 `RevokedEntry.Reason` 使用的短名不同。
-	text := string(runOpenSSLCmd(t, dir, "crl", "-in", "ours.pem", "-noout", "-text"))
+	text := string(testutil.MustRunOpenSSLInDir(t, dir, "crl", "-in", "ours.pem", "-noout", "-text"))
 	t.Logf("openssl crl -text:\n%s", text)
 	for _, want := range []string{
 		"Serial Number: 1092", // 4242
@@ -132,24 +114,24 @@ func TestCLICRLBuilderInterop(t *testing.T) {
 	}
 
 	// 2) openssl 验证 CRL 签名（用 CA 证书作为信任锚）。
-	verifyOut := string(runOpenSSLCmd(t, dir, "crl", "-in", "ours.pem", "-noout",
+	verifyOut := string(testutil.MustRunOpenSSLInDir(t, dir, "crl", "-in", "ours.pem", "-noout",
 		"-verify", "-CAfile", "ca.pem"))
 	if !strings.Contains(verifyOut, "verify OK") {
 		t.Errorf("openssl crl -verify 未通过：%s", verifyOut)
 	}
 
 	// 3) openssl 读取 CRL Number（0x63 == 99）与签发者。
-	if out := string(runOpenSSLCmd(t, dir, "crl", "-in", "ours.pem", "-noout",
+	if out := string(testutil.MustRunOpenSSLInDir(t, dir, "crl", "-in", "ours.pem", "-noout",
 		"-crlnumber")); !strings.Contains(out, "0x63") {
 		t.Errorf("openssl crl -crlnumber = %q, want 含 0x63 (99)", out)
 	}
-	if out := string(runOpenSSLCmd(t, dir, "crl", "-in", "ours.pem", "-noout",
+	if out := string(testutil.MustRunOpenSSLInDir(t, dir, "crl", "-in", "ours.pem", "-noout",
 		"-issuer")); !strings.Contains(out, "CRL CLI Interop CA") {
 		t.Errorf("openssl crl -issuer = %q, want 含 CA CN", out)
 	}
 
 	// 4) DER 编码同样可被 openssl 解析。
-	if out := string(runOpenSSLCmd(t, dir, "crl", "-in", "ours.der", "-inform", "DER",
+	if out := string(testutil.MustRunOpenSSLInDir(t, dir, "crl", "-in", "ours.der", "-inform", "DER",
 		"-noout", "-issuer")); !strings.Contains(out, "CRL CLI Interop CA") {
 		t.Errorf("openssl 无法解析我们的 DER CRL：%q", out)
 	}

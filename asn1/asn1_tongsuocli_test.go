@@ -4,7 +4,6 @@ package asn1
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,24 +11,14 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/internal/testutil"
 )
 
-func runOpenSSL(t *testing.T, args ...string) []byte {
-	t.Helper()
-	cmd := exec.Command(testutil.OpenSSLBin(), args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("openssl %v: %v\n%s", args, err, out)
-	}
-	return out
-}
-
 // TestCLIDerParse 解析 openssl 生成的证书 DER，验证结构。
 func TestCLIDerParse(t *testing.T) {
 	dir := t.TempDir()
 	pemFile := filepath.Join(dir, "cert.pem")
 	derFile := filepath.Join(dir, "cert.der")
-	runOpenSSL(t, "req", "-new", "-x509", "-nodes", "-keyout", filepath.Join(dir, "key.pem"),
+	testutil.MustRunOpenSSL(t, "req", "-new", "-x509", "-nodes", "-keyout", filepath.Join(dir, "key.pem"),
 		"-out", pemFile, "-subj", "/CN=asn1-cli.dev", "-days", "365")
-	runOpenSSL(t, "x509", "-in", pemFile, "-outform", "DER", "-out", derFile)
+	testutil.MustRunOpenSSL(t, "x509", "-in", pemFile, "-outform", "DER", "-out", derFile)
 	der, err := os.ReadFile(derFile)
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +35,7 @@ func TestCLIDerParse(t *testing.T) {
 		t.Fatalf("children = %d, want >= 3", len(root.Children))
 	}
 	// 与 openssl asn1parse 直接子节点数对比（根为 d=0，子节点为 d=1）
-	out := runOpenSSL(t, "asn1parse", "-in", derFile, "-inform", "DER")
+	out := testutil.MustRunOpenSSL(t, "asn1parse", "-in", derFile, "-inform", "DER")
 	lines := strings.Split(string(out), "\n")
 	childCount := 0
 	for _, l := range lines {
