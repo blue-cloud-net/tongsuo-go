@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/asym"
-	"github.com/blue-cloud-net/tongsuo-go/internal/testutil/legacykeys/sm2"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
@@ -42,7 +41,7 @@ func ExampleCreateOCSPRequest() {
 // Response.Verify together with an x509.Store to check the signature,
 // and call defer resp.Close() when done.
 func ExampleParseOCSPResponse() {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	subject := x509.NewName().Add("CN", "example.com")
 	cert, _ := x509.CreateCertificate(subject, subject, 1,
 		time.Now(), time.Now().Add(time.Hour), priv.Public(), priv)
