@@ -1323,7 +1323,7 @@ func TestCRLSignatureInfoSM2(t *testing.T) {
 	caName := NewName().Add("CN", "CRL SM2 CA")
 
 	// 通过 core 直接构建 CRL
-	coreCRL, err := core.NewCRL(caName.name, caPriv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	coreCRL, err := core.NewCRL(caName.name, pkeyOf(caPriv), now.Add(-time.Hour), now.Add(7*24*time.Hour))
 	if err != nil {
 		t.Fatalf("core.NewCRL: %v", err)
 	}
@@ -1433,7 +1433,7 @@ func TestCRLAKID(t *testing.T) {
 	}
 
 	// 通过 core 直接签发 CRL；core.NewCRL 不附加 AKID，需手工附加（与 openssl ca -gencrl 行为类似）。
-	coreCRL, err := core.NewCRL(caName.name, caPriv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	coreCRL, err := core.NewCRL(caName.name, pkeyOf(caPriv), now.Add(-time.Hour), now.Add(7*24*time.Hour))
 	if err != nil {
 		t.Fatalf("core.NewCRL: %v", err)
 	}
@@ -1469,7 +1469,7 @@ func TestCRLExtensions(t *testing.T) {
 	now := time.Now()
 	caName := NewName().Add("CN", "Ext CRL CA")
 
-	coreCRL, err := core.NewCRL(caName.name, priv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	coreCRL, err := core.NewCRL(caName.name, pkeyOf(priv), now.Add(-time.Hour), now.Add(7*24*time.Hour))
 	if err != nil {
 		t.Fatalf("core.NewCRL: %v", err)
 	}
@@ -1508,7 +1508,7 @@ func TestCRLIssuerEntries(t *testing.T) {
 	now := time.Now()
 	caName := NewName().Add("CN", "Entries CRL CA").Add("O", "Entries Org").Add("C", "CN")
 
-	coreCRL, err := core.NewCRL(caName.name, priv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	coreCRL, err := core.NewCRL(caName.name, pkeyOf(priv), now.Add(-time.Hour), now.Add(7*24*time.Hour))
 	if err != nil {
 		t.Fatalf("core.NewCRL: %v", err)
 	}
@@ -1574,7 +1574,7 @@ func TestCRLVerify(t *testing.T) {
 	}
 
 	// 签发 CRL 并通过 PEM 加载为公开 CRL。
-	coreCRL, err := core.NewCRL(caName.name, caPriv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	coreCRL, err := core.NewCRL(caName.name, pkeyOf(caPriv), now.Add(-time.Hour), now.Add(7*24*time.Hour))
 	if err != nil {
 		t.Fatalf("core.NewCRL: %v", err)
 	}
@@ -1638,14 +1638,14 @@ func TestCreateCertificateEd25519(t *testing.T) {
 	now := time.Now()
 	subject := NewName().Add("CN", "ed25519.example.com")
 	cert, err := CreateCertificate(subject, subject, 40,
-		now.Add(-time.Hour), now.Add(365*24*time.Hour), asX509PubKey(priv.Key()), asX509PrivKey(priv.Key()))
+		now.Add(-time.Hour), now.Add(365*24*time.Hour), priv.Public(), priv)
 	if err != nil {
 		t.Fatalf("CreateCertificate Ed25519: %v", err)
 	}
 	if cert.CertificateType() != "ED25519" {
 		t.Fatalf("CertificateType = %q, want ED25519", cert.CertificateType())
 	}
-	if err := cert.Verify(asX509PubKey(priv.Key())); err != nil {
+	if err := cert.Verify(priv.Public()); err != nil {
 		t.Fatalf("Ed25519 self-verify failed: %v", err)
 	}
 	if len(cert.Signature()) != 64 {
@@ -1667,7 +1667,7 @@ func TestCreateCertificateEd25519(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := loaded.Verify(asX509PubKey(priv.Key())); err != nil {
+	if err := loaded.Verify(priv.Public()); err != nil {
 		t.Fatal("loaded Ed25519 cert verify failed")
 	}
 	pk, err := loaded.PublicKey()
@@ -1689,14 +1689,14 @@ func TestCreateCertificateEd448(t *testing.T) {
 	now := time.Now()
 	subject := NewName().Add("CN", "ed448.example.com")
 	cert, err := CreateCertificate(subject, subject, 41,
-		now.Add(-time.Hour), now.Add(365*24*time.Hour), asX509PubKey(priv.Key()), asX509PrivKey(priv.Key()))
+		now.Add(-time.Hour), now.Add(365*24*time.Hour), priv.Public(), priv)
 	if err != nil {
 		t.Fatalf("CreateCertificate Ed448: %v", err)
 	}
 	if cert.CertificateType() != "ED448" {
 		t.Fatalf("CertificateType = %q, want ED448", cert.CertificateType())
 	}
-	if err := cert.Verify(asX509PubKey(priv.Key())); err != nil {
+	if err := cert.Verify(priv.Public()); err != nil {
 		t.Fatalf("Ed448 self-verify failed: %v", err)
 	}
 	if len(cert.Signature()) != 114 {
@@ -1717,7 +1717,7 @@ func TestCreateCertificateEd448(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := loaded.Verify(asX509PubKey(priv.Key())); err != nil {
+	if err := loaded.Verify(priv.Public()); err != nil {
 		t.Fatal("loaded Ed448 cert verify failed")
 	}
 }
@@ -1729,7 +1729,7 @@ func TestCSREd25519(t *testing.T) {
 		t.Fatal(err)
 	}
 	req, err := NewCertificateRequest(NewName().Add("CN", "csr-ed25519.example.com"),
-		asX509PubKey(priv.Key()), asX509PrivKey(priv.Key()))
+		priv.Public(), priv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1766,7 +1766,7 @@ func TestCSREd448(t *testing.T) {
 		t.Fatal(err)
 	}
 	req, err := NewCertificateRequest(NewName().Add("CN", "csr-ed448.example.com"),
-		asX509PubKey(priv.Key()), asX509PrivKey(priv.Key()))
+		priv.Public(), priv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1791,7 +1791,7 @@ func TestCASignedCertEd25519(t *testing.T) {
 	now := time.Now()
 	caSubject := NewName().Add("CN", "ED25519 Root CA")
 	caCert, err := CreateCertificate(caSubject, caSubject, 50,
-		now.Add(-time.Hour), now.Add(2*365*24*time.Hour), asX509PubKey(caPriv.Key()), asX509PrivKey(caPriv.Key()))
+		now.Add(-time.Hour), now.Add(2*365*24*time.Hour), caPriv.Public(), caPriv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1800,20 +1800,20 @@ func TestCASignedCertEd25519(t *testing.T) {
 	}
 
 	// 重新签发（AddBasicConstraints 后必须重签才能让扩展进入签名覆盖范围）
-	if err := caCert.Sign(asX509PrivKey(caPriv.Key())); err != nil {
+	if err := caCert.Sign(caPriv); err != nil {
 		t.Fatalf("CA re-sign: %v", err)
 	}
-	if err := caCert.Verify(asX509PubKey(caPriv.Key())); err != nil {
+	if err := caCert.Verify(caPriv.Public()); err != nil {
 		t.Fatal("CA self-verify failed")
 	}
 
 	leafCert, err := CreateCertificate(NewName().Add("CN", "leaf-ed25519.example.com"),
 		caSubject, 51, now.Add(-time.Hour), now.Add(365*24*time.Hour),
-		asX509PubKey(leafPriv.Key()), asX509PrivKey(caPriv.Key()))
+		leafPriv.Public(), caPriv)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := leafCert.Verify(asX509PubKey(caPriv.Key())); err != nil {
+	if err := leafCert.Verify(caPriv.Public()); err != nil {
 		t.Fatal("CA verify leaf failed")
 	}
 
@@ -1840,7 +1840,7 @@ func TestCRLEd25519(t *testing.T) {
 	now := time.Now()
 	caName := NewName().Add("CN", "ED25519 CRL CA")
 
-	coreCRL, err := core.NewCRL(caName.name, caPriv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	coreCRL, err := core.NewCRL(caName.name, pkeyOf(caPriv), now.Add(-time.Hour), now.Add(7*24*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}

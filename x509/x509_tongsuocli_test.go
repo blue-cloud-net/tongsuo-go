@@ -717,7 +717,7 @@ func TestCLIECCertEd25519(t *testing.T) {
 	subject := NewName().Add("CN", "ed25519-cli.example.com")
 	cert, err := CreateCertificate(subject, subject, 100,
 		now.Add(-time.Hour), now.Add(365*24*time.Hour),
-		asX509PubKey(priv.Key()), asX509PrivKey(priv.Key()))
+		priv.Public(), priv)
 	if err != nil {
 		t.Fatal(err)
 	}
