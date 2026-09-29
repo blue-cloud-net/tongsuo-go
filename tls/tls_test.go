@@ -15,26 +15,85 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
-// mustHandshake 同步驱动服务端握手的测试辅助（Server.Accept 当前为惰性，
-// 测试代码需要显式调 Handshake 后才能 Read/Write）。
+// handshakeErr 同步驱动服务端握手的测试辅助（Server.Accept 当前为惰性，
+// 测试代码需要显式调 Handshake 后才能 Read/Write），但把失败作为 error 返回、
+// **不调用**任何 t.Fatal*。
 //
-// mustHandshake 仅在握手应当成功时使用；期望握手失败的测试（如 TestDialPeerVerifyReject）
-// 须自己写 if/return，不要走 t.Fatalf，否则会误判为测试失败。
+// 专供**测试内 goroutine** 使用：一旦测试函数已返回，Go 测试框架禁止再调用
+// t.Fail*，否则会以 "Fail in goroutine after ... has completed" 触发**包级
+// panic**，吞掉同包其余用例的结果（见 docs/issues/2026-09-24/P1004）。goroutine
+// 内的失败必须经 channel 回传给主 goroutine（或 t.Cleanup）断言。
 //
-// mustHandshake is a test helper that drives the now-lazy server-side
-// handshake synchronously; Server.Accept returns before the handshake
-// completes, so tests must explicitly call Handshake (or HandshakeContext)
-// before reading/writing. Use it only when the handshake is expected to
-// succeed — for tests that expect a handshake failure, do not Fatalf on
-// the server side (the test asserts the client-side failure).
-func mustHandshake(t *testing.T, c net.Conn) net.Conn {
-	t.Helper()
+// 期望握手失败的测试（如 TestDialPeerVerifyReject）同样走本函数，检查返回的 error
+// 即可，不要用 t.Fatalf，否则会误判为测试失败。
+//
+// handshakeErr is a test helper that drives the now-lazy server-side handshake
+// synchronously (Server.Accept returns before the handshake completes, so tests
+// must explicitly call Handshake before reading/writing) but returns the failure
+// as an error instead of calling any t.Fatal*.
+//
+// It is meant for goroutines spawned by tests: once a test function has returned,
+// the Go testing framework forbids further t.Fail* calls — they panic with
+// "Fail in goroutine after ... has completed" and swallow the results of every
+// other test in the package (see docs/issues/2026-09-24/P1004). A goroutine must
+// therefore hand failures back through a channel to the main goroutine (or to
+// t.Cleanup) for assertion.
+//
+// Tests that expect a handshake failure (for example TestDialPeerVerifyReject)
+// use the same function and inspect the returned error instead of calling
+// t.Fatalf, which would misreport an expected failure as a test failure.
+func handshakeErr(c net.Conn) error {
 	if tc, ok := c.(*Conn); ok {
-		if err := tc.Handshake(); err != nil {
-			t.Fatalf("Handshake: %v", err)
-		}
+		return tc.Handshake()
 	}
-	return c
+	return nil
+}
+
+// serveHandshakeAsync 在后台 goroutine 中完成「accept → 服务端握手」，并在测试
+// 结束时（t.Cleanup）断言结果；供「客户端只需握手成功、不做数据交互」的用例使用。
+//
+// 这是 P1004 缺陷 2 的修法：goroutine 内不得再调用 t.Fatal*（测试函数返回后调用会
+// 以 "Fail in goroutine after ... has completed" 触发包级 panic），因此把断言推迟
+// 到 t.Cleanup —— 它仍属于本测试的生命周期，t.Errorf 合法。
+//
+// serveHandshakeAsync runs "accept → server-side handshake" in a background
+// goroutine and asserts the outcome from t.Cleanup. It serves tests whose client
+// only needs a successful handshake and exchanges no data.
+//
+// This shape fixes defect 2 of P1004: a goroutine must not call t.Fatal* (after
+// the test function returns that panics with "Fail in goroutine after ... has
+// completed"), so the assertion is deferred to t.Cleanup, which still belongs to
+// the test's lifecycle and may legally call t.Errorf.
+func serveHandshakeAsync(t *testing.T, ln net.Listener, srv *Server) {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			done <- err
+			return
+		}
+		conn, aerr := srv.Accept(c)
+		if aerr != nil {
+			done <- aerr
+			return
+		}
+		done <- handshakeErr(conn)
+		// 立即释放服务端连接：否则该 SSL 会活过 defer srv.Close()（其 SSL_CTX 已释放），
+		// finalizer 稍后触发 SSL_free 时会触碰已释放的 ctx——由此造成的堆损坏会让**后续**
+		// 用例的握手间歇失败（P1004 观测到的 SSL_connect: unexpected message）。
+		_ = conn.Close()
+	}()
+	t.Cleanup(func() {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("server handshake: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Errorf("server handshake did not finish")
+		}
+	})
 }
 
 // testServerConfig 生成 SM2 自签服务器证书配置。
@@ -139,19 +198,25 @@ func TestNTLSLoopback(t *testing.T) {
 	}
 	defer ln.Close()
 
+	handshakeReady := make(chan error, 1)
 	errCh := make(chan error, 1)
 	go func() {
 		raw, err := ln.Accept()
 		if err != nil {
-			errCh <- err
+			handshakeReady <- err
 			return
 		}
 		tlsConn, err := server.Accept(raw)
 		if err != nil {
-			errCh <- err
+			handshakeReady <- err
 			return
 		}
-		tlsConn = mustHandshake(t, tlsConn)
+		defer tlsConn.Close()
+		if herr := handshakeErr(tlsConn); herr != nil {
+			handshakeReady <- herr
+			return
+		}
+		handshakeReady <- nil
 		buf := make([]byte, 512)
 		n, err := tlsConn.Read(buf)
 		if err != nil {
@@ -171,6 +236,11 @@ func TestNTLSLoopback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
+
+	// 等服务端握手结果：失败即失败，避免客户端 Read 空等到超时（P1004）。
+	if herr := <-handshakeReady; herr != nil {
+		t.Fatalf("server handshake: %v", herr)
+	}
 
 	c, _ := conn.(*Conn)
 	t.Logf("NTLS version=%s cipher=%s", c.Version(), c.CipherName())
@@ -207,19 +277,25 @@ func TestLoopback(t *testing.T) {
 	}
 	defer ln.Close()
 
+	handshakeReady := make(chan error, 1)
 	errCh := make(chan error, 1)
 	go func() {
 		raw, err := ln.Accept()
 		if err != nil {
-			errCh <- err
+			handshakeReady <- err
 			return
 		}
 		tlsConn, err := server.Accept(raw)
 		if err != nil {
-			errCh <- err
+			handshakeReady <- err
 			return
 		}
-		tlsConn = mustHandshake(t, tlsConn)
+		defer tlsConn.Close()
+		if herr := handshakeErr(tlsConn); herr != nil {
+			handshakeReady <- herr
+			return
+		}
+		handshakeReady <- nil
 		// 回显：读一段再写回。
 		buf := make([]byte, 512)
 		n, err := tlsConn.Read(buf)
@@ -240,6 +316,11 @@ func TestLoopback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
+
+	// 等服务端握手结果：失败即失败，避免客户端 Read 空等到超时（P1004）。
+	if herr := <-handshakeReady; herr != nil {
+		t.Fatalf("server handshake: %v", herr)
+	}
 
 	c, ok := conn.(*Conn)
 	if !ok {
@@ -282,19 +363,25 @@ func TestLoopbackMultiRound(t *testing.T) {
 	}
 	defer ln.Close()
 
+	handshakeReady := make(chan error, 1)
 	done := make(chan error, 1)
 	go func() {
 		raw, err := ln.Accept()
 		if err != nil {
-			done <- err
+			handshakeReady <- err
 			return
 		}
 		tlsConn, err := server.Accept(raw)
 		if err != nil {
-			done <- err
+			handshakeReady <- err
 			return
 		}
-		tlsConn = mustHandshake(t, tlsConn)
+		defer tlsConn.Close()
+		if herr := handshakeErr(tlsConn); herr != nil {
+			handshakeReady <- herr
+			return
+		}
+		handshakeReady <- nil
 		buf := make([]byte, 1024)
 		for i := 0; i < 5; i++ {
 			n, err := tlsConn.Read(buf)
@@ -316,6 +403,11 @@ func TestLoopbackMultiRound(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
+
+	// 等服务端握手结果：失败即失败，避免客户端 Read 空等到超时（P1004）。
+	if herr := <-handshakeReady; herr != nil {
+		t.Fatalf("server handshake: %v", herr)
+	}
 
 	for i := 0; i < 5; i++ {
 		msg := bytes.Repeat([]byte{byte('a' + i)}, 200)
@@ -423,7 +515,10 @@ func TestDialInsecureSkipVerify(t *testing.T) {
 			acceptDone <- aerr
 			return
 		}
-		conn = mustHandshake(t, conn)
+		if herr := handshakeErr(conn); herr != nil {
+			acceptDone <- herr
+			return
+		}
 		defer conn.Close()
 		acceptDone <- nil
 	}()
@@ -436,6 +531,16 @@ func TestDialInsecureSkipVerify(t *testing.T) {
 	conn, err := Dial("tcp", ln.Addr().String(), cliCfg)
 	if err != nil {
 		t.Fatalf("InsecureSkipVerify dial should succeed: %v", err)
+	}
+	// 等服务端握手结束再关连接：避免两端握手/关闭抢时序（P1004 缺陷 1），
+	// 并让 goroutine 内的失败经 channel 回到主 goroutine 断言（缺陷 2）。
+	select {
+	case herr := <-acceptDone:
+		if herr != nil {
+			t.Fatalf("server handshake: %v", herr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("server accept goroutine did not finish")
 	}
 	_ = conn.Close()
 }
@@ -467,7 +572,10 @@ func TestConnCloseIdempotent(t *testing.T) {
 			done <- aerr
 			return
 		}
-		conn = mustHandshake(t, conn)
+		if herr := handshakeErr(conn); herr != nil {
+			done <- herr
+			return
+		}
 		defer conn.Close()
 		done <- nil
 	}()
@@ -479,6 +587,16 @@ func TestConnCloseIdempotent(t *testing.T) {
 	conn, err := Dial("tcp", ln.Addr().String(), cliCfg)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// 等服务端握手结束再做双/三 Close：避免握手与关闭抢时序（P1004 缺陷 1），
+	// 并让 goroutine 内的失败经 channel 回到主 goroutine 断言（缺陷 2）。
+	select {
+	case herr := <-done:
+		if herr != nil {
+			t.Fatalf("server handshake: %v", herr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("server handshake did not finish")
 	}
 	// 双 Close + 三 Close 不应崩溃或卡住。
 	if err := conn.Close(); err != nil {
@@ -594,18 +712,25 @@ func TestConnDeadlineUnblocksRead(t *testing.T) {
 	}
 	defer ln.Close()
 
+	ready := make(chan error, 1)
 	keepAlive := make(chan struct{})
 	defer close(keepAlive)
 	go func() {
 		c, err := ln.Accept()
 		if err != nil {
+			ready <- err
 			return
 		}
 		conn, aerr := srv.Accept(c)
 		if aerr != nil {
+			ready <- aerr
 			return
 		}
-		conn = mustHandshake(t, conn)
+		if herr := handshakeErr(conn); herr != nil {
+			ready <- herr
+			return
+		}
+		ready <- nil
 		<-keepAlive
 		_ = conn.Close()
 	}()
@@ -617,6 +742,12 @@ func TestConnDeadlineUnblocksRead(t *testing.T) {
 	conn, err := Dial("tcp", ln.Addr().String(), cliCfg)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// 确认服务端握手已完成再开始 Read：避免握手与 deadline/Close 抢时序
+	// （P1004 缺陷 1），并让 goroutine 内的失败经 channel 回到主 goroutine
+	// 断言（缺陷 2）。
+	if herr := <-ready; herr != nil {
+		t.Fatalf("server handshake: %v", herr)
 	}
 	defer conn.Close()
 
@@ -665,18 +796,25 @@ func TestReadReturnsAfterCancel(t *testing.T) {
 	}
 	defer ln.Close()
 
+	ready := make(chan error, 1)
 	keepAlive := make(chan struct{})
 	defer close(keepAlive)
 	go func() {
 		c, err := ln.Accept()
 		if err != nil {
+			ready <- err
 			return
 		}
 		conn, aerr := srv.Accept(c)
 		if aerr != nil {
+			ready <- aerr
 			return
 		}
-		conn = mustHandshake(t, conn)
+		if herr := handshakeErr(conn); herr != nil {
+			ready <- herr
+			return
+		}
+		ready <- nil
 		<-keepAlive
 		_ = conn.Close()
 	}()
@@ -688,6 +826,12 @@ func TestReadReturnsAfterCancel(t *testing.T) {
 	conn, err := Dial("tcp", ln.Addr().String(), cliCfg)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// 确认服务端握手已完成再设置 deadline 并 Read：避免握手与 Close 抢时序
+	// （P1004 缺陷 1），并让 goroutine 内的失败经 channel 回到主 goroutine
+	// 断言（缺陷 2）。
+	if herr := <-ready; herr != nil {
+		t.Fatalf("server handshake: %v", herr)
 	}
 	// 兜底：2s deadline 确保即便 fd 关闭未唤醒 Select，retry 仍能命中
 	// deadline-exit（参见 internal/core ssl.go retry 的 deadlineError）。
@@ -852,18 +996,7 @@ func TestPeerCertificatesPEMRoundTrip(t *testing.T) {
 	}
 	defer ln.Close()
 
-	go func() {
-		c, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		conn, aerr := srv.Accept(c)
-		if aerr != nil {
-			return
-		}
-		conn = mustHandshake(t, conn)
-		_ = conn // 不需要 I/O，连接足够让客户端握手成功
-	}()
+	serveHandshakeAsync(t, ln, srv)
 
 	conn, err := Dial("tcp", ln.Addr().String(), &Config{})
 	if err != nil {
@@ -941,7 +1074,10 @@ func TestPeerCertificatesNilWhenNoClientCert(t *testing.T) {
 			srvDone <- srvResult{nil, aerr}
 			return
 		}
-		conn = mustHandshake(t, conn)
+		if herr := handshakeErr(conn); herr != nil {
+			srvDone <- srvResult{nil, herr}
+			return
+		}
 		srvDone <- srvResult{conn, nil}
 	}()
 
@@ -983,18 +1119,7 @@ func TestPeerEncCertificatesNTLS(t *testing.T) {
 	}
 	defer ln.Close()
 
-	go func() {
-		c, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		conn, aerr := srv.Accept(c)
-		if aerr != nil {
-			return
-		}
-		conn = mustHandshake(t, conn)
-		_ = conn
-	}()
+	serveHandshakeAsync(t, ln, srv)
 
 	cliCfg := &Config{
 		NTLS:     true,
@@ -1103,18 +1228,7 @@ func TestConfigCipherSuitesMixed(t *testing.T) {
 	}
 	defer ln.Close()
 
-	go func() {
-		c, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		conn, aerr := srv.Accept(c)
-		if aerr != nil {
-			return
-		}
-		conn = mustHandshake(t, conn)
-		defer conn.Close()
-	}()
+	serveHandshakeAsync(t, ln, srv)
 
 	// 客户端用同样的混合名单；握手应该成功（部分不致命）。
 	cliCfg := &Config{
