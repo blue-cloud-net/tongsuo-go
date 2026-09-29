@@ -122,6 +122,35 @@ func (s *Store) SetTime(t time.Time) error {
 	return s.store.SetTime(t)
 }
 
+// Close 释放存储持有的底层 X509_STORE 句柄。
+//
+// 调用是幂等的：对 nil 接收者、空内部句柄或已关闭的存储调用返回 nil，不产生副作用。
+// 与同包的 Certificate / CRL / CertificateRequest 一致，Store 的所有权归调用方，
+// **不得**只依赖 finalizer 兜底（见 AGENTS.md §4.4）；应在整个验证流程结束、且已确认
+// 无 goroutine 仍持有该存储引用之后再释放。
+//
+// 释放后再使用会得到明确错误：AddCert / AddCRL / SetFlags / SetTime 返回
+// "x509: store closed"，ChainVerify 因信任锚句柄已释放而失败。
+//
+// Close releases the underlying X509_STORE handle held by the store.
+//
+// The call is idempotent: a nil receiver, an empty internal handle or an
+// already closed store returns nil without further side effects. Like
+// Certificate / CRL / CertificateRequest in this package, the Store is owned by
+// the caller and must not rely on a finalizer alone (see AGENTS.md §4.4);
+// release it only after the whole verification flow has finished and no
+// goroutine still holds a reference.
+//
+// Using a released store yields explicit errors: AddCert / AddCRL / SetFlags /
+// SetTime return "x509: store closed", and ChainVerify fails because the trust
+// anchor handle has been released.
+func (s *Store) Close() error {
+	if s == nil || s.store == nil {
+		return nil
+	}
+	return s.store.Close()
+}
+
 // VerifyError 表示证书链验证失败详情。
 //
 // Code 为 X509_V_ERR_* 错误码（如 10 表示 "certificate has expired"）；
