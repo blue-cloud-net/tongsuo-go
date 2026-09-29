@@ -7,7 +7,8 @@
 > 2. 重构**只改包结构、公开签名与迁移路径**，不新增密码学能力；能力补全按 Phase 分批（见 §7）；
 > 3. 所有「现状」结论均可在源码中校验（文件:行号）；所有「目标」签名以 [api-reference.md](api-reference.md) 为准；
 > 4. 破坏性变更一次性完成（不保留 deprecated 转发包），配迁移对照表（见 §4）；
-> 5. 基线：`0.3.0 - TBD`（CHANGELOG 待发段）。
+> 5. 基线：`0.3.0`（2026-09-24 已实现，tag 待打）；§0 / §7 中「`0.3.0 - TBD`」等写法
+>    均为**当时的决策记录**，保留原样以示决策时点。
 
 ---
 
@@ -80,22 +81,26 @@
 
 | # | 包 | 主要 CLI 命令 | 旧包来源 | 状态 |
 |---|----|--------------|----------|------|
-| 1 | `meta` | `version` / `info` / `errstr` / `list` | —（新增） | 🚧 |
-| 2 | `digest` | `dgst`（摘要部分） | `crypto/{sm3,md5,sha1,sha256,sha512}` | 🚧 |
-| 3 | `mac` | `mac` | `crypto/hmac` | 🚧 |
-| 4 | `kdf` | `kdf` | `crypto/kdf` + `key` 的 KDF | 🚧 |
-| 5 | `rand` | `rand` | `crypto/rand` | 🚧 |
-| 6 | `sym` | `enc` | `crypto/{aes,sm4}` + `key` 对称部分 | 🚧 |
-| 7 | `asym` | `genpkey` / `pkey` / `pkeyutl` | `crypto/{sm2,rsa,ecdsa,ed25519,ed448}` + `crypto/{x25519,x448}` 生成 + `key` 非对称部分 | 🚧 |
-| 8 | `ecdh` | `pkeyutl -derive` | `crypto/ecdh` + `crypto/{x25519,x448}` 协商 | 🚧 |
-| 9 | `keystore` | —（本库优势项，CLI 无） | `key` 的 `Handle`/`Store`/`Rotate` | 🚧 |
-| 10 | `x509` | `x509` / `req` / `crl` / `ocsp` / `verify` | `x509` + `ocsp` | 🚧 |
-| 11 | `tls` | `s_client` / `s_server` | `tls` | 🚧 |
+| 1 | `meta` | `version` / `info` / `errstr` / `list` | —（新增） | ✅ |
+| 2 | `digest` | `dgst`（摘要部分） | `crypto/{sm3,md5,sha1,sha256,sha512}` | ✅ |
+| 3 | `mac` | `mac` | `crypto/hmac` | ✅ |
+| 4 | `kdf` | `kdf` | `crypto/kdf` + `key` 的 KDF | ✅ |
+| 5 | `rand` | `rand` | `crypto/rand` | ✅ |
+| 6 | `sym` | `enc` | `crypto/{aes,sm4}` + `key` 对称部分 | ✅ |
+| 7 | `asym` | `genpkey` / `pkey` / `pkeyutl` | `crypto/{sm2,rsa,ecdsa,ed25519,ed448}` + `crypto/{x25519,x448}` 生成 + `key` 非对称部分 | ✅ |
+| 8 | `ecdh` | `pkeyutl -derive` | `crypto/ecdh` + `crypto/{x25519,x448}` 协商 | ✅ |
+| 9 | `keystore` | —（本库优势项，CLI 无） | `key` 的 `Handle`/`Store`/`Rotate` | ✅ |
+| 10 | `x509` | `x509` / `req` / `crl` / `ocsp` / `verify` | `x509` + `ocsp` | ✅ |
+| 11 | `tls` | `s_client` / `s_server` | `tls` | ✅ |
 | 12 | `asn1` | `asn1parse` | `asn1` | ✅ |
-| 13 | `jwk` | —（CLI 无） | `jwk` | 🚧 |
+| 13 | `jwk` | —（CLI 无） | `jwk` | ✅ |
 | 14 | `pkcs/pkcs7` | `pkcs7` / `crl2pkcs7` | `pkcs/pkcs7` | ✅ |
-| 15 | `pkcs/pkcs12` | `pkcs12` | `pkcs/pkcs12` | 🚧 |
+| 15 | `pkcs/pkcs12` | `pkcs12` | `pkcs/pkcs12` | ✅ |
 | 16 | `xml/rsa` | —（CLI 无） | `xml/rsa` | ✅ |
+
+> **状态口径（2026-09-24 起）**：状态列指**包本身是否已落地**，16 个包随 `0.3.0` 全部为 `✅`；
+> 「主要 CLI 命令」列列的是**能力目标**，其中 `meta` 的 `list`、`pkcs7` 的 `crl2pkcs7`、
+> `sym` 的扩展模式等仍属 Phase 2 区间（见 §7）。
 
 **净减 11 个包**（27 → 16）。逐符号目标签名见 [api-reference.md](api-reference.md)。
 
@@ -645,3 +650,8 @@ go test -race ./...         # 涉及并发/生命周期时（commit 19/20）
 | 20.7 | `refactor(xml-rsa): 签名改收 asym 接口（解 commit 21 的阻塞）` | ✅ | （落实 P1009；这是 commit 21 删旧包的**唯一**非测试阻塞点——实测 `grep -rln 'tongsuo-go/crypto/\|tongsuo-go/key"' --include='*.go' . \| grep -v '_test.go'` 只剩 `xml/rsa/rsa.go`。**方向无需新增能力**：`asym.Params(key)` 已给出 `N/E/D/P/Q/Dmp1/Dmq1/Iqmp`，`asym.LoadPrivateKeyPEM`/`LoadPublicKeyPEM` 已能吃 PKCS#1 / SPKI PEM，即 P1009 方案一（零新增 API、零新增 cgo）；实现改动仅在「参数来源」与「返回类型/加载入口」，原「XML → 标准库 `crypto/rsa` → PKCS#1/SPKI **PEM** → 本库加载」的往返骨架一字未动。**签名变更**（BREAKING，列入 commit 22 的 CHANGELOG）：`MarshalPrivate(*trsa.PrivateKey)`→`(asym.PrivateKey)`、`MarshalPublic`→`(asym.PublicKey)`、`UnmarshalPrivate`/`UnmarshalPublic` 返回值改为 `asym.PrivateKey`/`asym.PublicKey`。**测试手法变更**：原用 `loaded.Key().Equal(priv.Key())` / `PublicEqual`（核心句柄比较，已删），改为新增 `keyFingerprint`（经 `asym.Params` 拼 N/E/D/P/Q/DP/DQ/IQ 指纹做整键比较）与 `asym.Match(priv, pub)`；并新增「公钥解析结果不得携带 `D`」断言。**文档**：api-reference §16 由「✅ 已有（本版不改签名）」改为「🚧 签名变更」，符号清单/前言/桥接注记全部改写（原文前言称「使用 Go 标准库 `crypto/rsa` 类型」与其签名 `*trsa.PrivateKey` 自相矛盾——`trsa` 是本库待删的包，不是标准库）。**订正说明**：§13 的 19g 行曾记「api-reference §16 无符号清单」，实测 §16 一直有 4 条签名，真实缺陷是上述前言与签名不一致，故在此更正而不回改 19g 行（遵守 D6「不修改他人的行」）） |
 | 21 | `chore(refactor): 删除旧 crypto/* + key/（16 包形态定格）` | ✅ | （§12.2 步 21。删除 `crypto/` 下 **18 个子包 74 个文件** + `key/` **15 个文件**，共 **89 文件 / 13754 行**；同时迁移 `jwk/jwk_test.go` + `jwk/jwk_tongsuocli_test.go`（它们是**最后**两个引用旧包的测试——`jwk` 测试改用 `asym.GenerateRSA` / `asym.GenerateEC`、公开入口 `MarshalKey(priv)`，并把已删的 `Key().Equal` / `PublicEqual` 句柄比较换成新增的 `sameKeyParams`（经 `asym.Params` 比较算法无关参数快照）与 `asym.Match`）。删除顺序已在开工前探查确认：**非测试代码对旧包的引用在 20.7 后已归零**，测试侧只剩上述两个文件，其余旧测试随目录一并消失。**验收（§8.3）**：① 旧包 import 路径 grep 为空；② 16 个目标包逐个 `[ -d ]` 全 OK（`meta digest mac kdf rand sym asym ecdh keystore x509 tls asn1 jwk pkcs/pkcs7 pkcs/pkcs12 xml/rsa`）；③ `go doc -all` 的**签名级** internal 泄漏：其余 15 包为 0，`x509` 为 1（仅 `CoreCertificate()`，§5.2 已接受的残余），`tls` 的 1 是 `const NTLSVersion uint16 = core.NTLSVersion` 的**初始化表达式**被 godoc 打印，并非类型泄漏（度量口径需排除常量初值）；④ `asym` 的 `CorePKey` godoc 计数为 0；⑤ `keyaccess` 消费方白名单核对发现新增一员 `keystore/handle.go`（`marshalKeyPEM` 取句柄序列化，commit 18 引入），而 §5.2 / AGENTS §3.3 的白名单只列了 ecdh/x509/tls/jwk/pkcs12 —— **待 commit 22 同步文档**（不属本步）。**删掉的测试面**：`crypto/*/example_test.go` 与 `key/*_test.go` 测的是已删包，随包删除；新包的对应覆盖由 commit 04–18 各自补的测试承担） |
 | 22 | `docs+changelog: 同步文档 + 0.3.0 BREAKING 段 + 本地 tag v0.3.0` | ✅ | （收官。**CHANGELOG×2**：`## [0.3.0] - TBD` → `- 2026-09-24`，并补齐**实施期才暴露**的条目——`新增功能` 补 `asym.Close(k Key) error`（本包首个显式释放入口）；`行为变化与重构` 补 `meta` 同样去掉 `internal/native` 直连（至此 API 层直连归零）、`CipherSuiteByName` 的匹配语义、`examples/` 6 个示例迁移、`xml/rsa` 实现说明；**`BREAKING` 补 4 条**：`x509.WrapCertificate` 删除 + 证书所有权语义变更（改为自有副本，调用方须各自 `Close`）、`xml/rsa` 四个函数改收 `asym.*`、`jwk.Marshal(*core.PKey)` 删除改 `MarshalKey(asym.Key)`、`pkcs12.PrivateKey`/`Bundle.PrivateKey` 改 `asym.PrivateKey`；**`已知限制` 补 2 条**：`asym.PrivateKey.Public()` 与私钥共享底层句柄（既有行为）导致 `jwk.MarshalKey(priv.Public())` 仍会导出含私钥分量的 JWK、`x509.Store` 持有句柄但无公开 `Close`。两份 CHANGELOG **逐条对称**（各版本段条目数 45 / 22 / 10 / 37 / 35 完全一致，标题序列一一对应）。**api-reference**：状态图例与「生成基线」改为「`0.3.0`（2026-09-24 发布）」口径，§0 索引表 13 行与 13 处小节头由「🚧 当前版本实施中」翻为「✅ 已有」。**白名单订正**：`internal/keyaccess` 消费方 **5 → 6**（补 `keystore`，commit 18 的 `marshalKeyPEM` 需要），`AGENTS.md` §3.1/§3.3 与 roadmap §2.2 依赖图 / §5.2 同步。**`git tag v0.3.0` 仅本地**（AGENTS §6.5 禁止 `git push`）。） |
+
+> **收官后的补记（2026-09-29）**：22 步均已提交，但 §12.2 第 22 步备注里的
+> `git tag v0.3.0` **实际未执行**（用户决定先不打 tag）；另 §7 Phase 0 的两项
+> （`internal/testutil` 收敛、CI 增 `tongsuocli` job）当时未落地，现已排入收尾。
+> 按 D6「不改他人的行」，上表不做回改，差异在此说明。

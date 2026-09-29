@@ -201,7 +201,7 @@
 
 **规划中（`0.4.0`）**
 
-> 前置：`internal/native` 需新增 `EVP_MAC_fetch / new / init / update / final` 绑定（`crypto/hmac` 现有实现不受影响）。
+> 前置：`internal/native` 需新增 `EVP_MAC_fetch / new / init / update / final` 绑定（本版 `mac` 的 HMAC 走 legacy `HMAC_CTX_*` 路径，新增绑定不影响其行为）。
 
 | 符号 | 说明 |
 |---|---|
