@@ -235,12 +235,13 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   private components**. For a public JWK, load the public key on its own
   (`asym.LoadPublicKeyPEM`) and pass that to `MarshalKey`.
 - Known limitation: the `tls` loopback and interop suites still fail
-  intermittently in about 5% of runs (client-side `SSL_connect:
-  unexpected message` / `SSL_read: Bad file descriptor`). The cause is
-  not the test structure but a **library-level** issue around connection
-  fd lifetime (`connFD` + `SSL_set_fd` versus close ordering) and is
-  pending a dedicated fix; CI therefore does **not** run the
-  `tongsuocli` interop job yet.
+  intermittently (client-side `SSL_connect: unexpected message` /
+  `SSL_read: Bad file descriptor`). The measured rate grows with load:
+  roughly 1 run in 20 for `go test ./tls/` alone, and roughly 1 in 2-3
+  for a full `go test ./...`. The cause is not the test structure but a
+  **library-level** issue around connection fd lifetime (`connFD` +
+  `SSL_set_fd` versus close ordering) and is pending a dedicated fix; CI
+  therefore does **not** run the `tongsuocli` interop job yet.
 
 ---
 

@@ -192,11 +192,12 @@
   因此 `jwk.MarshalKey(priv.Public())` 仍会导出**含私钥分量**的 JWK。
   需要公钥 JWK 时，请先把公钥 PEM 独立加载（`asym.LoadPublicKeyPEM`）
   再传给 `MarshalKey`。
-- 已知限制：`tls` 的回环与对拍测试仍有约 5% 的间歇失败
-  （客户端 `SSL_connect: unexpected message` / `SSL_read: Bad file
-  descriptor`）。根因不在测试结构，而是连接 fd 生命周期相关的**库级**
-  问题（`connFD` + `SSL_set_fd` 与关闭时序），待单独修复；因此 CI
-  **尚未**启用 `tongsuocli` 对拍 job。
+- 已知限制：`tls` 的回环与对拍测试仍会间歇失败（客户端
+  `SSL_connect: unexpected message` / `SSL_read: Bad file descriptor`）。
+  实测频率随负载上升：`go test ./tls/` 单包 20 次约 1 次；全仓库
+  `go test ./...` 时约每 2–3 次 1 次。根因不在测试结构，而是连接 fd
+  生命周期相关的**库级**问题（`connFD` + `SSL_set_fd` 与关闭时序），
+  待单独修复；因此 CI **尚未**启用 `tongsuocli` 对拍 job。
 
 ---
 
