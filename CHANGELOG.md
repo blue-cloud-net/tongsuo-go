@@ -63,6 +63,12 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   explicit release path; until now a key holding a handle could only be
   freed by the finalizer. The `keystore` and `ecdh` suites use it to prove
   a duplicate stays usable after the source key is released.
+- `x509`: `(*Store).Close()` adds the release path a trust store never
+  had — `Store` was the only handle-owning type in the package with no
+  public `Close` and could previously be freed only by the finalizer.
+  After `Close`, `AddCert` / `AddCRL` / `SetFlags` / `SetTime` return
+  `x509: store closed` and `ChainVerify` fails because the trust anchor
+  has been released.
 
 ### Changed
 
@@ -97,6 +103,13 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - `xml/rsa`: the implementation still round-trips through PKCS#1 / SPKI
   PEM and `asym.LoadPrivateKeyPEM` / `LoadPublicKeyPEM` — **no new cgo**;
   only the parameter source moved to `asym.Params`.
+- `internal/testutil` gains the unified entry points
+  `RunOpenSSLCombined` / `RunOpenSSLCombinedIn` / `MustRunOpenSSL` /
+  `MustRunOpenSSLInDir`. Eight `*_tongsuocli_test.go` files used to
+  duplicate their own openssl wrapper (four of them lacked
+  `SkipIfNoOpenSSL` and failed instead of skipping when the CLI was
+  missing); all of them now call the shared helpers. Test infrastructure
+  only — no public API change.
 
 ### Fixed
 
@@ -104,6 +117,18 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   private-side listing previously called `P` / `Q` "CRT 因子"; they are
   in fact the RSA prime factors. The doc now distinguishes 素因子
   (`P` / `Q`) and CRT factors (`Dmp1` / `Dmq1` / `Iqmp`).
+- `tls` test structure: `mustHandshake` used to call `t.Fatalf` inside a
+  goroutine spawned by a test; once the test function has returned, that
+  panics with "Fail in goroutine after … has completed" and swallows the
+  results of every other test in the package (P1004, defect 2). It is
+  replaced by `handshakeErr` (error-returning only) plus
+  `serveHandshakeAsync` (assertion from `t.Cleanup`), six tests gained
+  explicit handshake-vs-close synchronisation, and a handshake failure
+  now fails fast instead of waiting for a timeout. A test-level leak was
+  fixed along the way: a server connection abandoned after the handshake
+  outlived `defer srv.Close()` (which frees the `SSL_CTX`). Package flake
+  rate dropped from 3/20 to 1/20; the remainder is listed under Known
+  limitations.
 
 ### Documentation
 
@@ -123,6 +148,15 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   known-trap list.
 - `README.md` + `README.zh.md`: features, code examples and the
   architecture section.
+- `docs/refactor-roadmap.md`: the §0 baseline now reads "`0.3.0`
+  implemented, tag pending", the §2.1 status column is all-green, and a
+  closing footnote records that the tag was never created and that two
+  Phase 0 items were still outstanding.
+- `docs/api-reference.md` / `docs/api-reference-internal.md` /
+  `docs/architecture.md` / `AGENTS.md`: document the
+  `internal/certaccess` bridge (only `internal/keyaccess` was listed
+  before), correct the keyaccess consumer list to six entries (adds
+  `keystore`) and cover the new `internal/testutil` entry points.
 
 ### BREAKING / 已知限制
 
@@ -200,11 +234,13 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   `jwk.MarshalKey(priv.Public())` still exports a JWK **carrying the
   private components**. For a public JWK, load the public key on its own
   (`asym.LoadPublicKeyPEM`) and pass that to `MarshalKey`.
-- Known limitation: `x509.Store` holds a native handle but exposes **no
-  public `Close`** (every other handle-owning type in the package has
-  one), so release currently depends on the finalizer; long-running
-  processes should reuse a single `Store` rather than creating one per
-  operation.
+- Known limitation: the `tls` loopback and interop suites still fail
+  intermittently in about 5% of runs (client-side `SSL_connect:
+  unexpected message` / `SSL_read: Bad file descriptor`). The cause is
+  not the test structure but a **library-level** issue around connection
+  fd lifetime (`connFD` + `SSL_set_fd` versus close ordering) and is
+  pending a dedicated fix; CI therefore does **not** run the
+  `tongsuocli` interop job yet.
 
 ---
 

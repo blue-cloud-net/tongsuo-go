@@ -56,6 +56,10 @@
 - `asym`：新增包级 `Close(k Key) error` 释放入口。此前本包**没有任何显式
   释放途径**，持有句柄的密钥只能等 finalizer；`keystore` 与 `ecdh` 的用例
   已用它验证「源密钥释放后副本仍可用」。
+- `x509`：新增 `(*Store).Close()` 释放入口。此前 `Store` 是同类句柄类型中
+  唯一没有公开释放途径的（只能等 finalizer），现已可显式释放；释放后
+  `AddCert` / `AddCRL` / `SetFlags` / `SetTime` 返回 `x509: store closed`，
+  `ChainVerify` 因信任锚已释放而失败。
 
 ### 行为变化与重构
 
@@ -83,12 +87,25 @@
   `cd examples/<name> && go run .`（它们是独立 module）。
 - `xml/rsa`：内部实现仍走 PKCS#1 / SPKI PEM 往返 + `asym.LoadPrivateKeyPEM`
   / `LoadPublicKeyPEM`，**零新增 cgo**；仅参数来源改为 `asym.Params`。
+- `internal/testutil` 新增统一入口 `RunOpenSSLCombined` /
+  `RunOpenSSLCombinedIn` / `MustRunOpenSSL` / `MustRunOpenSSLInDir`；
+  8 个 `*_tongsuocli_test.go` 原本各自复制 openssl 命令封装（其中 4 处
+  未接 `SkipIfNoOpenSSL`，缺 CLI 时直接失败而非跳过），现已全部改走
+  统一入口。此项属测试基础设施，不影响公开 API。
 
 ### Bug 修复
 
 - `asym` GoDoc：`PrivateKey.Params` / `PublicKey.Params` 注释将
   `P` / `Q` 误称为「CRT 因子」（实为 RSA 素因子）。现已区分素因子
   （`P` / `Q`）与 CRT 系数（`Dmp1` / `Dmq1` / `Iqmp`）。
+- `tls` 测试结构：`mustHandshake` 曾在测试自起的 goroutine 内调用
+  `t.Fatalf`，测试函数返回后调用会以「Fail in goroutine after … has
+  completed」触发**包级 panic**，吞掉同包其余用例的结果（P1004 缺陷 2）。
+  现改为 `handshakeErr`（只返回 error）+ `serveHandshakeAsync`
+  （`t.Cleanup` 断言），并给 6 个用例补齐握手与关闭的时序同步，握手失败
+  快速失败（不再空等到超时）；顺带修掉一处测试级泄漏：握手后遗弃的服务端
+  连接会活过 `defer srv.Close()` 释放 `SSL_CTX` 的时刻。本包 flake 率由
+  3/20 降到 1/20，残余部分见「已知限制」。
 
 ### 文档
 
@@ -103,6 +120,13 @@
 - `docs/architecture.md`：§1.1 / §2 / §3.3 / §4 / §5 / §7 / §10 / §11。
 - `AGENTS.md`：目录地图、分层红线、文档同步表与已知陷阱清单。
 - `README.md` + `README.zh.md`：功能列表、代码示例与架构段。
+- `docs/refactor-roadmap.md`：§0 基线改为「`0.3.0` 已实现，tag 待打」、
+  §2.1 状态列 16 个包全部翻为已落地，并在 §13 表下补收官脚注（tag 未打、
+  Phase 0 两项遗留）。
+- `docs/api-reference.md` / `docs/api-reference-internal.md` /
+  `docs/architecture.md` / `AGENTS.md`：补 `internal/certaccess` 桥接
+  （此前只列了 `internal/keyaccess`），订正 keyaccess 消费方为 6 个
+  （补 `keystore`），并同步 `internal/testutil` 的新统一入口。
 
 ### BREAKING / 已知限制
 
@@ -168,9 +192,11 @@
   因此 `jwk.MarshalKey(priv.Public())` 仍会导出**含私钥分量**的 JWK。
   需要公钥 JWK 时，请先把公钥 PEM 独立加载（`asym.LoadPublicKeyPEM`）
   再传给 `MarshalKey`。
-- 已知限制：`x509.Store` 持有原生句柄但**未提供公开 `Close`**（同包其他
-  句柄类型都有），释放目前只能依赖 finalizer；对长驻进程建议复用同一个
-  `Store` 而非每次新建。
+- 已知限制：`tls` 的回环与对拍测试仍有约 5% 的间歇失败
+  （客户端 `SSL_connect: unexpected message` / `SSL_read: Bad file
+  descriptor`）。根因不在测试结构，而是连接 fd 生命周期相关的**库级**
+  问题（`connFD` + `SSL_set_fd` 与关闭时序），待单独修复；因此 CI
+  **尚未**启用 `tongsuocli` 对拍 job。
 
 ---
 

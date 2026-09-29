@@ -95,7 +95,7 @@ API 层（16 个顶级包：meta / digest / mac / sym / asym / ecdh / kdf / rand
 - **公开签名不得出现 `internal/` 类型**：这是重构后的硬约束（原先 `*core.PKey` /
   `*core.Digest` / `*core.KeyParams` / `*core.Certificate` 等泄漏到公开签名的 12 处均已收敛）
 
-#### 跨包取原生句柄（`internal/keyaccess`）
+#### 跨包取原生句柄（`internal/keyaccess` / `internal/certaccess`）
 
 API 层内部存在必须先拿到 `*core.PKey` 才能工作的场景（如 `ecdh` 对 `asym` 密钥做
 `EVP_PKEY_derive`，`x509` 设置证书公钥 / 签名）。为兼顾「不泄露内部类型」与「不多一次编解码」，
@@ -107,9 +107,14 @@ API 层内部存在必须先拿到 `*core.PKey` 才能工作的场景（如 `ecd
   因此不进公开 godoc
 - `internal/keyaccess` 只声明形状 `interface{ CorePKey() *core.PKey }` + `PKey(v any) (*core.PKey, bool)`
   并做类型断言：**无注册表、无 `init()` 顺序依赖、无全局状态**；`asym` 也不需要 import 它
-- 消费方：`ecdh`、`x509`、`tls`、`jwk`、`pkcs/pkcs12`；拿到句柄后用 `EVP_PKEY_dup` 复制，
+- 消费方：`ecdh`、`x509`、`tls`、`jwk`、`keystore`、`pkcs/pkcs12`；拿到句柄后用 `EVP_PKEY_dup` 复制，
   保证两侧生命周期独立
 - 验收：`go doc -all ./asym` 输出中不得出现 `CorePKey`；`internal/` 路径规则保证外部模块无法 import
+
+证书句柄走同构的 `internal/certaccess`：`Certificate(v any) (*core.Certificate, bool)`
+供 `tls` / `pkcs/pkcs7` / `pkcs/pkcs12` 取句柄，反向的 `Wrap(*core.Certificate)` 用
+**DER 往返**产出 owned 副本（因此 `x509.Certificate.CoreCertificate()` 是§5.2 已接受的
+残余：方法虽在 godoc，但外部模块无法 import `internal/core`，拿到也用不了）。
 
 #### tls 包公开 API（v0.2.0+）
 
@@ -239,6 +244,8 @@ tongsuo-go/
 │   │   └── waitfd_linux.go  waitfd_darwin.go
 │   ├── keyaccess/             # 【桥接】公开密钥对象 → *core.PKey（结构化接口断言，叶子包）
 │   │   └── keyaccess.go       # corePKeyer + PKey(v any)
+│   ├── certaccess/            # 【桥接】公开证书对象 ↔ *core.Certificate（断言 + DER 往返）
+│   │   └── certaccess.go      # Certificate(v any) + Wrap(*core.Certificate)
 │   ├── digest/                # 【共享抽象】纯 Go hash.Hash 实现
 │   │   └── digest.go          # NewHash：把 *core.Digest 适配为 hash.Hash
 │   └── testutil/              # 【测试共享】铜锁 CLI 包装与跳过判定
@@ -252,8 +259,10 @@ tongsuo-go/
 ```
 
 > **内部实现隐藏**：`internal/` 使绑定层、核心层与桥接层对库外部不可见；公开 API 由上述
-> 16 个顶级包构成。`internal/keyaccess` 是唯一的「公开对象 → 原生句柄」通道，只被
-> `ecdh` / `x509` / `tls` / `jwk` / `pkcs12` 使用。
+> 16 个顶级包构成。「公开对象 → 原生句柄」共有两个桥接包：`internal/keyaccess`（密钥，
+> 结构化断言）供 `ecdh` / `x509` / `tls` / `jwk` / `keystore` / `pkcs12` 使用，
+> `internal/certaccess`（证书，断言 + DER 往返）供 `tls` / `pkcs7` / `pkcs12` 与 `x509`
+> 包内的 `ocsp` 使用。
 > 依赖方向单向：算法原语包只依赖 `internal/core`；`ecdh → asym`；`x509 → asym`；
 > `tls` / `jwk` / `pkcs12` → `x509` + `asym`。原 `key/` 的统合职责已拆分：
 > 非对称抽象 → `asym`、对称抽象 → `sym`、元数据与轮转 → `keystore`、KDF → `kdf`。

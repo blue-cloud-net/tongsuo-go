@@ -1,6 +1,6 @@
 # 内部 API 清单（`internal/*`）
 
-> **用途**：列出本仓库 `internal/` 下五个包的导出 API（签名 + 一句话说明），供本仓库内部开发（绑定层、核心层、测试）速查。
+> **用途**：列出本仓库 `internal/` 下六个包的导出 API（签名 + 一句话说明），供本仓库内部开发（绑定层、核心层、测试）速查。
 >
 > **口径**：
 > 1. 只列 `internal/` 的包；对外公开面见 `docs/api-reference.md`；
@@ -8,7 +8,7 @@
 > 3. 每项格式为「完整签名 — 中文一句话」；未导出（小写）符号不列；
 > 4. 某些 `internal/core` 类型会**出现在公开 API 签名中**（如 `*core.PKey`），下文用 ⚠️ 标出。
 >
-> **范围**：**5 个包**。生成基线：`0.3.0 - TBD`。
+> **范围**：**6 个包**。生成基线：`0.3.0`（2026-09-24 已实现，tag 待打）。
 
 ---
 
@@ -20,13 +20,15 @@
 | 2 | `internal/native` | 绑定层：cgo + 内嵌 C shim，直接映射铜锁 C 函数 |
 | 3 | `internal/digest` | 纯 Go 共享实现：把 `*core.Digest` 适配为 `hash.Hash` |
 | 4 | `internal/keyaccess` | 公开密钥对象 → `*core.PKey` 的内部反查（结构化接口断言，无注册表） |
-| 5 | `internal/testutil` | 测试共享：铜锁 CLI 包装与跳过判定 |
+| 5 | `internal/certaccess` | 公开证书对象 ↔ `*core.Certificate` 的双向桥接（结构化断言 + DER 往返） |
+| 6 | `internal/testutil` | 测试共享：铜锁 CLI 包装与跳过判定 |
 
 ```
 API 层（meta / digest / mac / sym / asym / ecdh / kdf / rand / keystore / x509 / tls / asn1 / jwk / pkcs/* / xml-rsa）
     ↓                                              ↑
 internal/core     ← 句柄/上下文包装、生命周期、错误、协议编排
 internal/keyaccess → 公开密钥对象到 *core.PKey 的反查（叶子包，只依赖 internal/core）
+internal/certaccess → 公开证书对象到 *core.Certificate 的双向桥接（叶子包，只依赖 x509 + internal/core）
     ↓
 internal/native   ← cgo + shim.c（X_ 前缀），1:1 映射铜锁 C 函数
 
@@ -378,8 +380,14 @@ internal/testutil ← 仅被 *_test.go 使用
 
 - `func OpenSSLBin() string` — 返回铜锁命令行路径（`TONGSUO_OPENSSL_BIN`，默认 `/opt/tongsuo/bin/openssl`）
 - `func RunOpenSSL(args []string, stdin []byte) ([]byte, error)` — 执行铜锁 CLI 并捕获 stdout
+- `func RunOpenSSLCombined(args []string, stdin []byte) ([]byte, error)` — 同上但保留 stderr（`openssl verify` / `crl -verify` 的结果写在 stderr）
+- `func RunOpenSSLCombinedIn(dir string, args []string, stdin []byte) ([]byte, error)` — 同上但在 dir 目录下执行（`ca` / `ocsp` / `crl` 依赖相对路径）
 - `func OpenSSLAvailable() bool` — 铜锁 CLI 是否可用
 - `func SkipIfNoOpenSSL(t *testing.T) string` — CLI 不可用时跳过用例，否则返回其路径
+- `func MustRunOpenSSL(t *testing.T, args ...string) []byte` — **对拍测试的统一入口**：自动跳过判定 + 合并输出 + 失败即 `t.Fatalf`
+- `func MustRunOpenSSLInDir(t *testing.T, dir string, args ...string) []byte` — 同上，但在 dir 目录下执行
+
+> 各包的 `*_tongsuocli_test.go` **不得**自行复制 openssl 封装（AGENTS.md §5.1），统一调用 `Must*` 系列。
 
 ---
 
@@ -394,7 +402,7 @@ internal/testutil ← 仅被 *_test.go 使用
 - `type corePKeyer interface { CorePKey() *core.PKey }`（非导出）— 形状契约；由 `asym` 的非导出密钥类型隐式满足
 - `func PKey(v any) (*core.PKey, bool)` — 反查 `v` 背后的原生句柄；`v` 为 nil / 非本库密钥类型 / 未实现契约时返回 `(nil, false)`
 
-**消费方**：`ecdh`、`x509`、`tls`、`jwk`、`pkcs/pkcs12`
+**消费方（6 个）**：`ecdh`、`x509`、`tls`、`jwk`、`keystore`、`pkcs/pkcs12`
 
 **契约要求（`asym` 侧）**
 
@@ -406,4 +414,34 @@ internal/testutil ← 仅被 *_test.go 使用
 **验收**
 
 - `go doc -all ./asym` 输出中**不得**出现 `CorePKey`
-- `grep -rn "keyaccess" --include=*.go` 只应命中 `internal/keyaccess/` 与上述 5 个消费方
+- `grep -rln "internal/keyaccess" --include=*.go .` 只应命中 `internal/keyaccess/` 与上述 6 个消费方
+
+---
+
+## 6. `internal/certaccess` — 公开证书对象 ↔ 原生句柄的双向桥接
+
+与 `keyaccess` 同构，但处理的是**证书**而不是密钥：`tls` / `pkcs/pkcs7` / `pkcs/pkcs12`
+需要把 `*x509.Certificate` 换成 `*core.Certificate`（`X509_set_pubkey` / `PKCS7` 系列），
+而 `x509` 包内部（如 `ocsp`）需要反向把 `*core.Certificate` 换成公开类型。
+
+**与 `keyaccess` 的两处差异**：
+
+1. 本包 **import `x509`**（单向：`certaccess → x509`），因此不能像 `keyaccess` 那样只依赖 `internal/core`；
+2. 只有「取句柄」方向是结构化断言（`certaccess.Certificate`），
+   **反向包装走 DER 往返**（`MarshalDER` → `x509.LoadCertificateDER`），
+   产物是**持有独立句柄**的证书（调用方各自 `Close`）——
+   修正了旧 `x509.WrapCertificate` 共享句柄与「调用方负责 Close」契约不符的问题。
+
+**类型与函数**
+
+- `func Certificate(v any) (*core.Certificate, bool)` — 从 `*x509.Certificate` 或 `*core.Certificate` 取底层句柄；nil / 非本库类型 / 未实现契约时返回 `(nil, false)`
+- `func Wrap(c *core.Certificate) (*x509.Certificate, error)` — 句柄 → 公开证书（DER 往返，返回 owned 副本）
+
+**消费方**：`tls`、`pkcs/pkcs7`、`pkcs/pkcs12`，以及 `x509` 包内部的 `ocsp`
+
+**已知残余**：`x509.Certificate.CoreCertificate()` 仍以导出方法形式存在于 godoc
+（`roadmap §5.2` 已接受的残余）；外部包即使满足结构化断言，也因无法 import
+`internal/core` 而拿不到可用句柄。
+
+**验收**：`go doc -all ./x509` 的签名级 `internal/` 泄漏仅剩 `CoreCertificate()` 一处；
+`internal/certaccess/certaccess_test.go` 必须包含「断言确实命中」的回归用例（P1001 教训）。

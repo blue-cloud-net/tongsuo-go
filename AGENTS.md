@@ -123,7 +123,7 @@ API 层（16 个顶级包：meta / digest / mac / sym / asym / ecdh / kdf / rand
     ↓ 调用
 绑定层（internal/native/）                 ← cgo + 内嵌 C shim，直接映射铜锁 C 函数
 
-（桥接：internal/keyaccess ← 公开密钥对象 → *core.PKey，供 6 个消费包使用）
+（桥接：internal/keyaccess ← 公开密钥对象 → *core.PKey；internal/certaccess ↔ 公开证书对象 → *core.Certificate）
 ```
 
 - `crypto/` 整目录与 `key/` 已在包结构重构中**取消**；详见 `docs/refactor-roadmap.md`
@@ -228,6 +228,7 @@ internal/core/                 # 核心层：句柄包装 + 生命周期 + 错�
 └── waitfd_linux.go  waitfd_darwin.go   # epoll / kqueue 等待 fd 可读
 
 internal/keyaccess/            # 桥接：公开密钥对象 → *core.PKey（结构化接口断言，无注册表）
+internal/certaccess/           # 桥接：公开证书对象 ↔ *core.Certificate（断言 + DER 往返）
 internal/digest/               # 纯 Go hash.Hash 共享实现（digest 包使用）
 internal/testutil/             # 测试共享：openssl CLI 包装 / SkipIfNoOpenSSL
 ```
@@ -270,8 +271,8 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 - **公开签名中不得出现 `internal/` 类型**（重构后的硬约束）
   - ❌ 反例：`func EncryptOAEP(pub asym.PublicKey, data []byte, md *core.Digest)`
   - ❌ 反例：`func (k *PrivateKey) Key() *core.PKey`
-- 跨包取原生句柄**只允许**经 `internal/keyaccess`，且消费方仅限 `ecdh` / `x509` / `tls` / `jwk` / `keystore` / `pkcs/pkcs12`
-  - 注：`keystore` 是实施期新增的第 6 个消费方（`marshalKeyPEM` 取句柄做 PEM 序列化），原白名单只列了 5 个
+- 跨包取原生句柄**只允许**经两个桥接包：密钥走 `internal/keyaccess`（消费方限 `ecdh` / `x509` / `tls` / `jwk` / `keystore` / `pkcs/pkcs12`），证书走 `internal/certaccess`（消费方限 `tls` / `pkcs/pkcs7` / `pkcs/pkcs12` 与 `x509` 包内的 `ocsp`）
+  - 注：`keystore` 是实施期新增的第 6 个 keyaccess 消费方（`marshalKeyPEM` 取句柄做 PEM 序列化），原白名单只列了 5 个
   - ❌ 反例：在 `internal/core` 里写「类型开关」反查公开类型（会成环，`internal/core` 不能 import `asym`）
   - ✅ 正例：`asym` 在**非导出**具体类型上实现 `CorePKey() *core.PKey`，`keyaccess.PKey(v)` 结构化断言取得；取到后必须 `EVP_PKEY_dup`
 - `unsafe` 仅限绑定层与核心层，作用域尽量小；**不得**在 Go 与 C 之间直接传 Go 指针
@@ -521,7 +522,7 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 | 11 | `go test ./...` 默认**不**编译 `*_tongsuocli_test.go` | 需要 CLI 对拍时显式加 `-tags tongsuocli`，否则会误以为「已覆盖」 |
 | 12 | `internal/` 受 Go 机制保护 | 外部包无法 import；新增内部包不要试图对外暴露 |
 | 13 | 铜锁需带 `enable-ntls` 编译才有 NTLS 能力 | CI 配置为 `--prefix=... --libdir=... enable-ntls enable-trace no-shared`，本地安装需一致 |
-| 14 | 跨包取 `*core.PKey` 只能经 `internal/keyaccess`，且取到后必须 `EVP_PKEY_dup` | 不要新增第二个桥接机制；不要直接暴露句柄（见 §3.3） |
+| 14 | 跨包取句柄只能经 `internal/keyaccess`（`*core.PKey`，取到后必须 `EVP_PKEY_dup`）或 `internal/certaccess`（`*core.Certificate`） | 不要新增第三个桥接机制；不要直接暴露句柄（见 §3.3） |
 
 ---
 
