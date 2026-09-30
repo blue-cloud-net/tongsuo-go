@@ -87,8 +87,11 @@ jobs:
           echo "==> make -j${JOBS}"
           make -j"${JOBS}"
           echo "==> make done"
-          echo "==> make install_sw"
-          make install_sw
+          # 用 install 而非 install_sw：前者 = install_sw + install_ssldirs，
+          # 会一并装 $OPENSSLDIR（ssl/openssl.cnf 等）；openssl CLI 的 req / ca /
+          # ocsp 读默认配置文件，缺了会报 "Can't open .../ssl/openssl.cnf"。
+          echo "==> make install"
+          make install
           echo "==> Tongsuo installed to ${{ github.workspace }}/.tongsuo-install"
 
       - name: go vet
@@ -163,8 +166,11 @@ jobs:
           echo "==> make -j${JOBS}"
           make -j"${JOBS}"
           echo "==> make done"
-          echo "==> make install_sw"
-          make install_sw
+          # 用 install 而非 install_sw：前者 = install_sw + install_ssldirs，
+          # 会一并装 $OPENSSLDIR（ssl/openssl.cnf 等）；openssl CLI 的 req / ca /
+          # ocsp 读默认配置文件，缺了会报 "Can't open .../ssl/openssl.cnf"。
+          echo "==> make install"
+          make install
           echo "==> Tongsuo installed to ${{ github.workspace }}/.tongsuo-install"
 
       # Linux：写入 ld.so.conf 并 ldconfig；macOS 通过 DYLD_LIBRARY_PATH 生效
@@ -252,8 +258,11 @@ jobs:
           echo "==> make -j${JOBS}"
           make -j"${JOBS}"
           echo "==> make done"
-          echo "==> make install_sw"
-          make install_sw
+          # 用 install 而非 install_sw：前者 = install_sw + install_ssldirs，
+          # 会一并装 $OPENSSLDIR（ssl/openssl.cnf 等）；openssl CLI 的 req / ca /
+          # ocsp 读默认配置文件，缺了会报 "Can't open .../ssl/openssl.cnf"。
+          echo "==> make install"
+          make install
           echo "==> Tongsuo installed to ${{ github.workspace }}/.tongsuo-install"
 
       - name: Configure dynamic linker (Linux)
