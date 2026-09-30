@@ -3,11 +3,9 @@
 // NTLS 同时使用两张证书：签名证书（SM2withSM3）+ 加密证书（SM4-GCM-SM3）。
 // 本例使用同一密钥对签两张证书（生产环境应使用不同密钥对）。
 //
-// 运行：
+// 运行（examples 下每个示例都是独立 module）：
 //
-//	TONGSUO_HOME=/opt/tongsuo LD_LIBRARY_PATH=${TONGSUO_HOME}/lib64 \
-//	CGO_CFLAGS="-I${TONGSUO_HOME}/include" CGO_LDFLAGS="-L${TONGSUO_HOME}/lib64" \
-//	go run ./examples/ntls-loopback
+//	cd examples/ntls-loopback && go run .
 //
 // Package main demonstrates an NTLS (GM/T 0024 TLCP) dual-certificate loopback
 // handshake with multiple read/write rounds.
@@ -24,18 +22,18 @@ import (
 	"net"
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/tls"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
 func main() {
 	// 1. 生成签名与加密密钥对（生产环境应分开）
-	signPriv, err := sm2.GenerateKey()
+	signPriv, err := asym.GenerateSM2()
 	if err != nil {
 		log.Fatal(err)
 	}
-	encPriv, err := sm2.GenerateKey()
+	encPriv, err := asym.GenerateSM2()
 	if err != nil {
 		log.Fatal(err)
 	}

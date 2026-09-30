@@ -1554,3 +1554,156 @@ func X509_REQ_sign_ctx(r, ctx unsafe.Pointer) int {
 func X509_CRL_sign_ctx(crl, ctx unsafe.Pointer) int {
 	return int(C.X509_CRL_sign_ctx((*C.X509_CRL)(crl), (*C.EVP_MD_CTX)(ctx)))
 }
+
+// X509_REVOKED_new 创建空的吊销条目（调用方负责用 X509_REVOKED_free 释放）。
+// X509_REVOKED_new allocates an empty revocation entry; the caller owns it
+// and must release it with X509_REVOKED_free.
+func X509_REVOKED_new() unsafe.Pointer {
+	return unsafe.Pointer(C.X509_REVOKED_new())
+}
+
+// X509_REVOKED_free 释放吊销条目（NULL 安全）。
+// X509_REVOKED_free releases rev. Safe on NULL.
+func X509_REVOKED_free(rev unsafe.Pointer) {
+	C.X509_REVOKED_free((*C.X509_REVOKED)(rev))
+}
+
+// X509_REVOKED_set_serial_int 设置吊销条目的序列号（整型）。
+//
+// 实测铜锁 8.5 的 X509_REVOKED_set_serialNumber 会**复制**传入的 ASN1_INTEGER
+// 内容（而非接管指针），故临时 ASN1_INTEGER 由本函数自行创建并释放，与
+// X509_set_serial_int 同形。
+//
+// X509_REVOKED_set_serial_int sets the serial number of a revocation entry.
+//
+// Measured on Tongsuo 8.5: X509_REVOKED_set_serialNumber **copies** the
+// supplied ASN1_INTEGER (it does not take ownership of the pointer), so
+// this helper allocates and frees the temporary ASN1_INTEGER itself,
+// mirroring X509_set_serial_int.
+func X509_REVOKED_set_serial_int(rev unsafe.Pointer, serial int64) bool {
+	ai := C.ASN1_INTEGER_new()
+	if ai == nil {
+		return false
+	}
+	defer C.ASN1_INTEGER_free(ai)
+	if C.ASN1_INTEGER_set(ai, C.long(serial)) != 1 {
+		return false
+	}
+	return C.X509_REVOKED_set_serialNumber((*C.X509_REVOKED)(rev), ai) == 1
+}
+
+// X509_REVOKED_set_revocation_date 设置吊销条目的吊销时间（unix 秒）。
+// X509_REVOKED_set_revocation_date sets the revocationDate of a revocation
+// entry from a unix timestamp (seconds). As with the serial number, the
+// temporary ASN1_TIME is copied by OpenSSL and released here.
+func X509_REVOKED_set_revocation_date(rev unsafe.Pointer, unix int64) bool {
+	tt := C.ASN1_TIME_new()
+	if tt == nil {
+		return false
+	}
+	defer C.ASN1_TIME_free(tt)
+	if C.ASN1_TIME_set(tt, C.time_t(unix)) == nil {
+		return false
+	}
+	return C.X509_REVOKED_set_revocationDate((*C.X509_REVOKED)(rev), tt) == 1
+}
+
+// X509_REVOKED_set_reason 设置吊销条目的原因码（crlReasons 扩展）。
+//
+// X509_REVOKED_add1_ext_i2d 只把值 i2d 编码进扩展、**不接管** value 指针，
+// 故临时 ASN1_ENUMERATED 由本函数释放。
+//
+// X509_REVOKED_set_reason sets the revocation reason code (crlReasons
+// extension) of a revocation entry.
+//
+// X509_REVOKED_add1_ext_i2d only DER-encodes the value into the extension
+// and does **not** take ownership of the pointer, so the temporary
+// ASN1_ENUMERATED is freed here.
+func X509_REVOKED_set_reason(rev unsafe.Pointer, reason int) bool {
+	en := C.ASN1_ENUMERATED_new()
+	if en == nil {
+		return false
+	}
+	defer C.ASN1_ENUMERATED_free(en)
+	if C.ASN1_ENUMERATED_set(en, C.long(reason)) != 1 {
+		return false
+	}
+	return C.X509_REVOKED_add1_ext_i2d((*C.X509_REVOKED)(rev), C.int(NidCrlReason),
+		unsafe.Pointer(en), 0, 0) == 1
+}
+
+// X509_CRL_add0_revoked 把吊销条目追加进 CRL（**所有权转移**给 CRL）。
+//
+// 成功后不得再对该 X509_REVOKED 调用 X509_REVOKED_free：它已由 CRL 拥有，
+// 随 X509_CRL_free 一并释放。
+//
+// X509_CRL_add0_revoked appends a revocation entry to the CRL, transferring
+// **ownership** of rev to the CRL.
+//
+// After success the caller must NOT call X509_REVOKED_free on rev: the CRL
+// owns it and releases it together with X509_CRL_free.
+func X509_CRL_add0_revoked(crl, rev unsafe.Pointer) bool {
+	return C.X509_CRL_add0_revoked((*C.X509_CRL)(crl),
+		(*C.X509_REVOKED)(rev)) == 1
+}
+
+// X509_CRL_sort 按序列号对 CRL 中的吊销条目排序。
+// X509_CRL_sort sorts the revocation entries of crl by serial number.
+func X509_CRL_sort(crl unsafe.Pointer) bool {
+	return C.X509_CRL_sort((*C.X509_CRL)(crl)) == 1
+}
+
+// X509_check_host 校验证书的 SAN / CN 是否匹配主机名（X509_check_host）。
+//
+// flags 传 0（默认语义：无 SAN 时回退比对 CN；支持通配符）；peername 传 NULL
+// 表示不需要回填实际匹配到的名字。
+// 返回 1 = 匹配，0 = 不匹配，-1 = 内部错误，-2 = 输入非法（如空名字）。
+//
+// X509_check_host checks whether the certificate matches the host name,
+// consulting the SAN dNSName entries first and falling back to CN.
+//
+// flags is 0 (default semantics: wildcards allowed, CN fallback when no
+// SAN is present) and peername is NULL (the matched name is not returned).
+// Returns 1 on match, 0 on mismatch, -1 on internal error and -2 on
+// malformed input such as an empty name.
+func X509_check_host(x unsafe.Pointer, host string) int {
+	ch := C.CString(host)
+	defer C.free(unsafe.Pointer(ch))
+	return int(C.X509_check_host((*C.X509)(x), ch, C.size_t(len(host)),
+		0, nil))
+}
+
+// X509_check_ip_asc 校验证书的 SAN iPAddress 是否匹配点分 / 冒号文本 IP。
+//
+// 返回 1 = 匹配，0 = 不匹配，-1 = 内部错误，-2 = 输入非法（非 IP 文本）。
+//
+// X509_check_ip_asc checks whether the certificate matches the IP address
+// given in dotted-decimal or colon (IPv6) text form.
+//
+// Returns 1 on match, 0 on mismatch, -1 on internal error and -2 on
+// malformed input (not an IP literal).
+func X509_check_ip_asc(x unsafe.Pointer, ip string) int {
+	ci := C.CString(ip)
+	defer C.free(unsafe.Pointer(ci))
+	return int(C.X509_check_ip_asc((*C.X509)(x), ci, 0))
+}
+
+// X509_STORE_set_verify_time 设置信任存储的验证时刻（unix 秒）。
+//
+// 直接作用于 X509_STORE 的 X509_VERIFY_PARAM，因此对该存储上的**后续每次**
+// ChainVerify 都生效（等价 `openssl verify -attime`）。
+//
+// X509_STORE_set_verify_time sets the verification time of the trust store
+// from a unix timestamp (seconds).
+//
+// It writes to the X509_VERIFY_PARAM owned by the X509_STORE, so it affects
+// **every subsequent** ChainVerify performed with that store (equivalent to
+// `openssl verify -attime`).
+func X509_STORE_set_verify_time(store unsafe.Pointer, unix int64) bool {
+	param := C.X509_STORE_get0_param((*C.X509_STORE)(store))
+	if param == nil {
+		return false
+	}
+	C.X509_VERIFY_PARAM_set_time(param, C.time_t(unix))
+	return true
+}

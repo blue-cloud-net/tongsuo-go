@@ -1,12 +1,35 @@
 package rsa
 
 import (
+	"fmt"
 	"math/big"
 	"strings"
 	"testing"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 )
+
+// keyFingerprint 返回密钥参数的紧凑指纹（含私钥分量），供整键比较。
+//
+// keyFingerprint returns a compact fingerprint of a key's parameters
+// (including the private components) so whole-key equality can be asserted
+// without reaching for internal handles.
+func keyFingerprint(t *testing.T, k asym.Key) string {
+	t.Helper()
+	p, err := asym.Params(k)
+	if err != nil {
+		t.Fatalf("asym.Params: %v", err)
+	}
+	bi := func(x *big.Int) string {
+		if x == nil {
+			return "-"
+		}
+		return x.Text(16)
+	}
+	return fmt.Sprintf("%s|N=%s|E=%s|D=%s|P=%s|Q=%s|DP=%s|DQ=%s|IQ=%s",
+		p.Type, bi(p.N), bi(p.E), bi(p.D), bi(p.P), bi(p.Q),
+		bi(p.Dmp1), bi(p.Dmq1), bi(p.Iqmp))
+}
 
 // extractTag 提取 <Tag>value</Tag> 中的 base64 解码值（测试 helper）。未找到返回空串。
 func extractTag(s, tag string) string {
@@ -25,7 +48,7 @@ func extractTag(s, tag string) string {
 
 // TestPrivateRoundtrip 验证私钥 XML 往返。
 func TestPrivateRoundtrip(t *testing.T) {
-	priv, err := rsa.GenerateKey(2048)
+	priv, err := asym.GenerateRSA(2048)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +64,10 @@ func TestPrivateRoundtrip(t *testing.T) {
 	}
 	// CRT 字段值断言：DP/DQ/InverseQ 应等于 core.KeyParams 的 Dmp1/Dmq1/Iqmp
 	// （即 XML 与本库 Params() 一致），保证不再走"重复 Mod/ModInverse"路径。
-	lp := priv.Params()
+	lp, err := asym.Params(priv)
+	if err != nil {
+		t.Fatalf("asym.Params: %v", err)
+	}
 	if lp == nil || lp.Dmp1 == nil || lp.Dmq1 == nil || lp.Iqmp == nil {
 		t.Fatal("underlying CRT params should be populated")
 	}
@@ -68,14 +94,14 @@ func TestPrivateRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !loaded.Key().Equal(priv.Key()) {
+	if keyFingerprint(t, loaded) != keyFingerprint(t, priv) {
 		t.Fatal("private XML roundtrip key mismatch")
 	}
 }
 
 // TestPublicRoundtrip 验证公钥 XML 往返（仅 Modulus/Exponent）。
 func TestPublicRoundtrip(t *testing.T) {
-	priv, _ := rsa.GenerateKey(2048)
+	priv, _ := asym.GenerateRSA(2048)
 	pub := priv.Public()
 	data, err := MarshalPublic(pub)
 	if err != nil {
@@ -92,14 +118,26 @@ func TestPublicRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !loaded.Key().PublicEqual(pub.Key()) {
+	matched, err := asym.Match(priv, loaded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !matched {
 		t.Fatal("public XML roundtrip key mismatch")
+	}
+	// 公钥解析结果不应携带私钥分量。
+	p, err := asym.Params(loaded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.D != nil {
+		t.Fatal("public key params must not carry D")
 	}
 }
 
 // TestPrivateFromPublicXML 验证私钥解析含 P/Q，公钥解析无 P/Q。
 func TestPrivateFromPublicXML(t *testing.T) {
-	priv, _ := rsa.GenerateKey(2048)
+	priv, _ := asym.GenerateRSA(2048)
 	_, _ = MarshalPrivate(priv)
 	pubXML, _ := MarshalPublic(priv.Public())
 
@@ -107,7 +145,11 @@ func TestPrivateFromPublicXML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !loadedPub.Key().PublicEqual(priv.Public().Key()) {
+	matched, err := asym.Match(priv, loadedPub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !matched {
 		t.Fatal("public key mismatch")
 	}
 

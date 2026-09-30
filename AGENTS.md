@@ -12,7 +12,7 @@
 | GoDoc 注释、命名、cgo、核心层、错误、内存、代码风格 | `docs/development-guide.md` |
 | 测试组织、各算法必测用例、标准向量来源 | `docs/testing-guide.md` |
 | 双语 GoDoc 段式细则、八条规则、中英对照词典 | `docs/bilingual-doc-guide.md` |
-| 历史审计发现（19 份报告） | `docs/issues/2026-09-10/` |
+| 历史审计发现（19 份报告） | `docs/issues/2026-09-18/` |
 
 ---
 
@@ -25,12 +25,13 @@
 
 - 通过 **cgo** 调用铜锁原生 C 库，把底层 `EVP_*` / `X509_*` / `SSL_*` 等接口
   **组合封装为高级方法**，向 Go 开发者提供**符合 Go 语言惯例**的 API：
-  `hash.Hash`、`cipher.Block`、`cipher.AEAD`、`(T, error)` 返回形态、一次性便捷函数
-  （如 `sm3.Sum`、`sm4.EncryptCBC`）
+  `hash.Hash`、`cipher.Block`、`cipher.AEAD`、`(T, error)` 返回形态；
+  并同时提供**按算法名分发的 CLI 式入口**（如 `digest.Sum("SM3", d)`、`digest.SumSM3(d)`）
 - 覆盖 SM2 / SM3 / SM4 商用密码算法，以及 AES、RSA、ECDSA、Ed25519 / Ed448、
   X25519 / X448、ECDH、HMAC、KDF、X.509 证书、PKCS#7 / PKCS#12、OCSP、
   JWK、TLS / NTLS（国密双证书）
-- 采用 **API 层 → 核心层 → 绑定层** 三层架构，依赖单向向下，`internal/` 隐藏 cgo 细节
+- 采用 **API 层 → 核心层 → 绑定层** 三层架构，依赖单向向下，`internal/` 隐藏 cgo 细节；
+  API 层为 **16 个顶级包**（无 `crypto/` 中间目录、无 `key/` 统合包）
 - 是**全新独立实现**，与官方 [tongsuo-project/tongsuo-go-sdk](https://github.com/tongsuo-project/tongsuo-go-sdk)
   **并存**，**不复用其代码**；命名语义参考 C# 项目 [blue-cloud-net/tongsuo-csharp](https://github.com/blue-cloud-net/tongsuo-csharp)
 
@@ -81,6 +82,7 @@ export CGO_LDFLAGS="-L${TONGSUO_HOME}/lib"
 - `-Wno-deprecated-declarations` 仅用于屏蔽铜锁对部分 OpenSSL 已废弃声明的告警，不影响功能
 - 也可用 pkg-config 方式：`export PKG_CONFIG_PATH=${TONGSUO_HOME}/lib/pkgconfig:${PKG_CONFIG_PATH}`
 - CLI 对拍测试用 `TONGSUO_OPENSSL_BIN` 指定铜锁命令行，默认 `/opt/tongsuo/bin/openssl`
+  （仅适用本地开发机；CI 的 `interop` job 显式指向 `.tongsuo-install/bin/openssl`）
 
 ### 2.2 构建与静态检查
 
@@ -93,8 +95,8 @@ go build -tags static ./...   # 静态链接；仅 Linux 已接线（macOS 未�
 ### 2.3 测试
 
 ```bash
-go test -count=1 ./...            # 默认：单元测试（不含 CLI 对拍），CI 跑的就是这条
-go test -tags tongsuocli ./...    # 额外跑铜锁 openssl CLI 逐字节对拍（需铜锁二进制）
+go test -count=1 ./...            # 默认：单元测试（不含 CLI 对拍）—— CI 的 lint / test 阶段
+go test -tags tongsuocli ./...    # 额外跑铜锁 openssl CLI 逐字节对拍（需铜锁二进制）—— CI 的 interop 阶段
 go test -cover ./...              # 覆盖率
 go test -race ./...               # 并发改动时建议加跑
 ```
@@ -104,8 +106,8 @@ go test -race ./...               # 并发改动时建议加跑
 ```bash
 THRESHOLD=80 ./scripts/check-coverage.sh          # 逐包行覆盖门禁（默认阈值 60%）
 EXCLUDE="ocsp,jwk" ./scripts/check-coverage.sh    # 排除依赖外部环境的包
-go test -bench . ./crypto/sm3                     # 基准（关键路径应有 Benchmark*）
-go test -fuzz FuzzRoundTrip ./crypto/sm4          # 模糊测试（会真实跑很久）
+go test -bench . ./digest                      # 基准（关键路径应有 Benchmark*）
+go test -fuzz FuzzRoundTrip ./sym              # 模糊测试（会真实跑很久）
 ```
 
 ---
@@ -115,12 +117,19 @@ go test -fuzz FuzzRoundTrip ./crypto/sm4          # 模糊测试（会真实跑�
 ### 3.1 三层架构
 
 ```
-API 层（crypto/*、key/、x509/、tls/ …）  ← 对外高层 API，仅此层可被外部 import
+API 层（16 个顶级包：meta / digest / mac / sym / asym / ecdh / kdf / rand /
+        keystore / x509 / tls / asn1 / jwk / pkcs/* / xml-rsa）
+    ↓ 调用                                ← 仅此层可被外部 import
+核心层（internal/core/）                   ← 句柄/上下文包装，生命周期与所有权管理
     ↓ 调用
-核心层（internal/core/）                 ← 句柄/上下文包装，生命周期与所有权管理
-    ↓ 调用
-绑定层（internal/native/）               ← cgo + 内嵌 C shim，直接映射铜锁 C 函数
+绑定层（internal/native/）                 ← cgo + 内嵌 C shim，直接映射铜锁 C 函数
+
+（桥接：internal/keyaccess ← 公开密钥对象 → *core.PKey；internal/certaccess ↔ 公开证书对象 → *core.Certificate）
 ```
+
+- `crypto/` 整目录与 `key/` 已在包结构重构中**取消**；详见 `docs/refactor-roadmap.md`
+- API 层内部依赖：算法原语包只依赖 `internal/core`；`ecdh → asym`；`x509 → asym`；
+  `tls` / `jwk` / `pkcs12` → `x509` + `asym`（单向，无环）
 
 ### 3.2 完整目录地图（到文件级）
 
@@ -140,33 +149,35 @@ tongsuo-go/
 └── .github/workflows/        # ci.yml / release.yml
 ```
 
-**`crypto/` — 算法引擎层（仅算法，不放协议/容器/格式）**
+**16 个顶级包（API 层，单层扁平）**
 
-每个子包自带 `{file}.go` + `{file}_test.go` + `example_test.go`，
+每个包自带 `{file}.go` + `{file}_test.go` + `example_test.go`，
 并尽量提供 `{file}_tongsuocli_test.go`（CLI 对拍）。
-子包：`aes/` `ecdh/` `ecdsa/` `ed25519/` `ed448/` `hmac/` `kdf/` `md5/` `rand/` `rsa/`
-`sha1/` `sha256/` `sha512/` `sm2/` `sm3/` `sm4/` `x25519/` `x448/`。
-
-**组合层（与 `crypto/` 平级的顶级包）**
 
 ```
-key/                # 密钥统合抽象：跨算法统一接口 / PEM 解析 / 生命周期 / KDF
-├── key.go          # Algorithm / Key 接口 / PEM / 错误 / Close
-├── symmetric.go    # SymmetricKey / AESKey / SM4Key
-├── generate.go     # GenerateSymmetricKey / ParseSymmetricKey
-├── asymmetric.go   # Asymmetric(Private/Public)Key / PrivateKey / PublicKey
-├── asym_generate.go# GenerateRSAKey / GenerateSM2Key / GenerateECKey
-├── parse.go        # Load*PEM（PKCS#8 / PKCS#1 / SPKI / 加密）
-├── handle.go       # Handle 元数据
-├── store.go        # Store / MemoryStore（密钥轮转）
-└── kdf.go          # Hash / HKDF / PBKDF2 / Argon2ID
+meta/               # 元信息：版本 / 构建信息 / 错误码 / 算法枚举（只查询，无句柄）
+├── version.go      # Version / VersionString / VersionNum / TongsuoVersionNum
+├── build.go        # BuildInfo / ReadBuildInfo
+├── error.go        # ErrorString / ErrorCode / ParseErrorCode
+└── list.go         # （规划中）Digests / Ciphers / MACs / KDFs / Providers …
 
-x509/               # 证书核心
-├── x509.go         # Certificate / Extension / PublicKey / PrivateKey / CreateCertificate
-├── name.go         # Name / NameEntry / NewName
+digest/             # 摘要（合并原 crypto/{sm3,md5,sha1,sha256,sha512}）
+mac/                # 消息认证码（原 crypto/hmac；CMAC/GMAC/KMAC… 规划中）
+kdf/                # 密钥派生（原 crypto/kdf + key 的 KDF）
+rand/               # 安全随机数（原 crypto/rand）
+sym/                # 对称加密 + 对称密钥对象（原 crypto/{aes,sm4} + key 对称部分）
+asym/               # 非对称密钥 / 签名验签 / 加解密 / KEM
+                    #   原 crypto/{sm2,rsa,ecdsa,ed25519,ed448} + crypto/{x25519,x448} 生成 + key 非对称部分
+ecdh/               # 密钥协商（原 crypto/ecdh + crypto/{x25519,x448} 协商）
+keystore/           # 密钥元数据、存储与轮转（原 key 的 Handle / Store / Rotate）
+
+x509/               # 证书 + CSR + CRL + OCSP + 链验证（单包；原 x509 + ocsp）
+├── x509.go         # Certificate / Extension / CreateCertificate / CreateSelfSigned
+├── name.go         # Name / NameEntry
 ├── csr.go          # CertificateRequest
+├── crl.go          # CRL / RevokedEntry / CRLBuilder / RevocationCheck
+├── ocsp.go         # Request / Response / CreateOCSPRequest / ParseOCSPResponse
 ├── store.go        # Store / VerifyError / ChainVerify
-├── crl.go          # CRL / RevokedEntry / RevocationCheck
 └── helpers.go      # convertEntries / convertExtensions（内部辅助）
 
 tls/                # TLS / NTLS 传输层
@@ -176,10 +187,9 @@ tls/                # TLS / NTLS 传输层
 └── errors.go       # 错误分类
 
 asn1/               # DER viewer（纯 Go，cgo-free）
+jwk/                # JWK ↔ PEM（RFC 7517）
 pkcs/pkcs7/         # PKCS#7（Build / Extract / MarshalPEM）
 pkcs/pkcs12/        # PKCS#12（Pack / Parse / ChangePassword）
-ocsp/               # OCSP 客户端（验证 / 自适应 CertID）
-jwk/                # JWK ↔ PEM（RFC 7517）
 xml/doc.go          # 格式族预留命名空间
 xml/rsa/            # .NET RSAKeyValue XML 序列化
 ```
@@ -218,8 +228,10 @@ internal/core/                 # 核心层：句柄包装 + 生命周期 + 错�
 ├── rand.go  zero.go           # RandomBytes 包装 / 清零辅助
 └── waitfd_linux.go  waitfd_darwin.go   # epoll / kqueue 等待 fd 可读
 
-internal/digest/               # 纯 Go hash.Hash 共享实现（sm3/md5/sha*）
-internal/testutil/             # 测试共享：openssl CLI 包装 / 向量加载 / SkipIfNoOpenSSL
+internal/keyaccess/            # 桥接：公开密钥对象 → *core.PKey（结构化接口断言，无注册表）
+internal/certaccess/           # 桥接：公开证书对象 ↔ *core.Certificate（断言 + DER 往返）
+internal/digest/               # 纯 Go hash.Hash 共享实现（digest 包使用）
+internal/testutil/             # 测试共享：openssl CLI 包装 / SkipIfNoOpenSSL
 ```
 
 **`docs/`**
@@ -229,7 +241,11 @@ docs/architecture.md          # 架构、目录、构建依赖、生命周期、
 docs/development-guide.md     # GoDoc / 命名 / cgo / 核心层 / 错误 / 内存 / 风格
 docs/testing-guide.md         # 测试组织、各算法必测用例、向量来源
 docs/bilingual-doc-guide.md   # 双语 GoDoc 段式规则与检查清单
-docs/issues/2026-09-10/       # 历史审计报告（BUG / 规范类）
+docs/api-reference.md         # 公开 API 清单（重构后 16 包，三态标记）
+docs/api-reference-internal.md# 内部 API 清单（internal/* 五个包）
+docs/refactor-roadmap.md      # 包结构重构路线图（决策 / 迁移 / 排期 / 验证）
+docs/cli-comparison.md        # 铜锁 CLI 与本库能力对比（能力级）
+docs/official-sdk-comparison.md # 与官方 SDK 对比
 ```
 
 **其他**
@@ -243,20 +259,29 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 ### 3.3 分层红线
 
 - 依赖方向**单向向下**：API 层 → 核心层 → 绑定层，**禁止跨层调用与反向依赖**
-  - ❌ 反例：在 `crypto/sm4` 或 `x509` 中 `import "github.com/blue-cloud-net/tongsuo-go/internal/native"`
-  - ❌ 反例：让 `internal/core` 反过来 import `crypto/*` 或 `key/`
+  - ❌ 反例：在 `sym` 或 `x509` 中 `import "github.com/blue-cloud-net/tongsuo-go/internal/native"`
+  - ❌ 反例：让 `internal/core` 反过来 import `sym` / `asym` / `x509`
+  - ❌ 反例：让 `asym` import `ecdh` 或 `x509`（方向必须反过来）
+- **API 层是单层扁平的 16 个顶级包**，没有 `crypto/` 中间目录、没有 `key/` 统合包；
+  算法原语与「按算法名分发」的应用入口同包
+  - ❌ 反例：重新引入 `crypto/sm3`、`key/` 或把 `pkcs7` 塞进 `sym`
 - `import "C"` **只允许**出现在 `internal/native`
-  - ❌ 反例：为了省事在 `crypto/aes` 里直接写 cgo 调用
-- `crypto/` 只装算法引擎；ASN.1 / PKCS / OCSP / TLS / 格式转换等「组合层」保持顶级包
-  - ❌ 反例：把 `pkcs7` 塞进 `crypto/pkcs7`
+  - ❌ 反例：为了省事在 `sym` 里直接写 cgo 调用
 - 原生句柄**不进入公开 API**；公开结构体不暴露 `unsafe.Pointer` / `*C.xxx`
-  - ❌ 反例：让 `sm4.Cipher` 结构体带一个导出字段 `Ctx *C.EVP_CIPHER_CTX`
+  - ❌ 反例：让 `sym.SM4Key` 带一个导出字段 `Ctx *C.EVP_CIPHER_CTX`
+- **公开签名中不得出现 `internal/` 类型**（重构后的硬约束）
+  - ❌ 反例：`func EncryptOAEP(pub asym.PublicKey, data []byte, md *core.Digest)`
+  - ❌ 反例：`func (k *PrivateKey) Key() *core.PKey`
+- 跨包取原生句柄**只允许**经两个桥接包：密钥走 `internal/keyaccess`（消费方限 `ecdh` / `x509` / `tls` / `jwk` / `keystore` / `pkcs/pkcs12`），证书走 `internal/certaccess`（消费方限 `tls` / `pkcs/pkcs7` / `pkcs/pkcs12` 与 `x509` 包内的 `ocsp`）
+  - 注：`keystore` 是实施期新增的第 6 个 keyaccess 消费方（`marshalKeyPEM` 取句柄做 PEM 序列化），原白名单只列了 5 个
+  - ❌ 反例：在 `internal/core` 里写「类型开关」反查公开类型（会成环，`internal/core` 不能 import `asym`）
+  - ✅ 正例：`asym` 在**非导出**具体类型上实现 `CorePKey() *core.PKey`，`keyaccess.PKey(v)` 结构化断言取得；取到后必须 `EVP_PKEY_dup`
 - `unsafe` 仅限绑定层与核心层，作用域尽量小；**不得**在 Go 与 C 之间直接传 Go 指针
   - ❌ 反例：把 `[]byte` 数据指针交给 C 长期持有（BIO 场景尤其注意 Go pointer pinning）
 - 释放铜锁分配的内存必须用对应 `*_free` / `OPENSSL_free`
   - ❌ 反例：`C.free(unsafe.Pointer(p))`
 - 平台差异用 build tags + `#cgo` 指令隔离在 `internal/native`，不扩散到 API 层
-  - ❌ 反例：在 `crypto/sm3` 里写 `//go:build darwin` 分支
+  - ❌ 反例：在 `digest` 里写 `//go:build darwin` 分支
 
 ---
 
@@ -289,8 +314,10 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 
 | 元素 | 约定 | 示例 |
 |------|------|------|
-| 包名 | 小写单词，无下划线 | `crypto/sm3`、`pkcs/pkcs7`、`internal/core` |
-| API 层导出符号 | 遵循 Go 导出约定，语义对齐 C# 参考项目 | `sm3.Sum`、`sm4.NewCipher`、`sm2.Encrypt` |
+| 包名 | 小写单词，无下划线 | `digest`、`sym`、`pkcs/pkcs7`、`internal/core` |
+| API 层导出符号 | 遵循 Go 导出约定，语义对齐 C# 参考项目 | `digest.SumSM3`、`sym.NewSM4Cipher`、`asym.SignSM2` |
+| 同能力多算法的类型化入口 | **算法名作前缀/中缀**（合并包后需防重名） | `sym.EncryptAESCBC`、`mac.NewHMACSM3` |
+| 按算法名分发入口 | `New(name, …)` / `Sum(name, …)` / `GenerateKey(alg, …)` | `digest.New("SM3")`、`asym.GenerateKey(asym.AlgRSA, opts)` |
 | 绑定层函数 | 与铜锁 C 函数名**完全一致** | `EVP_DigestInit_ex` |
 | shim 包装函数 | `X_` 前缀 | `X_EVP_Digest` |
 | 核心层类型 | 去 `EVP_` 前缀，上下文类加 `Ctx` 后缀 | `DigestCtx`、`CipherCtx`、`PKey` |
@@ -342,7 +369,8 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
   1. **单元测试**：标准向量、往返、边界、错误路径、交叉验证 → 默认 `go test` 跑
   2. **CLI 对拍测试**：调铜锁 `openssl` 命令行逐字节比对 → 文件头 `//go:build tongsuocli`
      隔离，默认**不**运行
-- 共享工具放 `internal/testutil`（`RunOpenSSL(args, stdin)`，**不含断言逻辑**）
+- 共享工具放 `internal/testutil`（`RunOpenSSL(args, stdin)`，**不含断言逻辑**）；
+  缺铜锁时统一用 `SkipIfNoOpenSSL` 跳过；禁止各测试文件自行复制 `runOpenSSL`
 - 提供 `Example*`（会被 `go doc` 展示）与关键路径 `Benchmark*`；加密往返提供 `Fuzz*`
 
 ### 5.2 覆盖要求（摘要）
@@ -400,17 +428,18 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 
 - **type**（本仓库实际使用）：`feat` / `fix` / `docs` / `test` / `chore` / `ci` /
   `refactor` / `perf` / `release`
-- **scope**：用「层-包」或模块名，例如 `crypto-rsa`、`core-pkey`、`native-binding`、
-  `crypto-x509`、`x509`、`tls`、`key`、`architecture`、`changelog`、`workflows`、`scripts`
+- **scope**：用「层-包」或模块名，例如 `asym`、`sym`、`digest`、`x509`、`tls`、
+  `core-pkey`、`native-binding`、`architecture`、`refactor-roadmap`、`changelog`、
+  `workflows`、`scripts`
 - 真实历史示例（可对齐风格）：
-  - `feat(crypto-rsa): 新增 RSA 算法 API（生成/PEM/签名验签/加解密/参数提取）`
-  - `refactor(crypto-x509): x509 接口泛化支持 SM2/RSA/ECDSA 任意密钥`
+  - `feat(asym): 新增 RSA 算法 API（生成/PEM/签名验签/加解密/参数提取）`
+  - `refactor(x509): 接口泛化支持 SM2/RSA/ECDSA 任意密钥`
   - `docs(architecture): 同步 §3.1 / §3.2 / §5 目录结构与版本号`
   - `perf(core-pkey): LockOSThread 仅 SM2 加锁（性能修复）`
   - `ci(workflows): 触发收敛 main + workflow_call 复用 + 矩阵扩到 amd64/arm64`
 - **一个逻辑变更一个 commit**：不要「顺手重构」，不要把无关格式化混进功能提交
 - ❌ 反例：`update code`、`fix bug`、`临时提交`、`WIP` 这类无信息量的 message
-- ❌ 反例：一次提交同时改 `crypto/sm4` 算法与 README 排版
+- ❌ 反例：一次提交同时改 `sym` 算法与 README 排版
 
 ### 6.2 分支
 
@@ -430,7 +459,7 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
   - `## [Unreleased]`（**尚未决定归入哪个版本**的改动暂存区）放在**最顶部**；
   - `## [x.y.z] - TBD`（**已定目标版本、尚未发 tag**的条目）紧随其后；
   - 打 tag 时把 `TBD` 换成真实日期（推荐格式 `YYYY-MM-DD`）
-- 待发布版本用 `## [0.2.0] - TBD`
+- 待发布版本用 `## [0.3.0] - TBD`
 - 术语保留英文（SM2 / SM4 / PEM / DER / PKCS#8 / NTLS / RFC xxxx …）
 - 底部链接定义区必须与正文标题一一对应（无引用即无定义）
 - ❌ 反例：只改 `CHANGELOG.zh.md` 而不改 `CHANGELOG.md`（发版会被脚本拦下）
@@ -462,6 +491,7 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 | 任何功能/行为/API 变化 | `CHANGELOG.md` + `CHANGELOG.zh.md`（同一版本段） |
 | 新增算法包、新增公开 API | `README.md` + `README.zh.md` 的功能列表与示例（如适用） |
 | 目录结构、分层、依赖、构建方式变化 | `docs/architecture.md` |
+| 包结构/公开签名变化（含迁移路径与排期） | `docs/refactor-roadmap.md` + `docs/api-reference.md`（+ `docs/api-reference-internal.md`） |
 | 注释/命名/cgo/错误/内存约定变化 | `docs/development-guide.md`（+ `docs/bilingual-doc-guide.md`） |
 | 测试组织或新增必测用例 | `docs/testing-guide.md` |
 | 新增示例 | `examples/README.md` + 示例目录内代码 |
@@ -472,7 +502,7 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 - 本文件（`AGENTS.md`）与上述文档**同源**：若规范变更，先改 `docs/` 细则，
   再更新本文件的摘要与指针，避免两处规则打架
 - 不要在没有明确要求时改动 `docs/issues/` 下的历史审计报告、CHANGELOG 的既有版本段
-  - ❌ 反例：顺手「订正」`docs/issues/2026-09-10/` 里旧报告的结论
+  - ❌ 反例：顺手「订正」`docs/issues/` 下旧报告的结论
 
 ---
 
@@ -485,7 +515,7 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 | 3 | **Windows 后置**：平台支持为 Linux 优先、macOS 兼容、Windows 后置 | 不要为 Windows 新增未验证的构建路径 |
 | 4 | **CI 不跑 golangci-lint**（cgo 命名与 `defer x.Close()` 惯例冲突已退场） | 本地门禁用 `go vet ./...`；不要擅自加回 lint 工具 |
 | 5 | `-Wno-deprecated-declarations` 只是屏蔽铜锁对 OpenSSL 废弃声明的告警 | 不要删除，也不要据此认为 API 已废弃 |
-| 6 | `crypto/rand` 与标准库 `crypto/rand` **同名** | 使用时注意 import 别名，避免误用；本包基于铜锁 `RAND_bytes` |
+| 6 | `crypto/rand` 与标准库 `crypto/rand` 曾是**同路径同名**（重构后本包改为顶级 `rand`，已消解） | 使用时仍注意 import 别名；本包基于铜锁 `RAND_bytes` |
 | 7 | `runtime.LockOSThread()` 仅对 SM2 路径必要 | 不要无差别给所有算法加锁（会显著掉性能，见 `perf(core-pkey)` 修复） |
 | 8 | OCSP 测试依赖外部 responder | 覆盖率脚本默认豁免 `ocsp`；对拍用例缺失环境时统一 `SkipIfNoOpenSSL` |
 | 9 | `.gitignore` 当前包含 `docs/issues` | 在该目录**新增**文件需 `git add -f`，或先调整 `.gitignore` |
@@ -493,6 +523,7 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 | 11 | `go test ./...` 默认**不**编译 `*_tongsuocli_test.go` | 需要 CLI 对拍时显式加 `-tags tongsuocli`，否则会误以为「已覆盖」 |
 | 12 | `internal/` 受 Go 机制保护 | 外部包无法 import；新增内部包不要试图对外暴露 |
 | 13 | 铜锁需带 `enable-ntls` 编译才有 NTLS 能力 | CI 配置为 `--prefix=... --libdir=... enable-ntls enable-trace no-shared`，本地安装需一致 |
+| 14 | 跨包取句柄只能经 `internal/keyaccess`（`*core.PKey`，取到后必须 `EVP_PKEY_dup`）或 `internal/certaccess`（`*core.Certificate`） | 不要新增第三个桥接机制；不要直接暴露句柄（见 §3.3） |
 
 ---
 
@@ -503,9 +534,11 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 1. 读本文件 `AGENTS.md`（定位 + 红线）
 2. 读相关细则：架构改动 → `docs/architecture.md`；API/注释改动 →
    `docs/development-guide.md` + `docs/bilingual-doc-guide.md`；测试改动 → `docs/testing-guide.md`
-3. 读目标包源码 **+ 相邻同类包**作为模板（如做 `crypto/x448` 时先看 `crypto/x25519`；
+3. 读目标包源码 **+ 相邻同类包**作为模板（如做 `ecdh` 时先看 `asym`；
    做 `pkcs/pkcs12` 时先看 `pkcs/pkcs7`）
-4. 若涉及既有问题清单，先看 `docs/issues/2026-09-10/` 是否已记录同类问题
+4. 若涉及既有问题清单，先看 `docs/issues/` 下对应日期的目录是否已记录同类问题
+5. 涉及包结构 / 公开签名改动时，先读 `docs/refactor-roadmap.md`（目标形态与迁移路径）
+   与 `docs/api-reference.md`（逐符号签名）
 
 ### 9.2 改动后：必须执行并如实汇报
 
@@ -522,17 +555,20 @@ go test -count=1 ./...    # 必须 ok（无铜锁环境则如实说明未能运�
 - 涉及双语注释时自查 §4.1 清单（段数对称、`// Output:` 未动）
 - **禁止**在未运行上述命令的情况下宣称「已完成 / 已修复」
 
-### 9.3 新增算法包对齐清单
+### 9.3 新增能力对齐清单
 
-以 `crypto/x25519` 或 `crypto/sm3` 为模板，逐项落实：
+向既有包新增算法 / 入口时，以 `asym` 或 `digest` 为模板，逐项落实：
 
-- [ ] `crypto/<alg>/<alg>.go`：包级双语 doc + 导出符号双语段式注释
-- [ ] `crypto/<alg>/<alg>_test.go`：标准向量 + 往返 + 边界 + 错误路径（§5.2）
-- [ ] `crypto/<alg>/example_test.go`：`Example*` + `// Output:`（紧贴函数体）
-- [ ] `crypto/<alg>/<alg>_tongsuocli_test.go`：`//go:build tongsuocli` CLI 对拍
+- [ ] `{pkg}/{alg}.go`：双语包 doc + 导出符号双语段式注释
+- [ ] 按算法名分发入口（`New(name, …)` / `Sum(name, …)`）与类型化入口**成对**提供
+- [ ] `{pkg}/{alg}_test.go`：标准向量 + 往返 + 边界 + 错误路径（§5.2）
+- [ ] `{pkg}/example_test.go`：`Example*` + `// Output:`（紧贴函数体）
+- [ ] `{pkg}/{alg}_tongsuocli_test.go`：`//go:build tongsuocli` CLI 对拍（用 `internal/testutil`）
 - [ ] 如需新 C 接口：`internal/native/binding_*.go`（单行式注释 + `X_` shim）
 - [ ] 如需新句柄：`internal/core/` 包装（`handle` 基类 + 幂等 `Close()`）
-- [ ] `key/` 是否需要对应的 `Alg*` 常量与 `Generate*Key`（跨算法统一抽象）
+- [ ] 公开签名**无 `internal/` 类型**；若需取句柄，经 `internal/keyaccess`（§3.3）
+- [ ] `docs/api-reference.md` 对应小节（含状态标记）
+- [ ] `docs/refactor-roadmap.md` §3 / §4 / §6（若涉及新绑定或新包）
 - [ ] `docs/architecture.md` §3.3 / §5 目录与包列表
 - [ ] `docs/testing-guide.md` 用例表
 - [ ] `README.md` + `README.zh.md` 功能列表（成对）
@@ -570,7 +606,12 @@ go test -count=1 ./...    # 必须 ok（无铜锁环境则如实说明未能运�
 | 双语注释规则 | `docs/bilingual-doc-guide.md` |
 | 三层边界与目录 | `docs/architecture.md` §2 / §3 / §5 |
 | 生命周期与所有权 | `docs/architecture.md` §7 / §8 |
-| 各算法必测用例 | `docs/testing-guide.md` §3～§5.1 |
+| **包结构重构路线图（16 包目标形态 / 迁移 / 排期）** | `docs/refactor-roadmap.md` |
+| **公开 API 逐符号清单（三态）** | `docs/api-reference.md` |
+| **内部 API 清单（`internal/*`）** | `docs/api-reference-internal.md` |
+| 各算法必测用例 | `docs/testing-guide.md` §3～§7 |
+| 与铜锁 CLI 的能力对比 | `docs/cli-comparison.md` |
+| 与官方 SDK 对比与对齐路线图 | `docs/official-sdk-comparison.md` |
 | CLI 对拍工具 | `internal/testutil/openssl.go` |
 | 覆盖率脚本 | `scripts/check-coverage.sh` |
 | 发版说明抽取 | `scripts/extract_release_notes.py` |

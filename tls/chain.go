@@ -33,6 +33,7 @@ package tls
 import (
 	"errors"
 
+	"github.com/blue-cloud-net/tongsuo-go/internal/certaccess"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
@@ -158,7 +159,11 @@ func (c *Conn) peerCertificateChain(leaf *core.Certificate, pool []*core.Certifi
 	coreChain := rebuildChain(leaf, pool)
 	out := make([]*x509.Certificate, 0, len(coreChain))
 	for _, cc := range coreChain {
-		out = append(out, x509.WrapCertificate(cc))
+		wrapped, err := certaccess.Wrap(cc)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, wrapped)
 	}
 	return out, nil
 }

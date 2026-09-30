@@ -60,7 +60,7 @@ cd examples/x25519 && go run .
 
 ### [ecdh](./ecdh) — 曲线 ECDH（NIST / OKP）共享密钥派生
 
-`crypto/ecdh` 统一曲线 API：P-256 / P-384 / P-521 / secp256k1（X9.63）与
+`asym` 生成 + `ecdh` 协商：P-256 / P-384 / P-521 / secp256k1（X9.63）与
 X25519 / X448（RFC 7748）的密钥生成、PEM（PKCS#8 / SPKI）往返、双向共享密钥派生，
 并演示曲线不可用时的降级处理。
 
