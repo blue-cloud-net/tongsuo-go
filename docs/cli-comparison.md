@@ -38,7 +38,7 @@
 |---|---|
 | **对比基线（CLI）** | `/opt/tongsuo/bin/tongsuo`<br>`Tongsuo: Tongsuo 8.5.0-pre2 (Library: Tongsuo 8.5.0-pre2)`<br>`OpenSSL 3.5.4 3 Aug 2026 (Library: OpenSSL 3.5.4 3 Aug 2026)`<br>`platform: linux-x86_64`，`OPENSSLDIR: "/opt/tongsuo/ssl"` |
 | **铜锁源码基线** | `/workspace/opensources/nginx/tongsuo`（`configdata.pm`：`linux-x86_64`，`--prefix=/opt/tongsuo`） |
-| **本库基线** | `github.com/blue-cloud-net/tongsuo-go`，CHANGELOG 待发段 `0.3.0 - TBD` |
+| **本库基线** | `github.com/blue-cloud-net/tongsuo-go`，CHANGELOG `0.3.0`（2026-09-30 发布） |
 | **CLI 侧检索方式** | 实机采集：`tongsuo version -a`、`tongsuo help`、`tongsuo list -commands -1`、`tongsuo list -<family> -1`（14 个族）、`tongsuo list -options <cmd>`（逐命令）、`tongsuo ciphers -v`；并与 `apps/progs.h`、`apps/progs.pl`、`configdata.pm` 交叉校验 |
 | **本库侧检索方式** | 全仓库检索导出符号 + `internal/native/binding_*.go`（已绑定的 C 函数）+ 逐符号复核（文件:行） |
 | **环境声明** | 本机**已安装铜锁 8.5.0-pre2**，故「CLI 能力」列全部为实机输出；本库侧为**静态检索**，未运行 `go build` / `go vet` / `go test`。 |
@@ -440,7 +440,7 @@
 | 7 | **密钥元数据与序列化** | `key.Handle{ID, Algorithm, Key, PEM, CreatedAt}` + JSON | **无** | 能力优势 |
 | 8 | **Argon2ID 派生** | `key.Argon2ID(password, salt, time, memory, threads, keyLen)` | 本机构建 `argon2` 未启用 | 能力优势 |
 | 9 | **结构化套件枚举** | `tls.CipherSuites(version) []{Name, ID, MinVersion, MaxVersion}` | `ciphers -v` 为文本表格 | 形态优势 |
-| 10 | **CRT 参数暴露** | `KeyParams.Dmp1`/`Dmq1`/`Iqmp`（0.3.0 待发段） | `rsa -text` 需文本解析 | 形态优势 |
+| 10 | **CRT 参数暴露** | `KeyParams.Dmp1`/`Dmq1`/`Iqmp`（0.3.0 发布） | `rsa -text` 需文本解析 | 形态优势 |
 | 11 | **secp256k1 曲线** | `ecdh.Secp256k1()` | `ec -name secp256k1` 支持 | 对等 |
 | 12 | **Ed448 独立包** | `crypto/ed448` 全 API | 仅算法名/签名算法 | 形态优势 |
 | 13 | **统一算法抽象** | `key.AsymmetricKey.Algorithm()` 返回 `Algorithm` 常量 | 算法名字符串 | 形态优势 |

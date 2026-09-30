@@ -134,9 +134,8 @@
 - `docs/architecture.md`：§1.1 / §2 / §3.3 / §4 / §5 / §7 / §10 / §11。
 - `AGENTS.md`：目录地图、分层红线、文档同步表与已知陷阱清单。
 - `README.md` + `README.zh.md`：功能列表、代码示例与架构段。
-- `docs/refactor-roadmap.md`：§0 基线改为「`0.3.0` 已实现，tag 待打」、
-  §2.1 状态列 16 个包全部翻为已落地，并在 §13 表下补收官脚注（tag 未打、
-  Phase 0 两项遗留）。
+- `docs/refactor-roadmap.md`：§0 基线改为「`0.3.0` 已实现」、§2.1 状态列
+  16 个包全部翻为已落地，并在 §13 表下补收官脚注（Phase 0 两项遗留）。
 - `docs/api-reference.md` / `docs/api-reference-internal.md` /
   `docs/architecture.md` / `AGENTS.md`：补 `internal/certaccess` 桥接
   （此前只列了 `internal/keyaccess`），订正 keyaccess 消费方为 6 个

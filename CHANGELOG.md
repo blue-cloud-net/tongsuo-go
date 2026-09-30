@@ -169,9 +169,8 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - `README.md` + `README.zh.md`: features, code examples and the
   architecture section.
 - `docs/refactor-roadmap.md`: the §0 baseline now reads "`0.3.0`
-  implemented, tag pending", the §2.1 status column is all-green, and a
-  closing footnote records that the tag was never created and that two
-  Phase 0 items were still outstanding.
+  implemented", the §2.1 status column is all-green, and a closing
+  footnote records that two Phase 0 items were still outstanding.
 - `docs/api-reference.md` / `docs/api-reference-internal.md` /
   `docs/architecture.md` / `AGENTS.md`: document the
   `internal/certaccess` bridge (only `internal/keyaccess` was listed
