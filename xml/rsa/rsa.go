@@ -3,8 +3,8 @@
 // 与铜锁 openssl / .NET 互操作：Marshal* 将本库 RSA 密钥导出为 XML，
 // Unmarshal* 从 XML 解析并加载为本库 RSA 密钥。
 //
-// 注意：本包路径为 xml/rsa，但包名为 rsa；调用方通常需用别名
-// `import rsaxml "github.com/.../xml/rsa"` 以避免与 crypto/rsa 冲突。
+// 注意：本包路径为 xml/rsa，但包名为 rsa；调用方若同时用到标准库
+// `crypto/rsa`，需给其中之一起别名（本库侧不再有同名的 `crypto/rsa` 包）。
 //
 // Package rsa serializes RSA keys in the .NET RSAKeyValue XML format.
 //
@@ -13,9 +13,9 @@
 // library. This interoperates with Tongsuo's openssl CLI and with the
 // .NET Framework.
 //
-// Note: the import path is xml/rsa but the package name is rsa. To
-// avoid a collision with crypto/rsa, callers usually import this
-// subpackage with an alias, e.g. `import rsaxml "github.com/.../xml/rsa"`.
+// Note: the import path is xml/rsa but the package name is rsa. Callers that
+// also use the standard library's crypto/rsa must alias one of them (this
+// library no longer ships a crypto/rsa package of its own).
 package rsa
 
 import (
@@ -27,7 +27,7 @@ import (
 	"fmt"
 	"math/big"
 
-	trsa "github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 )
 
 // rsaKeyValue 为 .NET XML RSA 格式。
@@ -49,14 +49,18 @@ type rsaKeyValue struct {
 //
 // MarshalPrivate exports an RSA private key to XML containing Modulus,
 // Exponent, D, and—when the CRT factors are available—P, Q, DP, DQ,
-// InverseQ. priv must be a non-nil *trsa.PrivateKey backed by an "RSA"
-// params record (Type=="RSA", with N/E/D set); otherwise an error is
-// returned. The result is indented XML suitable for storage or transport.
-func MarshalPrivate(priv *trsa.PrivateKey) ([]byte, error) {
+// InverseQ. priv must be a non-nil RSA key (asym.PrivateKey, produced by
+// asym.GenerateRSA / asym.LoadPrivateKeyPEM); otherwise, or when the key is
+// not RSA, an error is returned. The result is indented XML suitable for
+// storage or transport.
+func MarshalPrivate(priv asym.PrivateKey) ([]byte, error) {
 	if priv == nil {
 		return nil, fmt.Errorf("rsaxml: nil private key")
 	}
-	p := priv.Params()
+	p, perr := asym.Params(priv)
+	if perr != nil {
+		return nil, fmt.Errorf("rsaxml: read key params: %w", perr)
+	}
 	if p == nil || p.Type != "RSA" || p.N == nil || p.E == nil || p.D == nil {
 		return nil, fmt.Errorf("rsaxml: not an RSA private key")
 	}
@@ -66,14 +70,15 @@ func MarshalPrivate(priv *trsa.PrivateKey) ([]byte, error) {
 		D:        b64Std(p.D),
 	}
 	if p.P != nil && p.Q != nil {
-		one := big.NewInt(1)
-		pm1 := new(big.Int).Sub(p.P, one)
-		qm1 := new(big.Int).Sub(p.Q, one)
 		v.P = b64Std(p.P)
 		v.Q = b64Std(p.Q)
-		v.DP = b64Std(new(big.Int).Mod(p.D, pm1))
-		v.DQ = b64Std(new(big.Int).Mod(p.D, qm1))
-		v.InverseQ = b64Std(new(big.Int).ModInverse(p.Q, p.P))
+	}
+	// CRT 系数优先取自 core.KeyParams（由 core/PKey.Params 统一提供，provider
+	// 路径 + 本地推导回退已在内部合并），避免在导出侧重复 Mod/ModInverse。
+	if p.Dmp1 != nil && p.Dmq1 != nil && p.Iqmp != nil {
+		v.DP = b64Std(p.Dmp1)
+		v.DQ = b64Std(p.Dmq1)
+		v.InverseQ = b64Std(p.Iqmp)
 	}
 	return xml.MarshalIndent(v, "", "  ")
 }
@@ -81,14 +86,18 @@ func MarshalPrivate(priv *trsa.PrivateKey) ([]byte, error) {
 // MarshalPublic 导出 RSA 公钥为 XML（仅 Modulus + Exponent）；pub 必须为 RSA 类型公钥，非 nil 错值或类型不符返回 error。
 //
 // MarshalPublic exports an RSA public key to XML containing only
-// Modulus and Exponent (no private parameters). pub must be a non-nil
-// *trsa.PublicKey backed by an "RSA" params record (Type=="RSA", with
-// N/E set); otherwise an error is returned.
-func MarshalPublic(pub *trsa.PublicKey) ([]byte, error) {
+// Modulus and Exponent (no private parameters). pub must be a non-nil RSA
+// key (asym.PublicKey, produced by asym.GenerateRSA(...).Public() or
+// asym.LoadPublicKeyPEM); otherwise, or when the key is not RSA, an error is
+// returned.
+func MarshalPublic(pub asym.PublicKey) ([]byte, error) {
 	if pub == nil {
 		return nil, fmt.Errorf("rsaxml: nil public key")
 	}
-	p := pub.Params()
+	p, perr := asym.Params(pub)
+	if perr != nil {
+		return nil, fmt.Errorf("rsaxml: read key params: %w", perr)
+	}
 	if p == nil || p.Type != "RSA" || p.N == nil || p.E == nil {
 		return nil, fmt.Errorf("rsaxml: not an RSA public key")
 	}
@@ -99,11 +108,12 @@ func MarshalPublic(pub *trsa.PublicKey) ([]byte, error) {
 // UnmarshalPrivate 从 XML 解析 RSA 私钥；解析失败返回 error，XML 缺少 Modulus / Exponent / D 会报错。
 //
 // UnmarshalPrivate parses an .NET RSAKeyValue XML document and returns
-// the corresponding *trsa.PrivateKey. The XML must include Modulus,
+// the corresponding asym.PrivateKey. The XML must include Modulus,
 // Exponent and D; missing any of these produces an error. Internally
-// the XML is re-encoded as PKCS#1 PEM and re-loaded, so the returned
-// key flows back into this library's native key handling.
-func UnmarshalPrivate(data []byte) (*trsa.PrivateKey, error) {
+// the XML is re-encoded as PKCS#1 PEM and loaded through
+// asym.LoadPrivateKeyPEM, so the returned key flows back into this
+// library's native key handling.
+func UnmarshalPrivate(data []byte) (asym.PrivateKey, error) {
 	var v rsaKeyValue
 	if err := xml.Unmarshal(data, &v); err != nil {
 		return nil, fmt.Errorf("rsaxml: invalid XML: %w", err)
@@ -117,17 +127,17 @@ func UnmarshalPrivate(data []byte) (*trsa.PrivateKey, error) {
 	}
 	der := stdx509.MarshalPKCS1PrivateKey(priv)
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der})
-	return trsa.LoadPrivateKeyPEM(pemBytes) // 自动识别 PKCS#1
+	return asym.LoadPrivateKeyPEM(pemBytes) // 自动识别 PKCS#1
 }
 
 // UnmarshalPublic 从 XML 解析 RSA 公钥；XML 缺少 Modulus / Exponent 或 base64 解码失败会返回 error。
 //
 // UnmarshalPublic parses an .NET RSAKeyValue XML document and returns
-// the corresponding *trsa.PublicKey. The XML must include Modulus and
+// the corresponding asym.PublicKey. The XML must include Modulus and
 // Exponent; missing fields, malformed XML, or base64 decoding errors
 // all produce an error. Internally the parsed values are re-encoded as
-// SPKI PEM and re-loaded.
-func UnmarshalPublic(data []byte) (*trsa.PublicKey, error) {
+// SPKI PEM and loaded through asym.LoadPublicKeyPEM.
+func UnmarshalPublic(data []byte) (asym.PublicKey, error) {
 	var v rsaKeyValue
 	if err := xml.Unmarshal(data, &v); err != nil {
 		return nil, fmt.Errorf("rsaxml: invalid XML: %w", err)
@@ -149,7 +159,7 @@ func UnmarshalPublic(data []byte) (*trsa.PublicKey, error) {
 		return nil, fmt.Errorf("rsaxml: marshal SPKI: %w", err)
 	}
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
-	return trsa.LoadPublicKeyPEM(pemBytes)
+	return asym.LoadPublicKeyPEM(pemBytes)
 }
 
 // toStdPrivate 从 XML 值构造标准库 RSA 私钥。

@@ -1,10 +1,8 @@
 // Package main 演示使用 SM2 + SM3 自签证书的最小可运行示例。
 //
-// 运行：
+// 运行（examples 下每个示例都是独立 module）：
 //
-//	TONGSUO_HOME=/opt/tongsuo LD_LIBRARY_PATH=${TONGSUO_HOME}/lib64 \
-//	CGO_CFLAGS="-I${TONGSUO_HOME}/include" CGO_LDFLAGS="-L${TONGSUO_HOME}/lib64" \
-//	go run ./examples/self-signed-cert
+//	cd examples/self-signed-cert && go run .
 //
 // Package main demonstrates a minimal runnable example that issues a
 // self-signed SM2 certificate with SM3 as the signing digest.
@@ -15,13 +13,13 @@ import (
 	"log"
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
 func main() {
 	// 1. 生成 SM2 密钥对
-	priv, err := sm2.GenerateKey()
+	priv, err := asym.GenerateSM2()
 	if err != nil {
 		log.Fatal(err)
 	}

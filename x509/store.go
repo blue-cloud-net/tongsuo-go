@@ -3,6 +3,7 @@ package x509
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
@@ -24,11 +25,6 @@ func NewStore() *Store {
 	}
 	return &Store{store: s}
 }
-
-// Core 返回底层核心信任存储（供内部跨包使用，如 ocsp）。
-//
-// Core returns the underlying *core.Store for cross-package use (for example by the ocsp package).
-func (s *Store) Core() *core.Store { return s.store }
 
 // AddCert 向存储添加信任证书（如 Root CA 证书）。
 //
@@ -93,6 +89,66 @@ func (s *Store) SetCRLCheckAll() error {
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (s *Store) SetFlags(flags uint64) error {
 	return s.store.SetFlags(flags)
+}
+
+// SetTime 指定该信任存储的验证时刻（对应 `openssl verify -attime`）。
+//
+// 设置后对本存储上**后续每次** ChainVerify 都生效（不限于下一次调用），可反复
+// 覆盖；典型用途是以固定历史时刻验证已过期 / 尚未生效的证书链。
+//
+// ⚠️ 安全提示：验证时刻回拨会让已过期的证书通过链验证。仅在确有必要时（离线复核
+// 历史签名、验证归档数据）使用，不要用它掩盖真实的过期状态。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// SetTime sets the verification time of the store (equivalent to
+// `openssl verify -attime`).
+//
+// Once set it affects **every subsequent** ChainVerify performed with this
+// store (not just the next call) and may be overwritten repeatedly. The
+// typical use is validating a chain as of a fixed historical instant, for
+// certificates that have expired or are not yet valid.
+//
+// ⚠️ Security note: rolling the verification time back lets an expired
+// certificate pass chain validation. Use it only when genuinely required
+// (replaying a historical signature, validating archived data) and never to
+// mask a real expiry.
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (s *Store) SetTime(t time.Time) error {
+	if s == nil || s.store == nil {
+		return fmt.Errorf("x509: nil store")
+	}
+	return s.store.SetTime(t)
+}
+
+// Close 释放存储持有的底层 X509_STORE 句柄。
+//
+// 调用是幂等的：对 nil 接收者、空内部句柄或已关闭的存储调用返回 nil，不产生副作用。
+// 与同包的 Certificate / CRL / CertificateRequest 一致，Store 的所有权归调用方，
+// **不得**只依赖 finalizer 兜底（见 AGENTS.md §4.4）；应在整个验证流程结束、且已确认
+// 无 goroutine 仍持有该存储引用之后再释放。
+//
+// 释放后再使用会得到明确错误：AddCert / AddCRL / SetFlags / SetTime 返回
+// "x509: store closed"，ChainVerify 因信任锚句柄已释放而失败。
+//
+// Close releases the underlying X509_STORE handle held by the store.
+//
+// The call is idempotent: a nil receiver, an empty internal handle or an
+// already closed store returns nil without further side effects. Like
+// Certificate / CRL / CertificateRequest in this package, the Store is owned by
+// the caller and must not rely on a finalizer alone (see AGENTS.md §4.4);
+// release it only after the whole verification flow has finished and no
+// goroutine still holds a reference.
+//
+// Using a released store yields explicit errors: AddCert / AddCRL / SetFlags /
+// SetTime return "x509: store closed", and ChainVerify fails because the trust
+// anchor handle has been released.
+func (s *Store) Close() error {
+	if s == nil || s.store == nil {
+		return nil
+	}
+	return s.store.Close()
 }
 
 // VerifyError 表示证书链验证失败详情。

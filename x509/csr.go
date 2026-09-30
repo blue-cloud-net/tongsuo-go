@@ -3,7 +3,7 @@ package x509
 import (
 	"fmt"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
@@ -19,12 +19,20 @@ type CertificateRequest struct {
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
-// NewCertificateRequest creates a CSR for subject and signs it with priv. pub is the requester's public key and priv is the corresponding private key; SM2 / RSA / ECDSA are supported.
+// NewCertificateRequest creates a CSR for subject and signs it with priv. pub is the requester's public key and priv is the corresponding private key; any asym package algorithm is supported.
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
-func NewCertificateRequest(subject *Name, pub PublicKey, priv PrivateKey) (ret *CertificateRequest, retErr error) {
-	if subject == nil || pub == nil || priv == nil {
-		return nil, fmt.Errorf("x509: nil parameter")
+func NewCertificateRequest(subject *Name, pub asym.PublicKey, priv asym.PrivateKey) (ret *CertificateRequest, retErr error) {
+	pubKey, err := corePublicKey(pub)
+	if err != nil {
+		return nil, err
+	}
+	privKey, err := corePrivateKey(priv)
+	if err != nil {
+		return nil, err
+	}
+	if subject == nil {
+		return nil, fmt.Errorf("x509: nil subject name")
 	}
 	req, err := core.NewCertificateRequest()
 	if err != nil {
@@ -39,10 +47,10 @@ func NewCertificateRequest(subject *Name, pub PublicKey, priv PrivateKey) (ret *
 	if err := req.SetSubject(subject.name); err != nil {
 		return nil, err
 	}
-	if err := req.SetPublicKey(pub.Key()); err != nil {
+	if err := req.SetPublicKey(pubKey); err != nil {
 		return nil, err
 	}
-	if err := req.Sign(priv.Key(), nil); err != nil { // nil → 按密钥类型自动选摘要
+	if err := req.Sign(privKey, nil); err != nil { // nil → 按密钥类型自动选摘要
 		return nil, err
 	}
 	return &CertificateRequest{req: req}, nil
@@ -75,33 +83,35 @@ func (r *CertificateRequest) SetSubject(n *Name) error {
 	return r.req.SetSubject(n.name)
 }
 
-// SetPublicKey 设置 CSR 公钥（支持 SM2 / RSA / ECDSA）。
+// SetPublicKey 设置 CSR 公钥（asym 包提供的算法均可）。
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
-// SetPublicKey sets the CSR public key (SM2 / RSA / ECDSA are supported).
+// SetPublicKey sets the CSR public key (any algorithm the asym package provides).
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
-func (r *CertificateRequest) SetPublicKey(pub PublicKey) error {
-	if pub == nil {
-		return fmt.Errorf("x509: nil public key")
+func (r *CertificateRequest) SetPublicKey(pub asym.PublicKey) error {
+	k, err := corePublicKey(pub)
+	if err != nil {
+		return err
 	}
-	return r.req.SetPublicKey(pub.Key())
+	return r.req.SetPublicKey(k)
 }
 
 // Sign 使用请求者私钥对 CSR 签名（须先配置好主题/公钥/扩展/口令）。
-// priv 支持 SM2 / RSA / ECDSA，摘要按密钥类型自动选择。
+// priv 为 asym 包提供的私钥，摘要按密钥类型自动选择。
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
-// Sign signs the CSR with priv after subject, public key, extensions, and challenge password have been configured. priv supports SM2 / RSA / ECDSA, and the digest is chosen automatically based on the key type.
+// Sign signs the CSR with priv after subject, public key, extensions, and challenge password have been configured. priv is an asym package private key and the digest is chosen automatically based on its type.
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
-func (r *CertificateRequest) Sign(priv PrivateKey) error {
-	if priv == nil {
-		return fmt.Errorf("x509: nil private key")
+func (r *CertificateRequest) Sign(priv asym.PrivateKey) error {
+	k, err := corePrivateKey(priv)
+	if err != nil {
+		return err
 	}
-	return r.req.Sign(priv.Key(), nil)
+	return r.req.Sign(k, nil)
 }
 
 // LoadCertificateRequestPEM 从 PEM 加载 CSR。
@@ -156,19 +166,30 @@ func (r *CertificateRequest) Verify() error {
 	return r.req.Verify()
 }
 
-// PublicKey 返回 CSR 公钥（SM2）。
+// PublicKey 返回 CSR 公钥，以 asym.PublicKey 呈现（适用任意算法）。
+//
+// 返回的对象**拥有**自己的底层句柄，使用完毕应调用 asym.Close 释放。本方法取代了
+// 原 `PublicKey()`（返回 SM2 包装）与 `PublicKeyPKey()`（返回底层原生句柄）两个入口
+// （roadmap §5 E1-9）。
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
-// PublicKey returns the CSR public key wrapped as *sm2.PublicKey.
+// PublicKey returns the CSR public key as an asym.PublicKey, which works for any
+// algorithm.
+//
+// The returned value **owns** its underlying handle; release it with asym.Close.
+// It replaces the former `PublicKey()` (which returned an SM2 wrapper) and
+// `PublicKeyPKey()` (which returned the raw native handle) (roadmap §5, E1-9).
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
-func (r *CertificateRequest) PublicKey() (*sm2.PublicKey, error) {
+func (r *CertificateRequest) PublicKey() (asym.PublicKey, error) {
 	k, err := r.req.PublicKey()
 	if err != nil {
 		return nil, err
 	}
-	return sm2.PublicKeyFromPKey(k), nil
+	// 句柄用完即弃：wrapCorePublicKey 走 PEM 往返，asym 侧得到的是独立对象。
+	defer func() { _ = k.Close() }()
+	return wrapCorePublicKey(k)
 }
 
 // Signature 返回 CSR 的原始签名字节（DER 编码）；CSR 无效或未签名返回 nil。
@@ -213,17 +234,6 @@ func (r *CertificateRequest) SubjectText() string {
 		return ""
 	}
 	return n.String()
-}
-
-// PublicKeyPKey 返回 CSR 公钥的底层核心密钥（适用任意算法，调用方负责 Close）。
-//
-// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
-//
-// PublicKeyPKey returns the CSR public key as the underlying *core.PKey, which works for any algorithm. The caller is responsible for closing it.
-//
-// On failure, it returns an error wrapping an OpError describing the operation.
-func (r *CertificateRequest) PublicKeyPKey() (*core.PKey, error) {
-	return r.req.PublicKey()
 }
 
 // SetChallengePassword 设置 CSR 挑战密码（PKCS#9 challengePassword 属性，须在 Sign 之前调用）。

@@ -20,6 +20,201 @@
 
 ---
 
+## [0.3.0] - 2026-09-30
+
+### 新增功能
+
+- `internal/core`：`KeyParams` 新增 RSA CRT 系数 `Dmp1 = D mod (P-1)`、
+  `Dmq1 = D mod (Q-1)` 与 `Iqmp = Q⁻¹ mod P`，由 `(*PKey).Params()` 与
+  既有的 `N / E / D / P / Q` 一并返回。优先取自 Tongsuo provider 参数
+  `rsa-exponent1` / `rsa-exponent2` / `rsa-coefficient1`（Tongsuo 8.5+
+  可用），任一缺失则回落由 `D / P / Q` 在本包内推导；公钥侧相关字段保持 nil。
+- `meta`（新增顶级包）：铜锁版本与构建信息（`Version` / `VersionString` /
+  `VersionNum` / `TongsuoVersionNum` / `ReadBuildInfo`）与错误码解析
+  （`ErrorString` / `ErrorCode` / `ParseErrorCode`）。底层新增
+  `OpenSSLVersionWithIndex(idx int)` 绑定，使 `OpenSSL_version` 的全部
+  index 可达（原绑定把 index 硬编码为 `0`）。
+- `digest`：新增 `SHA-224` 与 `SHA-384` 支持——`SumSHA224` / `SumSHA384`、
+  `SHA224Size` / `SHA384Size` 以及对应的 `New` / `Sum` 按名入口。
+  `EVP_sha224` / `EVP_sha384` 已有绑定，**零新增 cgo**。
+- `digest` / `mac` / `kdf` / `sym` / `asym`：各包在 Go 惯例接口
+  （`hash.Hash` / `cipher.Block` / `cipher.AEAD`）之外，新增
+  「按算法名分发」的 CLI 式入口（`Names` / `New(name, …)` /
+  `Sum(name, …)` / `Derive(name, …)` / `GenerateKey(alg, …)`）。
+- `asym`：`LoadPrivateKeyPEM` 在失败前新增回退传统 RSA PKCS#1 与
+  EC SEC1 编码。
+- `ecdh`：新增 `LoadPrivateKey(asym.PrivateKey)` / `LoadPublicKey(asym.PublicKey)`，
+  使 `asym` 生成的密钥可直接用于密钥协商。
+- `x509`：新增 `CreateSelfSigned(...)` 一行生成自签证书；
+  `(*Certificate).VerifyHostname(host)` 校验主机名与 IP；
+  `(*Store).SetTime(t)` 指定验证时刻。
+- `x509`：新增 `CRLBuilder` / `NewCRLBuilder` / `(*CRLBuilder).Revoke` /
+  `(*CRLBuilder).Sign`，公开 CRL 签发入口（原 `internal/core.NewCRL`
+  未导出）。
+- `tls`：新增 `CipherSuiteByName(name)`，按名称或 ID 解析算法套件。
+- `rand`：新增 `Reader() io.Reader`，便于 `io.Copy` / `io.ReadFull` 组合。
+- `asym`：新增包级 `Close(k Key) error` 释放入口。此前本包**没有任何显式
+  释放途径**，持有句柄的密钥只能等 finalizer；`keystore` 与 `ecdh` 的用例
+  已用它验证「源密钥释放后副本仍可用」。
+- `x509`：新增 `(*Store).Close()` 释放入口。此前 `Store` 是同类句柄类型中
+  唯一没有公开释放途径的（只能等 finalizer），现已可显式释放；释放后
+  `AddCert` / `AddCRL` / `SetFlags` / `SetTime` 返回 `x509: store closed`，
+  `ChainVerify` 因信任锚已释放而失败。
+
+### 行为变化与重构
+
+- `jwk.Marshal`：RSA 私钥 JWK 现在同时携带 RFC 7518 §6.3.2 的 CRT 字段
+  `dp` / `dq` / `qi`，与既有的 `p` / `q` 并列；公钥输出与 EC / SM2 输出不变。
+- `xml/rsa.MarshalPrivate`：改用 `KeyParams` 中的 CRT 系数，删除本地
+  `Mod(D, P-1)`、`Mod(D, Q-1)` 与 `ModInverse(Q, P)` 重复推导。
+- `x509`：OCSP 相关入口并入本包并改名，避免与同包符号相撞——
+  `ocsp.CreateRequest` → `x509.CreateOCSPRequest`、
+  `ocsp.ParseResponse` → `x509.ParseOCSPResponse`、
+  `ocsp.Good` / `Revoked` / `Unknown` → `x509.OCSPGood` /
+  `OCSPRevoked` / `OCSPUnknown`。
+- `tls`：不再直接 import `internal/native`，套件与错误码查询改经
+  `internal/core`，恢复三层分离。
+- `meta`：同样不再直接 import `internal/native`——版本 / 构建信息 / 错误码
+  文本改经 `internal/core`（新增 `core.ReadBuildEnv` / `core.ErrorString`）。
+  至此 **API 层对绑定层的直连为 0**。
+- `meta` 的 `Version` / `VersionString` / `VersionNum` / `TongsuoVersionNum` /
+  `ReadBuildInfo` / `ErrorString` 公开签名不变。
+- `tls.CipherSuiteByName` 的匹配语义：名称**大小写不敏感**且只匹配枚举报告的
+  **主名**（不含 OpenSSL 旧式别名）；ID 传 16 位 wire ID 的文本形式，接受
+  十进制（`4865`）或 `0x` 前缀十六进制（`0x1301`）。
+- `examples/`：6 个示例（`sm2` / `ed25519` / `self-signed-cert` /
+  `ntls-loopback` / `x25519` / `ecdh`）同步迁到 16 包结构；用法改为
+  `cd examples/<name> && go run .`（它们是独立 module）。
+- `xml/rsa`：内部实现仍走 PKCS#1 / SPKI PEM 往返 + `asym.LoadPrivateKeyPEM`
+  / `LoadPublicKeyPEM`，**零新增 cgo**；仅参数来源改为 `asym.Params`。
+- `internal/testutil` 新增统一入口 `RunOpenSSLCombined` /
+  `RunOpenSSLCombinedIn` / `MustRunOpenSSL` / `MustRunOpenSSLInDir`；
+  8 个 `*_tongsuocli_test.go` 原本各自复制 openssl 命令封装（其中 4 处
+  未接 `SkipIfNoOpenSSL`，缺 CLI 时直接失败而非跳过），现已全部改走
+  统一入口。此项属测试基础设施，不影响公开 API。
+
+### Bug 修复
+
+- `asym` GoDoc：`PrivateKey.Params` / `PublicKey.Params` 注释将
+  `P` / `Q` 误称为「CRT 因子」（实为 RSA 素因子）。现已区分素因子
+  （`P` / `Q`）与 CRT 系数（`Dmp1` / `Dmq1` / `Iqmp`）。
+- `tls` 测试结构：`mustHandshake` 曾在测试自起的 goroutine 内调用
+  `t.Fatalf`，测试函数返回后调用会以「Fail in goroutine after … has
+  completed」触发**包级 panic**，吞掉同包其余用例的结果（P1004 缺陷 2）。
+  现改为 `handshakeErr`（只返回 error）+ `serveHandshakeAsync`
+  （`t.Cleanup` 断言），并给 6 个用例补齐握手与关闭的时序同步，握手失败
+  快速失败（不再空等到超时）；顺带修掉一处测试级泄漏：握手后遗弃的服务端
+  连接会活过 `defer srv.Close()` 释放 `SSL_CTX` 的时刻。本包 flake 率由
+  3/20 降到 1/20；残余部分实为库级缺陷，由下一条修复。
+- `tls`：**连接 fd 生命周期（P1011）**——`tls.Conn` 此前把裸 fd 号交给
+  `SSL_set_fd`，而该描述符属于底层 `net.Conn`。`Close()` 关掉 raw socket 后
+  内核可能把这个号码回收给新连接，而 SSL 的 BIO 仍记着旧号码，于是读写到了
+  **别的连接**的 socket——这才是间歇失败（`SSL_connect: unexpected message`、
+  `SSL_read: Bad file descriptor`、对端 `bad record MAC`）与上条残余 flake 的
+  真正根因。现改为在 `SyscallConn().Control` 回调内用 `dup(2)` 复制套接字
+  （新增 `internal/core/fd_unix.go`：`DupFD` / `ShutdownFD` / `CloseFD`），
+  由 `*core.SSLConn` 持有副本，并新增 `Stop()`（状态位 + `shutdown(2)`：即使
+  副本还在，也能唤醒在途 `select` 并向对端发 FIN）。`Close()` 先等在途调用
+  归零（`inflight.Wait`，登记早于 `stopped` 检查）再 `SSL_free` 并关闭副本；
+  `tls.Conn.Close()` 在关 raw 之前先 `Stop()`。修复后实测：
+  `go test -count=1 ./tls/` 连续 50 次**零失败**（修复前 1/20；只加守卫不做
+  `dup` 的变体反而劣化到 8/40，已回退），且 `-race`、全仓库 `go test ./...`
+  与 `-tags tongsuocli` 全量均通过。
+
+### 文档
+
+- `docs/testing-guide.md` §5.1 非对称测试表新增「参数提取」行：
+  CRT 系数非 nil、范围不变量与 `Iqmp*Q ≡ 1 (mod P)`。
+- `docs/refactor-roadmap.md`（新增）：包结构重构的完整决策记录、逐包
+  迁移方案、需新增的底层绑定、Phase 与版本归属、验证方案与回滚方案。
+- `docs/api-reference.md`：按重构后的 16 包布局重写，新增逐包状态标记
+  与逐符号「已有 / 当前版本实施中 / 规划中」标记。
+- `docs/api-reference-internal.md`：新增 `§5 internal/keyaccess` 并同步
+  分层图。
+- `docs/architecture.md`：§1.1 / §2 / §3.3 / §4 / §5 / §7 / §10 / §11。
+- `AGENTS.md`：目录地图、分层红线、文档同步表与已知陷阱清单。
+- `README.md` + `README.zh.md`：功能列表、代码示例与架构段。
+- `docs/refactor-roadmap.md`：§0 基线改为「`0.3.0` 已实现」、§2.1 状态列
+  16 个包全部翻为已落地，并在 §13 表下补收官脚注（Phase 0 两项遗留）。
+- `docs/api-reference.md` / `docs/api-reference-internal.md` /
+  `docs/architecture.md` / `AGENTS.md`：补 `internal/certaccess` 桥接
+  （此前只列了 `internal/keyaccess`），订正 keyaccess 消费方为 6 个
+  （补 `keystore`），并同步 `internal/testutil` 的新统一入口。
+
+### BREAKING / 已知限制
+
+- **API 层包结构：27 个包 → 16 个。**`crypto/` 整目录与 `key/` 包已删除，
+  所有公开 import 路径都发生变化。包级对照见 `docs/api-reference.md`
+  §0.1，符号级对照见 `docs/refactor-roadmap.md` §4。
+  - `crypto/{sm3,md5,sha1,sha256,sha512}` → `digest`
+  - `crypto/hmac` → `mac`
+  - `crypto/{aes,sm4}` + `key` 对称部分 → `sym`
+  - `crypto/{sm2,rsa,ecdsa,ed25519,ed448}` + `key` 非对称部分 +
+    `crypto/{x25519,x448}` 的密钥生成 → `asym`
+  - `crypto/ecdh` + `crypto/{x25519,x448}` 的密钥协商 → `ecdh`
+  - `crypto/kdf` + `key` 的 KDF 部分 → `kdf`
+  - `crypto/rand` → `rand`
+  - `key.{Handle,Store,MemoryStore}` → `keystore`
+  - `ocsp` → `x509`
+  - `crypto/` 整目录、`crypto/{x25519,x448}` 与 `key/` 直接删除。
+- **不保留 deprecated 转发包**，调用方需一次性迁移。
+- **`x509` / `csr` / `crl` / `ocsp` 不拆分。**拆分会在 `x509` 与 `crl`
+  之间引入循环依赖（`Store.AddCRL(*crl.CRL)` ↔
+  `crl.NewBuilder(*x509.Certificate)`），故 CSR / CRL / OCSP 均留在 `x509`。
+- **算法特有的方法改为包级函数。**密钥类型现为 `asym.PrivateKey` /
+  `asym.PublicKey` 接口，如 `rsa.GenerateKey(2048)` →
+  `asym.GenerateRSA(2048)`、`priv.SignPSS(…)` → `asym.SignPSS(priv, …)`。
+- **公开签名中不再出现 `internal/` 类型。**`docs/refactor-roadmap.md`
+  §5.1 列出的 12 处泄露已全部收敛，`Key() *core.PKey` / `Core()` /
+  `PublicKeyPKey()` / `Store.Core()` / `jwk.Marshal(*core.PKey)` 等逃逸口
+  一并移除；跨包取句柄改经 `internal/keyaccess`。
+- **`KeyParams` 迁入 `asym`。**`(*PrivateKey).Params()` 返回类型由
+  `*core.KeyParams` 改为 `*asym.KeyParams`。
+- **`x509` 窄接口删除。**`x509.PublicKey` / `x509.PrivateKey` 移除，
+  改用 `asym.PublicKey` / `asym.PrivateKey`。
+- **`x509` 的证书包装入口删除，且证书所有权语义变更。**公开的
+  `x509.WrapCertificate(*core.Certificate)` 既泄露 `internal/` 类型、又与
+  契约不符（它**共享**底层句柄，调用方 `Close` 会连带释放真正的所有者）；
+  跨包包装现改经 `internal/certaccess.Wrap`，用 DER 往返产出**自有**句柄。
+  因此 `tls.PeerCertificates()` / `tls.PeerEncCertificates()`、
+  `pkcs/pkcs7.Extract`、`pkcs/pkcs12.Bundle` 返回的 `*x509.Certificate`
+  现在是**各自由调用方持有的副本**，须分别 `Close`（`tls` 侧此前文档已
+  如此声明，本次让实现与契约对齐）。
+- **`xml/rsa` 四个公开函数改收 `asym.*`。**`MarshalPrivate(asym.PrivateKey)` /
+  `MarshalPublic(asym.PublicKey)` / `UnmarshalPrivate(...) (asym.PrivateKey,
+  error)` / `UnmarshalPublic(...) (asym.PublicKey, error)`；原签名的
+  `*crypto/rsa.PrivateKey` / `*crypto/rsa.PublicKey` 随 `crypto/rsa` 删除
+  而不可用。
+- **`jwk.Marshal(*core.PKey)` 删除**，改用 `jwk.MarshalKey(k asym.Key)`；
+  `MarshalKey` 的参数也从 `key.CoreKey` 改为 `asym.Key`。
+- **`pkcs/pkcs12` 的私钥类型改公开接口**：`pkcs12.PrivateKey`（原
+  `key.CoreKey` 别名）与 `pkcs12.Bundle.PrivateKey`（原 `*core.PKey`）
+  现为 `asym.PrivateKey`。
+- **`key.Algorithm` / `key.Key` 被取代。**非对称用 `asym.Algorithm` +
+  `asym.Key`，对称用 `sym.Algorithm` + `sym.SymmetricKey`；注意改名
+  `AlgED25519` → `AlgEd25519`。
+- **`tls.Config` 密钥字段改类型**：`Key` / `SignKey` / `EncKey` 由
+  `*sm2.PrivateKey` 改为 `asym.PrivateKey`。
+- **RSA OAEP 参数**：`crypto/rsa.EncryptOAEP` 的 `md *core.Digest` 参数
+  改为 `hash string`——旧参数在模块外本来无法构造。
+- 已知限制：`asym` 的密钥具体类型为非导出类型，仅以接口对外，第三方
+  自定义密钥类型不再能传给 `x509` / `tls`。此类类型此前也拿不到原生
+  句柄，故功能无损失。
+- 已知限制：`asym.PrivateKey.Public()` 返回的对象与私钥**共享同一底层
+  句柄**（既有行为，非本版引入：旧 `crypto/rsa` 与 `key` 同样如此），
+  因此 `jwk.MarshalKey(priv.Public())` 仍会导出**含私钥分量**的 JWK。
+  需要公钥 JWK 时，请先把公钥 PEM 独立加载（`asym.LoadPublicKeyPEM`）
+  再传给 `MarshalKey`。
+- 已知限制：`TestNTLSLoopback` 在**重负载并行**下仍可能失败——客户端 `Read`
+  报 `tls: SSL_read (syscall): … Broken pipe`（`SSL_ERROR_SYSCALL`）。六路并行
+  跑 `go test -count=15 -run TestNTLS ./tls/` 复现 4/90；同一版本单包跑
+  `./tls/` 50 次零失败、连续 17 次全量 `go test ./...` 也全部通过。该用例
+  修复前的**同一条用例、同一行**签名是 `Bad file descriptor`（即上面修复的
+  fd 生命周期缺陷），故这属残余而非回归，剩余成因尚未定位。`tongsuocli`
+  对拍 job 已在知悉该残余的情况下启用，因为它覆盖的库级缺陷已经修好。
+
+---
+
 ## [0.2.0] - 2026-09-18
 
 ### 新增功能
@@ -304,7 +499,8 @@
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.0...v0.1.1

@@ -14,25 +14,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/ed25519"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/internal/testutil"
 )
 
-func runOpenSSLFile(t *testing.T, args ...string) []byte {
-	t.Helper()
-	cmd := exec.Command(testutil.OpenSSLBin(), args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("openssl %v: %v\n%s", args, err, out)
-	}
-	return out
-}
-
 // TestCLICertVerify 本库签发证书 → 铜锁 openssl verify 验证通过。
 func TestCLICertVerify(t *testing.T) {
-	caPriv, _ := sm2.GenerateKey()
-	leafPriv, _ := sm2.GenerateKey()
+	caPriv, _ := asym.GenerateSM2()
+	leafPriv, _ := asym.GenerateSM2()
 	now := time.Now()
 
 	caSubject := NewName().Add("CN", "Tongsuo-Go Test CA")
@@ -80,7 +69,7 @@ func TestCLICertVerify(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := runOpenSSLFile(t, "verify", "-CAfile", caFile, leafFile)
+	out := testutil.MustRunOpenSSL(t, "verify", "-CAfile", caFile, leafFile)
 	if !bytes.Contains(out, []byte("OK")) {
 		t.Fatalf("openssl verify failed: %s", out)
 	}
@@ -88,7 +77,7 @@ func TestCLICertVerify(t *testing.T) {
 
 // TestCLISubjectIssuer 与 openssl x509 对比主题/签发者/序列号。
 func TestCLISubjectIssuer(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := NewName().Add("CN", "cli.example.com").Add("O", "CLI Org")
 	cert, err := CreateCertificate(subject, subject, 42,
@@ -103,7 +92,7 @@ func TestCLISubjectIssuer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := runOpenSSLFile(t, "x509", "-in", certFile, "-noout", "-subject", "-issuer", "-serial")
+	out := testutil.MustRunOpenSSL(t, "x509", "-in", certFile, "-noout", "-subject", "-issuer", "-serial")
 	s := string(out)
 	if !strings.Contains(s, "CN=cli.example.com") {
 		t.Fatalf("openssl subject mismatch: %s", s)
@@ -118,7 +107,7 @@ func TestCLISubjectIssuer(t *testing.T) {
 
 // TestCLICSRVerify 本库生成 CSR → 铜锁 openssl req -verify 通过，并可用 openssl 签发。
 func TestCLICSRVerify(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	subject := NewName().Add("CN", "cli-csr.example.com")
 	req, err := NewCertificateRequest(subject, priv.Public(), priv)
 	if err != nil {
@@ -131,7 +120,7 @@ func TestCLICSRVerify(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := runOpenSSLFile(t, "req", "-verify", "-in", reqFile, "-noout")
+	out := testutil.MustRunOpenSSL(t, "req", "-verify", "-in", reqFile, "-noout")
 	if !bytes.Contains(out, []byte("verify OK")) {
 		t.Fatalf("openssl req -verify failed: %s", out)
 	}
@@ -139,7 +128,7 @@ func TestCLICSRVerify(t *testing.T) {
 
 // TestCLIFingerprint 本库指纹与 openssl x509 -fingerprint -sha256 一致。
 func TestCLIFingerprint(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := NewName().Add("CN", "fp-cli.example.com")
 	cert, err := CreateCertificate(subject, subject, 11,
@@ -154,7 +143,7 @@ func TestCLIFingerprint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := runOpenSSLFile(t, "x509", "-in", certFile, "-noout", "-fingerprint", "-sha256")
+	out := testutil.MustRunOpenSSL(t, "x509", "-in", certFile, "-noout", "-fingerprint", "-sha256")
 	parts := strings.Split(strings.TrimSpace(string(out)), "=")
 	if len(parts) != 2 {
 		t.Fatalf("unexpected openssl fingerprint output: %s", out)
@@ -172,7 +161,7 @@ func TestCLIFingerprint(t *testing.T) {
 
 // TestCLIDer 本库 DER 导出/导入与 openssl 互通（-inform DER / -outform DER）。
 func TestCLIDer(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := NewName().Add("CN", "der-cli.example.com")
 	cert, err := CreateCertificate(subject, subject, 12,
@@ -191,7 +180,7 @@ func TestCLIDer(t *testing.T) {
 	}
 
 	// openssl 可读取本库导出的 DER
-	out := runOpenSSLFile(t, "x509", "-in", derFile, "-inform", "DER", "-noout", "-subject")
+	out := testutil.MustRunOpenSSL(t, "x509", "-in", derFile, "-inform", "DER", "-noout", "-subject")
 	if !strings.Contains(string(out), "CN=der-cli.example.com") {
 		t.Fatalf("openssl DER subject mismatch: %s", out)
 	}
@@ -202,7 +191,7 @@ func TestCLIDer(t *testing.T) {
 	if err := os.WriteFile(pemFile, certPEM, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runOpenSSLFile(t, "x509", "-in", pemFile, "-outform", "DER", "-out", dir+"/cli.der")
+	testutil.MustRunOpenSSL(t, "x509", "-in", pemFile, "-outform", "DER", "-out", dir+"/cli.der")
 	cliDER, err := os.ReadFile(dir + "/cli.der")
 	if err != nil {
 		t.Fatal(err)
@@ -224,7 +213,7 @@ func TestCLIDer(t *testing.T) {
 
 // TestCLISANText 本库构建的 SAN 扩展与 openssl x509 -text 一致。
 func TestCLISANText(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := NewName().Add("CN", "san-cli.example.com")
 	cert := NewCertificate()
@@ -262,7 +251,7 @@ func TestCLISANText(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := runOpenSSLFile(t, "x509", "-in", certFile, "-noout", "-text")
+	out := testutil.MustRunOpenSSL(t, "x509", "-in", certFile, "-noout", "-text")
 	s := string(out)
 	if !strings.Contains(s, "DNS:san-cli.example.com") {
 		t.Fatalf("openssl text missing DNS SAN: %s", s)
@@ -277,7 +266,7 @@ func TestCLISANText(t *testing.T) {
 
 // TestCLICSRText 本库构建的 CSR（SAN + 挑战密码 + 多字段）与 openssl req -text 一致。
 func TestCLICSRText(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	subject := NewName().Add("CN", "csr-cli.example.com").Add("O", "CLI CSR Org").Add("C", "CN")
 	req := NewEmptyCertificateRequest()
 	if err := req.SetSubject(subject); err != nil {
@@ -302,7 +291,7 @@ func TestCLICSRText(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := runOpenSSLFile(t, "req", "-text", "-noout", "-verify", "-in", reqFile)
+	out := testutil.MustRunOpenSSL(t, "req", "-text", "-noout", "-verify", "-in", reqFile)
 	s := string(out)
 	if !strings.Contains(s, "verify OK") {
 		t.Fatalf("openssl req verify failed: %s", s)
@@ -316,18 +305,6 @@ func TestCLICSRText(t *testing.T) {
 	if !strings.Contains(s, "CN=csr-cli.example.com") || !strings.Contains(s, "O=CLI CSR Org") {
 		t.Fatalf("openssl req text missing subject fields: %s", s)
 	}
-}
-
-// runOpenSSLInDir 在指定目录下运行铜锁 openssl（供 openssl ca 相对路径配置使用）。
-func runOpenSSLInDir(t *testing.T, dir string, args ...string) []byte {
-	t.Helper()
-	cmd := exec.Command(testutil.OpenSSLBin(), args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("openssl %v: %v\n%s", args, err, out)
-	}
-	return out
 }
 
 // setupCRLEnv 在临时目录搭建 openssl CA 环境并生成：
@@ -364,17 +341,17 @@ commonName = supplied
 `
 	must(os.WriteFile(dir+"/openssl.cnf", []byte(cnf), 0o600))
 
-	runOpenSSLInDir(t, dir, "req", "-new", "-x509", "-nodes", "-keyout", "ca.key",
+	testutil.MustRunOpenSSLInDir(t, dir, "req", "-new", "-x509", "-nodes", "-keyout", "ca.key",
 		"-out", "ca.pem", "-subj", "/CN=CRL Test CA", "-days", "3650")
 	for _, n := range []string{"leaf1", "leaf2"} {
-		runOpenSSLInDir(t, dir, "req", "-new", "-nodes", "-keyout", n+".key",
+		testutil.MustRunOpenSSLInDir(t, dir, "req", "-new", "-nodes", "-keyout", n+".key",
 			"-out", n+".csr", "-subj", "/CN="+n+".crl.dev")
-		runOpenSSLInDir(t, dir, "ca", "-batch", "-config", "openssl.cnf",
+		testutil.MustRunOpenSSLInDir(t, dir, "ca", "-batch", "-config", "openssl.cnf",
 			"-in", n+".csr", "-out", n+".pem")
 	}
-	runOpenSSLInDir(t, dir, "ca", "-config", "openssl.cnf",
+	testutil.MustRunOpenSSLInDir(t, dir, "ca", "-config", "openssl.cnf",
 		"-revoke", "leaf1.pem", "-crl_reason", "keyCompromise")
-	runOpenSSLInDir(t, dir, "ca", "-config", "openssl.cnf", "-gencrl", "-out", "crl.pem")
+	testutil.MustRunOpenSSLInDir(t, dir, "ca", "-config", "openssl.cnf", "-gencrl", "-out", "crl.pem")
 	return dir
 }
 
@@ -432,7 +409,7 @@ func TestCLICrlParse(t *testing.T) {
 
 	// 与 openssl crl -text 对比（openssl 以十六进制显示序列号）
 	hexSerial := strings.ToUpper(strconv.FormatInt(entries[0].Serial, 16))
-	out := runOpenSSLInDir(t, dir, "crl", "-in", "crl.pem", "-noout", "-text")
+	out := testutil.MustRunOpenSSLInDir(t, dir, "crl", "-in", "crl.pem", "-noout", "-text")
 	if !strings.Contains(string(out), "Serial Number: "+hexSerial) {
 		t.Fatalf("openssl crl text missing serial %s: %s", hexSerial, out)
 	}
@@ -516,7 +493,7 @@ func TestCLIRevocationCheck(t *testing.T) {
 // 短名 Tongsuo "SM2-SM3" 与 OpenSSL "SM2-with-SM3" 不一致，故仅校验：算法名非空、
 // 签名算法 OID 与 openssl x509 -text 输出相符（对 SM2 走文本匹配，对 RSA/ECDSA 走 OID 文本匹配）。
 func TestCLICertSignatureInfo(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := NewName().Add("CN", "siginfo-cli.example.com")
 	cert, err := CreateCertificate(subject, subject, 33,
@@ -532,7 +509,7 @@ func TestCLICertSignatureInfo(t *testing.T) {
 	}
 
 	// openssl x509 -text 显示 "Signature Algorithm: SM2-with-SM3"
-	out := string(runOpenSSLFile(t, "x509", "-in", certFile, "-noout", "-text"))
+	out := string(testutil.MustRunOpenSSL(t, "x509", "-in", certFile, "-noout", "-text"))
 	ourAlg := cert.SignatureAlgorithm()
 	ourOID := cert.SignatureAlgorithmOID()
 	if ourAlg == "" || ourOID == "" {
@@ -563,7 +540,7 @@ func TestCLICertSignatureInfo(t *testing.T) {
 
 // TestCLICSRSignatureInfo 本库 CSR 签名三件套与 openssl req -text 一致。
 func TestCLICSRSignatureInfo(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	subject := NewName().Add("CN", "csrsig-cli.example.com")
 	req, err := NewCertificateRequest(subject, priv.Public(), priv)
 	if err != nil {
@@ -576,7 +553,7 @@ func TestCLICSRSignatureInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := string(runOpenSSLFile(t, "req", "-in", reqFile, "-noout", "-text"))
+	out := string(testutil.MustRunOpenSSL(t, "req", "-in", reqFile, "-noout", "-text"))
 	ourAlg := req.SignatureAlgorithm()
 	ourOID := req.SignatureAlgorithmOID()
 	if ourAlg == "" || ourOID == "" {
@@ -616,7 +593,7 @@ func TestCLICRLSignatureInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := string(runOpenSSLInDir(t, dir, "crl", "-in", "crl.pem", "-noout", "-text"))
+	out := string(testutil.MustRunOpenSSLInDir(t, dir, "crl", "-in", "crl.pem", "-noout", "-text"))
 	s := out
 
 	ourAlg := crl.SignatureAlgorithm()
@@ -688,9 +665,9 @@ authorityKeyIdentifier = keyid:always
 `
 	must(os.WriteFile(dir+"/openssl.cnf", []byte(cnf), 0o600))
 
-	runOpenSSLInDir(t, dir, "req", "-new", "-x509", "-nodes", "-keyout", "ca.key",
+	testutil.MustRunOpenSSLInDir(t, dir, "req", "-new", "-x509", "-nodes", "-keyout", "ca.key",
 		"-out", "ca.pem", "-subj", "/CN=AKID CRL CA", "-days", "3650")
-	runOpenSSLInDir(t, dir, "ca", "-config", "openssl.cnf", "-gencrl", "-out", "crl.pem")
+	testutil.MustRunOpenSSLInDir(t, dir, "ca", "-config", "openssl.cnf", "-gencrl", "-out", "crl.pem")
 
 	crlPEM, err := os.ReadFile(dir + "/crl.pem")
 	if err != nil {
@@ -719,7 +696,7 @@ authorityKeyIdentifier = keyid:always
 	}
 
 	// 与 openssl crl -text 中的 Authority Key Identifier 行对比
-	out := runOpenSSLInDir(t, dir, "crl", "-in", "crl.pem", "-noout", "-text")
+	out := testutil.MustRunOpenSSLInDir(t, dir, "crl", "-in", "crl.pem", "-noout", "-text")
 	// openssl 以 "XX:YY:..." 大写冒号分隔输出；本库以 hex.EncodeToString 小写无分隔输出
 	outLowerNoColons := strings.ReplaceAll(strings.ToLower(string(out)), ":", "")
 	akidHex := hex.EncodeToString(ourAKID)
@@ -730,7 +707,7 @@ authorityKeyIdentifier = keyid:always
 
 // TestCLIECCertEd25519 验证 Ed25519 自签证书 → openssl x509 读 + openssl verify 通过。
 func TestCLIECCertEd25519(t *testing.T) {
-	priv, err := ed25519.GenerateKey()
+	priv, err := asym.GenerateEd25519()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -738,7 +715,7 @@ func TestCLIECCertEd25519(t *testing.T) {
 	subject := NewName().Add("CN", "ed25519-cli.example.com")
 	cert, err := CreateCertificate(subject, subject, 100,
 		now.Add(-time.Hour), now.Add(365*24*time.Hour),
-		asX509PubKey(priv.Key()), asX509PrivKey(priv.Key()))
+		priv.Public(), priv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -753,28 +730,30 @@ func TestCLIECCertEd25519(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := runOpenSSLFile(t, "x509", "-in", certPath, "-noout", "-text")
+	out := testutil.MustRunOpenSSL(t, "x509", "-in", certPath, "-noout", "-text")
 	if !bytes.Contains(out, []byte("ED25519")) {
 		t.Fatalf("cli x509 missing ED25519 marker: %s", out)
 	}
 
 	// 写入公钥 PEM 供后续对拍使用；pkeyutl verify 已由 ed25519 包测试覆盖。
-	pub, err := priv.Public()
-	if err != nil {
-		t.Fatal(err)
-	}
+	// 注：asym.PrivateKey.Public() 只返回一个值（不再有 error）。
+	pub := priv.Public()
 	pubPath := filepath.Join(dir, "ed_pub.pem")
 	if err := os.WriteFile(pubPath, mustPubPEM(pub), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	// openssl verify 自签 Ed25519（不强制 BasicConstraints，仅记录输出）。
-	out2 := runOpenSSLFile(t, "verify", "-CAfile", certPath, certPath)
+	out2 := testutil.MustRunOpenSSL(t, "verify", "-CAfile", certPath, certPath)
 	t.Logf("openssl verify self-signed ed25519 cert output: %s", out2)
 }
 
-// mustPubPEM 把 ed25519.PublicKey 序列化到 PEM。
-func mustPubPEM(pub *ed25519.PublicKey) []byte {
-	pb, err := pub.MarshalPEM()
+// mustPubPEM 把公钥序列化到 PEM。
+//
+// 参数改为 asym.PublicKey：原 crypto/ed25519.PublicKey 包装已被 asym 取代。
+//
+// mustPubPEM serializes a public key to PEM.
+func mustPubPEM(pub asym.PublicKey) []byte {
+	pb, err := pub.MarshalPublicKeyPEM()
 	if err != nil {
 		panic(err)
 	}

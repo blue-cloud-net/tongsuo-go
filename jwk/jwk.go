@@ -21,8 +21,9 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
-	"github.com/blue-cloud-net/tongsuo-go/key"
+	"github.com/blue-cloud-net/tongsuo-go/internal/keyaccess"
 )
 
 // Key 表示一个 JWK 密钥。
@@ -50,10 +51,19 @@ type Key struct {
 	Y   string `json:"y,omitempty"`
 }
 
-// Marshal 将核心密钥导出为 JWK。key 取自各密钥类型的 Key()（sm2/rsa/ecdsa 私钥或公钥）。
+// marshalCore 将底层核心密钥导出为 JWK（包内辅助）。
 //
-// Marshal converts a core PKey (sm2/rsa/ecdsa private or public) into a JWK Key. It returns an error if the input is nil, the params cannot be read, or the key type is unsupported.
-func Marshal(key *core.PKey) (*Key, error) {
+// 原先以 `Marshal(key *core.PKey)` 公开导出，因公开签名不得出现 internal/ 类型
+// （roadmap §5 E1-7）而收回为包内函数；对外统一走 `MarshalKey`。
+//
+// marshalCore converts a core PKey (sm2/rsa/ecdsa private or public) into a JWK
+// Key. It returns an error if the input is nil, the params cannot be read, or the
+// key type is unsupported.
+//
+// It used to be exported as Marshal(key *core.PKey) and was made package-private
+// because no public signature may mention an internal/ type (roadmap §5, E1-7);
+// the public entry point is MarshalKey.
+func marshalCore(key *core.PKey) (*Key, error) {
 	if key == nil {
 		return nil, fmt.Errorf("jwk: nil key")
 	}
@@ -79,6 +89,17 @@ func Marshal(key *core.PKey) (*Key, error) {
 		if p.Q != nil {
 			k.Q = b64(p.Q)
 		}
+		// CRT 系数 dp/dq/qi（RFC 7518 §6.3.2）可选；若底层已提取则填入，
+		// 缺则省略字段（公钥 / 私钥因子未加载均会缺）。
+		if p.Dmp1 != nil {
+			k.DP = b64(p.Dmp1)
+		}
+		if p.Dmq1 != nil {
+			k.DQ = b64(p.Dmq1)
+		}
+		if p.Iqmp != nil {
+			k.QI = b64(p.Iqmp)
+		}
 		return k, nil
 	case "EC", "SM2":
 		k := &Key{Kty: "EC", Crv: crvName(p.Curve)}
@@ -97,20 +118,31 @@ func Marshal(key *core.PKey) (*Key, error) {
 	}
 }
 
-// MarshalKey 将任意持底层核心句柄的密钥导出为 JWK。
-// k 接受 key.PrivateKey / key.PublicKey 或 crypto/{rsa,sm2,ecdsa} 的私钥/公钥
-// 类型（均实现 key.CoreKey）；等价于 Marshal(k.Key())。公钥 JWK 不含私钥材料。
+// MarshalKey 将 asym 密钥导出为 JWK。
 //
-// MarshalKey converts any key exposing its underlying core handle into a JWK.
-// k may be a key.PrivateKey / key.PublicKey or one of the
-// crypto/{rsa,sm2,ecdsa} private/public key types (all implement
-// key.CoreKey); it is equivalent to Marshal(k.Key()). Public-key JWKs carry
-// no private material.
-func MarshalKey(k key.CoreKey) (*Key, error) {
-	if k == nil || k.Key() == nil {
+// k 可为 asym.PrivateKey 或 asym.PublicKey（SM2 / RSA / EC / Ed25519 / Ed448 /
+// X25519 / X448）；跨包取底层句柄经 internal/keyaccess。公钥 JWK 不含私钥材料。
+//
+// 失败时返回错误：k 为 nil、取不到底层句柄、或密钥类型不受支持（目前只支持
+// RSA 与 EC 参数导出）。
+//
+// MarshalKey converts an asym key into a JWK.
+//
+// k may be an asym.PrivateKey or asym.PublicKey (SM2 / RSA / EC / Ed25519 / Ed448 /
+// X25519 / X448); the underlying handle is obtained through internal/keyaccess.
+// Public-key JWKs carry no private material.
+//
+// It returns an error when k is nil, exposes no underlying handle, or is of an
+// unsupported type (only RSA and EC parameters can be exported today).
+func MarshalKey(k asym.Key) (*Key, error) {
+	if k == nil {
 		return nil, fmt.Errorf("jwk: nil key")
 	}
-	return Marshal(k.Key())
+	pk, ok := keyaccess.PKey(k)
+	if !ok || pk == nil {
+		return nil, fmt.Errorf("jwk: unsupported key type %T", k)
+	}
+	return marshalCore(pk)
 }
 
 // Parse 解析 JWK JSON。
@@ -293,7 +325,7 @@ func FromPEM(pemBytes []byte) (*Key, error) {
 		return nil, fmt.Errorf("jwk: unsupported PEM: %w", err)
 	}
 	defer pk.Close()
-	return Marshal(pk)
+	return marshalCore(pk)
 }
 
 // b64 将大整数编码为 base64url（无填充）。

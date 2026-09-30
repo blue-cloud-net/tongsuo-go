@@ -21,6 +21,252 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
+## [0.3.0] - 2026-09-30
+
+### Added
+
+- `internal/core`: `KeyParams` now exposes the RSA CRT factors
+  `Dmp1 = D mod (P-1)`, `Dmq1 = D mod (Q-1)` and `Iqmp = Q^-1 mod P`,
+  populated by `(*PKey).Params()` next to the existing `N / E / D / P / Q`
+  fields. Values come from the Tongsuo provider parameters
+  `rsa-exponent1` / `rsa-exponent2` / `rsa-coefficient1` when exposed
+  (Tongsuo 8.5+) and fall back to local derivation from `D / P / Q`
+  otherwise; the public key path keeps these fields nil.
+- `meta` (new top-level package): Tongsuo version and build information
+  (`Version`, `VersionString`, `VersionNum`, `TongsuoVersionNum`,
+  `ReadBuildInfo`) plus error-code decoding (`ErrorString`, `ErrorCode`,
+  `ParseErrorCode`). Backed by a new `OpenSSLVersionWithIndex(idx int)`
+  binding, so every `OpenSSL_version` index is reachable (the previous
+  binding hard-coded index `0`).
+- `digest`: `SHA-224` and `SHA-384` are now supported —
+  `SumSHA224` / `SumSHA384`, `SHA224Size` / `SHA384Size` and the matching
+  `New` / `Sum` by-name entries. `EVP_sha224` / `EVP_sha384` were already
+  bound, so no new cgo binding was needed.
+- `digest` / `mac` / `kdf` / `sym` / `asym`: every package now also offers a
+  CLI-style "dispatch by algorithm name" entry point (`Names`,
+  `New(name, …)`, `Sum(name, …)`, `Derive(name, …)`,
+  `GenerateKey(alg, …)`) next to the idiomatic Go interfaces
+  (`hash.Hash` / `cipher.Block` / `cipher.AEAD`).
+- `asym`: `LoadPrivateKeyPEM` now falls back to the traditional RSA PKCS#1
+  and EC SEC1 encodings before failing.
+- `ecdh`: `LoadPrivateKey(asym.PrivateKey)` / `LoadPublicKey(asym.PublicKey)`
+  make a key produced by `asym` usable for key agreement.
+- `x509`: `CreateSelfSigned(...)` builds a self-signed certificate in one
+  call; `(*Certificate).VerifyHostname(host)` checks host names and IP
+  addresses; `(*Store).SetTime(t)` pins the verification instant.
+- `x509`: `CRLBuilder` / `NewCRLBuilder` / `(*CRLBuilder).Revoke` /
+  `(*CRLBuilder).Sign` make CRL issuance public (`internal/core.NewCRL`
+  was previously unexported).
+- `tls`: `CipherSuiteByName(name)` resolves a cipher suite by name or ID.
+- `rand`: `Reader() io.Reader` for `io.Copy` / `io.ReadFull` composition.
+- `asym`: package-level `Close(k Key) error` gives the package its first
+  explicit release path; until now a key holding a handle could only be
+  freed by the finalizer. The `keystore` and `ecdh` suites use it to prove
+  a duplicate stays usable after the source key is released.
+- `x509`: `(*Store).Close()` adds the release path a trust store never
+  had — `Store` was the only handle-owning type in the package with no
+  public `Close` and could previously be freed only by the finalizer.
+  After `Close`, `AddCert` / `AddCRL` / `SetFlags` / `SetTime` return
+  `x509: store closed` and `ChainVerify` fails because the trust anchor
+  has been released.
+
+### Changed
+
+- `jwk.Marshal`: an RSA private-key JWK now also carries the RFC 7518
+  §6.3.2 CRT fields `dp` / `dq` / `qi` alongside the previously
+  populated `p` / `q`. Public-key output and EC/SM2 output are
+  unchanged.
+- `xml/rsa.MarshalPrivate`: now uses the CRT factors from
+  `core.KeyParams` instead of recomputing `Mod(D, P-1)`,
+  `Mod(D, Q-1)` and `ModInverse(Q, P)` locally.
+- `x509`: the OCSP helpers moved in and were renamed to avoid colliding
+  with the new package's own symbols — `ocsp.CreateRequest` →
+  `x509.CreateOCSPRequest`, `ocsp.ParseResponse` →
+  `x509.ParseOCSPResponse`, and `ocsp.Good` / `Revoked` / `Unknown` →
+  `x509.OCSPGood` / `OCSPRevoked` / `OCSPUnknown`.
+- `tls`: the package no longer imports `internal/native` directly; the
+  cipher-suite and error-code lookups now go through `internal/core`,
+  restoring the three-layer separation.
+- `meta`: likewise no longer imports `internal/native` — version, build
+  information and error-code text now go through `internal/core` (new
+  `core.ReadBuildEnv` / `core.ErrorString`). **No API-layer package
+  imports the binding layer any more.**
+- `meta`'s public signatures (`Version` / `VersionString` / `VersionNum` /
+  `TongsuoVersionNum` / `ReadBuildInfo` / `ErrorString`) are unchanged.
+- `tls.CipherSuiteByName` matching semantics: names are
+  **case-insensitive** and only the primary name reported by enumeration
+  is matched (not OpenSSL legacy aliases); an ID is the 16-bit wire ID in
+  text form, either decimal (`4865`) or 0x-prefixed hex (`0x1301`).
+- `examples/`: all six examples (`sm2` / `ed25519` / `self-signed-cert` /
+  `ntls-loopback` / `x25519` / `ecdh`) moved to the 16-package layout; run
+  them with `cd examples/<name> && go run .` (each is its own module).
+- `xml/rsa`: the implementation still round-trips through PKCS#1 / SPKI
+  PEM and `asym.LoadPrivateKeyPEM` / `LoadPublicKeyPEM` — **no new cgo**;
+  only the parameter source moved to `asym.Params`.
+- `internal/testutil` gains the unified entry points
+  `RunOpenSSLCombined` / `RunOpenSSLCombinedIn` / `MustRunOpenSSL` /
+  `MustRunOpenSSLInDir`. Eight `*_tongsuocli_test.go` files used to
+  duplicate their own openssl wrapper (four of them lacked
+  `SkipIfNoOpenSSL` and failed instead of skipping when the CLI was
+  missing); all of them now call the shared helpers. Test infrastructure
+  only — no public API change.
+
+### Fixed
+
+- `asym` GoDoc for `PrivateKey.Params` / `PublicKey.Params`: the
+  private-side listing previously called `P` / `Q` "CRT 因子"; they are
+  in fact the RSA prime factors. The doc now distinguishes 素因子
+  (`P` / `Q`) and CRT factors (`Dmp1` / `Dmq1` / `Iqmp`).
+- `tls` test structure: `mustHandshake` used to call `t.Fatalf` inside a
+  goroutine spawned by a test; once the test function has returned, that
+  panics with "Fail in goroutine after … has completed" and swallows the
+  results of every other test in the package (P1004, defect 2). It is
+  replaced by `handshakeErr` (error-returning only) plus
+  `serveHandshakeAsync` (assertion from `t.Cleanup`), six tests gained
+  explicit handshake-vs-close synchronisation, and a handshake failure
+  now fails fast instead of waiting for a timeout. A test-level leak was
+  fixed along the way: a server connection abandoned after the handshake
+  outlived `defer srv.Close()` (which frees the `SSL_CTX`). Package flake
+  rate dropped from 3/20 to 1/20; the remainder turned out to be a
+  library-level defect, fixed by the next entry.
+- `tls`: **connection fd lifetime (P1011)** — `tls.Conn` used to hand a
+  bare fd number to `SSL_set_fd` while the descriptor was owned by the
+  underlying `net.Conn`. After `Close()` closed the raw socket the kernel
+  could recycle that number for a new connection, and the SSL BIO — still
+  holding the stale number — then read from or wrote to **another
+  connection's** socket. That is the real cause of the intermittent
+  failures (`SSL_connect: unexpected message`, `SSL_read: Bad file
+  descriptor`, peer-side `bad record MAC`) and of the residual flake
+  above. The socket is now duplicated with `dup(2)` inside the
+  `SyscallConn().Control` callback (new `internal/core/fd_unix.go`:
+  `DupFD` / `ShutdownFD` / `CloseFD`), `*core.SSLConn` owns the duplicate,
+  and a new `Stop()` (state flag + `shutdown(2)`) wakes an in-flight
+  `select` and sends FIN even though the duplicate keeps the socket open.
+  `Close()` waits for in-flight operations (`inflight.Wait`, registered
+  before the `stopped` check) before `SSL_free` and closing the duplicate;
+  `tls.Conn.Close()` calls `Stop()` before closing the raw socket.
+  Measured after the fix: 50 consecutive `go test -count=1 ./tls/` runs
+  with **zero** failures (before: 1/20; a guard-only variant without
+  `dup` made it worse at 8/40 and was reverted), with `-race`, the full
+  `go test ./...` suite and `-tags tongsuocli` all green.
+
+### Documentation
+
+- `docs/testing-guide.md` §5.1 now lists the CRT parameter invariants
+  among the required RSA cases (non-nil, range checks and
+  `Iqmp*Q ≡ 1 (mod P)`).
+- `docs/refactor-roadmap.md` (new): the full package-structure decision
+  record, per-package migration plan, required new bindings, phase/version
+  assignment, verification procedure and rollback plan.
+- `docs/api-reference.md`: rewritten for the post-refactor 16-package
+  layout, with a per-package status marker and a per-symbol marker for
+  "already present" / "landing in this release" / "planned".
+- `docs/api-reference-internal.md`: adds `§5 internal/keyaccess` and
+  updates the layer diagram.
+- `docs/architecture.md`: §1.1 / §2 / §3.3 / §4 / §5 / §7 / §10 / §11.
+- `AGENTS.md`: directory map, layering red lines, doc-sync table and the
+  known-trap list.
+- `README.md` + `README.zh.md`: features, code examples and the
+  architecture section.
+- `docs/refactor-roadmap.md`: the §0 baseline now reads "`0.3.0`
+  implemented", the §2.1 status column is all-green, and a closing
+  footnote records that two Phase 0 items were still outstanding.
+- `docs/api-reference.md` / `docs/api-reference-internal.md` /
+  `docs/architecture.md` / `AGENTS.md`: document the
+  `internal/certaccess` bridge (only `internal/keyaccess` was listed
+  before), correct the keyaccess consumer list to six entries (adds
+  `keystore`) and cover the new `internal/testutil` entry points.
+
+### BREAKING / 已知限制
+
+- **API-layer package layout: 27 packages → 16.** The `crypto/` tree and
+  the `key/` package are gone, so every public import path changes. See
+  `docs/api-reference.md` §0.1 for the package-level old → new mapping and
+  `docs/refactor-roadmap.md` §4 for the symbol-level one.
+  - `crypto/{sm3,md5,sha1,sha256,sha512}` → `digest`
+  - `crypto/hmac` → `mac`
+  - `crypto/{aes,sm4}` + the symmetric half of `key` → `sym`
+  - `crypto/{sm2,rsa,ecdsa,ed25519,ed448}` + the asymmetric half of `key`
+    + key generation from `crypto/{x25519,x448}` → `asym`
+  - `crypto/ecdh` + key agreement from `crypto/{x25519,x448}` → `ecdh`
+  - `crypto/kdf` + the KDF half of `key` → `kdf`
+  - `crypto/rand` → `rand`
+  - `key.{Handle,Store,MemoryStore}` → `keystore`
+  - `ocsp` → `x509`
+  - `crypto/`, `crypto/{x25519,x448}` and `key` are deleted outright.
+- **No deprecated forwarding packages.** Callers must migrate in one step.
+- **`x509` / `csr` / `crl` / `ocsp` are *not* split.** Splitting them would
+  introduce a `x509` ↔ `crl` import cycle (`Store.AddCRL(*crl.CRL)` versus
+  `crl.NewBuilder(*x509.Certificate)`), so CSR / CRL / OCSP stay in `x509`.
+- **Algorithm-specific methods became package-level functions.** Key types
+  are now the interfaces `asym.PrivateKey` / `asym.PublicKey`, so e.g.
+  `rsa.GenerateKey(2048)` → `asym.GenerateRSA(2048)` and
+  `priv.SignPSS(…)` → `asym.SignPSS(priv, …)`.
+- **No `internal/` type appears in a public signature any more.** All
+  twelve leaks listed in `docs/refactor-roadmap.md` §5.1 are closed, which
+  removes the `Key() *core.PKey`, `Core()`, `PublicKeyPKey()`,
+  `Store.Core()` and `jwk.Marshal(*core.PKey)` escape hatches.
+  Cross-package handle access now goes through `internal/keyaccess`.
+- **`KeyParams` moved to `asym`.** `(*PrivateKey).Params()` now returns
+  `*asym.KeyParams` instead of `*core.KeyParams`.
+- **`x509` narrow key interfaces removed.** `x509.PublicKey` /
+  `x509.PrivateKey` are gone; use `asym.PublicKey` / `asym.PrivateKey`.
+- **`x509`'s certificate wrapper is gone and certificate ownership
+  changed.** The public `x509.WrapCertificate(*core.Certificate)` both
+  leaked an `internal/` type and broke the documented contract (it
+  **shared** the underlying handle, so a caller's `Close` released the
+  real owner); cross-package wrapping now goes through
+  `internal/certaccess.Wrap`, which round-trips DER and yields an **owned**
+  handle. Consequently the `*x509.Certificate` values returned by
+  `tls.PeerCertificates()` / `tls.PeerEncCertificates()`,
+  `pkcs/pkcs7.Extract` and `pkcs/pkcs12.Bundle` are now **per-caller owned
+  copies** that must each be closed (the `tls` docs already promised this;
+  the implementation now matches).
+- **`xml/rsa`'s four public functions take `asym.*`.**
+  `MarshalPrivate(asym.PrivateKey)` / `MarshalPublic(asym.PublicKey)` /
+  `UnmarshalPrivate(...) (asym.PrivateKey, error)` /
+  `UnmarshalPublic(...) (asym.PublicKey, error)`; the old
+  `*crypto/rsa.PrivateKey` / `*crypto/rsa.PublicKey` signatures went away
+  with the `crypto/rsa` package.
+- **`jwk.Marshal(*core.PKey)` removed**; use
+  `jwk.MarshalKey(k asym.Key)`. `MarshalKey`'s parameter also changed from
+  `key.CoreKey` to `asym.Key`.
+- **`pkcs/pkcs12` private-key types became public interfaces**:
+  `pkcs12.PrivateKey` (formerly a `key.CoreKey` alias) and
+  `pkcs12.Bundle.PrivateKey` (formerly `*core.PKey`) are now
+  `asym.PrivateKey`.
+- **`key.Algorithm` / `key.Key` replaced.** Use `asym.Algorithm` +
+  `asym.Key` (asymmetric) or `sym.Algorithm` + `sym.SymmetricKey`
+  (symmetric); note the rename `AlgED25519` → `AlgEd25519`.
+- **`tls.Config` key fields retyped**: `Key` / `SignKey` / `EncKey` are
+  `asym.PrivateKey` instead of `*sm2.PrivateKey`.
+- **RSA OAEP parameter**: `crypto/rsa.EncryptOAEP`'s
+  `md *core.Digest` parameter became `hash string` — the old parameter was
+  impossible to construct from outside the module anyway.
+- Known limitation: `asym` key types are unexported concrete types behind
+  interfaces, so a third-party key type can no longer be passed to `x509` /
+  `tls`. Such a type could not supply a native handle before either, so no
+  functionality is lost.
+- Known limitation: `asym.PrivateKey.Public()` returns an object that
+  **shares the private key's underlying handle** (pre-existing behaviour,
+  not introduced here: the old `crypto/rsa` and `key` did the same), so
+  `jwk.MarshalKey(priv.Public())` still exports a JWK **carrying the
+  private components**. For a public JWK, load the public key on its own
+  (`asym.LoadPublicKeyPEM`) and pass that to `MarshalKey`.
+- Known limitation: `TestNTLSLoopback` can still fail under heavy parallel
+  load — the client's `Read` fails with `tls: SSL_read (syscall): …
+  Broken pipe` (`SSL_ERROR_SYSCALL`). Reproduced 4 times in 90 runs of
+  `go test -count=15 -run TestNTLS ./tls/` with six processes in parallel,
+  while the same revision is clean on the single-package loop (50/50) and
+  on 17 consecutive full `go test ./...` runs. The pre-fix signature of the
+  very same test and line was `Bad file descriptor` (the fd-lifetime defect
+  fixed above), so this is a residual rather than a regression; the
+  remaining cause is not yet pinned. The `tongsuocli` interop job is
+  enabled in spite of it, because the library-level defect it covers is
+  fixed.
+
+---
+
 ## [0.2.0] - 2026-09-18
 
 ### Added
@@ -361,7 +607,8 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.0...v0.1.1

@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/hex"
 	"fmt"
+	"net"
 	"time"
 	"unsafe"
 
@@ -1238,6 +1239,67 @@ func (c *Certificate) PublicKey() (*PKey, error) {
 	return &PKey{handle: NewHandle(p, true, native.EVP_PKEY_free)}, nil
 }
 
+// VerifyHostname 校验证书是否对给定主机名或 IP 地址有效（等价
+// `openssl verify -verify_hostname`）。
+//
+// host 为 IP 文本（IPv4 点分 / IPv6 冒号）时走 X509_check_ip_asc，只比对 SAN 的
+// iPAddress 条目；否则走 X509_check_host，先比对 SAN 的 dNSName 条目，无 SAN 时
+// 回退比对 subject CN，并允许通配符（`*.example.com`）。
+//
+// 匹配返回 nil；不匹配返回描述性错误；host 为空返回 "x509: empty hostname"；
+// 对 nil 接收者或已关闭的证书返回 "x509: invalid certificate"。
+//
+// ⚠️ 本函数只做「名字匹配」，**不**验证证书链、有效期或用途；调用方必须先
+// 完成链验证（ChainVerify）再调用它，否则对任意自签证书都会「匹配成功」。
+//
+// VerifyHostname checks whether the certificate is valid for the given host
+// name or IP address (equivalent to `openssl verify -verify_hostname`).
+//
+// When host is an IP literal (dotted IPv4 or colon IPv6) it goes through
+// X509_check_ip_asc and only the iPAddress SAN entries are compared;
+// otherwise it goes through X509_check_host, which compares the dNSName SAN
+// entries first, falls back to the subject CN when no SAN is present, and
+// allows wildcards such as `*.example.com`.
+//
+// A match returns nil; a mismatch returns a descriptive error; an empty host
+// returns "x509: empty hostname"; a nil or closed certificate returns
+// "x509: invalid certificate".
+//
+// ⚠️ This function performs name matching only. It does **not** validate the
+// chain, the validity window or the key usage; callers must complete chain
+// verification (ChainVerify) first, otherwise any self-signed certificate
+// will also "match".
+func (c *Certificate) VerifyHostname(host string) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: invalid certificate")
+	}
+	if host == "" {
+		return fmt.Errorf("x509: empty hostname")
+	}
+	if net.ParseIP(host) != nil {
+		switch native.X509_check_ip_asc(c.handle.Ptr(), host) {
+		case 1:
+			return nil
+		case 0:
+			return fmt.Errorf("x509: certificate is not valid for IP %q", host)
+		case -2:
+			return fmt.Errorf("x509: X509_check_ip_asc: malformed IP %q", host)
+		default:
+			return fmt.Errorf("x509: X509_check_ip_asc: internal error")
+		}
+	}
+	switch native.X509_check_host(c.handle.Ptr(), host) {
+	case 1:
+		return nil
+	case 0:
+		return fmt.Errorf("x509: certificate is not valid for host %q", host)
+	case -2:
+		return fmt.Errorf("x509: X509_check_host: malformed hostname %q", host)
+	default:
+		return fmt.Errorf("x509: X509_check_host: internal error")
+	}
+}
+
 // Close 释放底层 X509 句柄。
 //
 // 调用是幂等的：对 nil 接收者或已关闭的证书调用返回 nil，不产生副作用；Close 返回后，
@@ -1917,6 +1979,43 @@ func (s *Store) SetFlags(flags uint64) error {
 	return nil
 }
 
+// SetTime 指定该信任存储的验证时刻（等价 `openssl verify -attime`）。
+//
+// 时间写入 X509_STORE 自有的 X509_VERIFY_PARAM，因此对该存储上**后续每次**
+// ChainVerify 都生效（不限于下一次调用），且可反复覆盖。典型用途是用「固定的
+// 历史时刻」验证已过期或尚未生效的证书链。
+//
+// ⚠️ 安全提示：验证时刻回拨会让**已过期**的证书通过链验证。仅在确有必要时
+// （如离线复核历史签名、验证归档数据）使用，不要用它掩盖真实的过期状态。
+//
+// 对 nil 接收者或已关闭的存储返回 "x509: store closed"；错误以 OpError 包装。
+//
+// SetTime sets the verification time of the trust store (equivalent to
+// `openssl verify -attime`).
+//
+// The timestamp is written into the X509_VERIFY_PARAM owned by the
+// X509_STORE, so it affects **every subsequent** ChainVerify performed with
+// that store (not just the next call) and may be overwritten repeatedly. The
+// typical use is validating a chain as of a fixed point in the past, for
+// certificates that have expired or are not yet valid.
+//
+// ⚠️ Security note: rolling the verification time back lets an **expired**
+// certificate pass chain validation. Use it only when genuinely required
+// (for example replaying a historical signature or validating archived
+// data) and never to mask a real expiry.
+//
+// A nil or closed store returns the error "x509: store closed". Errors are
+// wrapped as OpError.
+func (s *Store) SetTime(t time.Time) error {
+	if s == nil || s.handle == nil || s.handle.IsClosed() {
+		return fmt.Errorf("x509: store closed")
+	}
+	if !native.X509_STORE_set_verify_time(s.handle.Ptr(), t.Unix()) {
+		return NewOpError("x509: X509_STORE_get0_param", native.PopError())
+	}
+	return nil
+}
+
 // Close 释放底层 X509_STORE 句柄。
 //
 // 调用是幂等的：对 nil 接收者或已关闭的存储调用返回 nil，不产生副作用；Close 返回后，
@@ -2135,6 +2234,59 @@ func NewCRL(issuer *Name, priv *PKey, thisUpdate, nextUpdate time.Time) (*CRL, e
 	if priv == nil || priv.handle == nil || priv.handle.IsClosed() {
 		return nil, fmt.Errorf("x509: invalid signing key")
 	}
+	crl, err := NewCRLForIssuer(issuer)
+	if err != nil {
+		return nil, err
+	}
+	if err := crl.SetThisUpdate(thisUpdate); err != nil {
+		crl.Close()
+		return nil, err
+	}
+	if !nextUpdate.IsZero() {
+		if err := crl.SetNextUpdate(nextUpdate); err != nil {
+			crl.Close()
+			return nil, err
+		}
+	}
+	// 附加 CRL Number 扩展（值 = 1），匹配 openssl ca -gencrl 默认行为
+	if err := crl.SetNumber(1); err != nil {
+		crl.Close()
+		return nil, err
+	}
+	if err := crl.Sign(priv); err != nil {
+		crl.Close()
+		return nil, err
+	}
+	return crl, nil
+}
+
+// NewCRLForIssuer 创建空的 v2 CRL 并设置签发者名字，供分步组装使用。
+//
+// 本函数只完成「分配 + 版本 = v2 + 签发者名字」三步，不设置时间窗、不写 CRL
+// Number、不签名；调用方随后用 SetThisUpdate / SetNextUpdate / SetNumber /
+// AddRevokedEntry / AddAuthorityKeyID 组装，最后用 Sign 签名。这是公开 CRL
+// 构建器（x509.CRLBuilder）的核心层落点。
+//
+// 返回值拥有底层 X509_CRL 句柄，调用方须调用 Close 释放；issuer 必须是未关闭
+// 的有效 *Name，否则返回 "x509: invalid issuer name"；错误以 OpError 包装。
+//
+// NewCRLForIssuer allocates an empty v2 CRL and sets its issuer name, for
+// step-by-step assembly.
+//
+// It performs only allocation, version = v2 and issuer name assignment; it
+// sets no validity window, no CRL Number and no signature. The caller then
+// assembles the CRL with SetThisUpdate / SetNextUpdate / SetNumber /
+// AddRevokedEntry / AddAuthorityKeyID and finally signs it with Sign. This
+// is the core-layer backing for the public CRL builder (x509.CRLBuilder).
+//
+// The returned value owns the underlying X509_CRL handle and the caller
+// must invoke Close to release it. issuer must be a live, non-closed *Name;
+// otherwise the error "x509: invalid issuer name" is returned. Errors are
+// wrapped as OpError.
+func NewCRLForIssuer(issuer *Name) (*CRL, error) {
+	if issuer == nil || issuer.handle == nil || issuer.handle.IsClosed() {
+		return nil, fmt.Errorf("x509: invalid issuer name")
+	}
 	c := native.X509_CRL_new()
 	if c == nil {
 		return nil, NewOpError("x509: X509_CRL_new", native.PopError())
@@ -2148,38 +2300,171 @@ func NewCRL(issuer *Name, priv *PKey, thisUpdate, nextUpdate time.Time) (*CRL, e
 		crl.Close()
 		return nil, NewOpError("x509: X509_CRL_set_issuer_name", native.PopError())
 	}
-	if !native.X509_CRL_set1_lastUpdate(c, thisUpdate.Unix()) {
-		crl.Close()
-		return nil, NewOpError("x509: X509_CRL_set1_lastUpdate", native.PopError())
+	return crl, nil
+}
+
+// SetThisUpdate 设置 CRL 的 thisUpdate 时间。
+//
+// 须在 Sign 之前调用；对 nil 接收者或已关闭的 CRL 返回 "x509: CRL closed"；
+// 错误以 OpError 包装。
+//
+// SetThisUpdate sets the thisUpdate field of the CRL.
+//
+// Must be invoked before Sign. A nil or closed CRL returns the error
+// "x509: CRL closed". Errors are wrapped as OpError.
+func (c *CRL) SetThisUpdate(t time.Time) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: CRL closed")
 	}
-	if !nextUpdate.IsZero() {
-		if !native.X509_CRL_set1_nextUpdate(c, nextUpdate.Unix()) {
-			crl.Close()
-			return nil, NewOpError("x509: X509_CRL_set1_nextUpdate", native.PopError())
+	if !native.X509_CRL_set1_lastUpdate(c.handle.Ptr(), t.Unix()) {
+		return NewOpError("x509: X509_CRL_set1_lastUpdate", native.PopError())
+	}
+	return nil
+}
+
+// SetNextUpdate 设置 CRL 的 nextUpdate 时间。
+//
+// 须在 Sign 之前调用；对 nil 接收者或已关闭的 CRL 返回 "x509: CRL closed"；
+// 错误以 OpError 包装。
+//
+// SetNextUpdate sets the nextUpdate field of the CRL.
+//
+// Must be invoked before Sign. A nil or closed CRL returns the error
+// "x509: CRL closed". Errors are wrapped as OpError.
+func (c *CRL) SetNextUpdate(t time.Time) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: CRL closed")
+	}
+	if !native.X509_CRL_set1_nextUpdate(c.handle.Ptr(), t.Unix()) {
+		return NewOpError("x509: X509_CRL_set1_nextUpdate", native.PopError())
+	}
+	return nil
+}
+
+// SetNumber 设置 CRL 的 CRL Number 扩展值（RFC 5280 §5.2.3）。
+//
+// 须在 Sign 之前调用；对 nil 接收者或已关闭的 CRL 返回 "x509: CRL closed"；
+// 错误以 OpError 包装。
+//
+// SetNumber sets the CRL Number extension value of the CRL (RFC 5280 §5.2.3).
+//
+// Must be invoked before Sign. A nil or closed CRL returns the error
+// "x509: CRL closed". Errors are wrapped as OpError.
+func (c *CRL) SetNumber(n int64) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: CRL closed")
+	}
+	if !native.X509_CRL_set_crl_number(c.handle.Ptr(), n) {
+		return NewOpError("x509: CRL Number extension", native.PopError())
+	}
+	return nil
+}
+
+// AddRevokedEntry 向 CRL 追加一条吊销记录。
+//
+// serial 为被吊销证书的序列号；at 为吊销生效时间（UTC 秒）；reason 为 RFC 5280
+// 吊销原因码，传负数表示不写 crlReasons 扩展。
+//
+// 所有权：底层 X509_REVOKED 由本函数创建，成功后所有权转移给 X509_CRL，随 CRL
+// 释放；失败路径由本函数释放，不会泄漏。
+//
+// 对 nil 接收者或已关闭的 CRL 返回 "x509: CRL closed"；错误以 OpError 包装。
+//
+// AddRevokedEntry appends one revocation record to the CRL.
+//
+// serial is the revoked certificate's serial number, at is when the
+// revocation took effect (unix seconds) and reason is the RFC 5280
+// CRLReason code; a negative reason leaves the crlReasons extension unset.
+//
+// Ownership: the underlying X509_REVOKED is allocated here and, on success,
+// its ownership is transferred to the X509_CRL (released together with the
+// CRL); every failure path releases it here, so nothing leaks.
+//
+// A nil or closed CRL returns the error "x509: CRL closed". Errors are
+// wrapped as OpError.
+func (c *CRL) AddRevokedEntry(serial int64, at time.Time, reason int) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: CRL closed")
+	}
+	rev := native.X509_REVOKED_new()
+	if rev == nil {
+		return NewOpError("x509: X509_REVOKED_new", native.PopError())
+	}
+	if !native.X509_REVOKED_set_serial_int(rev, serial) {
+		native.X509_REVOKED_free(rev)
+		return NewOpError("x509: X509_REVOKED_set_serialNumber", native.PopError())
+	}
+	if !native.X509_REVOKED_set_revocation_date(rev, at.Unix()) {
+		native.X509_REVOKED_free(rev)
+		return NewOpError("x509: X509_REVOKED_set_revocationDate", native.PopError())
+	}
+	if reason >= 0 {
+		if !native.X509_REVOKED_set_reason(rev, reason) {
+			native.X509_REVOKED_free(rev)
+			return NewOpError("x509: X509_REVOKED_add1_ext_i2d (crlReasons)",
+				native.PopError())
 		}
 	}
-	// 附加 CRL Number 扩展（值 = 1），匹配 openssl ca -gencrl 默认行为
-	if !native.X509_CRL_set_crl_number(c, 1) {
-		crl.Close()
-		return nil, NewOpError("x509: CRL Number extension", native.PopError())
+	if !native.X509_CRL_add0_revoked(c.handle.Ptr(), rev) {
+		// add0 失败即未接管所有权，由本路径释放。
+		native.X509_REVOKED_free(rev)
+		return NewOpError("x509: X509_CRL_add0_revoked", native.PopError())
+	}
+	return nil
+}
+
+// SortRevokedEntries 按序列号对 CRL 中的吊销条目排序。
+//
+// 通常不必调用（序列号递增时无需排序），仅供乱序追加后归一化 DER 输出。
+//
+// SortRevokedEntries sorts the revocation entries of the CRL by serial
+// number.
+//
+// It is normally unnecessary (entries appended with increasing serials are
+// already ordered) and exists to normalize the DER output when entries were
+// appended out of order.
+func (c *CRL) SortRevokedEntries() error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: CRL closed")
+	}
+	if !native.X509_CRL_sort(c.handle.Ptr()) {
+		return NewOpError("x509: X509_CRL_sort", native.PopError())
+	}
+	return nil
+}
+
+// Sign 用签发者私钥对 CRL 签名。
+//
+// priv 支持 SM2 / RSA / ECDSA / Ed25519 / Ed448；摘要算法由密钥类型自动选择
+// （EdDSA 走 EVP_DigestSign 路径）。须在设置好签发者、时间窗与吊销条目之后调用；
+// 对 nil 接收者或已关闭的 CRL 返回 "x509: CRL closed"，priv 无效返回
+// "x509: invalid signing key"；错误以 OpError 包装。
+//
+// Sign signs the CRL with the issuer's private key.
+//
+// priv may be an SM2 / RSA / ECDSA / Ed25519 / Ed448 key; the digest is
+// selected from the key type (EdDSA uses the EVP_DigestSign path). Invoke it
+// after the issuer, validity window and revocation entries are set. A nil or
+// closed CRL returns "x509: CRL closed" and an invalid priv returns
+// "x509: invalid signing key". Errors are wrapped as OpError.
+func (c *CRL) Sign(priv *PKey) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: CRL closed")
+	}
+	if priv == nil || priv.handle == nil || priv.handle.IsClosed() {
+		return fmt.Errorf("x509: invalid signing key")
 	}
 	md := digestForSigner(priv)
 	if md == nil {
-		if err := signCRLWithEdDSA(c, priv.handle.Ptr()); err != nil {
-			crl.Close()
-			return nil, err
-		}
-		return crl, nil
+		return signCRLWithEdDSA(c.handle.Ptr(), priv.handle.Ptr())
 	}
 	if md.handle == nil {
-		crl.Close()
-		return nil, fmt.Errorf("x509: invalid digest for signer")
+		return fmt.Errorf("x509: invalid digest for signer")
 	}
-	if !native.X509_CRL_sign(c, priv.handle.Ptr(), md.handle.Ptr()) {
-		crl.Close()
-		return nil, NewOpError("x509: X509_CRL_sign", native.PopError())
+	if !native.X509_CRL_sign(c.handle.Ptr(), priv.handle.Ptr(), md.handle.Ptr()) {
+		return NewOpError("x509: X509_CRL_sign", native.PopError())
 	}
-	return crl, nil
+	return nil
 }
 
 // LoadCRLDER 解析 ASN.1 DER 编码的 CRL。

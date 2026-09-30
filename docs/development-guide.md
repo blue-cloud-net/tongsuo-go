@@ -121,8 +121,10 @@ func Cgo_SM2_Encrypt(...) (...) { ... }
 
 | 元素 | 约定 | 示例 |
 |------|------|------|
-| 包名 | 小写单词，无下划线 | `crypto/sm3`、`pkcs/pkcs7`、`internal/core` |
-| API 层导出类型/函数 | 按 **C# 语义命名**，遵循 Go 导出约定（首字母大写）；形态走 Go 惯例 | `sm3.Sum`、`sm4.NewCipher`、`sm2.Encrypt` |
+| 包名 | 小写单词，无下划线；API 层为 **16 个扁平顶级包** | `digest`、`sym`、`pkcs/pkcs7`、`internal/core` |
+| API 层导出类型/函数 | 按 **C# 语义命名**，遵循 Go 导出约定（首字母大写）；形态走 Go 惯例 | `digest.SumSM3`、`sym.NewSM4Cipher`、`asym.Encrypt` |
+| 同能力多算法的类型化入口 | **算法名作前缀/中缀**（合并包后需防重名） | `sym.EncryptAESCBC`、`mac.NewHMACSM3` |
+| 按算法名分发入口 | `New(name, …)` / `Sum(name, …)` / `GenerateKey(alg, …)` | `digest.New("SM3")`、`asym.GenerateKey(asym.AlgRSA, opts)` |
 | 绑定层函数 | 与铜锁 C 函数名完全一致 | `EVP_DigestInit_ex` |
 | shim 包装函数 | `X_` 前缀 | `X_EVP_Digest` |
 | 核心层类型 | 去 `EVP_` 前缀，上下文类加 `Ctx` 后缀 | `DigestCtx`、`CipherCtx`、`PKey` |
@@ -131,6 +133,8 @@ func Cgo_SM2_Encrypt(...) (...) { ... }
 | 内部辅助 | 小写，不导出 | `zeroMem`、`checkLen` |
 
 > 命名以**语义清晰**为优先，具体符号在实现阶段可按实际调整，但三层边界与导出面约定不变。
+> 重构后的完整包清单与逐符号签名见 [api-reference.md](api-reference.md)（+ [api-reference-internal.md](api-reference-internal.md)），
+> 迁移对照见 [refactor-roadmap.md](refactor-roadmap.md) §4。**公开签名中不得出现 `internal/` 类型。**
 
 ---
 
@@ -185,7 +189,9 @@ func Cgo_SM2_Encrypt(...) (...) { ... }
 ## 7. 代码风格
 
 - 统一 `gofmt`（推荐 `gofumpt`）
-- 提交前必须通过：`go vet ./...` 与 `golangci-lint`（启用 govet / staticcheck / errcheck 等）
+- 提交前必须通过：`go vet ./...`
+  - **CI 的 lint 阶段只跑 `go vet`**：历史上 `golangci-lint` 与本项目的 cgo 函数名（`EVP_xxx`）
+    和 `defer x.Close()` 惯例大量冲突，已退场；不要新建 `.golangci.yml` 或把它加回 CI
 - **表驱动测试**优先，合理使用 `t.Parallel()`
 - **导出面最小化**：能被 unexported 的就不导出
 - 每个包提供包文档（`doc.go` 或包注释）
@@ -217,8 +223,7 @@ go build ./...
 
 ### 9.2 CI（GitHub Actions）
 
-- 步骤：安装铜锁（源码编译）→ `go vet` → `golangci-lint` → `go test ./...` →
-  静态链接验证（`go build -tags static ./...`）
+- 步骤：安装铜锁（源码编译）→ `go vet` → `go build` → `go build -tags static` → `go test ./...`
 - 完整定义见 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)；
   详细说明见 [architecture.md](architecture.md)
 - 矩阵：Linux + macOS × Go 1.21 / 1.23

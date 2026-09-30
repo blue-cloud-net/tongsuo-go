@@ -21,26 +21,32 @@
 
 ### 1.1 API 设计取向
 
-- **形态走 Go 惯例**：实现标准库接口（`hash.Hash`、`cipher.Block`）、返回 `(T, error)`、
-  按子包组织（`crypto/sm3`、`crypto/sm4` 等）
+- **形态走 Go 惯例**：实现标准库接口（`hash.Hash`、`cipher.Block`、`cipher.AEAD`）、
+  返回 `(T, error)`、按子包组织
+- **同时提供 CLI 式单一入口**：在标准接口之外，每个算法域还提供「算法名 + 输入 → 输出」
+  的按名分发入口（如 `digest.Sum("SM3", data)`、`sym.Encrypt("SM4-CBC", key, iv, data)`），
+  对齐铜锁 `openssl` 命令行的使用形态
 - **命名语义对齐 C# 参考项目**：算法相关命名与语义遵循 C# 思路（如 `SM3`/`SM4`/`SM2`
   相关概念），不强制与官方 SDK 同名
-- **一次性便捷函数**：在标准接口之外，提供直接可用的快捷方法（如 `sm3.Sum`）
+- **一次性便捷函数**：在标准接口之外，提供直接可用的快捷方法（如 `digest.SumSM3`）
 
 ---
 
 ## 2. 三层架构概览
 
 ```
-API 层（crypto/）              ← 对外高层 API，仅此层可被外部 import
+API 层（16 个顶级包：meta / digest / mac / sym / asym / ecdh / kdf / rand /
+        keystore / x509 / tls / asn1 / jwk / pkcs/* / xml-rsa）
+    ↓ 调用                          ← 仅此层可被外部 import
+核心层（internal/core/）          ← 句柄/上下文包装，生命周期与所有权管理
     ↓ 调用
-核心层（internal/core/）       ← 句柄/上下文包装，生命周期与所有权管理
-    ↓ 调用
-绑定层（internal/native/）     ← cgo + 内嵌 C shim，直接映射铜锁 C 函数
+绑定层（internal/native/）        ← cgo + 内嵌 C shim，直接映射铜锁 C 函数
 ```
 
 - 严格分层，**禁止跨层调用**：API 层不得直接调用绑定层；绑定层不得包含业务逻辑
 - 依赖方向**单向向下**，各层边界清晰，便于测试与替换
+- API 层内部：`ecdh → asym`（加载 `asym` 密钥对象）、`x509 → asym`（公钥/私钥接口）、
+  `tls/jwk/pkcs12 → x509` + `asym`；算法原语包只依赖 `internal/core`，不互相依赖
 
 ---
 
@@ -70,19 +76,45 @@ API 层（crypto/）              ← 对外高层 API，仅此层可被外部 i
 
 ### 3.3 API 层（公开导入面）
 
-- 对外暴露的公共 API 由两层组成：
-  - **算法引擎层**：`crypto/aes`、`crypto/sm2`、`crypto/sm3`、`crypto/sm4`、
-    `crypto/hmac`、`crypto/rand`、`crypto/md5`、`crypto/sha1/256/512`、`crypto/rsa`、
-    `crypto/ecdsa`、`crypto/ed25519`、`crypto/ed448`、`crypto/ecdh`、`crypto/x25519`、
-    `crypto/x448`、`crypto/kdf`
-  - **组合层（顶级）**：`x509/`（证书对象模型）、`key/`（密钥统合抽象：
-    对称/非对称接口、PEM 解析、生命周期、KDF）、`asn1/`（DER viewer）、
-    `pkcs/pkcs7/`、`pkcs/pkcs12/`、`ocsp/`（协议）、`tls/`（协议）、
-    `jwk/`（格式）、`xml/rsa/`（格式族）
-- 每个算法子包**自带 `*_test.go`** 测试文件（见 [testing-guide.md](testing-guide.md)）
+对外暴露的公共 API 是**单层扁平**的 **16 个顶级包**（`crypto/` 整目录与 `key/` 已在包结构重构中取消）：
+
+| 分组 | 包 | 职责 |
+|------|----|------|
+| 元信息 | `meta` | 版本 / 构建信息 / 错误码解析 / 算法枚举（只查询，不持有句柄） |
+| 算法原语 | `digest` `mac` `sym` `kdf` `rand` | 摘要 / 消息认证码 / 对称加解密 / 密钥派生 / 随机数 |
+| 密钥 | `asym` `ecdh` `keystore` | 非对称密钥与运算 / 密钥协商 / 密钥元数据、存储与轮转 |
+| PKI | `x509` | 证书 + CSR + CRL + OCSP + 链验证（**单包**） |
+| 传输 | `tls` | TLS / NTLS 客户端与服务端 |
+| 格式 | `asn1` `jwk` `pkcs/pkcs7` `pkcs/pkcs12` `xml/rsa` | DER viewer / JWK / PKCS#7 / PKCS#12 / .NET XML |
+
+- 每个包**自带 `*_test.go`** 测试文件（见 [testing-guide.md](testing-guide.md)），并尽量提供
+  `example_test.go` 与 `*_tongsuocli_test.go`（CLI 对拍，`//go:build tongsuocli` 隔离）
 - 不直接调用绑定层，只通过核心层对象操作
-- **职责边界**：`crypto/` 严格限于算法引擎；ASN.1 / PKCS / OCSP / TLS / 格式转换
-  等"组合层"包独立顶级化，借鉴 BouncyCastle C# 的命名空间分层原则
+- **职责边界**：算法原语与「按算法名分发」的应用入口同包（如 `digest.Sum("SM3", …)`
+  与 `digest.SumSM3(…)` 并存）；ASN.1 / PKCS / TLS / 格式转换等组合层包与算法包平级
+- **公开签名不得出现 `internal/` 类型**：这是重构后的硬约束（原先 `*core.PKey` /
+  `*core.Digest` / `*core.KeyParams` / `*core.Certificate` 等泄漏到公开签名的 12 处均已收敛）
+
+#### 跨包取原生句柄（`internal/keyaccess` / `internal/certaccess`）
+
+API 层内部存在必须先拿到 `*core.PKey` 才能工作的场景（如 `ecdh` 对 `asym` 密钥做
+`EVP_PKEY_derive`，`x509` 设置证书公钥 / 签名）。为兼顾「不泄露内部类型」与「不多一次编解码」，
+采用**结构化接口断言**而非注册表：
+
+- `asym` 密钥的**具体类型一律非导出**（`*privateKey` / `*publicKey` …），对外只返回
+  `PrivateKey` / `PublicKey` 接口；具体类型上实现导出方法 `CorePKey() *core.PKey`
+- 该方法**不出现在任何导出接口中**（`asym.Key` / `PrivateKey` / `PublicKey` 均不含它），
+  因此不进公开 godoc
+- `internal/keyaccess` 只声明形状 `interface{ CorePKey() *core.PKey }` + `PKey(v any) (*core.PKey, bool)`
+  并做类型断言：**无注册表、无 `init()` 顺序依赖、无全局状态**；`asym` 也不需要 import 它
+- 消费方：`ecdh`、`x509`、`tls`、`jwk`、`keystore`、`pkcs/pkcs12`；拿到句柄后用 `EVP_PKEY_dup` 复制，
+  保证两侧生命周期独立
+- 验收：`go doc -all ./asym` 输出中不得出现 `CorePKey`；`internal/` 路径规则保证外部模块无法 import
+
+证书句柄走同构的 `internal/certaccess`：`Certificate(v any) (*core.Certificate, bool)`
+供 `tls` / `pkcs/pkcs7` / `pkcs/pkcs12` 取句柄，反向的 `Wrap(*core.Certificate)` 用
+**DER 往返**产出 owned 副本（因此 `x509.Certificate.CoreCertificate()` 是§5.2 已接受的
+残余：方法虽在 godoc，但外部模块无法 import `internal/core`，拿到也用不了）。
 
 #### tls 包公开 API（v0.2.0+）
 
@@ -113,109 +145,127 @@ API 层（crypto/）              ← 对外高层 API，仅此层可被外部 i
 |-------------|------------|------|
 | Native 层（LibraryImport P/Invoke） | 绑定层 `internal/native`（cgo + shim） | 原生函数绑定 |
 | Core 层（`BaseWapper`） | 核心层 `internal/core`（`handle` 基类） | 句柄包装与生命周期 |
-| Crypto 层（高层 API） | API 层 `crypto/*` 子包 | 对外接口 |
+| Crypto 层（高层 API） | API 层（16 个顶级包） | 对外接口 |
 | `BaseWapper.IsOwner` 所有权模型 | `handle.owned` 字段 | 防止双重释放 |
 | `OpenSSLCryptoException` | `*core.OpError` | 携带原生错误码的 error |
 | `LibraryImport` 库路径常量 | `#cgo` LDFLAGS + `TONGSUO_HOME` 环境变量 | 库定位方式 |
-| `TongsuoCryptoNative.Version` | `internal/core` 版本查询 | 铜锁版本获取 |
-| `SM3Hash` / `SM4Cipher` | `crypto/sm3` / `crypto/sm4` | 高层 API |
-| `HashData` / `CreateEncryptor` | `sm3.Sum` / `sm4.EncryptECB` 等便捷函数 | 一次性 API |
+| `TongsuoCryptoNative.Version` | `meta` 包（薄封装 `internal/core` 版本查询） | 铜锁版本获取 |
+| `SM3Hash` / `SM4Cipher` | `digest` / `sym` | 高层 API |
+| `HashData` / `CreateEncryptor` | `digest.SumSM3` / `sym.EncryptSM4ECB` 等便捷函数 | 一次性 API |
 
 ---
 
 ## 5. 目录结构
 
-**顶层布局原则**：借鉴 BouncyCastle C# 命名空间分层——`crypto/` 仅装算法引擎；
-ASN.1、PKCS、OCSP、TLS、JWK、XML 与 `crypto/` 平级，不作为其子包。
+**顶层布局原则**：API 层是**单层扁平**的 16 个顶级包——没有 `crypto/` 中间目录，也没有
+`key/` 统合包；算法原语、密钥、PKI、传输、格式各自成包，且「算法名 + 输入 → 输出」的
+应用入口与算法原语**同包**（对应 CLI 的 `dgst` / `enc` / `mac` / `kdf` 等命令）。
 
 ```
 tongsuo-go/
-├── go.mod / go.sum            # module github.com/blue-cloud-net/tongsuo-go
+├── go.mod                     # module github.com/blue-cloud-net/tongsuo-go（无第三方依赖）
 ├── LICENSE                    # Apache-2.0
-├── README.md  CHANGELOG.md
-│   docs/                      # 设计文档（architecture / development-guide / testing-guide）
+├── README.md  README.zh.md
+├── CHANGELOG.md  CHANGELOG.zh.md
+├── AGENTS.md
 │
-├── crypto/                    # 【算法引擎层】仅算法子包
-│   ├── aes/  ecdh/  ecdsa/  ed25519/  ed448/  hmac/  kdf/  md5/  rand/  rsa/
-│   ├── sha1/  sha256/  sha512/  sm2/  sm3/  sm4/  x25519/  x448/
-├── key/                       # 【密钥统合抽象】跨算法统一密钥接口/解析/生命周期/KDF
-│   ├── key.go                 # Algorithm / Key 接口 / PEM / 错误 / Close
-│   ├── symmetric.go           # SymmetricKey / AESKey / SM4Key
-│   ├── generate.go            # GenerateSymmetricKey / ParseSymmetricKey
-│   ├── asymmetric.go          # Asymmetric(Private/Public)Key / PrivateKey / PublicKey
-│   ├── asym_generate.go       # GenerateRSAKey / GenerateSM2Key / GenerateECKey
-│   ├── parse.go               # Load*PEM（PKCS#8 / PKCS#1 / SPKI / 加密）
-│   ├── handle.go  store.go    # Handle 元数据 / Store / MemoryStore（轮转）
-│   └── kdf.go                 # Hash / HKDF / PBKDF2 / Argon2ID
-├── x509/                      # 【协议】证书核心
-│   ├── x509.go                # Certificate / Extension / PublicKey / PrivateKey / CreateCertificate
-│   ├── name.go                # Name / NameEntry / NewName
+├── meta/                      # 【元信息】版本 / 构建信息 / 错误码 / 算法枚举
+│   ├── version.go             # Version / VersionString / VersionNum / TongsuoVersionNum
+│   ├── build.go               # BuildInfo / ReadBuildInfo
+│   ├── error.go               # ErrorString / ErrorCode / ParseErrorCode
+│   └── list.go                # （规划中）Digests / Ciphers / MACs / KDFs / Providers …
+├── digest/                    # 【原语】摘要
+│   ├── digest.go              # 按名分发：Names / New / Sum / SumReader / Size / BlockSize
+│   └── typed.go               # 类型化：NewSM3 / SumSM3 / NewSHA256 / SumSHA256 …
+├── mac/                       # 【原语】消息认证码
+│   └── mac.go                 # 按名分发 + HMAC 类型化入口（CMAC/GMAC/KMAC… 规划中）
+├── kdf/                       # 【原语】密钥派生
+│   └── kdf.go                 # Hash 常量 / HKDF / PBKDF2 / Argon2ID / Derive
+├── rand/                      # 【原语】安全随机数
+│   └── rand.go                # Read / Bytes / Reader
+├── sym/                       # 【原语】对称加密 + 对称密钥对象
+│   ├── sym.go                 # 按名分发：Names / NewCipher / NewGCM / Encrypt / Decrypt
+│   ├── aes.go  sm4.go         # 类型化入口：EncryptAESCBC / EncryptSM4ECB …
+│   └── key.go                 # SymmetricKey / AESKey / SM4Key / GenerateSymmetricKey
+├── asym/                      # 【密钥】非对称密钥、签名验签、加解密、KEM
+│   ├── asym.go                # Algorithm / Key / PrivateKey / PublicKey 接口
+│   ├── generate.go            # GenerateKey / GenerateRSA / GenerateSM2 / GenerateEC …
+│   ├── parse.go               # LoadPrivateKeyPEM / LoadPublicKeyPEM / ParsePEM
+│   ├── sign.go  encrypt.go    # Sign / Verify / Encrypt / Decrypt + 算法特定入口
+│   ├── register.go            # CorePKey() 契约（供 internal/keyaccess 反查）
+│   └── params.go              # KeyParams
+├── ecdh/                      # 【密钥】密钥协商
+│   └── ecdh.go                # Curve / LoadPrivateKey / LoadPublicKey / SharedSecret
+├── keystore/                  # 【密钥】元数据、存储与轮转
+│   ├── handle.go              # Handle / NewHandle / MarshalJSON
+│   └── store.go               # Store / MemoryStore / Rotate / History
+├── x509/                      # 【PKI】证书 + CSR + CRL + OCSP + 链验证（单包）
+│   ├── x509.go                # Certificate / Extension / CreateCertificate / CreateSelfSigned
+│   ├── name.go                # Name / NameEntry
 │   ├── csr.go                 # CertificateRequest
+│   ├── crl.go                 # CRL / RevokedEntry / CRLBuilder / RevocationCheck
+│   ├── ocsp.go                # Request / Response / CreateOCSPRequest / ParseOCSPResponse
 │   ├── store.go               # Store / VerifyError / ChainVerify
-│   ├── crl.go                 # CRL / RevokedEntry / RevocationCheck
-│   └── helpers.go             # convertEntries / convertExtensions（内部辅助）
-│
-├── asn1/                      # 【编码】DER viewer（纯 Go）
-├── pkcs/                      # 【容器】BC pkcs 风格
+│   └── helpers.go             # convertEntries / convertExtensions
+├── tls/                       # 【传输】TLS / NTLS
+│   ├── tls.go  chain.go  suites.go  errors.go
+├── asn1/                      # 【格式】DER viewer（纯 Go，cgo-free）
+├── jwk/                       # 【格式】JWK ↔ PEM / JSON
+├── pkcs/                      # 【容器】
 │   ├── pkcs7/                 # PKCS#7（Build / Extract / MarshalPEM）
 │   └── pkcs12/                # PKCS#12（Pack / Parse / ChangePassword）
-├── ocsp/                      # 【协议】OCSP 客户端
-├── tls/                       # 【协议】TLS / NTLS
-├── jwk/                       # 【格式】JWK ↔ PEM
 ├── xml/                       # 【格式族】预留命名空间
 │   └── rsa/                   # .NET RSAKeyValue XML 序列化
 │
 ├── internal/                  # 【内部实现】外部不可 import
 │   ├── native/                # 【绑定层】cgo + shim（C 桥接）
-│   │   ├── shim.h  shim.c     # C shim：宏/可变参/回调桥接
+│   │   ├── shim.h  shim.c     # C shim：宏 / 可变参 / 回调桥接（X_ 前缀）
 │   │   ├── build.go           # #cgo LDFLAGS（动态库）
-│   │   ├── build_static.go    # #cgo LDFLAGS（-tags static 静态链接）
-│   │   ├── init.go            # Tongsuo 线程锁注册
+│   │   ├── build_static.go    # #cgo LDFLAGS（-tags static，仅 linux）
+│   │   ├── init.go            # 铜锁线程锁注册
 │   │   ├── binding_digest.go  # EVP_MD / EVP_Digest* 系列
 │   │   ├── binding_cipher.go  # EVP_CIPHER / EVP_CIPHER_CTX 系列
-│   │   ├── binding_pkey.go    # EVP_PKEY / EVP_PKEY_CTX 系列（SM2/RSA/EC）
-│   │   ├── binding_hmac.go    # EVP_MAC / HMAC 系列
-│   │   ├── binding_kdf.go     # EVP_KDF（HKDF / PBKDF2 / Argon2ID）
-│   │   ├── binding_rand.go    # RAND_bytes 系列
+│   │   ├── binding_pkey.go    # EVP_PKEY / EVP_PKEY_CTX 系列（SM2 / RSA / EC）
+│   │   ├── binding_hmac.go    # HMAC_CTX 系列
+│   │   ├── binding_kdf.go     # EVP_KDF（HKDF / PBKDF2）
+│   │   ├── binding_rand.go    # RAND_bytes
 │   │   ├── binding_bio.go     # BIO 系列
 │   │   ├── binding_ssl.go     # SSL_CTX / SSL / TLS 会话
-│   │   ├── binding_x509.go    # X509 / X509_CRL / X509_STORE / PEM / DER 系列
+│   │   ├── binding_x509.go    # X509 / X509_REQ / X509_CRL / X509_STORE / PEM / DER
 │   │   ├── binding_pkcs.go    # PKCS#7 / PKCS#12 系列
 │   │   ├── binding_ocsp.go    # OCSP_REQ / OCSP_RES 系列
 │   │   ├── binding_error.go   # ERR_get_error / 错误码
 │   │   └── binding_version.go # OpenSSL_version / Tongsuo_version_num
-│   ├── core/                  # 【核心层】句柄包装 + 生命周期 + 错误
-│   │   ├── handle.go          # 句柄基类：owned 所有权 + Close() + SetFinalizer
-│   │   ├── error.go           # OpError（携带 ERR_get_error 错误码）
-│   │   ├── doc.go             # 包级 GoDoc 概览
-│   │   ├── version.go         # 版本查询
-│   │   ├── digest.go          # Digest / DigestCtx 包装
-│   │   ├── cipher.go          # Cipher / CipherCtx 包装（含 Clone）
-│   │   ├── hmac.go            # HMAC 包装
-│   │   ├── kdf.go             # KDF（HKDF / PBKDF2 / Argon2ID）
-│   │   ├── pkey.go            # PKey 包装（SM2/RSA/EC + 默认 ID）
-│   │   ├── pkcs.go            # PKCS#7 / PKCS#12 包装
-│   │   ├── ocsp.go            # OCSP 自适应 CertID 匹配
-│   │   ├── x509.go            # X509 证书 / CRL / Store 包装
-│   │   ├── ssl.go             # SSL_CTX / SSL 会话 + Close 幂等
-│   │   ├── rand.go            # RandomBytes 包装（绑定层转发）
-│   │   ├── waitfd_linux.go    # epoll 等待 fd 可读（cgo syscall）
-│   │   └── waitfd_darwin.go   # kqueue 等待 fd 可读（cgo syscall）
-│   ├── digest/           # 【共享抽象】纯 Go hash.Hash 实现
-│   │   └── digest.go    # sm3/md5/sha1/256/512 共用 hash.Hash 工厂
-│   └── testutil/        # 【测试共享】openssl CLI 包装、向量加载（_test.go 编译）
-│       └── openssl.go   # Tongsuo CLI 测试钩子
+│   ├── core/                  # 【核心层】句柄包装 + 生命周期 + 错误 + 协议编排
+│   │   ├── handle.go  error.go  doc.go  version.go
+│   │   ├── digest.go  cipher.go  hmac.go  kdf.go
+│   │   ├── pkey.go  pkey_id.go  pkcs.go  ocsp.go
+│   │   ├── x509.go  ssl.go  rand.go  zero.go
+│   │   └── waitfd_linux.go  waitfd_darwin.go
+│   ├── keyaccess/             # 【桥接】公开密钥对象 → *core.PKey（结构化接口断言，叶子包）
+│   │   └── keyaccess.go       # corePKeyer + PKey(v any)
+│   ├── certaccess/            # 【桥接】公开证书对象 ↔ *core.Certificate（断言 + DER 往返）
+│   │   └── certaccess.go      # Certificate(v any) + Wrap(*core.Certificate)
+│   ├── digest/                # 【共享抽象】纯 Go hash.Hash 实现
+│   │   └── digest.go          # NewHash：把 *core.Digest 适配为 hash.Hash
+│   └── testutil/              # 【测试共享】铜锁 CLI 包装与跳过判定
+│       └── openssl.go
 │
-├── examples/                  # 示例（对应 C# Demo/）
-│   ├── sm3/main.go  sm4/main.go  sm2/main.go …
-└── testdata/                  # 测试数据（标准向量、证书等；不提交，CI 临时生成）
+├── docs/                      # 设计文档（architecture / development-guide / testing-guide /
+│                              #   bilingual-doc-guide / api-reference ×2 / refactor-roadmap …）
+├── scripts/                   # check-coverage.sh / extract_release_notes.py
+└── examples/                  # 示例（对应 C# Demo/），每个示例是独立 Go module
+    └── sm2/ self-signed-cert/ ntls-loopback/ ed25519/ x25519/ ecdh/
+```
 
-> **内部实现隐藏**：`internal/` 目录使绑定层与核心层对库外部不可见，公开 API 由
-> `crypto/*` 与顶级 `key/`、`asn1/`、`pkcs/*`、`ocsp/`、`tls/`、`jwk/`、`xml/*` 共同构成。
-> `crypto/` 仅限算法；非算法的"组合层"包独立顶级化。
-> `key/` 为顶层密钥统合抽象：只依赖 `internal/core` 与 `crypto/rand`，不反向依赖任何
-> 算法包；其对称/非对称类型与 `crypto/{aes,sm4,rsa,sm2,ecdsa}` 并存，底层均持
-> `*core.PKey`（对称持原始字节），可经各自的 `Key()` 互转。
+> **内部实现隐藏**：`internal/` 使绑定层、核心层与桥接层对库外部不可见；公开 API 由上述
+> 16 个顶级包构成。「公开对象 → 原生句柄」共有两个桥接包：`internal/keyaccess`（密钥，
+> 结构化断言）供 `ecdh` / `x509` / `tls` / `jwk` / `keystore` / `pkcs12` 使用，
+> `internal/certaccess`（证书，断言 + DER 往返）供 `tls` / `pkcs7` / `pkcs12` 与 `x509`
+> 包内的 `ocsp` 使用。
+> 依赖方向单向：算法原语包只依赖 `internal/core`；`ecdh → asym`；`x509 → asym`；
+> `tls` / `jwk` / `pkcs12` → `x509` + `asym`。原 `key/` 的统合职责已拆分：
+> 非对称抽象 → `asym`、对称抽象 → `sym`、元数据与轮转 → `keystore`、KDF → `kdf`。
 
 ---
 
@@ -271,7 +321,7 @@ go build ./...
 - **防双重释放**：`Close()` 幂等；释放后句柄置空，后续使用返回明确错误
 - **敏感内存**：本库 Go 侧不在持有方主动清零（Go 编译器允许消除看似无副作用的清零循环）；
   密钥/明文由调用方负责在使用后清零源切片；C 端由 Tongsuo 自身（OPENSSL_cleanse）
-  处理会话级密钥缓冲。详见 `crypto/aes.NewCipher` / `crypto/sm4.NewCipher` 等入口文档
+  处理会话级密钥缓冲。详见 `sym.NewAESCipher` / `sym.NewSM4Cipher` 等入口的 GoDoc
 - **防悬垂指针**：句柄释放后不得再调用绑定层函数
 
 ---
@@ -301,7 +351,7 @@ go build ./...
 | 维度 | 官方 tongsuo-go-sdk | tongsuo-go（本库） | C# tongsuo-csharp |
 |------|--------------------|--------------------|-------------------|
 | 绑定方式 | cgo + 内嵌 shim | cgo + 内嵌 shim（同思路，独立实现） | P/Invoke（LibraryImport） |
-| 分层 | 两层，绑定与 API 同包混合 | 三层，`internal/native` → `internal/core` → `crypto/*` | 三层（Native/Core/Crypto） |
+| 分层 | 两层，绑定与 API 同包混合 | 三层，`internal/native` → `internal/core` → 16 个顶级包 | 三层（Native/Core/Crypto） |
 | 实现可见性 | 原生指针暴露到公开 API | `internal/` 隐藏 cgo 与原生句柄 | Native 层 internal |
 | 生命周期 | 主要依赖 finalizer | `handle` 基类：Close() + finalizer + owned | `BaseWapper`：IDisposable + 析构器 |
 | API 命名 | 自身风格 | 按 C# 语义命名 | BCL 风格 |
@@ -315,4 +365,7 @@ go build ./...
 - [铜锁 GitHub](https://github.com/Tongsuo-Project/Tongsuo)
 - [参考项目（C# 封装）](https://github.com/blue-cloud-net/tongsuo-csharp)
 - [官方 Go SDK](https://github.com/tongsuo-project/tongsuo-go-sdk)
+- [与官方 SDK 的功能对比与对齐路线图](official-sdk-comparison.md)
+- [包结构重构路线图](refactor-roadmap.md)
 - [开发规范](development-guide.md) · [测试规范](testing-guide.md)
+- [公开 API 清单](api-reference.md) · [内部 API 清单](api-reference-internal.md)

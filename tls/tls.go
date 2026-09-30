@@ -20,11 +20,58 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
+	"github.com/blue-cloud-net/tongsuo-go/internal/certaccess"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
-	"github.com/blue-cloud-net/tongsuo-go/internal/native"
+	"github.com/blue-cloud-net/tongsuo-go/internal/keyaccess"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
+
+// corePrivateKeyForTLS 经 internal/keyaccess 取出私钥的底层 *core.PKey 句柄。
+//
+// Config 的 Key / SignKey / EncKey 现在是 asym.PrivateKey（roadmap §3.11），
+// 而 `SSL_CTX_use_certificate` / `SSL_CTX_use_PrivateKey` 需要原生句柄。
+// 取到的句柄**只借用**（调用期间源密钥一直存活），因此无需 Dup。
+//
+// corePrivateKeyForTLS extracts the underlying *core.PKey handle of a private key
+// through internal/keyaccess.
+//
+// Config's Key / SignKey / EncKey are asym.PrivateKey now (roadmap §3.11), while
+// SSL_CTX_use_certificate / SSL_CTX_use_PrivateKey need the native handle. The
+// handle is only borrowed (the source key stays alive for the call), so no Dup is
+// required.
+func corePrivateKeyForTLS(priv asym.PrivateKey) (*core.PKey, error) {
+	if priv == nil {
+		return nil, fmt.Errorf("tls: nil private key")
+	}
+	k, ok := keyaccess.PKey(priv)
+	if !ok || k == nil {
+		return nil, fmt.Errorf("tls: unsupported private key type %T", priv)
+	}
+	return k, nil
+}
+
+// coreCertOf 经 internal/certaccess 取出证书的底层 *core.Certificate 句柄。
+//
+// x509 已弃用 Certificate.Core()（roadmap §5 E1-8：公开签名中不得出现 internal/
+// 类型），跨包取证书句柄统一走桥接包。取不到时返回错误——在正常路径下不应发生，
+// 出现即说明 x509.Certificate 的桥接形状被改动而本包未同步。
+//
+// coreCertOf extracts the underlying *core.Certificate handle through
+// internal/certaccess.
+//
+// x509 deprecated Certificate.Core() (roadmap §5, E1-8: no public signature may
+// mention an internal/ type), so cross-package handle access goes through the
+// bridge package. A failure returns an error; it should not happen on a normal
+// path and would mean x509.Certificate's bridge shape changed without this
+// package being updated.
+func coreCertOf(c *x509.Certificate) (*core.Certificate, error) {
+	h, ok := certaccess.Certificate(c)
+	if !ok || h == nil {
+		return nil, fmt.Errorf("tls: certificate handle unavailable")
+	}
+	return h, nil
+}
 
 // Config 表示 TLS / NTLS 配置。
 //
@@ -56,14 +103,14 @@ import (
 type Config struct {
 	// Cert 与 Key 为 TLS 证书与私钥（服务端必填；客户端用作客户端证书时可选）。
 	Cert *x509.Certificate
-	Key  *sm2.PrivateKey
+	Key  asym.PrivateKey
 
 	// NTLS 启用国密双证书（须同时提供签名证书与加密证书）。
 	NTLS     bool
 	SignCert *x509.Certificate
-	SignKey  *sm2.PrivateKey
+	SignKey  asym.PrivateKey
 	EncCert  *x509.Certificate
-	EncKey   *sm2.PrivateKey
+	EncKey   asym.PrivateKey
 
 	// MinVersion / MaxVersion 为协议版本范围（0 表示不限制）。
 	MinVersion uint16
@@ -254,19 +301,20 @@ func (s *Server) Close() error {
 // Conn 是一个 TLS / NTLS 连接（net.Conn），基于底层 socket fd 上的 SSL。
 //
 // Read 与 Write 通过内部互斥锁序列化；多 goroutine 并发调用安全但不能并行。
-// Close 通过 sync.Once 保证幂等：先关闭底层 raw socket 以唤醒在途阻塞的
-// SSL_read / SSL_write / select 调用，再关闭 SSL 句柄；之后 Read/Write 立即返回
-// `io.EOF`/错误而非传 nil 进 cgo。
+// Close 通过 sync.Once 保证幂等：先停止 SSL 层并 shutdown 底层 socket（唤醒在途阻塞
+// 的 SSL_read / SSL_write / select 调用），再释放 SSL 句柄（含其持有的 dup socket
+// 副本）；之后 Read/Write 立即返回 `io.EOF`/错误而非传 nil 进 cgo。
 //
 // Conn is a net.Conn implementation that performs TLS or NTLS I/O on top
 // of an underlying socket file descriptor.
 //
 // Read and Write are serialized with an internal mutex; concurrent calls
 // from multiple goroutines are safe but not parallel. Close uses a
-// sync.Once to remain idempotent: it closes the underlying raw socket
-// first (to unblock any in-progress SSL_read / SSL_write / select call)
-// and then releases the SSL handle. Subsequent Read/Write calls return
-// io.EOF / an error rather than passing nil across the cgo boundary.
+// sync.Once to remain idempotent: it stops the SSL layer and shuts the socket
+// down (waking any in-progress SSL_read / SSL_write / select call) and then
+// releases the SSL handle, including the dup'ed socket duplicate it owns.
+// Subsequent Read/Write calls return io.EOF / an error rather than passing nil
+// across the cgo boundary.
 type Conn struct {
 	ssl       *core.SSLConn
 	raw       net.Conn
@@ -447,15 +495,7 @@ func classifyHandshakeErr(op string, err error) error {
 		return nil
 	}
 	// 先把队列里残留的错误全部弹出，再用最后一次弹出的码分类。
-	var last uint64
-	for {
-		code := native.PopError()
-		if code == 0 {
-			break
-		}
-		last = code
-	}
-	kind := classifyOpenSSLError(last)
+	kind := classifyOpenSSLError(core.ClassifySSLError(core.DrainErrors()))
 	if kind == HandshakeErrorOther {
 		// 无可分类错误码：归到 Network 类。
 		kind = HandshakeErrorNetwork
@@ -528,15 +568,26 @@ func isCleanShutdownErr(err error) bool {
 	return err != nil && err.Error() == "tls: connection closed"
 }
 
-// Close 关闭 TLS 连接与底层连接。幂等（多次调用安全）。先关闭底层 raw
-// socket 以唤醒任何在途阻塞的 SSL_read / SSL_write / select 调用，再释
-// 放 SSL 句柄与 raw 连接。
+// Close 关闭 TLS 连接与底层连接。幂等（多次调用安全）。顺序为：停止 SSL 层并
+// shutdown 底层 socket（唤醒在途阻塞的 SSL_read / SSL_write / select，并让对端立刻
+// 看到 FIN）→ 关闭 raw socket → 释放 SSL 句柄与它持有的 socket 副本 →（DialContext
+// 路径）释放 *core.TLSContext。
 //
-// Close shuts down the TLS or NTLS session, closes the underlying socket,
-// and (when ownsCtx is true — the DialContext path) releases the
-// *core.TLSContext. The call is idempotent — multiple invocations return
-// the same error as the first. The raw socket is closed first so that
-// any in-progress SSL_read / SSL_write / select call wakes up immediately.
+// 给 SSL 的是 dup 得到的 socket 副本（见 connFD 与 docs/issues/2026-09-24/P1011）：
+// 这样 SSL 用的 fd 号在本连接生命周期内不会被内核回收给别人，避免跨连接数据串扰。
+//
+// Close shuts down the TLS or NTLS session and closes the underlying socket. The
+// order is: stop the SSL layer and shutdown(2) the socket (waking in-flight
+// SSL_read / SSL_write / select and letting the peer observe a FIN immediately) →
+// close the raw socket → release the SSL handle together with the socket duplicate
+// it owns → (DialContext path only) release the *core.TLSContext.
+//
+// The SSL handle is bound to a dup'ed socket duplicate (see connFD and
+// docs/issues/2026-09-24/P1011), so its fd number cannot be recycled to another
+// connection for the lifetime of this Conn — which is what caused cross-connection
+// crosstalk.
+//
+// The call is idempotent — multiple invocations return the same error as the first.
 func (c *Conn) Close() error {
 	if c == nil {
 		return nil
@@ -544,14 +595,20 @@ func (c *Conn) Close() error {
 	var firstErr error
 	c.closeOnce.Do(func() {
 		c.closed.Store(true)
-		// 1) 关 raw socket：唤醒在途 SSL_read/SSL_write 的 select/waitFD 与
-		//    syscall；之后 ssl.Close 仅释放 native 句柄不再操作已关闭的 fd。
+		// 0) 先停 SSL 并 shutdown 底层 socket：唤醒在途 select/recv，并让对端立刻看到
+		//    FIN —— 本库给 SSL 的是 dup 出来的副本，单靠关 raw 既不会关闭套接字，
+		//    也唤不醒在途等待（P1011）。
+		if c.ssl != nil {
+			c.ssl.Stop()
+		}
+		// 1) 关 raw socket：释放 Go 侧资源；SSL 侧仍持有副本，随后由 ssl.Close 关闭。
 		if c.raw != nil {
 			if err := c.raw.Close(); err != nil && firstErr == nil {
 				firstErr = err
 			}
 		}
-		// 2) 释放 SSL 句柄。
+		// 2) 释放 SSL 句柄并关闭 socket 副本：ssl.Close 会先等在途调用归零，再
+		//    SSL_free 并 close(dup)，因此完成后不会泄漏描述符。
 		if c.ssl != nil {
 			if err := c.ssl.Close(); err != nil && firstErr == nil {
 				firstErr = err
@@ -758,19 +815,49 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 	// 加载证书与私钥。
 	if ntls {
 		if config.SignCert != nil && config.SignKey != nil {
-			if err := ctx.UseSignCertificate(config.SignCert.Core(), config.SignKey.Key()); err != nil {
+			signCore, err := coreCertOf(config.SignCert)
+			if err != nil {
+				_ = ctx.Close()
+				return nil, err
+			}
+			signKey, err := corePrivateKeyForTLS(config.SignKey)
+			if err != nil {
+				_ = ctx.Close()
+				return nil, err
+			}
+			if err := ctx.UseSignCertificate(signCore, signKey); err != nil {
 				_ = ctx.Close()
 				return nil, err
 			}
 		}
 		if config.EncCert != nil && config.EncKey != nil {
-			if err := ctx.UseEncryptCertificate(config.EncCert.Core(), config.EncKey.Key()); err != nil {
+			encCore, err := coreCertOf(config.EncCert)
+			if err != nil {
+				_ = ctx.Close()
+				return nil, err
+			}
+			encKey, err := corePrivateKeyForTLS(config.EncKey)
+			if err != nil {
+				_ = ctx.Close()
+				return nil, err
+			}
+			if err := ctx.UseEncryptCertificate(encCore, encKey); err != nil {
 				_ = ctx.Close()
 				return nil, err
 			}
 		}
 	} else if config.Cert != nil && config.Key != nil {
-		if err := ctx.UseCertificate(config.Cert.Core(), config.Key.Key()); err != nil {
+		certCore, err := coreCertOf(config.Cert)
+		if err != nil {
+			_ = ctx.Close()
+			return nil, err
+		}
+		keyCore, err := corePrivateKeyForTLS(config.Key)
+		if err != nil {
+			_ = ctx.Close()
+			return nil, err
+		}
+		if err := ctx.UseCertificate(certCore, keyCore); err != nil {
 			_ = ctx.Close()
 			return nil, err
 		}
@@ -813,7 +900,12 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 				if c == nil {
 					continue
 				}
-				certs = append(certs, c.Core())
+				h, err := coreCertOf(c)
+				if err != nil {
+					_ = ctx.Close()
+					return nil, err
+				}
+				certs = append(certs, h)
 			}
 			if err := ctx.AddVerifyRoots(certs); err != nil {
 				_ = ctx.Close()
@@ -827,32 +919,54 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 // defaultVerifyDepth 为对端证书链验证默认深度上限（100，覆盖常规 CA 路径长度）。
 const defaultVerifyDepth = 100
 
-// connFD 获取 net.Conn 底层的 socket fd。
+// connFD 复制 net.Conn 底层的 socket fd，返回**由调用方持有**的副本。
 //
-// connFD extracts the underlying TCP socket file descriptor from conn.
+// 必须复制（而不是直接把 fd 号交给 OpenSSL）：`net.Conn` 关闭后该号码会被内核回收
+// 并可能分配给新连接，而 SSL 的 BIO 仍记着它 —— 之后的 SSL_read / SSL_write 会
+// 读写**别的连接**的 socket（跨连接串扰、握手随机失败）。
+// 见 docs/issues/2026-09-24/P1011。
+//
+// 复制在 `SyscallConn().Control` 回调**内部**完成：该契约要求不得在回调外持有底层
+// fd，而 dup 出来的副本属于我们自己，可以安全长期持有。返回的 fd 由 tls.Conn 持有，
+// 最终由 `(*core.SSLConn).Close` 关闭。
+//
+// connFD duplicates the socket fd behind conn and returns the duplicate owned by
+// the caller.
+//
+// Duplicating (rather than handing the bare fd number to OpenSSL) is essential:
+// once the net.Conn is closed the kernel may recycle that number for a new
+// connection while the SSL BIO still remembers it, after which SSL_read /
+// SSL_write touch another connection's socket — cross-connection crosstalk and
+// intermittent handshake failures. See docs/issues/2026-09-24/P1011.
+//
+// The duplication happens inside the SyscallConn().Control callback, whose
+// contract forbids retaining the underlying fd outside it; the duplicate is ours
+// and may be retained. The returned fd is owned by tls.Conn and finally released
+// by (*core.SSLConn).Close.
+//
 // It returns an error for any net.Conn that is not a *net.TCPConn.
 func connFD(conn net.Conn) (int, error) {
 	tcp, ok := conn.(*net.TCPConn)
 	if !ok {
-		return 0, fmt.Errorf("tls: unsupported connection type %T", conn)
+		return -1, fmt.Errorf("tls: unsupported connection type %T", conn)
 	}
 	raw, err := tcp.SyscallConn()
 	if err != nil {
-		return 0, err
+		return -1, err
 	}
 	var (
-		fd   int
-		serr error
+		dup  = -1
+		derr error
 	)
 	if err := raw.Control(func(f uintptr) {
-		fd = int(f)
+		dup, derr = core.DupFD(int(f))
 	}); err != nil {
-		return 0, err
+		return -1, err
 	}
-	if serr != nil {
-		return 0, serr
+	if derr != nil {
+		return -1, derr
 	}
-	return fd, nil
+	return dup, nil
 }
 
 // 暴露协议版本常量，便于用户配置 MinVersion / MaxVersion。

@@ -40,3 +40,6 @@ docs/issues
 
 # act 本地 CI 日志（scripts/run-act.sh 生成；不在 .tongsuo-install 之内）
 .act-logs/
+
+# 发版说明抽取脚本（scripts/extract_release_notes.py）在仓库根生成的中间产物
+/release-notes.md

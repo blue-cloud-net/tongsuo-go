@@ -5,23 +5,14 @@ package pkcs12
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
+	"github.com/blue-cloud-net/tongsuo-go/asym"
+	"github.com/blue-cloud-net/tongsuo-go/internal/keyaccess"
 	"github.com/blue-cloud-net/tongsuo-go/internal/testutil"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
-
-func runOpenSSL(t *testing.T, args ...string) []byte {
-	t.Helper()
-	cmd := exec.Command(testutil.OpenSSLBin(), args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("openssl %v: %v\n%s", args, err, out)
-	}
-	return out
-}
 
 // TestCLIInterop 本库 PKCS12 ↔ openssl pkcs12 双向互通。
 func TestCLIInterop(t *testing.T) {
@@ -39,7 +30,7 @@ func TestCLIInterop(t *testing.T) {
 	}
 	exportFile := filepath.Join(dir, "exported.pem")
 	// 退出码 0 即表明 MAC 校验通过、可解析（口令错误会以非零退出）。
-	runOpenSSL(t, "pkcs12", "-in", p12File, "-passin", "pass:pass123",
+	testutil.MustRunOpenSSL(t, "pkcs12", "-in", p12File, "-passin", "pass:pass123",
 		"-nokeys", "-clcerts", "-out", exportFile)
 	exported, _ := os.ReadFile(exportFile)
 	if !bytes.Contains(exported, []byte("leaf.pkcs12.dev")) {
@@ -47,14 +38,14 @@ func TestCLIInterop(t *testing.T) {
 	}
 
 	// openssl pkcs12 -export → 本库 Parse
-	keyPEM, _ := priv.MarshalPEM()
+	keyPEM, _ := priv.MarshalPrivateKeyPEM()
 	certPEM, _ := leaf.MarshalPEM()
 	keyFile := filepath.Join(dir, "key.pem")
 	certFile := filepath.Join(dir, "cert.pem")
 	os.WriteFile(keyFile, keyPEM, 0o600)
 	os.WriteFile(certFile, certPEM, 0o600)
 	osslP12 := filepath.Join(dir, "ossl.p12")
-	runOpenSSL(t, "pkcs12", "-export", "-inkey", keyFile, "-in", certFile,
+	testutil.MustRunOpenSSL(t, "pkcs12", "-export", "-inkey", keyFile, "-in", certFile,
 		"-passout", "pass:osslpass", "-out", osslP12)
 	osslDER, _ := os.ReadFile(osslP12)
 	b, err := Parse(osslDER, "osslpass")
@@ -62,12 +53,20 @@ func TestCLIInterop(t *testing.T) {
 		t.Fatalf("parse openssl p12 failed: %v", err)
 	}
 	if b.PrivateKey != nil {
-		defer b.PrivateKey.Close()
+		defer func() { _ = asym.Close(b.PrivateKey) }()
 	}
 	if b.Certificate == nil || b.Certificate.Subject() != "leaf.pkcs12.dev" {
 		t.Fatalf("parsed openssl cert = %v", b.Certificate)
 	}
-	if !b.PrivateKey.Equal(priv.Key()) {
+	gotKey, ok := keyaccess.PKey(b.PrivateKey)
+	if !ok || gotKey == nil {
+		t.Fatalf("parsed private key exposes no handle: %T", b.PrivateKey)
+	}
+	wantKey, ok := keyaccess.PKey(priv)
+	if !ok || wantKey == nil {
+		t.Fatalf("source private key exposes no handle: %T", priv)
+	}
+	if !gotKey.Equal(wantKey) {
 		t.Fatal("parsed openssl key mismatch")
 	}
 }

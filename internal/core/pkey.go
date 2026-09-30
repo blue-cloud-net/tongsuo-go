@@ -425,6 +425,32 @@ func (k *PKey) Close() error {
 	return k.handle.Close()
 }
 
+// Dup 复制当前密钥，返回与本对象生命周期完全独立的 *PKey。
+//
+// 用于跨包传递句柄（如 keyaccess.PKey 取到底层 EVP_PKEY 后必须 dup 一份），
+// 以避免源密钥 Close 后副本变成悬垂指针。本函数包装 native.EVP_PKEY_dup；
+// 原密钥若已 Close 则返回错误；返回的新 *PKey 由调用方负责 Close。
+//
+// Dup duplicates the underlying EVP_PKEY and returns a *PKey whose
+// lifecycle is independent of the receiver.
+//
+// Use this when handing the underlying handle across package boundaries
+// (for example keyaccess.PKey must dup the EVP_PKEY it extracts); without
+// dup the source key's Close would leave the consumer with a dangling
+// pointer. The method wraps native.EVP_PKEY_dup; if the receiver has
+// already been closed it returns an error, and the returned *PKey must
+// be Closed by its new owner.
+func (k *PKey) Dup() (*PKey, error) {
+	if k == nil || k.handle == nil || k.handle.IsClosed() {
+		return nil, NewOpError("pkey: EVP_PKEY_dup", 0)
+	}
+	p := native.EVP_PKEY_dup(k.handle.Ptr())
+	if p == nil {
+		return nil, NewOpError("pkey: EVP_PKEY_dup", native.PopError())
+	}
+	return &PKey{handle: NewHandle(p, true, native.EVP_PKEY_free)}, nil
+}
+
 // GenerateRSAKey 生成 RSA 密钥对（bits 为模数位数，如 2048）。
 //
 // 返回的 *PKey 持有底层 EVP_PKEY，使用完毕须调用 Close 释放；若底层原生调用失败，返回的错误包装 native.PopError 给出的 OpenSSL 错误码。
@@ -859,24 +885,38 @@ func (k *PKey) decryptWithOpts(data []byte, setOpts func(unsafe.Pointer) error) 
 
 // KeyParams 表示密钥参数（仅对应类型字段被填充）。
 //
-// 仅填充与底层密钥类型匹配的字段：Type 始终被赋值；RSA 密钥填充 N/E/D/P/Q；EC / SM2 密钥填充 Curve/D/X/Y。
-// 提取逻辑与底层 provider 参数名（如 "n"、"e"、"priv"、"rsa-factor1"、"rsa-factor2"、"group"、"pub"）请参见 PKey.Params。
+// 仅填充与底层密钥类型匹配的字段：Type 始终被赋值；RSA 密钥填充 N/E/D/P/Q 与 CRT 系数
+// Dmp1/Dmq1/Iqmp；EC / SM2 密钥填充 Curve/D/X/Y。
+// CRT 系数优先取自 Tongsuo provider 的 "rsa-exponent1"/"rsa-exponent2"/"rsa-coefficient1"
+// 参数（8.5 起可读），缺失时回落由 D/P/Q 在本包内推导（Dmp1 = D mod (P-1)，
+// Dmq1 = D mod (Q-1)，Iqmp = Q⁻¹ mod P）。公钥不携带 CRT 参数，相关字段保持 nil。
+// 提取逻辑与底层 provider 参数名请参见 PKey.Params。
 //
 // KeyParams holds the algorithm-specific parameters extracted from a key.
 //
 // Only the fields that apply to the underlying key type are populated:
-// Type is always set; RSA keys populate N/E/D/P/Q; EC and SM2 keys
-// populate Curve/D/X/Y. See PKey.Params for the extraction logic and the
-// underlying provider parameter names (for example "n", "e", "priv",
-// "rsa-factor1", "rsa-factor2", "group", and "pub").
+// Type is always set; RSA keys populate N/E/D/P/Q and the CRT factors
+// Dmp1/Dmq1/Iqmp; EC and SM2 keys populate Curve/D/X/Y.
+//
+// The CRT factors are read from the Tongsuo provider parameters
+// "rsa-exponent1", "rsa-exponent2" and "rsa-coefficient1" when exposed
+// (Tongsuo 8.5+); when any of them is missing the values are derived
+// locally from D, P and Q (Dmp1 = D mod (P-1), Dmq1 = D mod (Q-1),
+// Iqmp = Q^-1 mod P). Public keys do not carry CRT material and the
+// CRT fields stay nil. See PKey.Params for the extraction logic and the
+// underlying provider parameter names.
 type KeyParams struct {
 	Type string // "RSA" / "EC" / "SM2"
 
 	N *big.Int // RSA 模数
 	E *big.Int // RSA 公钥指数
 	D *big.Int // RSA 私钥指数 / EC 私钥标量
-	P *big.Int // RSA 质数 p
-	Q *big.Int // RSA 质数 q
+	P *big.Int // RSA 素因子 p（PKCS#1 记法）
+	Q *big.Int // RSA 素因子 q（PKCS#1 记法）
+
+	Dmp1 *big.Int // RSA CRT：dmp1 = d mod (p-1)（OpenSSL rsa-exponent1）
+	Dmq1 *big.Int // RSA CRT：dmq1 = d mod (q-1)（OpenSSL rsa-exponent2）
+	Iqmp *big.Int // RSA CRT：iqmp = q⁻¹ mod p（OpenSSL rsa-coefficient1）
 
 	Curve string   // EC 曲线名（如 "prime256v1"）
 	X     *big.Int // EC 公钥点 X
@@ -897,21 +937,69 @@ func bnParam(k *PKey, name string) *big.Int {
 	return new(big.Int).SetBytes(b)
 }
 
+// crtParams 装配 RSA CRT 系数（Dmp1/Dmq1/Iqmp）。
+//
+// 优先使用 provider 给出的 ex1/ex2/co1；任一为 nil 而 D/P/Q 可用时，按 RSA-CRT 数学
+// 派生：Dmp1 = D mod (P-1)、Dmq1 = D mod (Q-1)、Iqmp = Q⁻¹ mod P。推导结果不修改
+// 入参 big.Int（D/P/Q 复制后求模）。D/P/Q 任一缺失则对应派生字段保持 nil（最常见
+// 情形为公钥与未加载私钥因子的密钥）。
+//
+// crtParams assembles the RSA CRT factors (Dmp1/Dmq1/Iqmp).
+//
+// Provider-supplied ex1/ex2/co1 are preferred; any missing value is
+// derived from D/P/Q when all three are present
+// (Dmp1 = D mod (P-1), Dmq1 = D mod (Q-1), Iqmp = Q^-1 mod P).
+// D/P/Q are not mutated. If D/P/Q are not all available the
+// corresponding derived field stays nil (this is the normal case for
+// public keys and keys whose private factors have not been loaded).
+func crtParams(d, p, q, ex1, ex2, co1 *big.Int) (dmp1, dmq1, iqmp *big.Int) {
+	if ex1 != nil {
+		dmp1 = ex1
+	}
+	if ex2 != nil {
+		dmq1 = ex2
+	}
+	if co1 != nil {
+		iqmp = co1
+	}
+	if d != nil && p != nil && q != nil {
+		if dmp1 == nil {
+			pm1 := new(big.Int).Sub(p, big.NewInt(1))
+			dmp1 = new(big.Int).Mod(d, pm1)
+		}
+		if dmq1 == nil {
+			qm1 := new(big.Int).Sub(q, big.NewInt(1))
+			dmq1 = new(big.Int).Mod(d, qm1)
+		}
+		if iqmp == nil {
+			iqmp = new(big.Int).ModInverse(q, p)
+		}
+	}
+	return dmp1, dmq1, iqmp
+}
+
 // Params 返回密钥参数。
 //
 // 方法在 nil 接收者或已关闭的密钥上调用时返回 nil；RSA 密钥通过 EVP_PKEY_get_bn_param 读取
-// provider 参数 "n"、"e"、"d"、"rsa-factor1"、"rsa-factor2"；EC / SM2 密钥使用 "group"、"priv"
-// 以及仿射坐标 "qx"、"qy" 参数以恢复曲线名、私钥标量与公钥坐标；填充字段请参见 KeyParams。
+// provider 参数 "n"、"e"、"d"、"rsa-factor1"、"rsa-factor2"，并优先读取 CRT 参数
+// "rsa-exponent1"/"rsa-exponent2"/"rsa-coefficient1"，任一缺失则由 D/P/Q 在本包内派生
+// （Dmp1 = D mod (P-1)、Dmq1 = D mod (Q-1)、Iqmp = Q⁻¹ mod P）；
+// EC / SM2 密钥使用 "group"、"priv" 以及仿射坐标 "qx"、"qy" 参数以恢复曲线名、私钥标量与公钥坐标；
+// 填充字段请参见 KeyParams。
 //
 // Params returns the algorithm-specific parameters of the key.
 //
 // The method returns nil when called on a nil receiver or on a key that
 // has already been closed. For RSA keys the provider parameter names
 // "n", "e", "d", "rsa-factor1" and "rsa-factor2" are read via
-// EVP_PKEY_get_bn_param; for EC / SM2 keys the "group", "priv", "qx"
+// EVP_PKEY_get_bn_param; the CRT factors "rsa-exponent1",
+// "rsa-exponent2" and "rsa-coefficient1" are also attempted and the
+// derived fallback Dmp1 = D mod (P-1), Dmq1 = D mod (Q-1),
+// Iqmp = Q^-1 mod P is applied whenever a CRT value is missing but
+// D / P / Q are present. For EC / SM2 keys the "group", "priv", "qx"
 // and "qy" parameters are used to recover the curve name, the private
-// scalar and the public affine coordinates. See KeyParams for the populated
-// fields.
+// scalar and the public affine coordinates. See KeyParams for the
+// populated fields.
 func (k *PKey) Params() *KeyParams {
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil
@@ -921,9 +1009,17 @@ func (k *PKey) Params() *KeyParams {
 		p.N = bnParam(k, "n")
 		p.E = bnParam(k, "e")
 		p.D = bnParam(k, "d")
-		// provider 暴露的质数因子参数名为 rsa-factor1/rsa-factor2。
+		// provider 暴露的素因子参数名为 rsa-factor1/rsa-factor2。
 		p.P = bnParam(k, "rsa-factor1")
 		p.Q = bnParam(k, "rsa-factor2")
+		// CRT 系数优先取自 provider (rsa-exponent1/2、rsa-coefficient1)；
+		// 缺失则回落本地推导，保证公钥接口形状不变；公钥侧 D/P/Q 为 nil，
+		// CRT 字段自然保持 nil。
+		p.Dmp1, p.Dmq1, p.Iqmp = crtParams(p.D, p.P, p.Q,
+			bnParam(k, "rsa-exponent1"),
+			bnParam(k, "rsa-exponent2"),
+			bnParam(k, "rsa-coefficient1"),
+		)
 		return p
 	}
 	// EC / SM2：私钥标量参数名为 "priv"（OSSL_PKEY_PARAM_EC_PRIV_KEY）。

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/x509"
 )
 
@@ -31,7 +31,7 @@ func TestParseSimple(t *testing.T) {
 
 // TestParseCert 验证证书 DER 结构。
 func TestParseCert(t *testing.T) {
-	priv, err := rsa.GenerateKey(2048)
+	priv, err := asym.GenerateRSA(2048)
 	if err != nil {
 		t.Fatal(err)
 	}

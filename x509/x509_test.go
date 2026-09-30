@@ -7,17 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blue-cloud-net/tongsuo-go/crypto/ecdsa"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/ed25519"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/ed448"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/rsa"
-	"github.com/blue-cloud-net/tongsuo-go/crypto/sm2"
+	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
 // TestSelfSignedCert 验证自签证书创建、字段读取、自验签与 PEM 往返。
 func TestSelfSignedCert(t *testing.T) {
-	priv, err := sm2.GenerateKey()
+	priv, err := asym.GenerateSM2()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,11 +72,11 @@ func TestSelfSignedCert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ct, err := sm2.Encrypt(certPub, []byte("hello cert"))
+	ct, err := asym.Encrypt(certPub, []byte("hello cert"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	pt, err := sm2.Decrypt(priv, ct)
+	pt, err := asym.Decrypt(priv, ct)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,8 +87,8 @@ func TestSelfSignedCert(t *testing.T) {
 
 // TestCASignedCert 验证 CA 签发链：CA 自签，叶证书由 CA 签发。
 func TestCASignedCert(t *testing.T) {
-	caPriv, _ := sm2.GenerateKey()
-	leafPriv, _ := sm2.GenerateKey()
+	caPriv, _ := asym.GenerateSM2()
+	leafPriv, _ := asym.GenerateSM2()
 
 	now := time.Now()
 	caSubject := NewName().Add("CN", "Test Root CA")
@@ -119,7 +115,7 @@ func TestCASignedCert(t *testing.T) {
 	}
 
 	// 错误 CA 验证失败
-	other, _ := sm2.GenerateKey()
+	other, _ := asym.GenerateSM2()
 	if err := leafCert.Verify(other.Public()); err == nil {
 		t.Fatal("verify with wrong CA should fail")
 	}
@@ -127,7 +123,7 @@ func TestCASignedCert(t *testing.T) {
 
 // TestCSR 验证 CSR 创建、签名、PEM 往返与公钥读取。
 func TestCSR(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	subject := NewName().Add("CN", "csr.example.com").Add("O", "CSR Org")
 	req, err := NewCertificateRequest(subject, priv.Public(), priv)
 	if err != nil {
@@ -156,8 +152,8 @@ func TestCSR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ct, _ := sm2.Encrypt(pub, []byte("csr pub"))
-	pt, err := sm2.Decrypt(priv, ct)
+	ct, _ := asym.Encrypt(pub, []byte("csr pub"))
+	pt, err := asym.Decrypt(priv, ct)
 	if err != nil || string(pt) != "csr pub" {
 		t.Fatal("CSR pubkey encrypt/decrypt mismatch")
 	}
@@ -165,7 +161,7 @@ func TestCSR(t *testing.T) {
 
 // TestCSRSignatureInfoSM2 验证 SM2 CSR 签名值/算法/OID 三件套读取，并支持 PEM 往返。
 func TestCSRSignatureInfoSM2(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	subject := NewName().Add("CN", "csr-sig-sm2.example.com")
 	req, err := NewCertificateRequest(subject, priv.Public(), priv)
 	if err != nil {
@@ -204,7 +200,7 @@ func TestCSRSignatureInfoSM2(t *testing.T) {
 
 // TestCSRSignatureInfoRSA 验证 RSA CSR 签名值/算法/OID 三件套读取。
 func TestCSRSignatureInfoRSA(t *testing.T) {
-	priv, err := rsa.GenerateKey(2048)
+	priv, err := asym.GenerateRSA(2048)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +223,7 @@ func TestCSRSignatureInfoRSA(t *testing.T) {
 
 // TestCSRSignatureInfoECDSA 验证 ECDSA CSR 签名值/算法/OID 三件套读取。
 func TestCSRSignatureInfoECDSA(t *testing.T) {
-	priv, err := ecdsa.GenerateKey("prime256v1")
+	priv, err := asym.GenerateEC(asym.CurveP256)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +255,7 @@ func TestLoadInvalid(t *testing.T) {
 }
 
 // buildStructuredCert 构建一张带完整 RDN/SAN/KeyUsage/EKU/SKID/BasicConstraints 的证书。
-func buildStructuredCert(t *testing.T, priv *sm2.PrivateKey, cn string) *Certificate {
+func buildStructuredCert(t *testing.T, priv asym.PrivateKey, cn string) *Certificate {
 	t.Helper()
 	now := time.Now()
 	subject := NewName().
@@ -312,7 +308,7 @@ func buildStructuredCert(t *testing.T, priv *sm2.PrivateKey, cn string) *Certifi
 
 // TestStructuredParse 验证完整 RDN、SAN、KeyUsage、EKU、BasicConstraints、SKID、版本、类型解析。
 func TestStructuredParse(t *testing.T) {
-	priv, err := sm2.GenerateKey()
+	priv, err := asym.GenerateSM2()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,8 +417,8 @@ func TestStructuredParse(t *testing.T) {
 
 // TestAuthorityKeyID 验证 CA 签发叶证书时 AKID 与 CA 的 SKID 一致。
 func TestAuthorityKeyID(t *testing.T) {
-	caPriv, _ := sm2.GenerateKey()
-	leafPriv, _ := sm2.GenerateKey()
+	caPriv, _ := asym.GenerateSM2()
+	leafPriv, _ := asym.GenerateSM2()
 	now := time.Now()
 
 	caSubject := NewName().Add("CN", "AKID Root CA")
@@ -497,7 +493,7 @@ func TestAuthorityKeyID(t *testing.T) {
 
 // TestFingerprint 验证指纹长度、稳定性与非法算法。
 func TestFingerprint(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := NewName().Add("CN", "fp.example.com")
 	cert, err := CreateCertificate(subject, subject, 5,
@@ -552,7 +548,7 @@ func TestFingerprint(t *testing.T) {
 
 // TestDERRoundtrip 验证证书与 CSR 的 DER 往返。
 func TestDERRoundtrip(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := NewName().Add("CN", "der.example.com")
 	cert, err := CreateCertificate(subject, subject, 9,
@@ -616,7 +612,7 @@ func TestDERRoundtrip(t *testing.T) {
 
 // TestCSRAdvanced 验证 CSR 的扩展、挑战密码与多字段 Subject。
 func TestCSRAdvanced(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	subject := NewName().Add("CN", "csr-adv.example.com").Add("O", "CSR Adv Org").Add("C", "CN")
 
 	req := NewEmptyCertificateRequest()
@@ -682,7 +678,7 @@ func TestCSRAdvanced(t *testing.T) {
 }
 
 // makeCACert 构建一张 CA 证书（BasicConstraints CA:TRUE）。
-func makeCACert(t *testing.T, priv *sm2.PrivateKey, cn string) *Certificate {
+func makeCACert(t *testing.T, priv asym.PrivateKey, cn string) *Certificate {
 	t.Helper()
 	now := time.Now()
 	subject := NewName().Add("CN", cn)
@@ -716,7 +712,7 @@ func makeCACert(t *testing.T, priv *sm2.PrivateKey, cn string) *Certificate {
 
 // TestChainVerifySelfSigned 自签证书放入信任存储后验证通过。
 func TestChainVerifySelfSigned(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := NewName().Add("CN", "self.example.com")
 	cert, err := CreateCertificate(subject, subject, 1,
@@ -749,8 +745,8 @@ func TestChainVerifySelfSigned(t *testing.T) {
 
 // TestChainVerifyCA CA 签发叶证书验证通过（链长 2）。
 func TestChainVerifyCA(t *testing.T) {
-	caPriv, _ := sm2.GenerateKey()
-	leafPriv, _ := sm2.GenerateKey()
+	caPriv, _ := asym.GenerateSM2()
+	leafPriv, _ := asym.GenerateSM2()
 	now := time.Now()
 	caCert := makeCACert(t, caPriv, "Chain Root CA")
 
@@ -779,9 +775,9 @@ func TestChainVerifyCA(t *testing.T) {
 
 // TestChainVerifyForged 伪造 CA 拒绝（错误码非 0）。
 func TestChainVerifyForged(t *testing.T) {
-	caPriv, _ := sm2.GenerateKey()
-	evilPriv, _ := sm2.GenerateKey()
-	leafPriv, _ := sm2.GenerateKey()
+	caPriv, _ := asym.GenerateSM2()
+	evilPriv, _ := asym.GenerateSM2()
+	leafPriv, _ := asym.GenerateSM2()
 	now := time.Now()
 
 	caCert := makeCACert(t, caPriv, "Good CA")
@@ -813,8 +809,8 @@ func TestChainVerifyForged(t *testing.T) {
 
 // TestChainVerifyExpired 过期证书验证失败（错误码 10）。
 func TestChainVerifyExpired(t *testing.T) {
-	caPriv, _ := sm2.GenerateKey()
-	leafPriv, _ := sm2.GenerateKey()
+	caPriv, _ := asym.GenerateSM2()
+	leafPriv, _ := asym.GenerateSM2()
 	now := time.Now()
 	caCert := makeCACert(t, caPriv, "Expired Root CA")
 
@@ -844,9 +840,9 @@ func TestChainVerifyExpired(t *testing.T) {
 
 // TestChainVerifyIntermediate Root → Intermediate → Leaf 三层链与链补全。
 func TestChainVerifyIntermediate(t *testing.T) {
-	rootPriv, _ := sm2.GenerateKey()
-	interPriv, _ := sm2.GenerateKey()
-	leafPriv, _ := sm2.GenerateKey()
+	rootPriv, _ := asym.GenerateSM2()
+	interPriv, _ := asym.GenerateSM2()
+	leafPriv, _ := asym.GenerateSM2()
 	now := time.Now()
 
 	rootSubject := NewName().Add("CN", "Chain Root CA")
@@ -913,7 +909,7 @@ func TestChainVerifyIntermediate(t *testing.T) {
 
 // TestRevocationCheckBasic 无 CRL 时不吊销；空参数返回错误。
 func TestRevocationCheckBasic(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := NewName().Add("CN", "revoke.example.com")
 	cert, err := CreateCertificate(subject, subject, 5,
@@ -938,7 +934,7 @@ func TestRevocationCheckBasic(t *testing.T) {
 
 // TestCreateCertificateRSA 验证 RSA 密钥可签发/验证证书（自签）。
 func TestCreateCertificateRSA(t *testing.T) {
-	priv, err := rsa.GenerateKey(2048)
+	priv, err := asym.GenerateRSA(2048)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -965,12 +961,12 @@ func TestCreateCertificateRSA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pk, err := loaded.PublicKeyPKey()
+	pk, err := loaded.PublicKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pk.Close()
-	if pk.Algorithm() != "RSA" {
+	defer func() { _ = asym.Close(pk) }()
+	if string(pk.Algorithm()) != "RSA" {
 		t.Fatalf("loaded cert pubkey algorithm = %q, want RSA", pk.Algorithm())
 	}
 	if err := loaded.Verify(priv.Public()); err != nil {
@@ -980,7 +976,7 @@ func TestCreateCertificateRSA(t *testing.T) {
 
 // TestCreateCertificateECDSA 验证 ECDSA 密钥可签发/验证证书（自签）。
 func TestCreateCertificateECDSA(t *testing.T) {
-	priv, err := ecdsa.GenerateKey("prime256v1")
+	priv, err := asym.GenerateEC(asym.CurveP256)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1012,7 +1008,7 @@ func TestCreateCertificateECDSA(t *testing.T) {
 
 // TestSignatureInfoSM2 验证 SM2 证书签名值/算法/OID 三件套读取，并支持 PEM 往返。
 func TestSignatureInfoSM2(t *testing.T) {
-	priv, err := sm2.GenerateKey()
+	priv, err := asym.GenerateSM2()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1057,7 +1053,7 @@ func TestSignatureInfoSM2(t *testing.T) {
 
 // TestSignatureInfoRSA 验证 RSA 证书签名值/算法/OID 三件套读取（SHA-256）。
 func TestSignatureInfoRSA(t *testing.T) {
-	priv, err := rsa.GenerateKey(2048)
+	priv, err := asym.GenerateRSA(2048)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1083,7 +1079,7 @@ func TestSignatureInfoRSA(t *testing.T) {
 
 // TestSignatureInfoECDSA 验证 ECDSA 证书签名值/算法/OID 三件套读取（SHA-256）。
 func TestSignatureInfoECDSA(t *testing.T) {
-	priv, err := ecdsa.GenerateKey("prime256v1")
+	priv, err := asym.GenerateEC(asym.CurveP256)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1109,11 +1105,11 @@ func TestSignatureInfoECDSA(t *testing.T) {
 
 // TestChainVerifyRSA 验证 RSA CA 签发 RSA 叶证书的链验证。
 func TestChainVerifyRSA(t *testing.T) {
-	caPriv, err := rsa.GenerateKey(2048)
+	caPriv, err := asym.GenerateRSA(2048)
 	if err != nil {
 		t.Fatal(err)
 	}
-	leafPriv, err := rsa.GenerateKey(2048)
+	leafPriv, err := asym.GenerateRSA(2048)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1166,7 +1162,7 @@ func TestChainVerifyRSA(t *testing.T) {
 
 // TestCSRRSA 验证 RSA 密钥可生成 CSR 并验签。
 func TestCSRRSA(t *testing.T) {
-	priv, err := rsa.GenerateKey(2048)
+	priv, err := asym.GenerateRSA(2048)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1192,7 +1188,7 @@ func TestCSRRSA(t *testing.T) {
 
 // TestSelfSigned 验证 Certificate.SelfSigned：自签返回 true，CA 签发叶证书返回 false。
 func TestSelfSigned(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	subject := NewName().Add("CN", "self.example.com")
 
@@ -1208,9 +1204,9 @@ func TestSelfSigned(t *testing.T) {
 	}
 
 	// CA 签发叶证书
-	caPriv, _ := sm2.GenerateKey()
+	caPriv, _ := asym.GenerateSM2()
 	caCert := makeCACert(t, caPriv, "Self CA")
-	leafPriv, _ := sm2.GenerateKey()
+	leafPriv, _ := asym.GenerateSM2()
 	leafCert, err := CreateCertificate(NewName().Add("CN", "leaf.example.com"),
 		caCert.SubjectName(), 2, now.Add(-time.Hour), now.Add(365*24*time.Hour),
 		leafPriv.Public(), caPriv)
@@ -1243,7 +1239,7 @@ func TestNameHelpers(t *testing.T) {
 	}
 
 	// CSR SubjectEntries / SubjectText
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	req, _ := NewCertificateRequest(n, priv.Public(), priv)
 	entries := req.SubjectEntries()
 	if len(entries) != 3 {
@@ -1254,46 +1250,53 @@ func TestNameHelpers(t *testing.T) {
 	}
 }
 
-// TestCSRPublicKeyPKey 验证 CSR.PublicKeyPKey 在 SM2 / RSA / ECDSA 上均工作。
-func TestCSRPublicKeyPKey(t *testing.T) {
+// TestCSRPublicKey 验证 CSR.PublicKey 在 SM2 / RSA / ECDSA 上均返回正确的
+// asym 算法标识（原 TestCSRPublicKeyPKey，随 roadmap §5 E1-9 改为 asym.PublicKey）。
+func TestCSRPublicKey(t *testing.T) {
 	// SM2
-	sm2priv, _ := sm2.GenerateKey()
+	sm2priv, _ := asym.GenerateSM2()
 	req, _ := NewCertificateRequest(NewName().Add("CN", "sm2.example.com"),
 		sm2priv.Public(), sm2priv)
-	pk, err := req.PublicKeyPKey()
+	pk, err := req.PublicKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pk.Algorithm() != "SM2" {
-		t.Fatalf("SM2 CSR PublicKeyPKey algo = %q, want SM2", pk.Algorithm())
+	if string(pk.Algorithm()) != "SM2" {
+		t.Fatalf("SM2 CSR PublicKey algo = %q, want SM2", pk.Algorithm())
 	}
-	pk.Close()
+	if err := asym.Close(pk); err != nil {
+		t.Fatal(err)
+	}
 
 	// RSA
-	rsapriv, _ := rsa.GenerateKey(2048)
+	rsapriv, _ := asym.GenerateRSA(2048)
 	req, _ = NewCertificateRequest(NewName().Add("CN", "rsa.example.com"),
 		rsapriv.Public(), rsapriv)
-	pk, err = req.PublicKeyPKey()
+	pk, err = req.PublicKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pk.Algorithm() != "RSA" {
-		t.Fatalf("RSA CSR PublicKeyPKey algo = %q, want RSA", pk.Algorithm())
+	if string(pk.Algorithm()) != "RSA" {
+		t.Fatalf("RSA CSR PublicKey algo = %q, want RSA", pk.Algorithm())
 	}
-	pk.Close()
+	if err := asym.Close(pk); err != nil {
+		t.Fatal(err)
+	}
 
 	// ECDSA
-	ecpriv, _ := ecdsa.GenerateKey("prime256v1")
+	ecpriv, _ := asym.GenerateEC(asym.CurveP256)
 	req, _ = NewCertificateRequest(NewName().Add("CN", "ec.example.com"),
 		ecpriv.Public(), ecpriv)
-	pk, err = req.PublicKeyPKey()
+	pk, err = req.PublicKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pk.Algorithm() != "EC" {
-		t.Fatalf("ECDSA CSR PublicKeyPKey algo = %q, want EC", pk.Algorithm())
+	if string(pk.Algorithm()) != "EC" {
+		t.Fatalf("ECDSA CSR PublicKey algo = %q, want EC", pk.Algorithm())
 	}
-	pk.Close()
+	if err := asym.Close(pk); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestStoreSetFlags 验证 Store.SetFlags 通用方法（传入 0 应不报错）。
@@ -1310,12 +1313,12 @@ func TestStoreSetFlags(t *testing.T) {
 // TestCRLSignatureInfoSM2 验证 SM2 签发 CRL 的签名三件套、Issuer 辅助方法、Number、Extensions。
 // CRL 由 core 直接签发（绕开 CA 证书持有），通过 PEM 往返后由公开 API 加载与验证。
 func TestCRLSignatureInfoSM2(t *testing.T) {
-	caPriv, _ := sm2.GenerateKey()
+	caPriv, _ := asym.GenerateSM2()
 	now := time.Now()
 	caName := NewName().Add("CN", "CRL SM2 CA")
 
 	// 通过 core 直接构建 CRL
-	coreCRL, err := core.NewCRL(caName.name, caPriv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	coreCRL, err := core.NewCRL(caName.name, pkeyOf(caPriv), now.Add(-time.Hour), now.Add(7*24*time.Hour))
 	if err != nil {
 		t.Fatalf("core.NewCRL: %v", err)
 	}
@@ -1391,7 +1394,7 @@ func TestCRLSignatureInfoSM2(t *testing.T) {
 
 // TestCRLAKID 验证 CRL.AuthorityKeyID 与 issuer CA 的 SKID 一致（自签发 CRL 场景）。
 func TestCRLAKID(t *testing.T) {
-	caPriv, _ := sm2.GenerateKey()
+	caPriv, _ := asym.GenerateSM2()
 	now := time.Now()
 	caName := NewName().Add("CN", "AKID CRL CA")
 
@@ -1425,14 +1428,14 @@ func TestCRLAKID(t *testing.T) {
 	}
 
 	// 通过 core 直接签发 CRL；core.NewCRL 不附加 AKID，需手工附加（与 openssl ca -gencrl 行为类似）。
-	coreCRL, err := core.NewCRL(caName.name, caPriv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	coreCRL, err := core.NewCRL(caName.name, pkeyOf(caPriv), now.Add(-time.Hour), now.Add(7*24*time.Hour))
 	if err != nil {
 		t.Fatalf("core.NewCRL: %v", err)
 	}
 	defer coreCRL.Close()
 
 	// 手工添加 AuthorityKeyIdentifier 扩展（keyid 取自 CA 的 SKID）
-	if err := coreCRL.AddAuthorityKeyID(caCert.Core()); err != nil {
+	if err := coreCRL.AddAuthorityKeyID(caCert.cert); err != nil {
 		t.Fatalf("AddAuthorityKeyID: %v", err)
 	}
 
@@ -1457,11 +1460,11 @@ func TestCRLAKID(t *testing.T) {
 
 // TestCRLExtensions 验证 CRL.Extensions 至少包含 CRL Number 扩展（OpenSSL 默认附加）。
 func TestCRLExtensions(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	caName := NewName().Add("CN", "Ext CRL CA")
 
-	coreCRL, err := core.NewCRL(caName.name, priv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	coreCRL, err := core.NewCRL(caName.name, pkeyOf(priv), now.Add(-time.Hour), now.Add(7*24*time.Hour))
 	if err != nil {
 		t.Fatalf("core.NewCRL: %v", err)
 	}
@@ -1496,11 +1499,11 @@ func TestCRLExtensions(t *testing.T) {
 
 // TestCRLIssuerEntries / TestCRLIssuerText 验证 Issuer 辅助方法返回完整 RDN。
 func TestCRLIssuerEntries(t *testing.T) {
-	priv, _ := sm2.GenerateKey()
+	priv, _ := asym.GenerateSM2()
 	now := time.Now()
 	caName := NewName().Add("CN", "Entries CRL CA").Add("O", "Entries Org").Add("C", "CN")
 
-	coreCRL, err := core.NewCRL(caName.name, priv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	coreCRL, err := core.NewCRL(caName.name, pkeyOf(priv), now.Add(-time.Hour), now.Add(7*24*time.Hour))
 	if err != nil {
 		t.Fatalf("core.NewCRL: %v", err)
 	}
@@ -1534,7 +1537,7 @@ func TestCRLIssuerEntries(t *testing.T) {
 
 // TestCRLVerify 验证 CRL.Verify：正确签发者验证成功，错误公钥验证失败。
 func TestCRLVerify(t *testing.T) {
-	caPriv, _ := sm2.GenerateKey()
+	caPriv, _ := asym.GenerateSM2()
 	now := time.Now()
 	caName := NewName().Add("CN", "CRL Verify CA")
 
@@ -1566,7 +1569,7 @@ func TestCRLVerify(t *testing.T) {
 	}
 
 	// 签发 CRL 并通过 PEM 加载为公开 CRL。
-	coreCRL, err := core.NewCRL(caName.name, caPriv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	coreCRL, err := core.NewCRL(caName.name, pkeyOf(caPriv), now.Add(-time.Hour), now.Add(7*24*time.Hour))
 	if err != nil {
 		t.Fatalf("core.NewCRL: %v", err)
 	}
@@ -1587,7 +1590,7 @@ func TestCRLVerify(t *testing.T) {
 	}
 
 	// 错误公钥验证失败。
-	wrongPriv, _ := sm2.GenerateKey()
+	wrongPriv, _ := asym.GenerateSM2()
 	wrongName := NewName().Add("CN", "Wrong CA")
 	wrongCert := NewCertificate()
 	if err := wrongCert.SetVersion(2); err != nil {
@@ -1623,21 +1626,21 @@ func TestCRLVerify(t *testing.T) {
 // TestCreateCertificateEd25519 verifies Ed25519 self-signed certificate
 // creation, signature info, PEM round-trip and verification.
 func TestCreateCertificateEd25519(t *testing.T) {
-	priv, err := ed25519.GenerateKey()
+	priv, err := asym.GenerateEd25519()
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
 	subject := NewName().Add("CN", "ed25519.example.com")
 	cert, err := CreateCertificate(subject, subject, 40,
-		now.Add(-time.Hour), now.Add(365*24*time.Hour), asX509PubKey(priv.Key()), asX509PrivKey(priv.Key()))
+		now.Add(-time.Hour), now.Add(365*24*time.Hour), priv.Public(), priv)
 	if err != nil {
 		t.Fatalf("CreateCertificate Ed25519: %v", err)
 	}
 	if cert.CertificateType() != "ED25519" {
 		t.Fatalf("CertificateType = %q, want ED25519", cert.CertificateType())
 	}
-	if err := cert.Verify(asX509PubKey(priv.Key())); err != nil {
+	if err := cert.Verify(priv.Public()); err != nil {
 		t.Fatalf("Ed25519 self-verify failed: %v", err)
 	}
 	if len(cert.Signature()) != 64 {
@@ -1659,36 +1662,36 @@ func TestCreateCertificateEd25519(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := loaded.Verify(asX509PubKey(priv.Key())); err != nil {
+	if err := loaded.Verify(priv.Public()); err != nil {
 		t.Fatal("loaded Ed25519 cert verify failed")
 	}
-	pk, err := loaded.PublicKeyPKey()
+	pk, err := loaded.PublicKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pk.Close()
-	if pk.Algorithm() != "ED25519" {
+	defer func() { _ = asym.Close(pk) }()
+	if string(pk.Algorithm()) != "ED25519" {
 		t.Fatalf("loaded pubkey algorithm = %q, want ED25519", pk.Algorithm())
 	}
 }
 
 // TestCreateCertificateEd448 验证 Ed448 密钥可签发/验证证书。
 func TestCreateCertificateEd448(t *testing.T) {
-	priv, err := ed448.GenerateKey()
+	priv, err := asym.GenerateEd448()
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
 	subject := NewName().Add("CN", "ed448.example.com")
 	cert, err := CreateCertificate(subject, subject, 41,
-		now.Add(-time.Hour), now.Add(365*24*time.Hour), asX509PubKey(priv.Key()), asX509PrivKey(priv.Key()))
+		now.Add(-time.Hour), now.Add(365*24*time.Hour), priv.Public(), priv)
 	if err != nil {
 		t.Fatalf("CreateCertificate Ed448: %v", err)
 	}
 	if cert.CertificateType() != "ED448" {
 		t.Fatalf("CertificateType = %q, want ED448", cert.CertificateType())
 	}
-	if err := cert.Verify(asX509PubKey(priv.Key())); err != nil {
+	if err := cert.Verify(priv.Public()); err != nil {
 		t.Fatalf("Ed448 self-verify failed: %v", err)
 	}
 	if len(cert.Signature()) != 114 {
@@ -1709,19 +1712,19 @@ func TestCreateCertificateEd448(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := loaded.Verify(asX509PubKey(priv.Key())); err != nil {
+	if err := loaded.Verify(priv.Public()); err != nil {
 		t.Fatal("loaded Ed448 cert verify failed")
 	}
 }
 
 // TestCSREd25519 验证 Ed25519 密钥可生成 CSR 并验签。
 func TestCSREd25519(t *testing.T) {
-	priv, err := ed25519.GenerateKey()
+	priv, err := asym.GenerateEd25519()
 	if err != nil {
 		t.Fatal(err)
 	}
 	req, err := NewCertificateRequest(NewName().Add("CN", "csr-ed25519.example.com"),
-		asX509PubKey(priv.Key()), asX509PrivKey(priv.Key()))
+		priv.Public(), priv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1753,12 +1756,12 @@ func TestCSREd25519(t *testing.T) {
 
 // TestCSREd448 验证 Ed448 密钥可生成 CSR 并验签。
 func TestCSREd448(t *testing.T) {
-	priv, err := ed448.GenerateKey()
+	priv, err := asym.GenerateEd448()
 	if err != nil {
 		t.Fatal(err)
 	}
 	req, err := NewCertificateRequest(NewName().Add("CN", "csr-ed448.example.com"),
-		asX509PubKey(priv.Key()), asX509PrivKey(priv.Key()))
+		priv.Public(), priv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1772,18 +1775,18 @@ func TestCSREd448(t *testing.T) {
 
 // TestCASignedCertEd25519 验证 Ed25519 CA 自签 + Ed25519 CA 签 Ed25519 叶证书。
 func TestCASignedCertEd25519(t *testing.T) {
-	caPriv, err := ed25519.GenerateKey()
+	caPriv, err := asym.GenerateEd25519()
 	if err != nil {
 		t.Fatal(err)
 	}
-	leafPriv, err := ed25519.GenerateKey()
+	leafPriv, err := asym.GenerateEd25519()
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
 	caSubject := NewName().Add("CN", "ED25519 Root CA")
 	caCert, err := CreateCertificate(caSubject, caSubject, 50,
-		now.Add(-time.Hour), now.Add(2*365*24*time.Hour), asX509PubKey(caPriv.Key()), asX509PrivKey(caPriv.Key()))
+		now.Add(-time.Hour), now.Add(2*365*24*time.Hour), caPriv.Public(), caPriv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1792,20 +1795,20 @@ func TestCASignedCertEd25519(t *testing.T) {
 	}
 
 	// 重新签发（AddBasicConstraints 后必须重签才能让扩展进入签名覆盖范围）
-	if err := caCert.Sign(asX509PrivKey(caPriv.Key())); err != nil {
+	if err := caCert.Sign(caPriv); err != nil {
 		t.Fatalf("CA re-sign: %v", err)
 	}
-	if err := caCert.Verify(asX509PubKey(caPriv.Key())); err != nil {
+	if err := caCert.Verify(caPriv.Public()); err != nil {
 		t.Fatal("CA self-verify failed")
 	}
 
 	leafCert, err := CreateCertificate(NewName().Add("CN", "leaf-ed25519.example.com"),
 		caSubject, 51, now.Add(-time.Hour), now.Add(365*24*time.Hour),
-		asX509PubKey(leafPriv.Key()), asX509PrivKey(caPriv.Key()))
+		leafPriv.Public(), caPriv)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := leafCert.Verify(asX509PubKey(caPriv.Key())); err != nil {
+	if err := leafCert.Verify(caPriv.Public()); err != nil {
 		t.Fatal("CA verify leaf failed")
 	}
 
@@ -1825,14 +1828,14 @@ func TestCASignedCertEd25519(t *testing.T) {
 
 // TestCRLEd25519 验证 Ed25519 签发 CRL 的签发、加载、验签。
 func TestCRLEd25519(t *testing.T) {
-	caPriv, err := ed25519.GenerateKey()
+	caPriv, err := asym.GenerateEd25519()
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
 	caName := NewName().Add("CN", "ED25519 CRL CA")
 
-	coreCRL, err := core.NewCRL(caName.name, caPriv.Key(), now.Add(-time.Hour), now.Add(7*24*time.Hour))
+	coreCRL, err := core.NewCRL(caName.name, pkeyOf(caPriv), now.Add(-time.Hour), now.Add(7*24*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
