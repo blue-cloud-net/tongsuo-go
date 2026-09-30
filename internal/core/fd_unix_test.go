@@ -41,7 +41,8 @@ func TestDupFDKeepsSocketAlive(t *testing.T) {
 	if err := syscall.Close(orig); err != nil {
 		t.Fatalf("close orig: %v", err)
 	}
-	if _, err := syscall.Fstat(dup); err != nil {
+	var st syscall.Stat_t
+	if err := syscall.Fstat(dup, &st); err != nil {
 		t.Fatalf("duplicate should stay valid after closing the original: %v", err)
 	}
 	if _, err := syscall.Write(peer, []byte("x")); err != nil {
@@ -56,7 +57,7 @@ func TestDupFDKeepsSocketAlive(t *testing.T) {
 	if err := CloseFD(dup); err != nil {
 		t.Fatalf("CloseFD: %v", err)
 	}
-	if _, err := syscall.Fstat(dup); !errors.Is(err, syscall.EBADF) {
+	if err := syscall.Fstat(dup, &syscall.Stat_t{}); !errors.Is(err, syscall.EBADF) {
 		t.Fatalf("fstat after CloseFD = %v, want EBADF", err)
 	}
 	if err := CloseFD(dup); err != nil {
@@ -143,7 +144,7 @@ func TestSSLConnCloseClosesDupFD(t *testing.T) {
 	if err := ssl.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if _, err := syscall.Fstat(dup); !errors.Is(err, syscall.EBADF) {
+	if err := syscall.Fstat(dup, &syscall.Stat_t{}); !errors.Is(err, syscall.EBADF) {
 		t.Fatalf("SSLConn.Close must close the duplicate it owns; fstat = %v, want EBADF", err)
 	}
 	// 幂等：重复 Close / 关闭后再 Stop 都不应 panic 或报错。
