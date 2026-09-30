@@ -38,13 +38,19 @@ func ExampleReadBuildInfo() {
 }
 
 // ExampleErrorString 演示将原生错误码转为文本。
-// 错误码 0x0906D06C 在 Tongsuo 8.x 是 lib=18, reason=184428（固定常量）。
+// 错误码 0x0906D06C 的 reason 文本随所链接的铜锁版本变化：8.4.0（OpenSSL
+// 3.0.3）把 rflags 位并入 reason 数值，8.5.0-pre1（OpenSSL 3.5.4）将其剥离，
+// 故示例不写 // Output: 行；与铜锁 CLI 的逐字节一致性由 meta_tongsuocli_test.go
+// 覆盖。
 //
 // ExampleErrorString demonstrates converting a native error code to text.
-// Code 0x0906D06C is lib=18, reason=184428 on Tongsuo 8.x and is fixed.
+// The reason text of code 0x0906D06C varies with the linked Tongsuo
+// version: 8.4.0 (OpenSSL 3.0.3) folds the rflags bits into the numeric
+// reason, whereas 8.5.0-pre1 (OpenSSL 3.5.4) strips them, so the example
+// omits // Output:; byte-for-byte agreement with the tongsuo CLI is covered
+// by meta_tongsuocli_test.go.
 func ExampleErrorString() {
 	fmt.Println(meta.ErrorString(0x0906D06C))
-	// Output: error:0906D06C:lib(18)::reason(184428)
 }
 
 // ExampleParseErrorCode_hex 演示解析十六进制错误码。
