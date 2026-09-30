@@ -21,7 +21,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-## [0.3.0] - 2026-09-24
+## [0.3.0] - 2026-09-30
 
 ### Added
 
