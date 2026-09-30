@@ -92,12 +92,17 @@ func TestCLISubjectIssuer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := testutil.MustRunOpenSSL(t, "x509", "-in", certFile, "-noout", "-subject", "-issuer", "-serial")
+	// 用 -nameopt RFC2253 固定名称输出：默认 nameopt 随铜锁 / OpenSSL 版本变化
+	// （8.4.0 / OpenSSL 3.0 为 "O = CLI Org, CN = cli.example.com"，
+	// 8.5.0 / OpenSSL 3.5 为 "CN=cli.example.com, O=CLI Org"），RFC2253 则稳定
+	// 为「前向 RDN 顺序 + 无空格」。
+	out := testutil.MustRunOpenSSL(t, "x509", "-in", certFile, "-noout",
+		"-nameopt", "RFC2253", "-subject", "-issuer", "-serial")
 	s := string(out)
-	if !strings.Contains(s, "CN=cli.example.com") {
+	if !strings.Contains(s, "subject=CN=cli.example.com,O=CLI Org") {
 		t.Fatalf("openssl subject mismatch: %s", s)
 	}
-	if !strings.Contains(s, "CN=cli.example.com") {
+	if !strings.Contains(s, "issuer=CN=cli.example.com,O=CLI Org") {
 		t.Fatalf("openssl issuer mismatch: %s", s)
 	}
 	if !strings.Contains(s, "serial=2A") { // 42 = 0x2A
@@ -179,8 +184,9 @@ func TestCLIDer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// openssl 可读取本库导出的 DER
-	out := testutil.MustRunOpenSSL(t, "x509", "-in", derFile, "-inform", "DER", "-noout", "-subject")
+	// openssl 可读取本库导出的 DER（-nameopt RFC2253 固定名称输出，理由同 TestCLISubjectIssuer）
+	out := testutil.MustRunOpenSSL(t, "x509", "-in", derFile, "-inform", "DER", "-noout",
+		"-nameopt", "RFC2253", "-subject")
 	if !strings.Contains(string(out), "CN=der-cli.example.com") {
 		t.Fatalf("openssl DER subject mismatch: %s", out)
 	}
@@ -291,7 +297,8 @@ func TestCLICSRText(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := testutil.MustRunOpenSSL(t, "req", "-text", "-noout", "-verify", "-in", reqFile)
+	// -nameopt RFC2253 固定名称输出：默认 nameopt 随铜锁 / OpenSSL 版本变化。
+	out := testutil.MustRunOpenSSL(t, "req", "-text", "-noout", "-verify", "-nameopt", "RFC2253", "-in", reqFile)
 	s := string(out)
 	if !strings.Contains(s, "verify OK") {
 		t.Fatalf("openssl req verify failed: %s", s)
