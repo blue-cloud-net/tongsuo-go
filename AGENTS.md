@@ -82,6 +82,7 @@ export CGO_LDFLAGS="-L${TONGSUO_HOME}/lib"
 - `-Wno-deprecated-declarations` 仅用于屏蔽铜锁对部分 OpenSSL 已废弃声明的告警，不影响功能
 - 也可用 pkg-config 方式：`export PKG_CONFIG_PATH=${TONGSUO_HOME}/lib/pkgconfig:${PKG_CONFIG_PATH}`
 - CLI 对拍测试用 `TONGSUO_OPENSSL_BIN` 指定铜锁命令行，默认 `/opt/tongsuo/bin/openssl`
+  （仅适用本地开发机；CI 的 `interop` job 显式指向 `.tongsuo-install/bin/openssl`）
 
 ### 2.2 构建与静态检查
 
@@ -94,8 +95,8 @@ go build -tags static ./...   # 静态链接；仅 Linux 已接线（macOS 未�
 ### 2.3 测试
 
 ```bash
-go test -count=1 ./...            # 默认：单元测试（不含 CLI 对拍），CI 跑的就是这条
-go test -tags tongsuocli ./...    # 额外跑铜锁 openssl CLI 逐字节对拍（需铜锁二进制）
+go test -count=1 ./...            # 默认：单元测试（不含 CLI 对拍）—— CI 的 lint / test 阶段
+go test -tags tongsuocli ./...    # 额外跑铜锁 openssl CLI 逐字节对拍（需铜锁二进制）—— CI 的 interop 阶段
 go test -cover ./...              # 覆盖率
 go test -race ./...               # 并发改动时建议加跑
 ```

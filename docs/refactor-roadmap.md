@@ -423,7 +423,7 @@ graph TD
 |----|------|
 | `internal/keyaccess` | 新建叶子包 + `asym` 侧契约（§5.2） |
 | `internal/testutil` 收敛 | 现状 25 个 `*_tongsuocli_test.go` 中 14 处各自复制 `runOpenSSL`，且仅 5 个用了 `SkipIfNoOpenSSL`；统一为单一签名并补齐 skip 分支 |
-| CI 增加 `tongsuocli` job | 现状 CI 只跑 `go vet` / `go build` / `go build -tags static` / `go test`；新包的价值就是 CLI 对拍，不进 CI 等于没验证 |
+| CI 增加 `tongsuocli` job ✅ | 原状：CI 只跑 `go vet` / `go build` / `go build -tags static` / `go test`；新包的价值就是 CLI 对拍，不进 CI 等于没验证。**已完成**：`ci.yml` 新增 `interop` job（ubuntu/amd64 单腿，`needs: test`），详见 §8.4 |
 
 ### Phase 1 — 包骨架与迁移（`0.3.0`）
 
@@ -489,8 +489,12 @@ grep -rln 'internal/keyaccess' --include=*.go .
 
 ### 8.4 CI 变更
 
-- 新增 `tongsuocli` job（`go test -tags tongsuocli -count=1 ./...`），只跑 `crypto` 已迁出的包与 `x509` / `tls` / `jwk` / `pkcs/*`
-- 保留 `-race` 在 main 分支的稳定性 job（可选）
+- ✅ 新增 `interop` job（`go test -count=1 -tags tongsuocli ./...`）：ubuntu/amd64 单腿、
+  `needs: test`，复用与 lint/test 相同的 Tongsuo 缓存键（同为 Linux-amd64）。两层保险：
+  ① job 内先 `test -x "$TONGSUO_OPENSSL_BIN"` 并打印 `version`，缺 CLI 时直接失败；
+  ② 必须显式设 `TONGSUO_OPENSSL_BIN=${{ github.workspace }}/.tongsuo-install/bin/openssl`，
+  否则 `internal/testutil` 的默认值 `/opt/tongsuo/bin/openssl`（本地开发机路径）会让对拍全数 skip
+- `-race` 稳定性 job（可选）：尚未加入；目前靠本地 `go test -race ./...` 把关
 
 ---
 
