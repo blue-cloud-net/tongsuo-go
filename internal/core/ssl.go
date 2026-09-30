@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -386,10 +387,21 @@ func (c *TLSContext) SetDefaultVerifyPaths() error {
 // responsibility. The deadline (unix nano) is set via SetDeadline and
 // bounds the cumulative wait of Connect/Accept/Read/Write retry loops.
 type SSLConn struct {
-	handle   *Handle
-	ctx      *TLSContext
-	fd       int
+	handle *Handle
+	ctx    *TLSContext
+
+	// fd 是**本连接持有**的 socket 副本（由 tls 层用 dup(2) 产生，见
+	// internal/core/fd_unix.go 的 DupFD 与 docs/issues/2026-09-24/P1011）。
+	// 构造后不再变更，由 Close 负责关闭。
+	fd int
+
 	deadline atomic.Int64 // 0 = 无 deadline；其它值 = unix nano
+	stopped  atomic.Bool  // true = 已停止：不得再发起新的 SSL 调用
+
+	// inflight 统计执行中的 SSL 调用（Connect / Accept / Read / Write）。Close
+	// 等其归零后才 SSL_free 并关闭 fd，避免「调用中释放句柄 / 关闭 fd」。
+	inflight sync.WaitGroup
+	fdOnce   sync.Once // 保证 socket 副本只关一次
 }
 
 // NewSSLConn 基于套接字 fd 创建 TLS 连接并绑定。
@@ -443,6 +455,49 @@ func (s *SSLConn) SetDeadline(t time.Time) error {
 	return nil
 }
 
+// Stop 停止本连接：禁止后续 SSL 调用，并 shutdown(2) 唤醒在途的 select / recv。
+//
+// 由 tls.Conn.Close 在关闭底层 net.Conn **之前**调用。理由见
+// docs/issues/2026-09-24/P1011：SSL 一旦在 fd 已关闭（乃至被其它连接复用）之后继续
+// 调用，就会读写**别的连接**的 socket。shutdown 还让对端立刻看到 FIN —— 只要还有 fd
+// 副本存在，单靠 close(2) 不会关闭套接字。幂等且并发安全。
+//
+// Stop stops the connection: no further SSL call may start, and shutdown(2) wakes
+// in-flight select / recv.
+//
+// It is called by tls.Conn.Close before the underlying net.Conn is closed; see
+// docs/issues/2026-09-24/P1011. shutdown also makes the peer observe a FIN
+// immediately — close(2) alone cannot close the socket while a duplicate exists.
+// The method is idempotent and safe for concurrent use.
+func (s *SSLConn) Stop() {
+	if s == nil {
+		return
+	}
+	s.stopped.Store(true)
+	if s.fd >= 0 {
+		_ = ShutdownFD(s.fd)
+	}
+}
+
+// begin 登记一次 SSL 调用；返回 false 表示连接已停止或句柄已释放，调用方必须放弃。
+//
+// 顺序很关键：**先 Add 再检查 stopped**，这样 Close 的 inflight.Wait 一定能看到本次
+// 调用；否则会出现「Wait 已返回、本调用才开始 SSL 调用」的竞态。
+//
+// begin registers one SSL call; a false result means the connection is stopped or
+// the handle has been released and the caller must bail out.
+//
+// The order matters: Add first, check stopped second, so Close's inflight.Wait
+// always observes this call.
+func (s *SSLConn) begin() bool {
+	s.inflight.Add(1)
+	if s.stopped.Load() || s.handle == nil || s.handle.IsClosed() {
+		s.inflight.Done()
+		return false
+	}
+	return true
+}
+
 // Connect 执行客户端握手。Go 的 socket 为非阻塞，按 WANT_READ/WANT_WRITE 轮询重试。
 //
 // Connect performs the TLS client handshake.
@@ -457,7 +512,11 @@ func (s *SSLConn) Connect() error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	for {
+		if !s.begin() {
+			return fmt.Errorf("tls: connection closed")
+		}
 		ret := native.SSL_connect(s.handle.Ptr())
+		s.inflight.Done()
 		if ret == 1 {
 			return nil
 		}
@@ -479,7 +538,11 @@ func (s *SSLConn) Accept() error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	for {
+		if !s.begin() {
+			return fmt.Errorf("tls: connection closed")
+		}
 		ret := native.SSL_accept(s.handle.Ptr())
+		s.inflight.Done()
 		if ret == 1 {
 			return nil
 		}
@@ -503,14 +566,14 @@ func (s *SSLConn) Read(buf []byte) (int, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	for {
-		// 守护：Close 可能在重试循环外被并发调用，导致 SSL* 已被 SSL_free，
-		// 若继续调 SSL_read 会进 cgo 后 use-after-free 触发 SIGSEGV
-		// （参见 tls/tls_test.go::TestReadReturnsAfterCancel）。句柄的
-		// IsClosed / Ptr 在 handle.go 用 mutex 保护，对并发 Close 安全。
-		if s.handle.IsClosed() {
+		// 守护：Close 可能在重试循环外被并发调用，导致 SSL* 已被 SSL_free
+		// （use-after-free → SIGSEGV），或底层 fd 已被关闭/复用（P1011：会读到
+		// 别的连接的数据）。begin 先登记再检查，保证 Close 的 Wait 看得到本次调用。
+		if !s.begin() {
 			return 0, fmt.Errorf("tls: connection closed")
 		}
 		ret := native.SSL_read(s.handle.Ptr(), buf)
+		s.inflight.Done()
 		if ret > 0 {
 			return ret, nil
 		}
@@ -536,11 +599,12 @@ func (s *SSLConn) Write(buf []byte) (int, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	for {
-		// 守护：参见 Read 同源说明。Close 与 Write 并发时跳过 SSL_write。
-		if s.handle.IsClosed() {
+		// 守护：参见 Read 同源说明。
+		if !s.begin() {
 			return 0, fmt.Errorf("tls: connection closed")
 		}
 		ret := native.SSL_write(s.handle.Ptr(), buf)
+		s.inflight.Done()
 		if ret > 0 {
 			return ret, nil
 		}
@@ -675,26 +739,48 @@ func (s *SSLConn) retry(op string, ret int) error {
 // and the ctx / deadline termination condition live in waitPlan /
 // waitReady so they stay free of platform branching.
 
-// Close 发送关闭通知并释放底层句柄。幂等。
+// Close 发送关闭通知、释放底层句柄，并关闭本连接持有的 socket 副本。幂等。
 //
-// Close sends the TLS close_notify alert (via SSL_shutdown) and then
-// releases the underlying SSL handle.
+// Close sends the TLS close_notify alert (via SSL_shutdown), releases the
+// underlying SSL handle and closes the socket duplicate owned by this
+// connection.
 //
-// The call is idempotent: invoking it on a nil receiver or on a
-// connection that has already been closed returns nil without further
-// side effects and does NOT invoke SSL_shutdown again. The underlying
-// socket fd is NOT closed by this method; the caller is responsible for
-// closing it.
+// The call is idempotent: invoking it on a nil receiver or on a connection that
+// has already been closed returns nil without further side effects and does NOT
+// invoke SSL_shutdown again. It first waits for any in-flight SSL call to finish,
+// because a handle release or fd close concurrent with an SSL call is exactly the
+// bug described in docs/issues/2026-09-24/P1011.
 func (s *SSLConn) Close() error {
 	if s == nil {
 		return nil
 	}
-	// 幂等：closed 时直接返回；避免二次 Close 时 SSL_shutdown(NULL) 崩溃。
+	// 先停再用等待归零：Wait 返回后新来的调用会在 begin 里看到 stopped 而放弃，
+	// 因此此后不可能再有 SSL 调用触碰句柄或 fd。
+	s.stopped.Store(true)
+	s.inflight.Wait()
+	// 幂等：closed 时只补关 fd；避免二次 Close 时 SSL_shutdown(NULL) 崩溃。
 	if s.handle == nil || s.handle.IsClosed() {
+		s.closeFD()
 		return nil
 	}
 	native.SSL_shutdown(s.handle.Ptr())
-	return s.handle.Close()
+	err := s.handle.Close()
+	s.closeFD()
+	return err
+}
+
+// closeFD 关闭本连接持有的 socket 副本（幂等）。该 fd 由 tls 层 dup(2) 而来，
+// 所有权归本连接，不关闭就会泄漏描述符。
+//
+// closeFD closes the socket duplicate owned by this connection (idempotent). The
+// descriptor comes from dup(2) in the tls layer and is owned here, so it must be
+// released or it leaks.
+func (s *SSLConn) closeFD() {
+	s.fdOnce.Do(func() {
+		if s.fd >= 0 {
+			_ = CloseFD(s.fd)
+		}
+	})
 }
 
 // Version 返回协商后的协议版本字符串。
