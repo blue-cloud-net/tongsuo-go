@@ -127,8 +127,28 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   now fails fast instead of waiting for a timeout. A test-level leak was
   fixed along the way: a server connection abandoned after the handshake
   outlived `defer srv.Close()` (which frees the `SSL_CTX`). Package flake
-  rate dropped from 3/20 to 1/20; the remainder is listed under Known
-  limitations.
+  rate dropped from 3/20 to 1/20; the remainder turned out to be a
+  library-level defect, fixed by the next entry.
+- `tls`: **connection fd lifetime (P1011)** — `tls.Conn` used to hand a
+  bare fd number to `SSL_set_fd` while the descriptor was owned by the
+  underlying `net.Conn`. After `Close()` closed the raw socket the kernel
+  could recycle that number for a new connection, and the SSL BIO — still
+  holding the stale number — then read from or wrote to **another
+  connection's** socket. That is the real cause of the intermittent
+  failures (`SSL_connect: unexpected message`, `SSL_read: Bad file
+  descriptor`, peer-side `bad record MAC`) and of the residual flake
+  above. The socket is now duplicated with `dup(2)` inside the
+  `SyscallConn().Control` callback (new `internal/core/fd_unix.go`:
+  `DupFD` / `ShutdownFD` / `CloseFD`), `*core.SSLConn` owns the duplicate,
+  and a new `Stop()` (state flag + `shutdown(2)`) wakes an in-flight
+  `select` and sends FIN even though the duplicate keeps the socket open.
+  `Close()` waits for in-flight operations (`inflight.Wait`, registered
+  before the `stopped` check) before `SSL_free` and closing the duplicate;
+  `tls.Conn.Close()` calls `Stop()` before closing the raw socket.
+  Measured after the fix: 50 consecutive `go test -count=1 ./tls/` runs
+  with **zero** failures (before: 1/20; a guard-only variant without
+  `dup` made it worse at 8/40 and was reverted), with `-race`, the full
+  `go test ./...` suite and `-tags tongsuocli` all green.
 
 ### Documentation
 
@@ -234,14 +254,6 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   `jwk.MarshalKey(priv.Public())` still exports a JWK **carrying the
   private components**. For a public JWK, load the public key on its own
   (`asym.LoadPublicKeyPEM`) and pass that to `MarshalKey`.
-- Known limitation: the `tls` loopback and interop suites still fail
-  intermittently (client-side `SSL_connect: unexpected message` /
-  `SSL_read: Bad file descriptor`). The measured rate grows with load:
-  roughly 1 run in 20 for `go test ./tls/` alone, and roughly 1 in 2-3
-  for a full `go test ./...`. The cause is not the test structure but a
-  **library-level** issue around connection fd lifetime (`connFD` +
-  `SSL_set_fd` versus close ordering) and is pending a dedicated fix; CI
-  therefore does **not** run the `tongsuocli` interop job yet.
 
 ---
 

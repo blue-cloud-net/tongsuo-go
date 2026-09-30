@@ -105,7 +105,21 @@
   （`t.Cleanup` 断言），并给 6 个用例补齐握手与关闭的时序同步，握手失败
   快速失败（不再空等到超时）；顺带修掉一处测试级泄漏：握手后遗弃的服务端
   连接会活过 `defer srv.Close()` 释放 `SSL_CTX` 的时刻。本包 flake 率由
-  3/20 降到 1/20，残余部分见「已知限制」。
+  3/20 降到 1/20；残余部分实为库级缺陷，由下一条修复。
+- `tls`：**连接 fd 生命周期（P1011）**——`tls.Conn` 此前把裸 fd 号交给
+  `SSL_set_fd`，而该描述符属于底层 `net.Conn`。`Close()` 关掉 raw socket 后
+  内核可能把这个号码回收给新连接，而 SSL 的 BIO 仍记着旧号码，于是读写到了
+  **别的连接**的 socket——这才是间歇失败（`SSL_connect: unexpected message`、
+  `SSL_read: Bad file descriptor`、对端 `bad record MAC`）与上条残余 flake 的
+  真正根因。现改为在 `SyscallConn().Control` 回调内用 `dup(2)` 复制套接字
+  （新增 `internal/core/fd_unix.go`：`DupFD` / `ShutdownFD` / `CloseFD`），
+  由 `*core.SSLConn` 持有副本，并新增 `Stop()`（状态位 + `shutdown(2)`：即使
+  副本还在，也能唤醒在途 `select` 并向对端发 FIN）。`Close()` 先等在途调用
+  归零（`inflight.Wait`，登记早于 `stopped` 检查）再 `SSL_free` 并关闭副本；
+  `tls.Conn.Close()` 在关 raw 之前先 `Stop()`。修复后实测：
+  `go test -count=1 ./tls/` 连续 50 次**零失败**（修复前 1/20；只加守卫不做
+  `dup` 的变体反而劣化到 8/40，已回退），且 `-race`、全仓库 `go test ./...`
+  与 `-tags tongsuocli` 全量均通过。
 
 ### 文档
 
@@ -192,12 +206,6 @@
   因此 `jwk.MarshalKey(priv.Public())` 仍会导出**含私钥分量**的 JWK。
   需要公钥 JWK 时，请先把公钥 PEM 独立加载（`asym.LoadPublicKeyPEM`）
   再传给 `MarshalKey`。
-- 已知限制：`tls` 的回环与对拍测试仍会间歇失败（客户端
-  `SSL_connect: unexpected message` / `SSL_read: Bad file descriptor`）。
-  实测频率随负载上升：`go test ./tls/` 单包 20 次约 1 次；全仓库
-  `go test ./...` 时约每 2–3 次 1 次。根因不在测试结构，而是连接 fd
-  生命周期相关的**库级**问题（`connFD` + `SSL_set_fd` 与关闭时序），
-  待单独修复；因此 CI **尚未**启用 `tongsuocli` 对拍 job。
 
 ---
 
