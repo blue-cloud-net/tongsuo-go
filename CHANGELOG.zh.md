@@ -206,6 +206,13 @@
   因此 `jwk.MarshalKey(priv.Public())` 仍会导出**含私钥分量**的 JWK。
   需要公钥 JWK 时，请先把公钥 PEM 独立加载（`asym.LoadPublicKeyPEM`）
   再传给 `MarshalKey`。
+- 已知限制：`TestNTLSLoopback` 在**重负载并行**下仍可能失败——客户端 `Read`
+  报 `tls: SSL_read (syscall): … Broken pipe`（`SSL_ERROR_SYSCALL`）。六路并行
+  跑 `go test -count=15 -run TestNTLS ./tls/` 复现 4/90；同一版本单包跑
+  `./tls/` 50 次零失败、连续 17 次全量 `go test ./...` 也全部通过。该用例
+  修复前的**同一条用例、同一行**签名是 `Bad file descriptor`（即上面修复的
+  fd 生命周期缺陷），故这属残余而非回归，剩余成因尚未定位。`tongsuocli`
+  对拍 job 已在知悉该残余的情况下启用，因为它覆盖的库级缺陷已经修好。
 
 ---
 

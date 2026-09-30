@@ -254,6 +254,17 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   `jwk.MarshalKey(priv.Public())` still exports a JWK **carrying the
   private components**. For a public JWK, load the public key on its own
   (`asym.LoadPublicKeyPEM`) and pass that to `MarshalKey`.
+- Known limitation: `TestNTLSLoopback` can still fail under heavy parallel
+  load — the client's `Read` fails with `tls: SSL_read (syscall): …
+  Broken pipe` (`SSL_ERROR_SYSCALL`). Reproduced 4 times in 90 runs of
+  `go test -count=15 -run TestNTLS ./tls/` with six processes in parallel,
+  while the same revision is clean on the single-package loop (50/50) and
+  on 17 consecutive full `go test ./...` runs. The pre-fix signature of the
+  very same test and line was `Bad file descriptor` (the fd-lifetime defect
+  fixed above), so this is a residual rather than a regression; the
+  remaining cause is not yet pinned. The `tongsuocli` interop job is
+  enabled in spite of it, because the library-level defect it covers is
+  fixed.
 
 ---
 
