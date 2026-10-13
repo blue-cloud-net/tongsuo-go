@@ -19,6 +19,65 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `x509`: arbitrary X.509 v3 extensions on `*Certificate` —
+  `AddExtension(nid int, value string)` (by NID),
+  `AddExtensionByName(name, value string)` (by short name, long name or
+  dotted OID, resolved through `OBJ_txt2nid` so no numeric NID constants have
+  to be exported) and `AddExtensions(exts ...Extension)` (batch).
+  `value` uses the OpenSSL `X509V3_EXT_conf` configuration syntax.
+- `x509`: extension inspection and editing on `*Certificate` —
+  `HasExtension(name)` (read-only), `RemoveExtension(name)` and
+  `ReplaceExtension(name, value)`. `ReplaceExtension` keeps the extension in
+  its original position and, like BouncyCastle's
+  `X509ExtensionsGenerator.ReplaceExtension`, fails when the extension is
+  absent rather than creating it.
+  Re-adding an existing NID reports
+  `x509: extension already present (nid N)`, except for the repeatable OIDs
+  (`subjectAltName` / `issuerAltName` / `subjectDirectoryAttributes` /
+  `certificateIssuer`) whose new values are **merged** into the existing entry
+  (keeping its position and critical flag).
+- `x509`: CSR-side symmetry — `(*CertificateRequest).AddExtensionByName`,
+  `AddKeyUsage`, `AddExtendedKeyUsage` and `AddBasicConstraints`.
+- `x509`: `(*Certificate).SerialHex()` (uppercase hex serial, for values beyond
+  the `int64` range; matches `openssl x509 -serial`),
+  `SubjectHash()` / `IssuerHash()` (`X509_NAME_hash`, matching
+  `-subject_hash` / `-issuer_hash`) and `CheckEmail(email)`
+  (matching `verify -verify_email`).
+- `x509`: `(*Certificate).ToCertificateRequest(priv)` (certificate to CSR,
+  the equivalent of `openssl x509 -x509toreq`; no extension is migrated, just
+  like openssl) plus `LoadCertificatePEMFile(path)` and
+  `SaveCertificatePEMFile(path, cert, perm)`.
+- `x509`: `IssueCertificateFromRequest(req, issuer, signer, opts)` with
+  `IssueOptions{Serial, NotBefore, NotAfter, Extensions,
+  CopyRequestExtensions}` for CSR-driven CA issuance.
+  `CopyRequestExtensions` defaults to `false` (matching `openssl ca`'s
+  `copy_extensions none`); even when enabled only a whitelist is copied
+  (SAN / KeyUsage / EKU / BasicConstraints) and `Extensions` takes precedence,
+  so a requester can never pick its own SAN.
+
+### Fixed
+
+- `internal/native`: `X509_sk_X509_EXTENSION_push` and `X509_sk_X509_push`
+  treated the result of OpenSSL 3's `sk_TYPE_push` as a 0/1 boolean. It
+  actually returns the resulting stack **length**, so every push after the
+  first was misreported as a failure. As a result
+  `CertificateRequest.AddExtensions` could only ever add one extension.
+  The same assumption was corrected in the PKCS#12 CA-stack path in `shim.c`.
+
+### BREAKING
+
+- `x509`: signing is now a one-way transition. `(*Certificate).Sign` and
+  `(*CertificateRequest).Sign` mark the object immutable, and every later
+  `Set*` / `Add*` / `Remove*` / `Replace*` call — as well as a repeated
+  `Sign` — returns `x509: certificate already signed`. Certificates obtained
+  through `LoadCertificatePEM` / `LoadCertificateDER` (and the `tls`,
+  `pkcs7` and `pkcs12` bridges) are locked from the start. This closes the
+  silent-failure path where a field or extension was modified after signing
+  and the resulting DER no longer matched its signature; rebuild the
+  certificate instead of re-signing.
+
 ---
 
 ## [0.3.0] - 2026-09-30

@@ -147,9 +147,9 @@
 | B2 | **`crypto.Engine` / `EngineByID(name)`**（ENGINE 加载与生命周期） | ❌ 无 | **P2** | **待定**。ENGINE 在 3.0 后由 provider 取代；若要做，应以 provider 形态补；现阶段可暂缓。 |
 | B3 | **`crypto.DH` / `LoadDHParametersFromPEM`** | ❌ 无 DH 参数 API | **P1** | **做**。与 A7 配合；命名 `crypto/dh.DH` + `LoadDHParametersPEM(data []byte)`，独立子包对齐 `crypto/ecdh` 形态。 |
 | B4 | **`crypto.DeriveSharedSecret(priv, pub) ([]byte, error)`**（通用 `EVP_PKEY_derive`，对 ECDH/EC/DH/SM2 等统一） | ⚠️ 各算法各自实现（`x25519.SharedSecret`、`ecdh.(*PrivateKey).ECDH`、`sm2` 无 KE） | **P1** | **做**。补在 `key/` 或 `crypto/ecdh` 顶层；不改各算法现有 API，作为「跨算法 KEX 适配点」与未来 SM2-KE 的预留。 |
-| B5 | **`Certificate.CheckHost` / `CheckEmail` / `CheckIP` / `VerifyHostname` + `CheckFlags`** | ❌ 无公开主机名/邮箱/IP 匹配 API | **P0** | **做**。客户端链校验的常用配套；命名替换为 `x509.Certificate.VerifyHostname(host string) error` + `x509.HostnameOptions`（与 Go `crypto/x509` 兼容形态）。 |
-| B6 | **`Certificate.AddExtension(nid, textValue)` / `AddExtensions(map[NID]string)`**（任意 X509v3 扩展按 NID+文本构建） | ⚠️ `x509.Certificate` 只有固定 helper（SAN/KeyUsage/EKU/SKID/AKID/BasicConstraints）；`CSR` 已有通用 `AddExtension` | **P0** | **做**。`CSR` 已证明方案可复用；扩到 `x509.Certificate.AddExtension(nid int, value string) error`，文档明示「value 是 OpenSSL v3 ext 配置语法」。 |
-| B7 | **`LoadPEMFromFile` / `SavePEMToFile`** | ❌ | **P2** | **做**。小工具；放 `key/` 或新 `pkcs/pem` 子包；用户也可自行 `os.ReadFile` + `os.WriteFile`，价值中等。 |
+| B5 | **`Certificate.CheckHost` / `CheckEmail` / `CheckIP` / `VerifyHostname` + `CheckFlags`** | ✅ `VerifyHostname(host)`（主机名 / IP）+ `CheckEmail(email)`；`CheckFlags` 未拆（走默认语义） | **P0** | **已做**（`CheckFlags` 可视需求再拆）。客户端链校验的常用配套；命名替换为 `x509.Certificate.VerifyHostname(host string) error` + `CheckEmail`，与 Go `crypto/x509` 兼容形态。 |
+| B6 | **`Certificate.AddExtension(nid, textValue)` / `AddExtensions(map[NID]string)`**（任意 X509v3 扩展按 NID+文本构建） | ✅ `AddExtension(nid, value)` / `AddExtensionByName(name, value)` / `AddExtensions(...Extension)` + `HasExtension` / `RemoveExtension` / `ReplaceExtension` | **P0** | **已做**。`value` 是 OpenSSL v3 ext 配置语法；按名入口走 `OBJ_txt2nid` 免写 NID 魔数；去重语义对齐 BC（报错 + 可重复 OID 合并 + 显式 Replace）。 |
+| B7 | **`LoadPEMFromFile` / `SavePEMToFile`** | ✅ `x509.LoadCertificatePEMFile` / `SaveCertificatePEMFile` | **P2** | **已做**。 |
 | B8 | **`CertificateInfo` + `NewCertificate`**（便捷自签） | ⚠️ 本库是低层 `Set*` 逐步构建 + `CreateCertificate` | **P2** | **不做**（或推迟）。本库自签路径示例完整（`examples/self-signed-cert`），便捷 API 价值不高；待用户呼声出现时再加。 |
 | B9 | **`GMDoubleCertKey`**（双证书文件路径组合） | ⚠️ 用 `tls.Config` 四个独立字段（`SignCert`/`SignKey`/`EncCert`/`EncKey`） | **P2** | **不做**。本库已经用 `Config` 字段表达，引入结构体反而割裂；如需便利函数可在 `tls` 包提供 `dialWithDoubleCertFiles(addr, signCert, signKey, encCert, encKey)` 等一两个便利函数。 |
 | B10 | **`DigestAlgo` 枚举 + `crypto.Digest` / `DigestCtx` 通用摘要对象** | ⚠️ 按算法分包，无统一摘要对象 | **P2** | **不做**。本库按 Go `hash.Hash` 惯例分包，加通用 `Digest` 对象会与 §9「不做」项重合；如确有需要，作为 `internal/core` 内部使用即可。 |
@@ -161,7 +161,7 @@
 | B16 | **公开 BIO 桥接**（`ReadBio` / `WriteBio` / `MakeCBIO`） | ⚠️ 封在 `internal/native` | **P2** | **不做**（见 §9）。 |
 | B17 | **`HMAC`（`HMAC_CTX`，带 Engine）** | ⚠️ 本库用 `hash.Hash` 惯例实现（`crypto/hmac.NewSHA256` 等） | **P2** | **不做**（见 §9）。 |
 
-合计 27 项：**P0 共 6 项**（A1、A2、A3、A4、A5、B5、B6）、**P1 共 7 项**（A6、A7、A8、A10、B1、B3、B4、B12）、**P2 共 14 项**（其余）。
+合计 27 项：**P0 共 6 项**（A1、A2、A3、A4、A5、B5、B6）——其中 B5、B6 已落地；**P1 共 7 项**（A6、A7、A8、A10、B1、B3、B4、B12）、**P2 共 14 项**（其余，其中 B7 已落地）。
 
 ---
 
@@ -216,8 +216,8 @@
 | 能力 | 缺口编号 | 优先级 |
 |---|---|---|
 | PEM 公开切分（`key.SplitPEM` 或 `pkcs/pem`） | B1 | P1 |
-| X.509 主机名/邮箱/IP 校验（`x509.Certificate.VerifyHostname` + `HostnameOptions`） | B5 | **P0** |
-| 任意 X509v3 扩展按 NID 构建（`x509.Certificate.AddExtension(nid,value)`） | B6 | **P0** |
+| X.509 主机名/邮箱校验（`x509.Certificate.VerifyHostname` + `CheckEmail`） | B5 | **P0** ✅ 已做 |
+| 任意 X509v3 扩展按 NID / 名字构建（`AddExtension` / `AddExtensionByName` / `AddExtensions`） | B6 | **P0** ✅ 已做 |
 | DH 参数加载（`crypto/dh` 子包 + `LoadDHParametersPEM`） | B3 | P1 |
 | AES-192（含 AES-192-GCM）补齐 | B12 部分 | P1 |
 
@@ -273,8 +273,9 @@
 | `crypto.Engine` / `EngineByID` | 暂缓（详见 §6.B.B2） | B2 |
 | `crypto.DH` / `LoadDHParametersFromPEM` | `crypto/dh.DH` + `crypto/dh.LoadDHParametersPEM([]byte)` | B3 |
 | `crypto.DeriveSharedSecret` | `key.DeriveSharedSecret(priv key.PrivateKey, pub key.PublicKey) ([]byte, error)`（或放 `crypto/ecdh` 顶层） | B4 |
-| `Certificate.CheckHost`/`CheckEmail`/`CheckIP`/`VerifyHostname` + `CheckFlags` | `x509.Certificate.VerifyHostname(host string) error` + `x509.HostnameOptions{NoWildcards, AlwaysCheckSubject, ...}` | B5 |
-| `Certificate.AddExtension(nid, text)` / `AddExtensions(map[NID]string)` | `x509.Certificate.AddExtension(nid int, value string) error` + `AddExtensions(...)` | B6 |
+| `Certificate.CheckHost`/`CheckEmail`/`CheckIP`/`VerifyHostname` + `CheckFlags` | `x509.Certificate.VerifyHostname(host string) error` + `CheckEmail(email string) error` | B5 ✅ |
+| `Certificate.AddExtension(nid, text)` / `AddExtensions(map[NID]string)` | `x509.Certificate.AddExtension(nid int, value string) error` + `AddExtensionByName` + `AddExtensions` + `Has/Remove/ReplaceExtension` | B6 ✅ |
+| `LoadPEMFromFile` / `SavePEMToFile` | `x509.LoadCertificatePEMFile(path)` / `SaveCertificatePEMFile(path, cert, perm)` | B7 ✅ |
 | `crypto.ciphers_gcm.NewGCMEncryptionCipherCtx(blocksize,...)` AES-192-GCM | `crypto/aes.NewGCMWithKeySize(keyLen int) (cipher.AEAD, error)` + `aes.NewCipher` 支持 24B 密钥 | B12 |
 | `DeriveSharedSecret(priv, pub)` | `key.DeriveSharedSecret(priv key.PrivateKey, pub key.PublicKey) ([]byte, error)` | B4 |
 

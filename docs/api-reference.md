@@ -660,14 +660,35 @@
 - ♻️ `func (c *Certificate) SubjectKeyID() []byte` / `AuthorityKeyID() []byte` — SKID / AKID
 - ♻️ `func (c *Certificate) CertificateType() string` — 公钥算法名（如 `"SM2"` / `"RSA"` / `"EC"`）
 - ♻️ `func (c *Certificate) Extensions() []Extension` — 全部扩展
+- 🆕 `func (c *Certificate) SerialHex() string` — 序列号大写十六进制（超出 int64 范围时用它代替 `Serial`；对应 `-serial`）
+- 🆕 `func (c *Certificate) SubjectHash() uint32` / `IssuerHash() uint32` — `X509_NAME_hash`（对应 `-subject_hash` / `-issuer_hash`，也是 CA 目录 `hash.N` 的那个 hash）
+- 🆕 `func (c *Certificate) CheckEmail(email string) error` — 邮箱校验（对应 `verify -verify_email`；只做名字匹配，不验链）
 - ♻️ `func (c *Certificate) Fingerprint(hash string) (string, error)` — 指纹（十六进制；参数名由 `alg` 改为 `hash`，与全局取向一致）
+
+**证书加载与落盘**
+
+- ♻️ `func LoadCertificatePEM(pemBytes []byte) (*Certificate, error)` / `LoadCertificateDER(der []byte) (*Certificate, error)`
+- 🆕 `func LoadCertificatePEMFile(path string) (*Certificate, error)` — 从文件加载（对应 `openssl x509 -in <path>`）
+- 🆕 `func SaveCertificatePEMFile(path string, c *Certificate, perm os.FileMode) error` — 写入 PEM 文件（对应 `-out`；显式 chmod，因为 `os.WriteFile` 不改已存在文件的权限）
 
 **证书构建与签发**
 
 - ♻️ `func NewCertificate() *Certificate` — 创建空证书
 - ♻️ `func (c *Certificate) SetVersion(v int) error` / `SetSerial(serial int64) error` / `SetIssuer(n *Name) error` / `SetSubject(n *Name) error` / `SetValidity(notBefore, notAfter time.Time) error` / `SetPublicKey(pub asym.PublicKey) error` — 分步设置
-- ♻️ `func (c *Certificate) AddBasicConstraints(isCA bool) error` / `AddSubjectAltName(value string) error` / `AddKeyUsage(value string) error` / `AddExtendedKeyUsage(value string) error` / `AddSubjectKeyID() error` / `AddAuthorityKeyID(issuer *Certificate) error` — 扩展
-- ♻️ `func (c *Certificate) Sign(signer asym.PrivateKey) error` — 用签发者私钥签名
+- ♻️ `func (c *Certificate) AddBasicConstraints(isCA bool) error` / `AddSubjectAltName(value string) error` / `AddKeyUsage(value string) error` / `AddExtendedKeyUsage(value string) error` / `AddSubjectKeyID() error` / `AddAuthorityKeyID(issuer *Certificate) error` — 预置扩展
+- 🆕 `func (c *Certificate) AddExtension(nid int, value string) error` — 任意扩展（按 NID，`value` 为 OpenSSL `X509V3_EXT_conf` 配置串）
+- 🆕 `func (c *Certificate) AddExtensionByName(name, value string) error` — 任意扩展（按短名 / 长名 / 点分 OID，内部走 `OBJ_txt2nid`）
+- 🆕 `func (c *Certificate) AddExtensions(exts ...Extension) error` — 批量添加（只用 `Extension` 的 `Nid` / `Value`）
+- 🆕 `func (c *Certificate) HasExtension(name string) bool` — 扩展是否存在（只读，已签名证书可调用）
+- 🆕 `func (c *Certificate) RemoveExtension(name string) error` — 删除扩展（**须在 `Sign` 之前**）
+- 🆕 `func (c *Certificate) ReplaceExtension(name, value string) error` — 覆盖扩展并保持原位置（不存在时报错，语义对齐 BouncyCastle `X509ExtensionsGenerator`）
+
+  > **重复扩展规则**：`AddExtension*` 遇到已存在的 NID 时，可重复 OID
+  > （`subjectAltName` / `issuerAltName` / `subjectDirectoryAttributes` / `certificateIssuer`）
+  > 会把新值**合并**进同一条目（OpenSSL 不接受两个同 NID 条目——那会让 `SAN()` 与
+  > `VerifyHostname()` 全部失效）；其余 OID 返回 `x509: extension already present (nid N)`，
+  > 需覆盖请改用 `ReplaceExtension`。
+- ♻️ `func (c *Certificate) Sign(signer asym.PrivateKey) error` — 用签发者私钥签名（**单向终态**：成功后所有 `Set*` / `Add*` / 再次 `Sign` 均返回 `x509: certificate already signed`）
 - ♻️ `func CreateCertificate(subject, issuer *Name, serial int64, notBefore, notAfter time.Time, pub asym.PublicKey, signer asym.PrivateKey) (*Certificate, error)` — 一步创建并签发
 - 🆕 `func CreateSelfSigned(subject *Name, serial int64, notBefore, notAfter time.Time, pub asym.PublicKey, signer asym.PrivateKey) (*Certificate, error)` — 一行生成自签证书（等价 `req -x509`；内部自动设 issuer = subject 并补 SKID/AKID）
 
@@ -679,6 +700,7 @@
 - ♻️ `func (c *Certificate) Signature() []byte` — 原始签名值
 - ♻️ `func (c *Certificate) SignatureAlgorithm() string` / `SignatureAlgorithmOID() string` — 签名算法名 / OID
 - 🆕 `func (c *Certificate) VerifyHostname(host string) error` — 主机名 / IP 校验（对应 `verify -verify_hostname`；`cli-comparison.md` §6.B B8，P1）
+- 🆕 `func (c *Certificate) ToCertificateRequest(priv asym.PrivateKey) (*CertificateRequest, error)` — 证书转 CSR（对应 `x509 -x509toreq`；**不迁移扩展**，与 openssl 一致）
 
 **CSR**
 
@@ -690,8 +712,22 @@
 - ♻️ `func (r *CertificateRequest) SubjectName() *Name` / `SubjectEntries() []NameEntry` / `SubjectText() string` — subject 读取
 - ♻️ `func (r *CertificateRequest) SetChallengePassword(pwd string) error` / `ChallengePassword() string` — challengePassword 属性
 - ♻️ `func (r *CertificateRequest) AddExtensions(exts ...Extension) error` / `AddExtension(nid int, value string) error` / `AddSubjectAltName(value string) error` / `Extensions() []Extension` — 扩展
+- 🆕 `func (r *CertificateRequest) AddExtensionByName(name, value string) error` — 任意扩展（按短名 / 长名 / 点分 OID）
+- 🆕 `func (r *CertificateRequest) AddKeyUsage(value string) error` / `AddExtendedKeyUsage(value string) error` / `AddBasicConstraints(isCA bool) error` — 与 `Certificate` 对称的便利方法
+
+  > 注：CSR 侧**不提供** `AddSubjectKeyID`——OpenSSL 在 `X509_REQ` 上没有 subject 公钥
+  > 上下文，`"hash"` 会报 `s2i_skey_id: no subject details`。
 - 🆕 `func (r *CertificateRequest) PublicKey() (asym.PublicKey, error)` — 公钥（**替代原 `(*sm2.PublicKey, error)` 与 `PublicKeyPKey() (*core.PKey, error)`**）
 - ♻️ `func (r *CertificateRequest) Signature() []byte` / `SignatureAlgorithm() string` / `SignatureAlgorithmOID() string` — 签名信息
+
+**CA 签发入口**
+
+- 🆕 `func IssueCertificateFromRequest(req *CertificateRequest, issuer *Certificate, signer asym.PrivateKey, opts *IssueOptions) (*Certificate, error)` — 依据 CSR 签发（等价 `openssl ca` 的最小可用子集）
+- 🆕 `type IssueOptions struct { Serial int64; NotBefore, NotAfter time.Time; Extensions []Extension; CopyRequestExtensions bool }`
+
+  > `CopyRequestExtensions` 默认为 `false`（对齐 `openssl ca` 的 `copy_extensions none`）；
+  > 开启时也**只拷白名单**（SAN / KeyUsage / EKU / BasicConstraints），且 `Extensions`
+  > 优先——避免请求方自选 SAN 拿到任意域名的证书。
 
 **CRL**
 

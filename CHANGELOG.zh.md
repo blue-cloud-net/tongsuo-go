@@ -18,6 +18,55 @@
 
 ## [Unreleased]
 
+### 新增功能
+
+- `x509`：`(*Certificate)` 支持添加任意 X.509 v3 扩展——
+  `AddExtension(nid int, value string)`（按 NID）、
+  `AddExtensionByName(name, value string)`（按短名 / 长名 / 点分 OID，内部经
+  `OBJ_txt2nid` 解析，因此无需导出数字 NID 常量）与
+  `AddExtensions(exts ...Extension)`（批量）。
+  `value` 采用 OpenSSL `X509V3_EXT_conf` 配置语法。
+- `x509`：扩展查询与编辑——`HasExtension(name)`（只读）、`RemoveExtension(name)`
+  与 `ReplaceExtension(name, value)`。`ReplaceExtension` 保持扩展在证书中的
+  原有位置，且与 BouncyCastle 的 `X509ExtensionsGenerator.ReplaceExtension`
+  语义一致：扩展不存在时报错而非替调用方新建。
+  重复添加已存在的 NID 返回 `x509: extension already present (nid N)`；
+  可重复 OID（`subjectAltName` / `issuerAltName` / `subjectDirectoryAttributes` /
+  `certificateIssuer`）例外，新值会被**合并**进同一条目（保留位置与 critical 标记）。
+- `x509`：CSR 侧对称补全——`(*CertificateRequest).AddExtensionByName`、
+  `AddKeyUsage`、`AddExtendedKeyUsage` 与 `AddBasicConstraints`。
+- `x509`：`(*Certificate).SerialHex()`（序列号大写十六进制，供超出 `int64`
+  范围的序列号使用，对齐 `openssl x509 -serial`）、`SubjectHash()` /
+  `IssuerHash()`（`X509_NAME_hash`，对齐 `-subject_hash` / `-issuer_hash`）
+  与 `CheckEmail(email)`（对齐 `verify -verify_email`）。
+- `x509`：`(*Certificate).ToCertificateRequest(priv)`（证书转 CSR，等价
+  `openssl x509 -x509toreq`；与 openssl 一致**不迁移扩展**），以及
+  `LoadCertificatePEMFile(path)` 与 `SaveCertificatePEMFile(path, cert, perm)`。
+- `x509`：`IssueCertificateFromRequest(req, issuer, signer, opts)` 与
+  `IssueOptions{Serial, NotBefore, NotAfter, Extensions,
+  CopyRequestExtensions}`，用于按 CSR 驱动的 CA 签发。
+  `CopyRequestExtensions` 默认为 `false`（对齐 `openssl ca` 的
+  `copy_extensions none`）；即便开启也**只拷白名单**（SAN / KeyUsage / EKU /
+  BasicConstraints），且以 `Extensions` 为先——请求方无法自选 SAN。
+
+### Bug 修复
+
+- `internal/native`：`X509_sk_X509_EXTENSION_push` 与 `X509_sk_X509_push`
+  把 OpenSSL 3 `sk_TYPE_push` 的返回值当成 0/1 布尔处理，但它实际返回的是压入后的
+  **栈长度**，因此除第一个外的每次压入都被误报为失败——导致
+  `CertificateRequest.AddExtensions` 实际只能添加一个扩展。
+  `shim.c` 中 PKCS#12 CA 栈的同一处误用也已一并修正。
+
+### BREAKING
+
+- `x509`：签名现在是**单向终态**。`(*Certificate).Sign` 与
+  `(*CertificateRequest).Sign` 成功后对象即不可变，之后任何 `Set*` / `Add*` /
+  `Remove*` / `Replace*` 调用——以及重复 `Sign`——均返回
+  `x509: certificate already signed`。经 `LoadCertificatePEM` /
+  `LoadCertificateDER` 得到的证书（以及 `tls`、`pkcs7`、`pkcs12` 桥接传入的证书）
+  从一开始就处于锁定状态。这封堵了「签名后修改字段或扩展、却忘了重签」而静默
+  产出签名失效证书的路径；确需修改请丢弃证书重建。
+
 ---
 
 ## [0.3.0] - 2026-09-30

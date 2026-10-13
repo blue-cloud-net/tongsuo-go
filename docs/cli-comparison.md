@@ -174,15 +174,15 @@
 
 | 项 | 现状 |
 |---|---|
-| 加载/导出 | `LoadCertificatePEM`/`LoadCertificateDER`/`WrapCertificate`/`MarshalPEM`/`MarshalDER`/`Core()`（**泄漏 `*core.Certificate`**） |
-| 读取 | `Subject`/`Issuer`/`NotBefore`/`NotAfter`/`Serial(int64)`/`Version`、`SubjectName`/`IssuerName`/`SubjectEntries`/`IssuerEntries`/`SubjectText`/`IssuerText` |
+| 加载/导出 | `LoadCertificatePEM`/`LoadCertificateDER`/`WrapCertificate`/`MarshalPEM`/`MarshalDER`/`Core()`（**泄漏 `*core.Certificate`**）、`LoadCertificatePEMFile`/`SaveCertificatePEMFile` |
+| 读取 | `Subject`/`Issuer`/`NotBefore`/`NotAfter`/`Serial(int64)`/`SerialHex()`/`Version`、`SubjectHash()`/`IssuerHash()`、`SubjectName`/`IssuerName`/`SubjectEntries`/`IssuerEntries`/`SubjectText`/`IssuerText` |
 | 扩展读取 | `SAN`/`KeyUsage`/`ExtendedKeyUsage`/`IsCA`/`PathLen`/`SubjectKeyID`/`AuthorityKeyID`/`CertificateType()`/`Extensions()`/`Fingerprint(alg)` |
-| 构建 | `NewCertificate()` + `SetVersion`/`SetSerial`/`SetIssuer`/`SetSubject`/`SetValidity`/`SetPublicKey`/`AddBasicConstraints`/`AddSubjectAltName`/`AddKeyUsage`/`AddExtendedKeyUsage`/`AddSubjectKeyID`/`AddAuthorityKeyID` + `Sign`；便捷函数 `CreateCertificate(...)` |
-| 验签 | `Verify(signerPub)`、`SelfSigned()`、`PublicKey()`(SM2 包装)、`PublicKeyPKey()`(任意算法，**泄漏 `*core.PKey`**)、`Signature()`/`SignatureAlgorithm()`/`SignatureAlgorithmOID()` |
-| CSR | `NewCertificateRequest`/`NewEmptyCertificateRequest`/`SetSubject`/`SetPublicKey`/`Sign`/`Verify`/`LoadCertificateRequestPEM`/`LoadCertificateRequestDER`/`MarshalPEM`/`MarshalDER`/`SetChallengePassword`/`AddExtensions`/`AddSubjectAltName`/`Extensions` |
+| 构建 | `NewCertificate()` + `SetVersion`/`SetSerial`/`SetIssuer`/`SetSubject`/`SetValidity`/`SetPublicKey`/`AddBasicConstraints`/`AddSubjectAltName`/`AddKeyUsage`/`AddExtendedKeyUsage`/`AddSubjectKeyID`/`AddAuthorityKeyID` + `Sign`；任意扩展 `AddExtension`/`AddExtensionByName`/`AddExtensions` + `HasExtension`/`RemoveExtension`/`ReplaceExtension`；便捷函数 `CreateCertificate(...)`、`CreateSelfSigned(...)` |
+| 验签 | `Verify(signerPub)`、`SelfSigned()`、`PublicKey()`(SM2 包装)、`PublicKeyPKey()`(任意算法，**泄漏 `*core.PKey`**)、`Signature()`/`SignatureAlgorithm()`/`SignatureAlgorithmOID()`；`VerifyHostname(host)`/`CheckEmail(email)` |
+| CSR | `NewCertificateRequest`/`NewEmptyCertificateRequest`/`SetSubject`/`SetPublicKey`/`Sign`/`Verify`/`LoadCertificateRequestPEM`/`LoadCertificateRequestDER`/`MarshalPEM`/`MarshalDER`/`SetChallengePassword`/`AddExtensions`/`AddExtension`/`AddExtensionByName`/`AddKeyUsage`/`AddExtendedKeyUsage`/`AddBasicConstraints`/`AddSubjectAltName`/`Extensions`；`Certificate.ToCertificateRequest(priv)`（`-x509toreq`）、`IssueCertificateFromRequest(req, issuer, signer, opts)` |
 | CRL | `ParseCRL`/`LoadCRLPEM`/`LoadCRLDER`/`MarshalPEM`/`MarshalDER`/`RevokedEntries`/`IsRevoked`/`Verify`/`Extensions`，顶层 `RevocationCheck(cert, crls)` |
 | 链验证 | `NewStore`/`AddCert`/`AddCRL`/`SetCRLCheck`/`SetCRLCheckAll`/`SetFlags`/`Core()`、`ChainVerify(cert, roots, intermediates)`、`VerifyError` |
-| **缺失** | 主机名/邮箱/IP 校验（`CheckHost`/`CheckIP`/`VerifyHostname`）、任意扩展按 NID+文本添加、`-x509toreq` 等价、`-addtrust`/`-setalias`/`-subject_hash`、`ca` 式数据库工作流、`-attime`/`-crl_download` |
+| **缺失** | `-addtrust`/`-setalias`、`ca` 式数据库工作流、`-attime`/`-crl_download`、`-ocspid` |
 
 ### 5.4 传输（`tls/`）
 
