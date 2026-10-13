@@ -5,10 +5,12 @@ package native
 #include <openssl/x509v3.h>
 #include <openssl/asn1.h>
 #include <openssl/objects.h>
+#include <openssl/bn.h>
 #include "shim.h"
 */
 import "C"
 import (
+	"strings"
 	"time"
 	"unsafe"
 )
@@ -264,6 +266,68 @@ func X509_get_serial_int(x unsafe.Pointer) int64 {
 		return 0
 	}
 	return int64(C.ASN1_INTEGER_get(ai))
+}
+
+// X509_get_serial_hex 返回证书序列号的大写十六进制文本（偶数位，不带 0x 前缀）。
+//
+// 对齐 `openssl x509 -serial` 的 "serial=..." 取值：正数大写、负数补齐偶数位并在
+// 前置 "00"；序列号缺失时返回空串。
+//
+// X509_get_serial_hex returns the certificate serial number as uppercase
+// hexadecimal without a 0x prefix, matching the value of
+// `openssl x509 -serial`. Negative values are padded to an even number of
+// digits and prefixed with "00". Returns "" when the serial is absent.
+func X509_get_serial_hex(x unsafe.Pointer) string {
+	ai := C.X509_get_serialNumber((*C.X509)(x))
+	if ai == nil {
+		return ""
+	}
+	bn := C.ASN1_INTEGER_to_BN(ai, nil)
+	if bn == nil {
+		return ""
+	}
+	defer C.BN_free(bn)
+	c := C.BN_bn2hex(bn)
+	if c == nil {
+		return ""
+	}
+	defer C.X_OPENSSL_free(unsafe.Pointer(c))
+	return strings.ToUpper(C.GoString(c))
+}
+
+// X509_subject_name_hash 返回证书 subject 名字的 X509_NAME_hash。
+//
+// 对齐 `openssl x509 -subject_hash` 的取值（证书在 CA 目录中的文件名 hash.N）。
+//
+// X509_subject_name_hash returns the X509_NAME_hash of the certificate's
+// subject, matching `openssl x509 -subject_hash`.
+func X509_subject_name_hash(x unsafe.Pointer) uint32 {
+	return uint32(C.X509_subject_name_hash((*C.X509)(x)))
+}
+
+// X509_issuer_name_hash 返回证书 issuer 名字的 X509_NAME_hash。
+//
+// 对齐 `openssl x509 -issuer_hash` 的取值。
+//
+// X509_issuer_name_hash returns the X509_NAME_hash of the certificate's issuer,
+// matching `openssl x509 -issuer_hash`.
+func X509_issuer_name_hash(x unsafe.Pointer) uint32 {
+	return uint32(C.X509_issuer_name_hash((*C.X509)(x)))
+}
+
+// X509_check_email 校验证书是否对给定邮箱地址有效（对应 SAN 的 rfc822Name）。
+//
+// 对齐 OpenSSL 的 X509_check_email 返回值：1 匹配，0 不匹配，-2 邮箱格式非法。
+//
+// X509_check_email checks whether the certificate is valid for the given e-mail
+// address (matching a rfc822Name SAN entry).
+//
+// It mirrors the OpenSSL return values: 1 for a match, 0 for no match and -2
+// for a malformed address.
+func X509_check_email(x unsafe.Pointer, email string) int {
+	c := C.CString(email)
+	defer C.free(unsafe.Pointer(c))
+	return int(C.X509_check_email((*C.X509)(x), c, C.size_t(len(email)), 0))
 }
 
 // ASN1_INTEGER_free 释放 ASN1_INTEGER。

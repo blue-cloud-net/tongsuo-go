@@ -789,6 +789,94 @@ func (c *Certificate) Serial() int64 {
 	return native.X509_get_serial_int(c.handle.Ptr())
 }
 
+// SerialHex 返回证书序列号的大写十六进制文本（不含 "serial=" 前缀与 0x 前缀）。
+//
+// 序列号可能超出 int64 范围（如 openssl rand -hex 生成的 20 字节值），此时应改用
+// 本方法而非 Serial；对齐 `openssl x509 -serial` 的取值格式。
+//
+// 对 nil 接收者或已关闭的证书返回空串。
+//
+// SerialHex returns the certificate serial number as uppercase hexadecimal
+// without the "serial=" or 0x prefix.
+//
+// The serial number may exceed the int64 range (for example a 20-byte value
+// from `openssl rand -hex`), in which case this method should be used instead
+// of Serial. The format matches `openssl x509 -serial`.
+//
+// Returns "" for a nil or closed certificate.
+func (c *Certificate) SerialHex() string {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return ""
+	}
+	return native.X509_get_serial_hex(c.handle.Ptr())
+}
+
+// SubjectHash 返回证书 subject 名字的 X509_NAME_hash。
+//
+// 对应 `openssl x509 -subject_hash`（也是 CA 目录中 hash.N 文件名里的那个 hash）；
+// 对 nil 接收者或已关闭的证书返回 0。
+//
+// SubjectHash returns the X509_NAME_hash of the certificate's subject name.
+//
+// It corresponds to `openssl x509 -subject_hash`, which is also the hash used
+// in a CA directory's hash.N file names. Returns 0 for a nil or closed
+// certificate.
+func (c *Certificate) SubjectHash() uint32 {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return 0
+	}
+	return native.X509_subject_name_hash(c.handle.Ptr())
+}
+
+// IssuerHash 返回证书 issuer 名字的 X509_NAME_hash。
+//
+// 对应 `openssl x509 -issuer_hash`；对 nil 接收者或已关闭的证书返回 0。
+//
+// IssuerHash returns the X509_NAME_hash of the certificate's issuer name.
+//
+// It corresponds to `openssl x509 -issuer_hash`. Returns 0 for a nil or closed
+// certificate.
+func (c *Certificate) IssuerHash() uint32 {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return 0
+	}
+	return native.X509_issuer_name_hash(c.handle.Ptr())
+}
+
+// CheckEmail 校验证书是否对给定邮箱地址有效（对应 SAN 的 rfc822Name 条目）。
+//
+// ⚠️ 本函数只做「邮箱名字匹配」，**不**验证证书链、有效期或用途；调用方必须先
+// 完成链验证（ChainVerify）再调用它。
+//
+// 匹配返回 nil；不匹配返回描述性错误；email 为空或格式非法返回描述性错误；
+// 对 nil 接收者或已关闭的证书返回 "x509: invalid certificate"。
+//
+// CheckEmail checks whether the certificate is valid for the given e-mail
+// address (matching a rfc822Name SAN entry).
+//
+// ⚠️ This performs name matching only. It does **not** validate the chain, the
+// validity window or the key usage; callers must complete chain verification
+// (ChainVerify) first.
+//
+// A match returns nil; a mismatch, an empty address and a malformed address
+// return descriptive errors; a nil or closed certificate returns
+// "x509: invalid certificate".
+func (c *Certificate) CheckEmail(email string) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: invalid certificate")
+	}
+	switch native.X509_check_email(c.handle.Ptr(), email) {
+	case 1:
+		return nil
+	case 0:
+		return fmt.Errorf("x509: certificate is not valid for email %q", email)
+	case -2:
+		return fmt.Errorf("x509: X509_check_email: malformed email %q", email)
+	default:
+		return fmt.Errorf("x509: X509_check_email: internal error")
+	}
+}
+
 // Version 返回证书的 X.509 版本：0=v1，1=v2，2=v3。
 //
 // 对 nil 接收者或已关闭的证书调用返回 0。
