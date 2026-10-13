@@ -687,7 +687,9 @@ PKCS12 *X_PKCS12_create(const char *pass, const char *name, EVP_PKEY *pkey,
             return NULL;
         X509 **arr = (X509 **)ca;
         for (int i = 0; i < ca_len; i++) {
-            if (arr[i] == NULL || !sk_X509_push(ca_sk, arr[i])) {
+            /* sk_X509_push 在 OpenSSL 3 返回压入后的栈长度而非 0/1，
+             * 故这里判断 <= 0（失败时返回 0）。 */
+            if (arr[i] == NULL || sk_X509_push(ca_sk, arr[i]) <= 0) {
                 sk_X509_free(ca_sk);
                 return NULL;
             }

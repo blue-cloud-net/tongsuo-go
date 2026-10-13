@@ -138,7 +138,7 @@ long X_BASIC_CONSTRAINTS_pathlen(const void *bc);
 
 /* CSR 扩展栈 */
 void *X_sk_X509_EXTENSION_new_null(void);                  /* STACK_OF(X509_EXTENSION)* */
-int X_sk_X509_EXTENSION_push(void *sk, void *ext);
+int X_sk_X509_EXTENSION_push(void *sk, void *ext); /* 返回压入后的栈长度，> 0 即成功 */
 void X_sk_X509_EXTENSION_free(void *sk);
 void X_sk_X509_EXTENSION_pop_free(void *sk);               /* 连同元素一起释放 */
 int X_sk_X509_EXTENSION_num(const void *sk);

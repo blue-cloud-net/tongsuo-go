@@ -969,10 +969,17 @@ func X509_sk_X509_EXTENSION_new_null() unsafe.Pointer {
 }
 
 // X509_sk_X509_EXTENSION_push 向扩展栈压入扩展（栈不拥有该扩展）。
+//
+// ⚠️ OpenSSL 3 的 sk_TYPE_push 返回压入后的**栈长度**（而非 0/1 布尔），
+// 因此此处把返回值 > 0 视为成功。
+//
 // X509_sk_X509_EXTENSION_push appends ext to sk. The stack does NOT take
 // ownership of ext.
+//
+// ⚠️ In OpenSSL 3 sk_TYPE_push returns the resulting stack **length**, not a
+// 0/1 boolean, so a positive result is treated as success here.
 func X509_sk_X509_EXTENSION_push(sk, ext unsafe.Pointer) bool {
-	return C.X_sk_X509_EXTENSION_push(sk, ext) == 1
+	return C.X_sk_X509_EXTENSION_push(sk, ext) > 0
 }
 
 // X509_sk_X509_EXTENSION_free 释放扩展栈（不释放元素）。
@@ -1196,9 +1203,16 @@ func X509_sk_X509_new_null() unsafe.Pointer {
 }
 
 // X509_sk_X509_push 向 X509 栈压入证书（栈不拥有元素）。
+//
+// ⚠️ 同 X509_sk_X509_EXTENSION_push：OpenSSL 3 的 sk_TYPE_push 返回新栈长度，
+// 因此把 > 0 视为成功。
+//
 // X509_sk_X509_push appends x to sk. The stack does NOT take ownership of x.
+//
+// ⚠️ Like X509_sk_X509_EXTENSION_push, sk_TYPE_push in OpenSSL 3 returns the
+// resulting stack length, so a positive result is treated as success here.
 func X509_sk_X509_push(sk, x unsafe.Pointer) bool {
-	return C.X_sk_X509_push(sk, x) == 1
+	return C.X_sk_X509_push(sk, x) > 0
 }
 
 // X509_sk_X509_free 释放 X509 栈（不释放元素）。
