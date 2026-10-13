@@ -3,6 +3,7 @@ package x509
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/asym"
 )
@@ -325,5 +326,78 @@ func TestCSREd448(t *testing.T) {
 	}
 	if len(req.Signature()) != 114 {
 		t.Fatalf("CSR signature length = %d, want 114", len(req.Signature()))
+	}
+}
+
+// TestCertificateToRequest 验证证书转 CSR（`openssl x509 -x509toreq` 等价）。
+//
+// TestCertificateToRequest verifies certificate-to-CSR conversion (the
+// equivalent of `openssl x509 -x509toreq`).
+func TestCertificateToRequest(t *testing.T) {
+	priv, err := asym.GenerateSM2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	subject := NewName().Add("CN", "toreq.example.com").Add("O", "Req Org")
+
+	cert := NewCertificate()
+	if err := cert.SetVersion(2); err != nil {
+		t.Fatal(err)
+	}
+	if err := cert.SetSerial(55); err != nil {
+		t.Fatal(err)
+	}
+	if err := cert.SetIssuer(subject); err != nil {
+		t.Fatal(err)
+	}
+	if err := cert.SetSubject(subject); err != nil {
+		t.Fatal(err)
+	}
+	if err := cert.SetValidity(now.Add(-time.Hour), now.Add(365*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := cert.SetPublicKey(priv.Public()); err != nil {
+		t.Fatal(err)
+	}
+	if err := cert.AddSubjectAltName("DNS:toreq.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cert.Sign(priv); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cert.Close() })
+
+	req, err := cert.ToCertificateRequest(priv)
+	if err != nil {
+		t.Fatalf("ToCertificateRequest: %v", err)
+	}
+	if req.SubjectText() != cert.SubjectText() {
+		t.Errorf("subject = %q, want %q", req.SubjectText(), cert.SubjectText())
+	}
+	if err := req.Verify(); err != nil {
+		t.Errorf("CSR verify: %v", err)
+	}
+	// 扩展不迁移（与 openssl x509 -x509toreq 一致）
+	if got := req.Extensions(); len(got) != 0 {
+		t.Errorf("CSR extensions = %v, want none", got)
+	}
+	// PEM 往返后仍可校验
+	pemBytes, err := req.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCertificateRequestPEM(pemBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loaded.Verify(); err != nil {
+		t.Errorf("loaded CSR verify: %v", err)
+	}
+
+	// nil 证书
+	var nilCert *Certificate
+	if _, err := nilCert.ToCertificateRequest(priv); err == nil {
+		t.Error("nil certificate should fail")
 	}
 }

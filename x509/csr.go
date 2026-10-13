@@ -69,6 +69,65 @@ func NewEmptyCertificateRequest() *CertificateRequest {
 	return &CertificateRequest{req: r}
 }
 
+// ToCertificateRequest 把已签名的证书转成 CSR（等价 `openssl x509 -x509toreq`）。
+//
+// priv 必须是与证书公钥配对的私钥（自签证书即其自身私钥），CSR 将由它签名；
+// 转换只搬运主题与公钥，**不迁移原证书的任何扩展**，也不拷贝有效期与序列号，
+// 与 `openssl x509 -x509toreq` 的行为一致。
+//
+// 返回的 CSR 拥有自己的句柄，但本包未提供 CSR 的公开 Close 方法，
+// 交由 runtime finalizer 兜底释放。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// ToCertificateRequest converts a signed certificate into a CSR (the equivalent
+// of `openssl x509 -x509toreq`).
+//
+// priv must be the private key matching the certificate's public key (for a
+// self-signed certificate, its own key), and it signs the resulting CSR. Only
+// the subject and public key are carried over: **no extension is migrated**, nor
+// are the validity window or the serial number, matching
+// `openssl x509 -x509toreq`.
+//
+// The returned CSR owns its handle, but this package exposes no public Close
+// method for it, so a runtime finalizer is the only release path.
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (c *Certificate) ToCertificateRequest(priv asym.PrivateKey) (ret *CertificateRequest, retErr error) {
+	if c == nil || c.cert == nil {
+		return nil, fmt.Errorf("x509: nil certificate")
+	}
+	key, err := corePrivateKey(priv)
+	if err != nil {
+		return nil, err
+	}
+	req, err := core.NewCertificateRequest()
+	if err != nil {
+		return nil, err
+	}
+	// 仅在出错时释放：成功时句柄所有权转移给返回的 CSR。
+	defer func() {
+		if retErr != nil {
+			_ = req.Close()
+		}
+	}()
+	if err := req.SetSubject(c.cert.SubjectName()); err != nil {
+		return nil, err
+	}
+	pub, err := c.cert.PublicKey()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = pub.Close() }()
+	if err := req.SetPublicKey(pub); err != nil {
+		return nil, err
+	}
+	if err := req.Sign(key, nil); err != nil {
+		return nil, err
+	}
+	return &CertificateRequest{req: req}, nil
+}
+
 // SetSubject 设置 CSR 主题。
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。

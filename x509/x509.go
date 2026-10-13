@@ -55,6 +55,7 @@ package x509
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -154,6 +155,75 @@ func LoadCertificateDER(der []byte) (*Certificate, error) {
 		return nil, err
 	}
 	return &Certificate{cert: c}, nil
+}
+
+// LoadCertificatePEMFile 从 PEM 文件加载证书（等价 `openssl x509 -in <path>`）。
+//
+// 对应官方 SDK 的 LoadCertificateFromPEM 文件入口；本库不提供 PEM 解析辅助，
+// 调用方也可自行 os.ReadFile + LoadCertificatePEM。
+//
+// 返回的证书拥有自己的句柄，调用方须调用 Close。
+//
+// 失败时返回包装了 OpError 的错误；文件不存在或读失败时返回带上下文的错误。
+//
+// LoadCertificatePEMFile loads a certificate from a PEM file (the equivalent of
+// `openssl x509 -in <path>`).
+//
+// It corresponds to the official SDK's LoadCertificateFromPEM file entry
+// point; since this package ships no PEM parsing helpers, callers may also do
+// os.ReadFile plus LoadCertificatePEM themselves.
+//
+// The returned certificate owns its handle; the caller must Close it.
+//
+// On failure, it returns an error wrapping an OpError; a missing or unreadable
+// file yields an error carrying that context.
+func LoadCertificatePEMFile(path string) (*Certificate, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("x509: read %s: %w", path, err)
+	}
+	cert, err := LoadCertificatePEM(data)
+	if err != nil {
+		return nil, fmt.Errorf("x509: load %s: %w", path, err)
+	}
+	return cert, nil
+}
+
+// SaveCertificatePEMFile 把证书以 PEM 写入文件（等价 `openssl x509 -out <path>`）。
+//
+// perm 为文件权限（如 0o644）；文件已存在时按该权限截断覆写并重新 chmod
+// （os.WriteFile 只在创建时应用权限，故此处显式补一次）。
+// 写入的是**公开**证书，不含私钥；私钥请走 asym 包的 MarshalPrivateKeyPEM。
+//
+// 失败时返回包装了 OpError 的错误；文件写入失败时返回带上下文的错误。
+//
+// SaveCertificatePEMFile writes the certificate to a PEM file (the equivalent of
+// `openssl x509 -out <path>`).
+//
+// perm is the file mode (for example 0o644); an existing file is truncated,
+// overwritten and re-chmod'ed to that mode (os.WriteFile only applies the mode
+// when creating the file, so this call sets it explicitly).
+//
+// Only the **public** certificate is written, never a private key; use the asym
+// package's MarshalPrivateKeyPEM for keys.
+//
+// On failure, it returns an error wrapping an OpError; a failed write yields an
+// error carrying that context.
+func SaveCertificatePEMFile(path string, c *Certificate, perm os.FileMode) error {
+	if c == nil {
+		return fmt.Errorf("x509: nil certificate")
+	}
+	pemBytes, err := c.MarshalPEM()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, pemBytes, perm); err != nil {
+		return fmt.Errorf("x509: write %s: %w", path, err)
+	}
+	if err := os.Chmod(path, perm); err != nil {
+		return fmt.Errorf("x509: chmod %s: %w", path, err)
+	}
+	return nil
 }
 
 // wrapCertificate 用底层核心证书构造 Certificate（包内辅助）。
