@@ -393,7 +393,79 @@ func X509V3_EXT_conf_nid(nid int, value string) unsafe.Pointer {
 // asks OpenSSL to append. X509_add duplicates ext internally so the caller
 // retains ownership.
 func X509_add_ext(x, ext unsafe.Pointer) bool {
-	return C.X509_add_ext((*C.X509)(x), (*C.X509_EXTENSION)(ext), C.int(-1)) == 1
+	return X509_add_ext_loc(x, ext, -1)
+}
+
+// X509_add_ext_loc 在指定位置插入扩展，loc 为 -1 时追加到末尾。
+// X509_add_ext_loc inserts ext into x's extension stack at loc; passing -1
+// appends to the end. OpenSSL duplicates ext internally so the caller
+// retains ownership. Returns true on success.
+// X509_add_ext_loc inserts ext into x's extension stack at loc; passing -1
+// appends to the end. OpenSSL duplicates ext internally so the caller
+// retains ownership. Returns true on success.
+func X509_add_ext_loc(x, ext unsafe.Pointer, loc int) bool {
+	return C.X509_add_ext((*C.X509)(x), (*C.X509_EXTENSION)(ext), C.int(loc)) == 1
+}
+
+// X509_add_ext_dup 把 ext 的副本追加到 x 的扩展栈末尾。
+//
+// ext 可以来自任意来源（证书的扩展栈或 CSR 的 extensionRequest 属性），
+// 因此可直接用于跨结构复制扩展，而无需在 Go 侧反解 DER。
+// 调用方仍持有 src 的所有权，本函数只读它。
+//
+// X509_add_ext_dup 把 ext 的副本追加到 x 的扩展栈末尾。
+//
+// ext 可以来自任意来源（证书的扩展栈或 CSR 的 extensionRequest 属性），
+// 因此可直接用于跨结构复制扩展而无需在 Go 侧反解 DER。
+// 调用方仍持有 src 的所有权，本函数只读它。
+//
+// X509_add_ext_dup appends a copy of ext to x's extension stack.
+//
+// ext may originate from any container (a certificate's extension stack or a
+// CSR's extensionRequest attribute), so it can be used to copy extensions across
+// structures without decoding DER on the Go side. The caller keeps ownership of
+// src; this function only reads it.
+func X509_add_ext_dup(x, ext unsafe.Pointer) bool {
+	dup := unsafe.Pointer(C.X509_EXTENSION_dup((*C.X509_EXTENSION)(ext)))
+	if dup == nil {
+		return false
+	}
+	defer C.X509_EXTENSION_free((*C.X509_EXTENSION)(dup))
+	return C.X509_add_ext((*C.X509)(x), (*C.X509_EXTENSION)(dup), C.int(-1)) == 1
+}
+
+// X509_delete_ext 删除证书第 loc 个扩展并把所有权转移给调用方。
+// X509_delete_ext removes the loc-th extension from x and transfers ownership
+// of it to the caller, who must release it with X509_EXTENSION_free. Returns
+// NULL when the index is out of range or the removal failed.
+func X509_delete_ext(x unsafe.Pointer, loc int) unsafe.Pointer {
+	return unsafe.Pointer(C.X509_delete_ext((*C.X509)(x), C.int(loc)))
+}
+
+// X509V3_EXT_conf_nid_merge 把 value 解析出的扩展并入 x 上已有的同 NID 扩展。
+//
+// 可重复 OID（subjectAltName / issuerAltName / subjectDirectoryAttributes /
+// certificateIssuer）的扩展值均为 SEQUENCE，OpenSSL 不接受同一证书里出现两个同
+// NID 的条目（X509_get_ext_d2i 会返回 NULL，SAN() 与 X509_check_host 随之全部失效）。
+// 本函数按 BouncyCastle 的做法拼接两个 SEQUENCE 的元素并原位替换，保持位置与
+// critical 标记。
+//
+// x 上不存在同 NID 扩展时返回 false 且不修改 x，调用方应改走普通追加路径。
+// X509V3_EXT_conf_nid_merge folds value into the extension already present on x.
+//
+// Repeatable OIDs (subjectAltName / issuerAltName / subjectDirectoryAttributes /
+// certificateIssuer) carry SEQUENCE values, and OpenSSL refuses two entries with
+// the same NID on one certificate: X509_get_ext_d2i then returns NULL, which
+// silently breaks both SAN() and X509_check_host. This binding concatenates the
+// two SEQUENCEs the way BouncyCastle does and replaces the original extension
+// in place, preserving its position and critical flag.
+//
+// It returns false without touching x when no extension with that NID exists;
+// callers must use the plain append path in that case.
+func X509V3_EXT_conf_nid_merge(x unsafe.Pointer, nid int, value string) bool {
+	cVal := C.CString(value)
+	defer C.free(unsafe.Pointer(cVal))
+	return C.X_X509V3_EXT_conf_nid_merge((*C.X509)(x), C.int(nid), cVal) == 1
 }
 
 // X509_EXTENSION_free 释放扩展对象。
@@ -688,6 +760,13 @@ func X509_get_ext(x unsafe.Pointer, i int) unsafe.Pointer {
 // the extension OID; do NOT free it.
 func X509_EXTENSION_get_object(e unsafe.Pointer) unsafe.Pointer {
 	return unsafe.Pointer(C.X509_EXTENSION_get_object((*C.X509_EXTENSION)(e)))
+}
+
+// X509_EXTENSION_get_nid 返回扩展 OID 对应的 NID（未知返回 NidUndef）。
+// X509_EXTENSION_get_nid returns the NID of the extension's OID, or NidUndef
+// when the OID is not known to the object database.
+func X509_EXTENSION_get_nid(e unsafe.Pointer) int {
+	return int(C.OBJ_obj2nid(C.X509_EXTENSION_get_object((*C.X509_EXTENSION)(e))))
 }
 
 // X509_EXTENSION_get_critical 返回扩展 critical 标志。

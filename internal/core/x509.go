@@ -219,6 +219,31 @@ func (n *Name) Close() error {
 // are done with it.
 type Certificate struct {
 	handle *Handle
+	// signed 标记证书是否已进入「已签名」不可变状态。
+	// 只有 NewCertificate 创建的对象为 false；解析（PEM/DER）、链校验
+	// 复制等路径产出的对象底层本就带签名，一律置为 true。
+	signed bool
+}
+
+// ensureMutable 在修改证书字段或扩展前检查句柄是否仍可变。
+//
+// 已关闭返回 "x509: certificate closed"；已签名返回
+// "x509: certificate already signed (op)"（op 为触发检查的操作名）。
+//
+// ensureMutable checks that the certificate may still be mutated, i.e. that
+// its handle is live and that it has not been signed yet.
+//
+// Returns "x509: certificate closed" for a closed handle and
+// "x509: certificate already signed (op)" once Sign has run, where op names
+// the operation that triggered the check.
+func (c *Certificate) ensureMutable(op string) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: certificate closed")
+	}
+	if c.signed {
+		return fmt.Errorf("x509: certificate already signed (%s)", op)
+	}
+	return nil
 }
 
 // NewCertificate 创建一张空证书（字段取默认值）。
@@ -232,6 +257,9 @@ type Certificate struct {
 // caller is responsible for calling Close to release it. The freshly
 // created object must be filled in (version, serial, subject, issuer,
 // public key, validity, extensions, ...) and then signed with Sign.
+//
+// The object starts out mutable; once Sign has run every mutating method
+// returns an error (see ensureMutable).
 func NewCertificate() (*Certificate, error) {
 	x := native.X509_new()
 	if x == nil {
@@ -262,7 +290,7 @@ func LoadCertificatePEM(pem []byte) (*Certificate, error) {
 	if x == nil {
 		return nil, NewOpError("x509: PEM_read_bio_X509", native.PopError())
 	}
-	return &Certificate{handle: NewHandle(x, true, native.X509_free)}, nil
+	return &Certificate{handle: NewHandle(x, true, native.X509_free), signed: true}, nil
 }
 
 // LoadCertificateDER 解析 ASN.1 DER 编码的 X.509 证书。
@@ -273,12 +301,16 @@ func LoadCertificatePEM(pem []byte) (*Certificate, error) {
 //
 // The returned *Certificate owns the underlying X509 handle and the
 // caller must invoke Close to release it. Errors are wrapped as OpError.
+//
+// The parsed certificate is marked as signed: mutating methods report
+// "x509: certificate already signed" instead of silently producing a
+// DER whose signature no longer matches.
 func LoadCertificateDER(der []byte) (*Certificate, error) {
 	x := native.D2i_X509(der)
 	if x == nil {
 		return nil, NewOpError("x509: d2i_X509", native.PopError())
 	}
-	return &Certificate{handle: NewHandle(x, true, native.X509_free)}, nil
+	return &Certificate{handle: NewHandle(x, true, native.X509_free), signed: true}, nil
 }
 
 // MarshalPEM 将证书序列化为 PEM 编码（"-----BEGIN CERTIFICATE-----"）。
@@ -315,6 +347,9 @@ func (c *Certificate) MarshalPEM() ([]byte, error) {
 // The convention matches OpenSSL's X509_set_version: 0 means v1 and 2
 // means v3. Must be invoked before Sign.
 func (c *Certificate) SetVersion(version int) error {
+	if err := c.ensureMutable("set version"); err != nil {
+		return err
+	}
 	if !native.X509_set_version(c.handle.Ptr(), version) {
 		return NewOpError("x509: X509_set_version", native.PopError())
 	}
@@ -330,6 +365,9 @@ func (c *Certificate) SetVersion(version int) error {
 // Must be invoked before Sign. Errors from the underlying OpenSSL call
 // are wrapped as OpError.
 func (c *Certificate) SetSerial(serial int64) error {
+	if err := c.ensureMutable("set serial"); err != nil {
+		return err
+	}
 	if !native.X509_set_serial_int(c.handle.Ptr(), serial) {
 		return NewOpError("x509: X509_set_serialNumber", native.PopError())
 	}
@@ -346,6 +384,9 @@ func (c *Certificate) SetSerial(serial int64) error {
 // returns the error "x509: invalid issuer name". Errors from the
 // underlying OpenSSL call are wrapped as OpError.
 func (c *Certificate) SetIssuer(n *Name) error {
+	if err := c.ensureMutable("set issuer"); err != nil {
+		return err
+	}
 	if n == nil || n.handle == nil || n.handle.IsClosed() {
 		return fmt.Errorf("x509: invalid issuer name")
 	}
@@ -365,6 +406,9 @@ func (c *Certificate) SetIssuer(n *Name) error {
 // returns the error "x509: invalid subject name". Errors from the
 // underlying OpenSSL call are wrapped as OpError.
 func (c *Certificate) SetSubject(n *Name) error {
+	if err := c.ensureMutable("set subject"); err != nil {
+		return err
+	}
 	if n == nil || n.handle == nil || n.handle.IsClosed() {
 		return fmt.Errorf("x509: invalid subject name")
 	}
@@ -384,6 +428,9 @@ func (c *Certificate) SetSubject(n *Name) error {
 // returns the error "x509: invalid public key". Errors from the
 // underlying OpenSSL call are wrapped as OpError.
 func (c *Certificate) SetPublicKey(k *PKey) error {
+	if err := c.ensureMutable("set public key"); err != nil {
+		return err
+	}
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return fmt.Errorf("x509: invalid public key")
 	}
@@ -404,6 +451,9 @@ func (c *Certificate) SetPublicKey(k *PKey) error {
 // "x509: notAfter must be after notBefore" without invoking OpenSSL.
 // Errors from ASN1_TIME_set are wrapped as OpError.
 func (c *Certificate) SetValidity(notBefore, notAfter time.Time) error {
+	if err := c.ensureMutable("set validity"); err != nil {
+		return err
+	}
 	if !notAfter.After(notBefore) {
 		return fmt.Errorf("x509: notAfter must be after notBefore")
 	}
@@ -427,6 +477,9 @@ func (c *Certificate) SetValidity(notBefore, notAfter time.Time) error {
 // CA:FALSE. Errors from the underlying OpenSSL call are wrapped as
 // OpError.
 func (c *Certificate) AddBasicConstraints(isCA bool) error {
+	if err := c.ensureMutable("add basic constraints"); err != nil {
+		return err
+	}
 	val := "critical,CA:FALSE"
 	if isCA {
 		val = "critical,CA:TRUE"
@@ -454,13 +507,33 @@ func (c *Certificate) AddBasicConstraints(isCA bool) error {
 // the digest is selected automatically by signer type (SM2→SM3,
 // RSA/ECDSA→SHA256, EdDSA→no-digest via X509_sign_ctx). Errors from the
 // underlying X509_sign / X509_sign_ctx calls are wrapped as OpError.
+//
+// Signing is a one-way transition: on success the certificate becomes
+// immutable and every later mutating call (Set*, Add*, Sign itself) fails
+// with "x509: certificate already signed". Configure all fields and
+// extensions before signing.
 func (c *Certificate) Sign(signer *PKey, md *Digest) error {
+	if err := c.ensureMutable("sign"); err != nil {
+		return err
+	}
 	if signer == nil || signer.handle == nil || signer.handle.IsClosed() {
 		return fmt.Errorf("x509: invalid signer")
 	}
 	if md == nil {
 		md = digestForSigner(signer)
 	}
+	if err := c.signWith(signer, md); err != nil {
+		return err
+	}
+	c.signed = true
+	return nil
+}
+
+// signWith 执行实际签名，不做可变性检查也不置 signed 标记。
+//
+// signWith performs the signing itself. It performs no mutability check and
+// does not set the signed flag; Sign owns both.
+func (c *Certificate) signWith(signer *PKey, md *Digest) error {
 	// digestForSigner 对 EdDSA 返回 nil：走 X509_sign_ctx 路径（无摘要 EdDSA 签名）。
 	if md == nil {
 		return signWithEdDSA(c.handle.Ptr(), signer.handle.Ptr(),
@@ -1098,6 +1171,8 @@ func (c *Certificate) Extensions() []Extension {
 //
 // nid 为扩展 NID（如 native.NidSubjectAltName）；value 为 X509V3_EXT_conf 配置串（如 "DNS:example.com"），可带 "critical," 前缀以标记为 critical；须在 Sign 之前调用；底层 OpenSSL 错误以 OpError 包装。
 //
+// 同 NID 扩展已存在时：可重复 OID（subjectAltName / issuerAltName / subjectDirectoryAttributes / certificateIssuer）把新值**合并**进已有条目并保持原位置与 critical 标记；其余 OID 返回 "x509: extension already present (nid N)"，需覆盖请改用 ReplaceExtension。
+//
 // AddExtension appends a generic extension to the certificate.
 //
 // Must be invoked before Sign. nid is the extension NID (for example
@@ -1105,8 +1180,221 @@ func (c *Certificate) Extensions() []Extension {
 // string, e.g. "DNS:example.com", optionally prefixed with "critical,"
 // to mark the extension critical. Errors from the underlying OpenSSL
 // call are wrapped as OpError.
+//
+// When an extension with the same NID is already present, repeatable OIDs
+// (subjectAltName / issuerAltName / subjectDirectoryAttributes /
+// certificateIssuer) **merge** the new value into the existing entry while
+// keeping its position and critical flag. Every other OID returns
+// "x509: extension already present (nid N)"; use ReplaceExtension to
+// overwrite instead.
 func (c *Certificate) AddExtension(nid int, value string) error {
-	return c.addExtCtx(c, nil, nid, value)
+	if err := c.ensureMutable("add extension"); err != nil {
+		return err
+	}
+	loc := c.extLoc(nid)
+	switch {
+	case loc < 0:
+		return c.addExtCtx(c, nil, nid, value)
+	case !extDupsAllowed(nid):
+		return fmt.Errorf("x509: extension already present (nid %d)", nid)
+	default:
+		if !native.X509V3_EXT_conf_nid_merge(c.handle.Ptr(), nid, value) {
+			return NewOpError("x509: X509V3_EXT_conf_nid(merge)", native.PopError())
+		}
+		return nil
+	}
+}
+
+// AddExtensions 批量追加扩展（空切片为 no-op）。
+//
+// 每个扩展只用 Extension 的 Nid 与 Value 两个字段（Field / OID / Critical / Data 为读取态，构建时忽略）；value 语义与 AddExtension 相同；按顺序逐条追加，部分失败时已追加的扩展保留，调用方应丢弃该证书重建；须在 Sign 之前调用。
+//
+// AddExtensions appends a batch of extensions to the certificate.
+//
+// A nil or empty slice is a no-op and returns nil. Only Extension's Nid
+// and Value fields are used (Field, OID, Critical and Data are populated
+// on read and ignored here). Extensions are appended in order; when a
+// call fails partway through the already-appended extensions are kept, so
+// the caller must discard the certificate and rebuild. Must be invoked
+// before Sign.
+func (c *Certificate) AddExtensions(exts ...Extension) error {
+	if len(exts) == 0 {
+		return nil
+	}
+	if err := c.ensureMutable("add extensions"); err != nil {
+		return err
+	}
+	for _, e := range exts {
+		if err := c.AddExtension(e.Nid, e.Value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// AddExtensionByName 按名字或 OID 追加通用扩展。
+//
+// name 可为扩展短名（"keyUsage"、"extendedKeyUsage"）、长名或点分 OID（"2.5.29.15"），内部经 OBJ_txt2nid 解析；解析失败返回 "x509: unknown extension name %q"；其余语义与 AddExtension 相同。
+//
+// AddExtensionByName appends a generic extension addressed by name.
+//
+// name may be the extension short name ("keyUsage", "extendedKeyUsage"),
+// a long name, or a dotted OID ("2.5.29.15"); it is resolved through
+// OBJ_txt2nid. An unknown name returns "x509: unknown extension name %q".
+// Otherwise the semantics match AddExtension.
+func (c *Certificate) AddExtensionByName(name, value string) error {
+	nid, err := extNidByName(name)
+	if err != nil {
+		return err
+	}
+	return c.AddExtension(nid, value)
+}
+
+// extNidByName 解析扩展短名 / 长名 / 点分 OID 为 NID，未知返回错误。
+//
+// extNidByName resolves an extension short name, long name, or dotted OID
+// to its NID via OBJ_txt2nid, reporting an error for unknown names.
+func extNidByName(name string) (int, error) {
+	if name == "" {
+		return native.NidUndef, fmt.Errorf("x509: unknown extension name %q", name)
+	}
+	nid := native.OBJ_txt2nid(name)
+	if nid == native.NidUndef {
+		return native.NidUndef, fmt.Errorf("x509: unknown extension name %q", name)
+	}
+	return nid, nil
+}
+
+// extDupsAllowedNid 列出允许重复出现的扩展 NID（OpenSSL 语义：追加第二个同 NID 条目）。
+//
+// 与 BouncyCastle X509ExtensionsGenerator.m_dupsAllowed 一致；NID 经
+// OBJ_txt2nid 运行时解析，不导出常量（AGENTS.md §10.9）。
+//
+// extDupsAllowedNid lists the NIDs that may appear more than once, in which
+// case a second entry with the same NID is appended (OpenSSL semantics),
+// mirroring BouncyCastle's X509ExtensionsGenerator.m_dupsAllowed. The NIDs
+// are resolved at run time so no constants need to be exported.
+var extDupsAllowedNid = func() map[int]bool {
+	names := []string{
+		"subjectAltName",             // 2.5.29.17
+		"issuerAltName",              // 2.5.29.18
+		"subjectDirectoryAttributes", // 2.5.29.9
+		"certificateIssuer",          // 2.5.29.29
+	}
+	m := make(map[int]bool, len(names))
+	for _, name := range names {
+		m[native.OBJ_txt2nid(name)] = true
+	}
+	return m
+}()
+
+// extDupsAllowed 判断 nid 是否允许重复。
+//
+// extDupsAllowed reports whether nid may appear more than once.
+func extDupsAllowed(nid int) bool { return extDupsAllowedNid[nid] }
+
+// extLoc 返回证书中第一个 NID 为 nid 的扩展下标，不存在返回 -1。
+//
+// extLoc returns the index of the first extension whose NID is nid, or -1
+// when the certificate has no such extension.
+func (c *Certificate) extLoc(nid int) int {
+	for i, e := range c.Extensions() {
+		if e.Nid == nid {
+			return i
+		}
+	}
+	return -1
+}
+
+// HasExtension 判断证书是否已含 name 指定的扩展。
+//
+// name 为扩展短名、长名或点分 OID；未知名字一律返回 false；nil 或已关闭证书返回 false。函数不会修改证书，已签名证书可安全调用。
+//
+// HasExtension reports whether the certificate already carries the
+// extension identified by name.
+//
+// name may be a short name, a long name, or a dotted OID; an unknown name
+// always yields false. A nil or closed certificate yields false. The call
+// never mutates the certificate, so it is safe on signed certificates.
+func (c *Certificate) HasExtension(name string) bool {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return false
+	}
+	nid, err := extNidByName(name)
+	if err != nil {
+		return false
+	}
+	return c.extLoc(nid) >= 0
+}
+
+// RemoveExtension 删除 name 指定的扩展。
+//
+// name 为扩展短名、长名或点分 OID；未知名字返回 "x509: unknown extension name %q"，证书中不存在该扩展返回 "x509: extension not present (nid N)"；删除会改变 DER 字节，删除后须重新 Sign 才能得到签名一致的证书；已签名或已关闭证书返回错误。
+//
+// RemoveExtension removes the extension identified by name.
+//
+// An unknown name returns "x509: unknown extension name %q"; a name the
+// certificate does not carry returns "x509: extension not present (nid N)".
+// Removing an extension changes the DER encoding, so the certificate must
+// be re-signed for the signature to remain consistent. Calls on a signed
+// or closed certificate fail.
+func (c *Certificate) RemoveExtension(name string) error {
+	if err := c.ensureMutable("remove extension"); err != nil {
+		return err
+	}
+	nid, err := extNidByName(name)
+	if err != nil {
+		return err
+	}
+	loc := c.extLoc(nid)
+	if loc < 0 {
+		return fmt.Errorf("x509: extension not present (nid %d)", nid)
+	}
+	removed := native.X509_delete_ext(c.handle.Ptr(), loc)
+	if removed == nil {
+		return NewOpError("x509: X509_delete_ext", native.PopError())
+	}
+	native.X509_EXTENSION_free(removed)
+	return nil
+}
+
+// ReplaceExtension 覆盖 name 指定的扩展，保持其在证书中的原有位置。
+//
+// 语义与 BouncyCastle X509ExtensionsGenerator.ReplaceExtension 一致（不存在时报错而非创建）；按 OpenSSL X509V3_EXT_conf_nid 语法解析 value；已签名或已关闭证书返回错误。
+//
+// ReplaceExtension overwrites the extension identified by name while keeping
+// its original position in the certificate.
+//
+// The semantics match BouncyCastle's X509ExtensionsGenerator.ReplaceExtension,
+// which fails when the extension is absent instead of creating it. value uses
+// the OpenSSL X509V3_EXT_conf syntax. Calls on a signed or closed certificate
+// fail.
+func (c *Certificate) ReplaceExtension(name, value string) error {
+	if err := c.ensureMutable("replace extension"); err != nil {
+		return err
+	}
+	nid, err := extNidByName(name)
+	if err != nil {
+		return err
+	}
+	loc := c.extLoc(nid)
+	if loc < 0 {
+		return fmt.Errorf("x509: extension not present (nid %d)", nid)
+	}
+	ext := native.X509V3_EXT_conf_nid(nid, value)
+	if ext == nil {
+		return NewOpError("x509: X509V3_EXT_conf_nid", native.PopError())
+	}
+	defer native.X509_EXTENSION_free(ext)
+	removed := native.X509_delete_ext(c.handle.Ptr(), loc)
+	if removed == nil {
+		return NewOpError("x509: X509_delete_ext", native.PopError())
+	}
+	native.X509_EXTENSION_free(removed)
+	if !native.X509_add_ext_loc(c.handle.Ptr(), ext, loc) {
+		return NewOpError("x509: X509_add_ext", native.PopError())
+	}
+	return nil
 }
 
 // AddSubjectAltName 向证书追加 subjectAltName 扩展。
@@ -1183,12 +1471,16 @@ func (c *Certificate) AddAuthorityKeyID(issuer *Certificate) error {
 
 // addExtCtx 带 X509V3_CTX 创建扩展并追加（subject 用于 SKID，issuer 用于 AKID）。
 //
+// 作为证书上所有 Add* 扩展方法的最终入口，统一承担可变性检查；返回值包装为 OpError。
+//
 // addExtCtx creates an X509V3 extension with the supplied X509V3_CTX
 // (subject supplies the SKID context, issuer supplies the AKID context)
-// and appends it to c. Returns an error wrapping an OpError on failure.
+// and appends it to c. It is the final funnel for every Add* extension
+// method on the certificate, so it is also where mutability is checked.
+// Returns an error wrapping an OpError on failure.
 func (c *Certificate) addExtCtx(subject, issuer *Certificate, nid int, value string) error {
-	if c == nil || c.handle == nil || c.handle.IsClosed() {
-		return fmt.Errorf("x509: certificate closed")
+	if err := c.ensureMutable("add extension"); err != nil {
+		return err
 	}
 	var sub, iss unsafe.Pointer
 	if subject != nil {
@@ -1334,6 +1626,27 @@ func (c *Certificate) Close() error {
 // done with the CSR.
 type CertificateRequest struct {
 	handle *Handle
+	// signed 标记 CSR 是否已进入「已签名」不可变状态。
+	// 只有 NewCertificateRequest 创建的对象为 false；解析路径（PEM/DER）
+	// 产出的对象底层本就带签名，一律置为 true。
+	signed bool
+}
+
+// ensureMutable 在修改 CSR 字段或扩展前检查句柄是否仍可变。
+//
+// 已关闭返回 "x509: request closed"；已签名返回
+// "x509: request already signed (op)"。
+//
+// ensureMutable checks that the CSR may still be mutated, i.e. that its
+// handle is live and that it has not been signed yet.
+func (r *CertificateRequest) ensureMutable(op string) error {
+	if r == nil || r.handle == nil || r.handle.IsClosed() {
+		return fmt.Errorf("x509: request closed")
+	}
+	if r.signed {
+		return fmt.Errorf("x509: request already signed (%s)", op)
+	}
+	return nil
 }
 
 // NewCertificateRequest 创建空 CSR（字段取默认值）。
@@ -1376,7 +1689,7 @@ func LoadCertificateRequestPEM(pem []byte) (*CertificateRequest, error) {
 	if r == nil {
 		return nil, NewOpError("x509: PEM_read_bio_X509_REQ", native.PopError())
 	}
-	return &CertificateRequest{handle: NewHandle(r, true, native.X509_REQ_free)}, nil
+	return &CertificateRequest{handle: NewHandle(r, true, native.X509_REQ_free), signed: true}, nil
 }
 
 // LoadCertificateRequestDER 解析 ASN.1 DER 编码的 CSR。
@@ -1393,7 +1706,7 @@ func LoadCertificateRequestDER(der []byte) (*CertificateRequest, error) {
 	if r == nil {
 		return nil, NewOpError("x509: d2i_X509_REQ", native.PopError())
 	}
-	return &CertificateRequest{handle: NewHandle(r, true, native.X509_REQ_free)}, nil
+	return &CertificateRequest{handle: NewHandle(r, true, native.X509_REQ_free), signed: true}, nil
 }
 
 // MarshalPEM 将 CSR 序列化为 PEM 编码（"-----BEGIN CERTIFICATE REQUEST-----"）。
@@ -1431,6 +1744,9 @@ func (r *CertificateRequest) MarshalPEM() ([]byte, error) {
 // returns the error "x509: invalid subject name". Errors from the
 // underlying OpenSSL call are wrapped as OpError.
 func (r *CertificateRequest) SetSubject(n *Name) error {
+	if err := r.ensureMutable("set subject"); err != nil {
+		return err
+	}
 	if n == nil || n.handle == nil || n.handle.IsClosed() {
 		return fmt.Errorf("x509: invalid subject name")
 	}
@@ -1501,11 +1817,11 @@ func (r *CertificateRequest) ChallengePassword() string {
 // calls are wrapped as OpError. If the call fails partway through, every
 // extension created so far is released before the error is returned.
 func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
-	if r == nil || r.handle == nil || r.handle.IsClosed() {
-		return fmt.Errorf("x509: request closed")
-	}
 	if len(exts) == 0 {
 		return nil
+	}
+	if err := r.ensureMutable("add extensions"); err != nil {
+		return err
 	}
 	sk := native.X509_sk_X509_EXTENSION_new_null()
 	if sk == nil {
@@ -1550,6 +1866,64 @@ func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
 // OpenSSL call are wrapped as OpError.
 func (r *CertificateRequest) AddExtension(nid int, value string) error {
 	return r.AddExtensions(Extension{Nid: nid, Value: value})
+}
+
+// AddExtensionByName 按名字或 OID 向 CSR 追加单个扩展。
+//
+// name 可为扩展短名、长名或点分 OID（"2.5.29.15"），内部经 OBJ_txt2nid 解析；解析失败返回 "x509: unknown extension name %q"；须在 Sign 之前调用。
+//
+// AddExtensionByName appends a single extension to the CSR, addressed by name.
+//
+// name may be an extension short name, a long name, or a dotted OID
+// ("2.5.29.15"); it is resolved through OBJ_txt2nid. An unknown name returns
+// "x509: unknown extension name %q". Must be invoked before Sign.
+func (r *CertificateRequest) AddExtensionByName(name, value string) error {
+	nid, err := extNidByName(name)
+	if err != nil {
+		return err
+	}
+	return r.AddExtension(nid, value)
+}
+
+// AddKeyUsage 向 CSR 追加 KeyUsage 扩展。
+//
+// value 为 OpenSSL 逗号分隔的能力位列表（如 "critical,digitalSignature"）；须在 Sign 之前调用。
+//
+// AddKeyUsage appends a KeyUsage extension to the CSR.
+//
+// value is the OpenSSL comma-separated capability list (for example
+// "critical,digitalSignature"). Must be invoked before Sign.
+func (r *CertificateRequest) AddKeyUsage(value string) error {
+	return r.AddExtension(native.NidKeyUsage, value)
+}
+
+// AddExtendedKeyUsage 向 CSR 追加 extendedKeyUsage 扩展。
+//
+// value 为 OpenSSL 逗号分隔的用途列表（如 "serverAuth,clientAuth"）；须在 Sign 之前调用。
+//
+// AddExtendedKeyUsage appends an extendedKeyUsage extension to the CSR.
+//
+// value is the OpenSSL comma-separated purpose list (for example
+// "serverAuth,clientAuth"). Must be invoked before Sign.
+func (r *CertificateRequest) AddExtendedKeyUsage(value string) error {
+	return r.AddExtension(native.NidExtKeyUsage, value)
+}
+
+// AddBasicConstraints 向 CSR 追加 BasicConstraints 扩展。
+//
+// isCA 为 true 时标记为 critical,CA:TRUE，否则标记为 critical,CA:FALSE；须在 Sign 之前调用。
+//
+// AddBasicConstraints appends a BasicConstraints extension to the CSR.
+//
+// When isCA is true the extension is marked as critical with CA:TRUE;
+// otherwise it is marked as critical with CA:FALSE. Must be invoked
+// before Sign.
+func (r *CertificateRequest) AddBasicConstraints(isCA bool) error {
+	val := "critical,CA:FALSE"
+	if isCA {
+		val = "critical,CA:TRUE"
+	}
+	return r.AddExtension(native.NidBasicConstraints, val)
 }
 
 // AddSubjectAltName 向 CSR 追加 subjectAltName 扩展。
@@ -1604,6 +1978,60 @@ func (r *CertificateRequest) Extensions() []Extension {
 	return out
 }
 
+// CopyExtensionTo 把 CSR 中白名单命中的扩展复制到目标证书。
+//
+// 对每个扩展调用 filter 决定是否拷贝（filter 收到 NID、短名与 critical）；
+// 返回实际拷贝的扩展个数。复制走 X509_EXTENSION_dup + X509_add_ext，
+// 不需要在 Go 侧反解 DER，因此 critical 标记与原始值逐字节保留。
+//
+// 任一扩展复制失败时返回已拷贝的个数与错误（错误包装为 OpError）；
+// nil 或已关闭的 CSR 返回 (0, nil)。
+//
+// CopyExtensionTo copies the CSR's whitelisted extensions onto the target
+// certificate.
+//
+// filter decides per extension whether to copy it and receives the NID, short
+// name and critical flag; the return value is the number of extensions actually
+// copied. The copy goes through X509_EXTENSION_dup plus X509_add_ext, so no DER
+// decoding is needed on the Go side and both the critical flag and the original
+// value survive byte for byte.
+//
+// When an individual copy fails it returns how many were copied along with the
+// error (wrapped as OpError). A nil or closed CSR yields (0, nil).
+func (r *CertificateRequest) CopyExtensionTo(target *Certificate, filter func(nid int, field string, critical bool) bool) (int, error) {
+	if r == nil || r.handle == nil || r.handle.IsClosed() {
+		return 0, nil
+	}
+	if target == nil || target.handle == nil || target.handle.IsClosed() {
+		return 0, fmt.Errorf("x509: certificate closed")
+	}
+	if filter == nil {
+		return 0, fmt.Errorf("x509: nil extension filter")
+	}
+	sk := native.X509_REQ_get_extensions(r.handle.Ptr())
+	if sk == nil {
+		return 0, nil
+	}
+	defer native.X509_sk_X509_EXTENSION_pop_free(sk)
+	count := 0
+	n := native.X509_sk_X509_EXTENSION_num(sk)
+	for i := 0; i < n; i++ {
+		e := native.X509_sk_X509_EXTENSION_value(sk, i)
+		if e == nil {
+			continue
+		}
+		nid := native.X509_EXTENSION_get_nid(e)
+		if !filter(nid, native.OBJ_nid2sn(nid), native.X509_EXTENSION_get_critical(e) != 0) {
+			continue
+		}
+		if !native.X509_add_ext_dup(target.handle.Ptr(), e) {
+			return count, NewOpError("x509: X509_add_ext", native.PopError())
+		}
+		count++
+	}
+	return count, nil
+}
+
 // MarshalDER 将 CSR 序列化为 ASN.1 DER 编码。
 //
 // CSR 已通过 Close 关闭，或底层 i2d_X509_REQ 调用失败时返回错误（包装为 OpError）。
@@ -1633,6 +2061,9 @@ func (r *CertificateRequest) MarshalDER() ([]byte, error) {
 // returns the error "x509: invalid public key". Errors from the
 // underlying OpenSSL call are wrapped as OpError.
 func (r *CertificateRequest) SetPublicKey(k *PKey) error {
+	if err := r.ensureMutable("set public key"); err != nil {
+		return err
+	}
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return fmt.Errorf("x509: invalid public key")
 	}
@@ -1652,7 +2083,14 @@ func (r *CertificateRequest) SetPublicKey(k *PKey) error {
 // selected automatically by signer type (SM2→SM3, RSA/ECDSA→SHA256,
 // EdDSA→no-digest via X509_REQ_sign_ctx). Errors from the underlying
 // X509_REQ_sign / X509_REQ_sign_ctx calls are wrapped as OpError.
+//
+// Signing is a one-way transition: on success the CSR becomes immutable and
+// every later mutating call (Set*, Add*, Sign itself) fails with
+// "x509: request already signed".
 func (r *CertificateRequest) Sign(priv *PKey, md *Digest) error {
+	if err := r.ensureMutable("sign"); err != nil {
+		return err
+	}
 	if priv == nil || priv.handle == nil || priv.handle.IsClosed() {
 		return fmt.Errorf("x509: invalid private key")
 	}
@@ -1660,7 +2098,11 @@ func (r *CertificateRequest) Sign(priv *PKey, md *Digest) error {
 		md = digestForSigner(priv)
 	}
 	if md == nil {
-		return signCSRWithEdDSA(r.handle.Ptr(), priv.handle.Ptr())
+		if err := signCSRWithEdDSA(r.handle.Ptr(), priv.handle.Ptr()); err != nil {
+			return err
+		}
+		r.signed = true
+		return nil
 	}
 	if md.handle == nil {
 		return fmt.Errorf("x509: invalid digest")
@@ -1668,6 +2110,7 @@ func (r *CertificateRequest) Sign(priv *PKey, md *Digest) error {
 	if !native.X509_REQ_sign(r.handle.Ptr(), priv.handle.Ptr(), md.handle.Ptr()) {
 		return NewOpError("x509: X509_REQ_sign", native.PopError())
 	}
+	r.signed = true
 	return nil
 }
 
@@ -2133,7 +2576,7 @@ func ChainVerify(cert *Certificate, store *Store, intermediates []*Certificate) 
 		if dup == nil {
 			return nil, NewOpError("x509: X509_dup", native.PopError())
 		}
-		chain = append(chain, &Certificate{handle: NewHandle(dup, true, native.X509_free)})
+		chain = append(chain, &Certificate{handle: NewHandle(dup, true, native.X509_free), signed: true})
 	}
 	return chain, nil
 }

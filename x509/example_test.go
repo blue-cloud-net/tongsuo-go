@@ -80,6 +80,57 @@ func ExampleCertificate_MarshalPEM() {
 	// Output: example.com
 }
 
+// ExampleCertificate_AddExtensionByName 演示按名字添加任意 X.509 扩展。
+//
+// name 支持扩展短名与点分 OID，内部经 OBJ_txt2nid 解析，无需事先知道 NID 数值。
+// subjectAltName 属于可重复 OID：多次调用会把新值合并进同一条目，而不是产生
+// 第二个扩展条目。Sign 之后证书不可变，任何 Set* / Add* 调用都会返回错误。
+//
+// ExampleCertificate_AddExtensionByName demonstrates adding an arbitrary X.509
+// extension by name.
+//
+// name accepts an extension short name or a dotted OID and is resolved through
+// OBJ_txt2nid, so callers need not know the numeric NID. subjectAltName is a
+// repeatable OID: repeated calls merge the new values into the single existing
+// entry rather than producing a second extension entry. The certificate becomes
+// immutable after Sign, and any Set* / Add* call then returns an error.
+func ExampleCertificate_AddExtensionByName() {
+	priv, _ := asym.GenerateSM2()
+	now := time.Now()
+	subject := x509.NewName().Add("CN", "ext.example.com")
+
+	cert := x509.NewCertificate()
+	_ = cert.SetVersion(2) // v3
+	_ = cert.SetSerial(2002)
+	_ = cert.SetIssuer(subject)
+	_ = cert.SetSubject(subject)
+	_ = cert.SetValidity(now.Add(-time.Hour), now.Add(365*24*time.Hour))
+	_ = cert.SetPublicKey(priv.Public())
+
+	// 按短名添加
+	_ = cert.AddExtensionByName("extendedKeyUsage", "serverAuth,clientAuth")
+	// 按点分 OID 添加（2.5.29.15 = keyUsage）
+	_ = cert.AddExtensionByName("2.5.29.15", "critical,digitalSignature")
+	// 重复的 SAN 会被合并进同一条目
+	_ = cert.AddExtensionByName("subjectAltName", "DNS:ext.example.com")
+	_ = cert.AddExtensionByName("subjectAltName", "DNS:www.ext.example.com")
+
+	fmt.Println(cert.ExtendedKeyUsage())
+	fmt.Println(cert.KeyUsage())
+	fmt.Println(cert.SAN())
+
+	_ = cert.Sign(priv)
+	// 签名之后证书不可变
+	fmt.Println(cert.AddKeyUsage("keyEncipherment") != nil)
+	fmt.Println(cert.VerifyHostname("www.ext.example.com"))
+	// Output:
+	// [serverAuth clientAuth]
+	// [digitalSignature]
+	// [DNS:ext.example.com DNS:www.ext.example.com]
+	// true
+	// <nil>
+}
+
 // ExampleNewCertificateRequest 演示生成 CSR 并校验签名。
 //
 // ExampleNewCertificateRequest demonstrates generating a CSR and verifying its signature.

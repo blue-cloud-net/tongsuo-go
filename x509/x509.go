@@ -377,9 +377,18 @@ func (c *Certificate) Extensions() []Extension { return convertExtensions(c.cert
 
 // AddSubjectAltName 添加 SAN 扩展（如 "DNS:example.com,IP:1.2.3.4"；须在 Sign 之前调用）。
 //
+// ⚠️ subjectAltName 属于可重复 OID：重复调用会把新值**合并**进同一条目
+// （等价于把两次调用的值用逗号拼接后一次写入），而不是产生第二个扩展条目。
+// 因此多次调用与一次传入 "DNS:a,DNS:b" 结果相同。
+//
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
 // AddSubjectAltName appends a subjectAltName extension (for example "DNS:example.com,IP:1.2.3.4"). It must be called before Sign.
+//
+// ⚠️ subjectAltName is a repeatable OID: repeated calls **merge** the new values
+// into the single existing entry (equivalent to joining both calls' values with
+// commas into one call) rather than producing a second extension entry. Calling
+// it twice is therefore identical to a single call with "DNS:a,DNS:b".
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (c *Certificate) AddSubjectAltName(value string) error {
@@ -432,6 +441,166 @@ func (c *Certificate) AddAuthorityKeyID(issuer *Certificate) error {
 		return fmt.Errorf("x509: nil issuer certificate")
 	}
 	return c.cert.AddAuthorityKeyID(issuer.cert)
+}
+
+// AddExtension 按 NID 添加任意 X.509 扩展（如 NID 85 的 subjectAltName）。
+//
+// value 采用 OpenSSL X509V3_EXT_conf 配置语法（如 "DNS:example.com"、"critical,CA:TRUE"），
+// 具体取值随扩展类型而定，详见 `openssl x509 -ext` 与 OpenSSL v3 扩展配置文档。
+// 须在 Sign 之前调用；Sign 之后证书即不可变，再次调用返回错误。
+//
+// 同 NID 扩展已存在时：可重复 OID（subjectAltName / issuerAltName /
+// subjectDirectoryAttributes / certificateIssuer）把新值**合并**进已有条目并保持原
+// 位置与 critical 标记——OpenSSL 不接受同一证书内出现两个同 NID 条目，那会让
+// SAN() 与 VerifyHostname() 全部失效；其余 OID 返回
+// "x509: extension already present (nid N)"，需覆盖请改用 ReplaceExtension。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// AddExtension adds an arbitrary X.509 extension identified by nid (for example
+// subjectAltName, NID 85).
+//
+// value uses the OpenSSL X509V3_EXT_conf configuration syntax (for example
+// "DNS:example.com" or "critical,CA:TRUE"); the accepted values depend on the
+// extension type, see `openssl x509 -ext` and the OpenSSL v3 extension
+// configuration documentation.
+//
+// It must be called before Sign. Once the certificate is signed it becomes
+// immutable and further calls return an error.
+//
+// When an extension with the same NID is already present, repeatable OIDs
+// (subjectAltName / issuerAltName / subjectDirectoryAttributes /
+// certificateIssuer) **merge** the new value into the existing entry, keeping
+// its position and critical flag — OpenSSL rejects two entries with the same
+// NID on one certificate, which would silently break both SAN() and
+// VerifyHostname(). Every other OID returns
+// "x509: extension already present (nid N)"; use ReplaceExtension to
+// overwrite instead.
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (c *Certificate) AddExtension(nid int, value string) error {
+	return c.cert.AddExtension(nid, value)
+}
+
+// AddExtensionByName 按名字添加任意 X.509 扩展。
+//
+// name 可为扩展短名（"keyUsage"、"extendedKeyUsage"、"subjectDirectoryAttributes"）、
+// 长名或点分 OID（"2.5.29.15"），内部经 OBJ_txt2nid 解析，无需事先知道 NID 数值；
+// name 为空或无法识别时返回 "x509: unknown extension name %q"。
+// value 语法与 AddExtension 完全一致；重复检测与 Sign 后不可变规则同 AddExtension。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// AddExtensionByName adds an arbitrary X.509 extension addressed by name.
+//
+// name may be an extension short name ("keyUsage", "extendedKeyUsage",
+// "subjectDirectoryAttributes"), a long name, or a dotted OID ("2.5.29.15");
+// it is resolved through OBJ_txt2nid so callers need not know the numeric
+// NID. An empty or unrecognized name returns
+// "x509: unknown extension name %q".
+//
+// The value syntax is identical to AddExtension, and duplicate detection and
+// the post-Sign immutability rule behave the same way.
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (c *Certificate) AddExtensionByName(name, value string) error {
+	return c.cert.AddExtensionByName(name, value)
+}
+
+// AddExtensions 批量添加多个扩展（如 SAN + KeyUsage + EKU）。
+//
+// nil 或空切片为 no-op，返回 nil。每个 Extension 只使用 Nid 与 Value 两个字段
+// （Field / OID / Critical / Data 为读取态，构建时忽略）。
+// 按顺序逐条追加，中途失败时已追加的扩展会保留——调用方应丢弃该证书重建，
+// 不得在不确定状态下继续签发。须在 Sign 之前调用。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// AddExtensions adds several extensions at once (for example SAN, KeyUsage and
+// EKU).
+//
+// A nil or empty slice is a no-op and returns nil. Only the Nid and Value fields
+// of each Extension are used; Field, OID, Critical and Data are populated on
+// read and ignored here.
+//
+// The extensions are appended in order. When the call fails partway through,
+// the extensions already appended are kept, so the caller must discard the
+// certificate and rebuild rather than issuing it in an indeterminate state.
+// It must be called before Sign.
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (c *Certificate) AddExtensions(exts ...Extension) error {
+	cexts := make([]core.Extension, 0, len(exts))
+	for _, e := range exts {
+		cexts = append(cexts, core.Extension{Nid: e.Nid, Value: e.Value})
+	}
+	return c.cert.AddExtensions(cexts...)
+}
+
+// HasExtension 报告证书是否已包含 name 指定的扩展。
+//
+// name 为扩展短名、长名或点分 OID；未知名字与 nil / 已关闭证书均返回 false。
+// 本方法只读不改，已签名证书可安全调用。用于在 AddExtension 前判断是否已存在，
+// 或在验证证书结构时检查某个扩展的缺失。
+//
+// HasExtension reports whether the certificate already carries the extension
+// identified by name.
+//
+// name may be a short name, a long name, or a dotted OID. An unknown name and a
+// nil or closed certificate both yield false.
+//
+// The call never mutates the certificate, so it is safe on signed ones. Use it
+// to check for presence before AddExtension, or to assert that an expected
+// extension is present.
+func (c *Certificate) HasExtension(name string) bool {
+	return c.cert.HasExtension(name)
+}
+
+// RemoveExtension 删除 name 指定的扩展。
+//
+// name 为扩展短名、长名或点分 OID；未知名字返回 "x509: unknown extension name %q"，
+// 证书中不存在该扩展返回 "x509: extension not present (nid N)"。
+// ⚠️ 删除会改变证书 DER 字节，因此**必须在 Sign 之前调用**；若证书已签名，
+// 删除操作会被拒绝（返回 "x509: certificate already signed"），
+// 以免产出签名与内容不一致的证书。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// RemoveExtension removes the extension identified by name.
+//
+// An unknown name returns "x509: unknown extension name %q"; a name the
+// certificate does not carry returns "x509: extension not present (nid N)".
+//
+// ⚠️ Removing an extension changes the DER encoding of the certificate, so it
+// **must** be called before Sign. On an already signed certificate the call is
+// rejected with "x509: certificate already signed" rather than producing a
+// certificate whose signature no longer matches its content.
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (c *Certificate) RemoveExtension(name string) error {
+	return c.cert.RemoveExtension(name)
+}
+
+// ReplaceExtension 覆盖 name 指定的扩展，并保持它在证书中的原有位置。
+//
+// 语义与 BouncyCastle X509ExtensionsGenerator.ReplaceExtension 一致：扩展不存在时
+// 返回 "x509: extension not present (nid N)"，而不是替调用方新建。
+// value 语法与 AddExtension 一致；须在 Sign 之前调用。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// ReplaceExtension overwrites the extension identified by name while keeping
+// its original position in the certificate.
+//
+// The semantics match BouncyCastle's X509ExtensionsGenerator.ReplaceExtension:
+// when the extension is absent the call returns
+// "x509: extension not present (nid N)" instead of creating it on the caller's
+// behalf. The value syntax matches AddExtension, and it must be called before
+// Sign.
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (c *Certificate) ReplaceExtension(name, value string) error {
+	return c.cert.ReplaceExtension(name, value)
 }
 
 // Fingerprint 计算证书指纹（十六进制小写）。
@@ -563,9 +732,19 @@ func (c *Certificate) AddBasicConstraints(isCA bool) error {
 // Sign 使用签名私钥对证书签名（须先配置好版本/序列号/主题/签发者/有效期/公钥/扩展）。
 // signer 支持 asym 包提供的算法，摘要按密钥类型自动选择。
 //
+// ⚠️ Sign 是单向终态：成功后证书不可变，任何 Set* / Add* / 再次 Sign 调用均返回
+// "x509: certificate already signed"。这避免了「改了字段或扩展却忘了重签」而静默
+// 产出签名失效的证书；确需修改请丢弃证书重建。
+//
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
 // Sign signs the certificate with signer after version, serial, subject, issuer, validity, public key, and extensions have been configured. signer may be any algorithm the asym package provides, and the digest is chosen automatically based on the key type.
+//
+// ⚠️ Sign is a one-way transition: on success the certificate becomes immutable
+// and every later Set*, Add* or repeated Sign call returns
+// "x509: certificate already signed". This prevents silently emitting a
+// certificate whose signature no longer covers the modified content; discard
+// the certificate and rebuild when changes are needed.
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (c *Certificate) Sign(signer asym.PrivateKey) error {
