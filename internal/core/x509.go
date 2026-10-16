@@ -1718,6 +1718,10 @@ type CertificateRequest struct {
 	// 只有 NewCertificateRequest 创建的对象为 false；解析路径（PEM/DER）
 	// 产出的对象底层本就带签名，一律置为 true。
 	signed bool
+	// pendingExts 暂存尚未提交到底层 X509_REQ 的扩展（已按 Nid/Value 校验）。
+	// 见 flushExtensions：铜锁 8.4 与 8.5 的 X509_REQ_add_extensions 合并语义
+	// 不同，分多次调用会丢扩展，故统一以**单次**原生调用提交。
+	pendingExts []Extension
 }
 
 // ensureMutable 在修改 CSR 字段或扩展前检查句柄是否仍可变。
@@ -1893,17 +1897,22 @@ func (r *CertificateRequest) ChallengePassword() string {
 	return native.X509_REQ_get_challenge_password(r.handle.Ptr())
 }
 
-// AddExtensions 向 CSR 批量追加多个扩展。
+// AddExtensions 向 CSR 追加多个扩展。
 //
-// 须在 Sign 之前调用；nil 或空 exts 切片为 no-op，返回 nil；每个扩展由 Nid 与 Value（X509V3_EXT_conf 串）构造；任一底层 OpenSSL 调用失败均以 OpError 包装；部分失败时已创建的扩展会在错误返回前全部释放。
+// 须在 Sign 之前调用；nil 或空 exts 切片为 no-op，返回 nil；每个扩展由 Nid 与 Value（X509V3_EXT_conf 串）构造，任一构造失败即整批放弃（不会部分写入）。本方法只校验并暂存，扩展在 Sign / MarshalDER / CopyExtensionTo 前由 flushExtensions 以单次原生调用提交——因为铜锁 8.4 与 8.5 的 X509_REQ_add_extensions 合并语义不同（8.4 每次调用追加一个新属性而读取只认第一个，8.5 会与已有扩展合并），分多次提交会在 8.4 上丢失先添加的扩展。错误均以 OpError 包装。
 //
 // AddExtensions appends a batch of extensions to the CSR.
 //
 // Must be invoked before Sign. A nil or empty exts slice is a no-op and
 // returns nil. Each extension is built from its Nid and Value (the
-// X509V3_EXT_conf string). Errors from any of the underlying OpenSSL
-// calls are wrapped as OpError. If the call fails partway through, every
-// extension created so far is released before the error is returned.
+// X509V3_EXT_conf string); if any of them fails to build, the whole batch is
+// abandoned (nothing is partially applied). This method only validates and
+// stages the extensions — flushExtensions commits them with a **single**
+// native call before Sign / MarshalDER / CopyExtensionTo, because
+// X509_REQ_add_extensions merges differently across Tongsuo versions (8.4
+// appends a fresh attribute per call while readers only see the first, 8.5
+// merges with the existing extensions), so committing incrementally would
+// drop the earlier extensions on 8.4. Errors are wrapped as OpError.
 func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
 	if len(exts) == 0 {
 		return nil
@@ -1911,19 +1920,58 @@ func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
 	if err := r.ensureMutable("add extensions"); err != nil {
 		return err
 	}
+	// 逐个构造以校验配置串合法性并填充读取视图；原生对象随即释放——
+	// 真正提交时（flushExtensions）会按 Nid/Value 重新构造。
+	staged := make([]Extension, 0, len(exts))
+	for _, e := range exts {
+		ext := native.X509V3_EXT_conf_nid(e.Nid, e.Value)
+		if ext == nil {
+			return NewOpError("x509: X509V3_EXT_conf_nid", native.PopError())
+		}
+		obj := native.X509_EXTENSION_get_object(ext)
+		nid := native.OBJ_obj2nid(obj)
+		e.Field = native.OBJ_nid2sn(nid)
+		e.OID = native.OBJ_obj2txt(obj, 1)
+		e.Critical = native.X509_EXTENSION_get_critical(ext) != 0
+		e.Data = native.ASN1_STRING_data_bytes(native.X509_EXTENSION_get_data(ext))
+		native.X509_EXTENSION_free(ext)
+		staged = append(staged, e)
+	}
+	r.pendingExts = append(r.pendingExts, staged...)
+	return nil
+}
+
+// flushExtensions 把暂存的扩展一次性提交到底层 X509_REQ，并清空暂存区。
+//
+// 无暂存时为 no-op。须在 Sign / MarshalDER / CopyExtensionTo 之前调用：
+// 这些操作都会读取 CSR 的 extensionRequest 属性，而在铜锁 8.4 上多次调用
+// X509_REQ_add_extensions 会追加多个属性而读取只认第一个，必须**只调一次**。
+// 底层 OpenSSL 错误以 OpError 包装；失败时暂存区保持不变（可重试）。
+//
+// flushExtensions commits the staged extensions to the underlying X509_REQ
+// with a single native call and clears the staging area.
+//
+// It is a no-op when nothing is staged and must be invoked before Sign /
+// MarshalDER / CopyExtensionTo, all of which read the CSR's extensionRequest
+// attribute. Errors are wrapped as OpError; on failure the staging area is
+// left intact so the call can be retried.
+func (r *CertificateRequest) flushExtensions() error {
+	if len(r.pendingExts) == 0 {
+		return nil
+	}
 	sk := native.X509_sk_X509_EXTENSION_new_null()
 	if sk == nil {
 		return NewOpError("x509: sk_X509_EXTENSION_new_null", native.PopError())
 	}
 	defer native.X509_sk_X509_EXTENSION_free(sk)
 	// 扩展压栈后不能立即释放：X509_REQ_add_extensions 在编码时会读取栈中元素。
-	created := make([]unsafe.Pointer, 0, len(exts))
+	created := make([]unsafe.Pointer, 0, len(r.pendingExts))
 	freeAll := func() {
 		for _, x := range created {
 			native.X509_EXTENSION_free(x)
 		}
 	}
-	for _, e := range exts {
+	for _, e := range r.pendingExts {
 		ext := native.X509V3_EXT_conf_nid(e.Nid, e.Value)
 		if ext == nil {
 			freeAll()
@@ -1940,6 +1988,7 @@ func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
 		return NewOpError("x509: X509_REQ_add_extensions", native.PopError())
 	}
 	freeAll()
+	r.pendingExts = nil
 	return nil
 }
 
@@ -2047,7 +2096,7 @@ func (r *CertificateRequest) Extensions() []Extension {
 	}
 	defer native.X509_sk_X509_EXTENSION_pop_free(sk)
 	count := native.X509_sk_X509_EXTENSION_num(sk)
-	out := make([]Extension, 0, count)
+	out := make([]Extension, 0, count+len(r.pendingExts))
 	for i := 0; i < count; i++ {
 		e := native.X509_sk_X509_EXTENSION_value(sk, i)
 		if e == nil {
@@ -2063,7 +2112,8 @@ func (r *CertificateRequest) Extensions() []Extension {
 			Data:     native.ASN1_STRING_data_bytes(native.X509_EXTENSION_get_data(e)),
 		})
 	}
-	return out
+	// 已暂存但尚未提交的扩展同样对调用方可见（AddExtension* 后、Sign 前）。
+	return append(out, r.pendingExts...)
 }
 
 // CopyExtensionTo 把 CSR 中白名单命中的扩展复制到目标证书。
@@ -2095,6 +2145,9 @@ func (r *CertificateRequest) CopyExtensionTo(target *Certificate, filter func(ni
 	}
 	if filter == nil {
 		return 0, fmt.Errorf("x509: nil extension filter")
+	}
+	if err := r.flushExtensions(); err != nil {
+		return 0, err
 	}
 	sk := native.X509_REQ_get_extensions(r.handle.Ptr())
 	if sk == nil {
@@ -2131,6 +2184,9 @@ func (r *CertificateRequest) CopyExtensionTo(target *Certificate, filter func(ni
 func (r *CertificateRequest) MarshalDER() ([]byte, error) {
 	if r == nil || r.handle == nil || r.handle.IsClosed() {
 		return nil, fmt.Errorf("x509: request closed")
+	}
+	if err := r.flushExtensions(); err != nil {
+		return nil, err
 	}
 	der, ok := native.I2d_X509_REQ(r.handle.Ptr())
 	if !ok {
@@ -2177,6 +2233,9 @@ func (r *CertificateRequest) SetPublicKey(k *PKey) error {
 // "x509: request already signed".
 func (r *CertificateRequest) Sign(priv *PKey, md *Digest) error {
 	if err := r.ensureMutable("sign"); err != nil {
+		return err
+	}
+	if err := r.flushExtensions(); err != nil {
 		return err
 	}
 	if priv == nil || priv.handle == nil || priv.handle.IsClosed() {

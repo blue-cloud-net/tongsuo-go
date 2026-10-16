@@ -410,18 +410,16 @@ func (r *CertificateRequest) AddBasicConstraints(isCA bool) error {
 
 // AddSubjectAltName 为 CSR 添加 SAN 扩展（如 "DNS:example.com"）。
 //
-// ⚠️ subjectAltName 属于可重复 OID：OpenSSL 的 X509_REQ_add_extensions 会整体
-// 替换扩展栈，因此 CSR 侧请在单次 AddExtensions 调用中用逗号分隔多个值，
-// 而不要分多次调用本方法。
+// ⚠️ subjectAltName 属于可重复 OID：可多次调用本方法追加多个值，也可在单次
+// AddExtensions 调用中用逗号分隔；两种写法最终效果一致。
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
 // AddSubjectAltName appends a subjectAltName extension to the CSR (for example "DNS:example.com").
 //
-// ⚠️ subjectAltName is a repeatable OID: OpenSSL's X509_REQ_add_extensions
-// replaces the whole extension stack, so on the CSR side pass several values
-// comma-separated in one AddExtensions call rather than calling this method
-// repeatedly.
+// ⚠️ subjectAltName is a repeatable OID: this method may be called repeatedly to
+// append more values, or several values may be passed comma-separated in one
+// AddExtensions call — both forms end up with the same result.
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) AddSubjectAltName(value string) error {
