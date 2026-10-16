@@ -3,7 +3,7 @@
 // `openssl kdf <ALG> -kdfopt …` 对应。
 //
 // 本版保留 legacy 强类型 HKDF/PBKDF2/Argon2ID 入口，与按名入口并存；
-// SCrypt / SSKDF / TLS1-PRF / KBKDF 等 10 种其余算法在 0.4.0 后补齐
+// SCrypt / SSKDF / TLS1-PRF / KBKDF 等 10 种其余算法在 0.5.0 后补齐
 // （需新增 EVP_KDF_fetch 泛化绑定）。
 //
 // Package kdf collects key-derivation functions: RFC 5869 HKDF,
@@ -12,5 +12,5 @@
 //
 // The legacy typed HKDF / PBKDF2 / Argon2ID helpers are kept alongside
 // the by-name entry; SCrypt, SSKDF, TLS1-PRF, KBKDF and others will be
-// added in 0.4.0 once the EVP_KDF_fetch binding is generalised.
+// added in 0.5.0 once the EVP_KDF_fetch binding is generalised.
 package kdf
