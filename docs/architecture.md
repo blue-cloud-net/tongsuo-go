@@ -276,6 +276,7 @@ tongsuo-go/
 │   ├── csr.go                 # CertificateRequest
 │   ├── crl.go                 # CRL / RevokedEntry / CRLBuilder / RevocationCheck
 │   ├── ocsp.go                # Request / Response / CreateOCSPRequest / ParseOCSPResponse
+│   ├── issue.go               # IssueCertificateFromRequest / IssueOptions
 │   ├── store.go               # Store / VerifyError / ChainVerify
 │   └── helpers.go             # convertEntries / convertExtensions
 ├── tls/                       # 【传输】TLS / NTLS
@@ -437,6 +438,6 @@ go build ./...
 - [参考项目（C# 封装）](https://github.com/blue-cloud-net/tongsuo-csharp)
 - [官方 Go SDK](https://github.com/tongsuo-project/tongsuo-go-sdk)
 - [与官方 SDK 的功能对比与对齐路线图](official-sdk-comparison.md)
-- [版本路线图（`0.4.0` 及以后）](roadmap.md)
+- [版本路线图（`0.5.0` 及以后）](roadmap.md)
 - [开发规范](development-guide.md) · [测试规范](testing-guide.md)
 - [公开 API 清单](api-reference.md) · [内部 API 清单](api-reference-internal.md)
