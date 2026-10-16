@@ -9,16 +9,18 @@
 > 4. 类型给出导出字段；未导出字段以「（内部字段）」表示其存在；
 > 5. 本文描述的是**重构后的目标形态**：`crypto/` 整目录与 `key/` 已被 `digest` / `mac` / `sym` / `asym` / `ecdh` / `kdf` / `rand` / `keystore` 取代；`csr` / `crl` / `ocsp` **未拆**，全部留在 `x509`。
 >
-> **范围**：**16 个包**。生成基线：`0.3.0`（2026-09-30 发布）。
+> **范围**：**16 个包**。生成基线：`0.4.0`（2026-10-16 发布）。
 > **版本归属**：本文件不负责版本分配，哪个 🧭 符号落在哪个版本见 [roadmap.md](roadmap.md) §2。
 >
 > **状态标记**：
-> - ✅ **已有** — 已发布可用（`0.3.0` 及之前）；
+> - ✅ **已有** — 已发布可用（`0.4.0` 及之前）；
 > - 🚧 **变更中** — 目标版本另标，尚不可用；
 > - 🧭 **规划中** — 仅表达**目标 API 形态**，尚不可用；**目标版本以 [roadmap.md](roadmap.md) §2 为准**，
 >   下表的版本列仅为速查，若与该文冲突以 roadmap 为准。
 >
-> 符号行前缀：`🆕` `0.3.0` 新增 / `♻️` 迁移自其他包（附原名） / `🧭` 规划中。
+> 符号行前缀：`🆕` `0.3.0` 新增 / `✨` `0.4.0` 新增 / `♻️` 迁移自其他包（附原名） / `🧭` 规划中。
+> `0.4.0` 的**行为变更**（非新增符号）写在对应行内，如 `Certificate.Sign` / `CertificateRequest.Sign`
+> 收紧为单向终态。
 
 ---
 
@@ -100,17 +102,17 @@
 
 | 符号 | 说明 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|---|
-| 🧭 `func Digests() []string` | 可用摘要算法名（等价 `list -digest-algorithms`） | `0.4.0` | `EVP_MD_do_all_provided` |
-| 🧭 `func Ciphers() []string` | 可用对称算法名（等价 `list -cipher-algorithms`） | `0.4.0` | `EVP_CIPHER_do_all_provided` |
-| 🧭 `func MACs() []string` | 可用 MAC 算法名（等价 `list -mac-algorithms`） | `0.4.0` | `EVP_MAC_do_all_provided` |
-| 🧭 `func KDFs() []string` | 可用 KDF 算法名（等价 `list -kdf-algorithms`） | `0.4.0` | `EVP_KDF_do_all_provided` |
-| 🧭 `func Signatures() []string` | 可用签名算法名（等价 `list -signature-algorithms`） | `0.4.0` | `EVP_SIGNATURE_do_all_provided` |
-| 🧭 `func KeyExchanges() []string` | 可用密钥交换算法名（等价 `list -key-exchange-algorithms`） | `0.4.0` | `EVP_KEYEXCH_do_all_provided` |
-| 🧭 `func KEMs() []string` | 可用 KEM 算法名（等价 `list -kem-algorithms`） | `0.4.0` | `EVP_KEM_do_all_provided` |
-| 🧭 `func TLSGroups() []string` | 可用 TLS 组（等价 `list -tls-groups`） | `0.4.0` | `SSL_get1_groups` / `SSL_group_to_name` |
-| 🧭 `func Providers() []ProviderInfo` | 活跃 provider 名称 / 版本 / 状态（等价 `list -providers`） | `0.4.0` | `OSSL_PROVIDER_*` |
-| 🧭 `type ProviderInfo struct { Name string; Version string; Status string }` | provider 描述 | `0.4.0` | — |
-| 🧭 `func SeedingSource() string` | 随机种子来源（`version -a` 的 `Seeding source` 行） | `0.4.0` | `OPENSSL_info(OPENSSL_INFO_SEED_SOURCE)` |
+| 🧭 `func Digests() []string` | 可用摘要算法名（等价 `list -digest-algorithms`） | `0.5.0` | `EVP_MD_do_all_provided` |
+| 🧭 `func Ciphers() []string` | 可用对称算法名（等价 `list -cipher-algorithms`） | `0.5.0` | `EVP_CIPHER_do_all_provided` |
+| 🧭 `func MACs() []string` | 可用 MAC 算法名（等价 `list -mac-algorithms`） | `0.5.0` | `EVP_MAC_do_all_provided` |
+| 🧭 `func KDFs() []string` | 可用 KDF 算法名（等价 `list -kdf-algorithms`） | `0.5.0` | `EVP_KDF_do_all_provided` |
+| 🧭 `func Signatures() []string` | 可用签名算法名（等价 `list -signature-algorithms`） | `0.5.0` | `EVP_SIGNATURE_do_all_provided` |
+| 🧭 `func KeyExchanges() []string` | 可用密钥交换算法名（等价 `list -key-exchange-algorithms`） | `0.5.0` | `EVP_KEYEXCH_do_all_provided` |
+| 🧭 `func KEMs() []string` | 可用 KEM 算法名（等价 `list -kem-algorithms`） | `0.5.0` | `EVP_KEM_do_all_provided` |
+| 🧭 `func TLSGroups() []string` | 可用 TLS 组（等价 `list -tls-groups`） | `0.5.0` | `SSL_get1_groups` / `SSL_group_to_name` |
+| 🧭 `func Providers() []ProviderInfo` | 活跃 provider 名称 / 版本 / 状态（等价 `list -providers`） | `0.5.0` | `OSSL_PROVIDER_*` |
+| 🧭 `type ProviderInfo struct { Name string; Version string; Status string }` | provider 描述 | `0.5.0` | — |
+| 🧭 `func SeedingSource() string` | 随机种子来源（`version -a` 的 `Seeding source` 行） | `0.5.0` | `OPENSSL_info(OPENSSL_INFO_SEED_SOURCE)` |
 
 ---
 
@@ -152,7 +154,7 @@
 
 > 安全提示：MD5 与 SHA-1 已不适用于数字签名，仅用于兼容既有格式与完整性校验。
 
-**规划中（`0.5.0`）**
+**规划中（`0.6.0`）**
 
 | 符号 | 说明 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
@@ -201,7 +203,7 @@
 
 > 实现说明：本版仍走 legacy `HMAC_CTX_*` 路径（`internal/native/binding_hmac.go`），未绑定 `EVP_MAC_*`；因此 `New(name, …)` 的 `name` 在本版只接受 `HMAC-*` 系列。
 
-**规划中（`0.4.0`）**
+**规划中（`0.5.0`）**
 
 > 前置：`internal/native` 需新增 `EVP_MAC_fetch / new / init / update / final` 绑定（本版 `mac` 的 HMAC 走 legacy `HMAC_CTX_*` 路径，新增绑定不影响其行为）。
 
@@ -244,7 +246,7 @@
 - 🆕 `func Names() []string` — 返回本版已支持的 KDF 算法名
 - 🆕 `func Derive(name string, opts *Options) ([]byte, error)` — 按名分发派生（对应 `tongsuo kdf HKDF -kdfopt …`）
 
-**规划中（`0.4.0`～`0.5.0`）**
+**规划中（`0.5.0`～`0.6.0`）**
 
 > 完整范围与版本拆分见 [roadmap.md](roadmap.md) §2.1 / §2.2。
 
@@ -350,11 +352,11 @@
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
-| 🧭 `AES192KeySize = 24` 与 AES-192 全模式 | `0.4.0` | `EVP_aes_192_{ecb,cbc,ctr,gcm}` |
-| 🧭 AES-OFB / CFB / CCM / XTS / OCB / SIV / GCM-SIV / WRAP / CBC-CTS | `0.5.0` | `EVP_aes_*_{ofb,cfb,ccm,xts,ocb,…}` |
-| 🧭 SM4-CCM / SM4-XTS | `0.4.0` | `EVP_sm4_ccm` / `EVP_sm4_xts` |
-| 🧭 ChaCha20 / ChaCha20-Poly1305 | `0.4.0` | `EVP_chacha20` / `EVP_chacha20_poly1305` |
-| 🧭 ZUC-128-EEA3 | `0.5.0` | `EVP_zuc` |
+| 🧭 `AES192KeySize = 24` 与 AES-192 全模式 | `0.5.0` | `EVP_aes_192_{ecb,cbc,ctr,gcm}` |
+| 🧭 AES-OFB / CFB / CCM / XTS / OCB / SIV / GCM-SIV / WRAP / CBC-CTS | `0.6.0` | `EVP_aes_*_{ofb,cfb,ccm,xts,ocb,…}` |
+| 🧭 SM4-CCM / SM4-XTS | `0.5.0` | `EVP_sm4_ccm` / `EVP_sm4_xts` |
+| 🧭 ChaCha20 / ChaCha20-Poly1305 | `0.5.0` | `EVP_chacha20` / `EVP_chacha20_poly1305` |
+| 🧭 ZUC-128-EEA3 | `0.6.0` | `EVP_zuc` |
 
 **破坏性变更**
 
@@ -457,10 +459,10 @@
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
-| 🧭 ED25519ph / ED25519ctx / ED448ph | `0.5.0` | `EVP_DigestSignInit_ex` 的 `context-string` 选项 |
-| 🧭 ML-DSA-44 / 65 / 87 | `0.6.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
-| 🧭 SLH-DSA 12 变体 | `0.6.0` | 同上 |
-| 🧭 `func Encapsulate` / `func Decapsulate`（KEM） | `0.6.0` | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
+| 🧭 ED25519ph / ED25519ctx / ED448ph | `0.6.0` | `EVP_DigestSignInit_ex` 的 `context-string` 选项 |
+| 🧭 ML-DSA-44 / 65 / 87 | `0.7.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
+| 🧭 SLH-DSA 12 变体 | `0.7.0` | 同上 |
+| 🧭 `func Encapsulate` / `func Decapsulate`（KEM） | `0.7.0` | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
 
 > 明确不做：DSA、DH、EC-ElGamal、Paillier（见 `docs/cli-comparison.md` §9）。
 
@@ -530,8 +532,8 @@
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
-| 🧭 SM2DH 密钥协商（`CurveByName("SM2DH")`） | `0.6.0` | 铜锁已启用（`key-exchange-algorithms`）；`EVP_PKEY_derive*` 已绑定，需补 SM2 派生参数 |
-| 🧭 曲线参数文件读写（`ecparam -param_out`） | `0.5.0` | 无需新绑定（走现有 EC 参数序列化） |
+| 🧭 SM2DH 密钥协商（`CurveByName("SM2DH")`） | `0.7.0` | 铜锁已启用（`key-exchange-algorithms`）；`EVP_PKEY_derive*` 已绑定，需补 SM2 派生参数 |
+| 🧭 曲线参数文件读写（`ecparam -param_out`） | `0.6.0` | 无需新绑定（走现有 EC 参数序列化） |
 
 **破坏性变更**
 
@@ -664,28 +666,28 @@
 - ♻️ `func (c *Certificate) SubjectKeyID() []byte` / `AuthorityKeyID() []byte` — SKID / AKID
 - ♻️ `func (c *Certificate) CertificateType() string` — 公钥算法名（如 `"SM2"` / `"RSA"` / `"EC"`）
 - ♻️ `func (c *Certificate) Extensions() []Extension` — 全部扩展
-- 🆕 `func (c *Certificate) SerialHex() string` — 序列号大写十六进制（超出 int64 范围时用它代替 `Serial`；对应 `-serial`）
-- 🆕 `func (c *Certificate) SubjectHash() uint32` / `IssuerHash() uint32` — `X509_NAME_hash`（对应 `-subject_hash` / `-issuer_hash`，也是 CA 目录 `hash.N` 的那个 hash）
-- 🆕 `func (c *Certificate) CheckEmail(email string) error` — 邮箱校验（对应 `verify -verify_email`；只做名字匹配，不验链）
+- ✨ `func (c *Certificate) SerialHex() string` — 序列号大写十六进制（超出 int64 范围时用它代替 `Serial`；对应 `-serial`）
+- ✨ `func (c *Certificate) SubjectHash() uint32` / `IssuerHash() uint32` — `X509_NAME_hash`（对应 `-subject_hash` / `-issuer_hash`，也是 CA 目录 `hash.N` 的那个 hash）
+- ✨ `func (c *Certificate) CheckEmail(email string) error` — 邮箱校验（对应 `verify -verify_email`；只做名字匹配，不验链）
 - ♻️ `func (c *Certificate) Fingerprint(hash string) (string, error)` — 指纹（十六进制；参数名由 `alg` 改为 `hash`，与全局取向一致）
 
 **证书加载与落盘**
 
 - ♻️ `func LoadCertificatePEM(pemBytes []byte) (*Certificate, error)` / `LoadCertificateDER(der []byte) (*Certificate, error)`
-- 🆕 `func LoadCertificatePEMFile(path string) (*Certificate, error)` — 从文件加载（对应 `openssl x509 -in <path>`）
-- 🆕 `func SaveCertificatePEMFile(path string, c *Certificate, perm os.FileMode) error` — 写入 PEM 文件（对应 `-out`；显式 chmod，因为 `os.WriteFile` 不改已存在文件的权限）
+- ✨ `func LoadCertificatePEMFile(path string) (*Certificate, error)` — 从文件加载（对应 `openssl x509 -in <path>`）
+- ✨ `func SaveCertificatePEMFile(path string, c *Certificate, perm os.FileMode) error` — 写入 PEM 文件（对应 `-out`；显式 chmod，因为 `os.WriteFile` 不改已存在文件的权限）
 
 **证书构建与签发**
 
 - ♻️ `func NewCertificate() *Certificate` — 创建空证书
 - ♻️ `func (c *Certificate) SetVersion(v int) error` / `SetSerial(serial int64) error` / `SetIssuer(n *Name) error` / `SetSubject(n *Name) error` / `SetValidity(notBefore, notAfter time.Time) error` / `SetPublicKey(pub asym.PublicKey) error` — 分步设置
 - ♻️ `func (c *Certificate) AddBasicConstraints(isCA bool) error` / `AddSubjectAltName(value string) error` / `AddKeyUsage(value string) error` / `AddExtendedKeyUsage(value string) error` / `AddSubjectKeyID() error` / `AddAuthorityKeyID(issuer *Certificate) error` — 预置扩展
-- 🆕 `func (c *Certificate) AddExtension(nid int, value string) error` — 任意扩展（按 NID，`value` 为 OpenSSL `X509V3_EXT_conf` 配置串）
-- 🆕 `func (c *Certificate) AddExtensionByName(name, value string) error` — 任意扩展（按短名 / 长名 / 点分 OID，内部走 `OBJ_txt2nid`）
-- 🆕 `func (c *Certificate) AddExtensions(exts ...Extension) error` — 批量添加（只用 `Extension` 的 `Nid` / `Value`）
-- 🆕 `func (c *Certificate) HasExtension(name string) bool` — 扩展是否存在（只读，已签名证书可调用）
-- 🆕 `func (c *Certificate) RemoveExtension(name string) error` — 删除扩展（**须在 `Sign` 之前**）
-- 🆕 `func (c *Certificate) ReplaceExtension(name, value string) error` — 覆盖扩展并保持原位置（不存在时报错，语义对齐 BouncyCastle `X509ExtensionsGenerator`）
+- ✨ `func (c *Certificate) AddExtension(nid int, value string) error` — 任意扩展（按 NID，`value` 为 OpenSSL `X509V3_EXT_conf` 配置串）
+- ✨ `func (c *Certificate) AddExtensionByName(name, value string) error` — 任意扩展（按短名 / 长名 / 点分 OID，内部走 `OBJ_txt2nid`）
+- ✨ `func (c *Certificate) AddExtensions(exts ...Extension) error` — 批量添加（只用 `Extension` 的 `Nid` / `Value`）
+- ✨ `func (c *Certificate) HasExtension(name string) bool` — 扩展是否存在（只读，已签名证书可调用）
+- ✨ `func (c *Certificate) RemoveExtension(name string) error` — 删除扩展（**须在 `Sign` 之前**）
+- ✨ `func (c *Certificate) ReplaceExtension(name, value string) error` — 覆盖扩展并保持原位置（不存在时报错，语义对齐 BouncyCastle `X509ExtensionsGenerator`）
 
   > **重复扩展规则**：`AddExtension*` 遇到已存在的 NID 时，可重复 OID
   > （`subjectAltName` / `issuerAltName` / `subjectDirectoryAttributes` / `certificateIssuer`）
@@ -704,7 +706,7 @@
 - ♻️ `func (c *Certificate) Signature() []byte` — 原始签名值
 - ♻️ `func (c *Certificate) SignatureAlgorithm() string` / `SignatureAlgorithmOID() string` — 签名算法名 / OID
 - 🆕 `func (c *Certificate) VerifyHostname(host string) error` — 主机名 / IP 校验（对应 `verify -verify_hostname`；`cli-comparison.md` §6.B B8，P1）
-- 🆕 `func (c *Certificate) ToCertificateRequest(priv asym.PrivateKey) (*CertificateRequest, error)` — 证书转 CSR（对应 `x509 -x509toreq`；**不迁移扩展**，与 openssl 一致）
+- ✨ `func (c *Certificate) ToCertificateRequest(priv asym.PrivateKey) (*CertificateRequest, error)` — 证书转 CSR（对应 `x509 -x509toreq`；**不迁移扩展**，与 openssl 一致）
 
 **CSR**
 
@@ -716,8 +718,8 @@
 - ♻️ `func (r *CertificateRequest) SubjectName() *Name` / `SubjectEntries() []NameEntry` / `SubjectText() string` — subject 读取
 - ♻️ `func (r *CertificateRequest) SetChallengePassword(pwd string) error` / `ChallengePassword() string` — challengePassword 属性
 - ♻️ `func (r *CertificateRequest) AddExtensions(exts ...Extension) error` / `AddExtension(nid int, value string) error` / `AddSubjectAltName(value string) error` / `Extensions() []Extension` — 扩展
-- 🆕 `func (r *CertificateRequest) AddExtensionByName(name, value string) error` — 任意扩展（按短名 / 长名 / 点分 OID）
-- 🆕 `func (r *CertificateRequest) AddKeyUsage(value string) error` / `AddExtendedKeyUsage(value string) error` / `AddBasicConstraints(isCA bool) error` — 与 `Certificate` 对称的便利方法
+- ✨ `func (r *CertificateRequest) AddExtensionByName(name, value string) error` — 任意扩展（按短名 / 长名 / 点分 OID）
+- ✨ `func (r *CertificateRequest) AddKeyUsage(value string) error` / `AddExtendedKeyUsage(value string) error` / `AddBasicConstraints(isCA bool) error` — 与 `Certificate` 对称的便利方法
 
   > 注：CSR 侧**不提供** `AddSubjectKeyID`——OpenSSL 在 `X509_REQ` 上没有 subject 公钥
   > 上下文，`"hash"` 会报 `s2i_skey_id: no subject details`。
@@ -726,8 +728,8 @@
 
 **CA 签发入口**
 
-- 🆕 `func IssueCertificateFromRequest(req *CertificateRequest, issuer *Certificate, signer asym.PrivateKey, opts *IssueOptions) (*Certificate, error)` — 依据 CSR 签发（等价 `openssl ca` 的最小可用子集）
-- 🆕 `type IssueOptions struct { Serial int64; NotBefore, NotAfter time.Time; Extensions []Extension; CopyRequestExtensions bool }`
+- ✨ `func IssueCertificateFromRequest(req *CertificateRequest, issuer *Certificate, signer asym.PrivateKey, opts *IssueOptions) (*Certificate, error)` — 依据 CSR 签发（等价 `openssl ca` 的最小可用子集）
+- ✨ `type IssueOptions struct { Serial int64; NotBefore, NotAfter time.Time; Extensions []Extension; CopyRequestExtensions bool }`
 
   > `CopyRequestExtensions` 默认为 `false`（对齐 `openssl ca` 的 `copy_extensions none`）；
   > 开启时也**只拷白名单**（SAN / KeyUsage / EKU / BasicConstraints），且 `Extensions`
@@ -775,10 +777,10 @@
 
 | 符号 | 目标版本 | 前置 |
 |---|---|---|
-| 🧭 `func FetchOCSP(url string, req []byte, timeout time.Duration) (*Response, error)` | `0.5.0` | 无（标准库 `net/http` 实现） |
-| 🧭 OCSP 请求 / 响应 nonce | `0.5.0` | 新增 `OCSP_REQUEST_add1_nonce` 等绑定 |
+| 🧭 `func FetchOCSP(url string, req []byte, timeout time.Duration) (*Response, error)` | `0.6.0` | 无（标准库 `net/http` 实现） |
+| 🧭 OCSP 请求 / 响应 nonce | `0.6.0` | 新增 `OCSP_REQUEST_add1_nonce` 等绑定 |
 | 🧭 `ca` 式数据库化签发 / 吊销 / 续期 | 待定形态 | 需先定「内存模型 vs 文件系统绑定」 |
-| 🧭 `-x509toreq`（证书 → CSR）、信任属性、`subject_hash` | `0.5.0` | 无需新绑定 |
+| 🧭 `-x509toreq`（证书 → CSR）、信任属性、`subject_hash` | `0.6.0` | 无需新绑定 |
 
 **破坏性变更**
 
@@ -838,7 +840,7 @@
 - ♻️ `func CipherSuites(version uint16) []CipherSuiteInfo` — 枚举指定协议版本下铜锁支持的套件
 - 🆕 `func CipherSuiteByName(name string) (CipherSuiteInfo, error)` — 名称/ID → 套件信息（对应 `ciphers -convert` / `-stdname`）。名称**大小写不敏感**且只匹配枚举报告的**主名**（不含 OpenSSL 旧式别名）；ID 为 16 位 wire ID 的文本形式，接受十进制（`4865`）或 `0x` 前缀十六进制（`0x1301`）；空串/未命中返回错误
 
-**规划中（传输深度归 `1.0.0`；`NewListener` 归 `0.4.0`）**
+**规划中（传输深度归 `1.0.0`；`NewListener` 归 `0.5.0`）**
 
 > 前置：均需在 `internal/native` 新增 `internal/native` 绑定（见 [roadmap.md](roadmap.md) §3），`NewListener` 除外（Go 侧实现）。
 
@@ -848,7 +850,7 @@
 | 🧭 会话复用 / 票据 | `Config.SessionCache`、`Conn.SessionState()` | `1.0.0` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
 | 🧭 `Config.ClientAuth` + `Config.ClientCAs` | 客户端证书认证（服务端） | `1.0.0` | `SSL_CTX_set_client_CA_list` / `SSL_CTX_set_verify` 回调 |
 | 🧭 `Config.GetCertificate func(*ClientHelloInfo)` | 服务端 SNI 多证书（对应 `-sign_cert2` / `-enc_cert2`） | `1.0.0` | `SSL_CTX_set_tlsext_servername_callback` |
-| 🧭 `func NewListener(config *Config, ln net.Listener) net.Listener` | `net.Listener` 包装 | `0.4.0` | 无（Go 侧实现） |
+| 🧭 `func NewListener(config *Config, ln net.Listener) net.Listener` | `net.Listener` 包装 | `0.5.0` | 无（Go 侧实现） |
 
 **破坏性变更**
 
@@ -903,7 +905,7 @@ cgo-free 的只读 DER 解析与转储；`Parse` 对深度设上限（`maxDERDep
 - ♻️ `func (k *Key) ToPEM() ([]byte, error)` — 转换为私钥 PEM（PKCS#8）
 - ♻️ `func (k *Key) ToPublicPEM() ([]byte, error)` — 转换为公钥 PEM（SPKI）
 
-**规划中（`0.5.0`）**
+**规划中（`0.6.0`）**
 
 | 符号 | 说明 |
 |---|---|
@@ -933,9 +935,9 @@ cgo-free 的只读 DER 解析与转储；`Parse` 对深度设上限（`maxDERDep
 
 | 符号 | 目标版本 | 前置 |
 |---|---|---|
-| 🧭 `pkcs7.Sign` / `Verify` / `Encrypt` / `Decrypt` | `0.6.0` | 新增 `PKCS7_sign` / `PKCS7_encrypt` 等绑定 |
-| 🧭 `pkcs7.FromCRL` / `ExtractCRLs`（`crl2pkcs7`） | `0.5.0` | 无需新绑定 |
-| 🧭 CMS 族（`cms` 命令） | `0.7.0` | 新增 `CMS_*` 绑定 |
+| 🧭 `pkcs7.Sign` / `Verify` / `Encrypt` / `Decrypt` | `0.7.0` | 新增 `PKCS7_sign` / `PKCS7_encrypt` 等绑定 |
+| 🧭 `pkcs7.FromCRL` / `ExtractCRLs`（`crl2pkcs7`） | `0.6.0` | 无需新绑定 |
+| 🧭 CMS 族（`cms` 命令） | `0.8.0` | 新增 `CMS_*` 绑定 |
 
 ---
 
@@ -958,7 +960,7 @@ cgo-free 的只读 DER 解析与转储；`Parse` 对深度设上限（`maxDERDep
 
 | 符号 | 目标版本 | 前置 |
 |---|---|---|
-| 🧭 `Options{ PBE, Iterations, FriendlyName, ReadPass, WritePass }` | `0.5.0` | `X_PKCS12_create` shim 扩展（`PKCS12_create` 已接受 PBE/iter 参数） |
+| 🧭 `Options{ PBE, Iterations, FriendlyName, ReadPass, WritePass }` | `0.6.0` | `X_PKCS12_create` shim 扩展（`PKCS12_create` 已接受 PBE/iter 参数） |
 
 **破坏性变更**
 

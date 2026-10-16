@@ -31,7 +31,7 @@
 | **对比基线（官方）** | [`Tongsuo-Project/tongsuo-go-sdk`](https://github.com/Tongsuo-Project/tongsuo-go-sdk) `main` @ [`002a0963`](https://github.com/Tongsuo-Project/tongsuo-go-sdk/commit/002a09631de785f2d984d9e0b3a7f1e9a169940c)（2025-01-14，Merge PR #40 Update README.md） |
 | **官方 README 自报能力** | Hash（SM3/MD5/SHA1/SHA256）、SM4、SM2 加解密、SM2withSM3 签名、HMAC、SM2 证书、TLCP + TLSv1.0/1.1/1.2/1.3（详见 README §Features） |
 | **官方内部文件基线** | 顶层 `ctx.go` / `ssl.go` / `conn.go` / `net.go` / `http.go` / `tickets.go` / `pem.go` / `init.go`；`crypto/`（`bio.go` `cert.go` `ciphers.go` `ciphers_gcm.go` `dh.go` `dhparam.go` `digest.go` `engine.go` `hmac.go` `hostname.go` `key.go` `mapping.go` `nid.go`）；`crypto/{md5,sha1,sha256,sm2,sm3,sm4}/` 子包；`utils/{errors,future}.go`；`test/`；`examples/{cert_gen,hmac_sm3,sm2_encrypt,sm2_keygen,sm2_sign,sm2_signasn1,sm3,sm4,tlcp_client,tlcp_server}` |
-| **本库基线** | `tongsuo-go` `0.3.0`（2026-09-30 发布） |
+| **本库基线** | `tongsuo-go` `0.4.0`（2026-10-16 发布） |
 | **检索方式** | 全仓库 `grep`/`ripgrep` 导出符号 + `internal/native/binding_*.go` + 现有 `docs/architecture.md` §3、§5 目录地图；结论字段「本库现状」均可在源码中校验 |
 | **环境声明** | 本机未安装 Tongsuo C 库，因此本次仅做静态比对；后续具体 PR 的实施必须 `gofmt -l .` / `go vet ./...` / `go build ./...` / `go test -count=1 ./...` 通过后才能合入 |
 
@@ -207,7 +207,7 @@
 
 > 本节**只列能力 + 优先级**。每个 PR 自行设计「涉及文件 / 验收方式」，按 §10 的验证与维护约定走。
 >
-> 本节**只列能力与优先级，不带版本号**。版本归属以 [roadmap.md](roadmap.md) §2 为准：包结构重构已于 `0.3.0` 落地，本节的能力补全自 `0.4.0` 起，其中传输深度（Phase 3 / Phase 4 的 TLS 项）归 `1.0.0`。
+> 本节**只列能力与优先级，不带版本号**。版本归属以 [roadmap.md](roadmap.md) §2 为准：包结构重构已于 `0.3.0` 落地，本节的能力补全自 `0.5.0` 起，其中传输深度（Phase 3 / Phase 4 的 TLS 项）归 `1.0.0`。
 
 ### Phase 1 — 基础设施小件（风险低、价值高、几乎不动 native shim）
 

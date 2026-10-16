@@ -187,7 +187,7 @@
 - [ ] `meta.ReadBuildInfo() *BuildInfo` — 一次性获取构建与运行环境信息（**备注**：不能取名 `BuildInfo()`，会与同名类型冲突，见 [api-reference.md](api-reference.md) §1）
 - [ ] `type BuildInfo struct { Platform, Compiler, BuildDate, OpenSSLDir, EnginesDir, ModulesDir, SeedingSource, CPUInfo string; Options []string }`
 - [ ] `(BuildInfo) String() string` — 文本视图（等价 `tongsuo version -a` 输出）
-- [ ] `meta.Providers() []ProviderInfo` — 活跃 provider 名称/版本/状态（`0.4.0`，需 `OSSL_PROVIDER_*`）
+- [ ] `meta.Providers() []ProviderInfo` — 活跃 provider 名称/版本/状态（`0.5.0`，需 `OSSL_PROVIDER_*`）
 - [ ] `type ProviderInfo struct { Name, Version, Status string }`
 
 ---
@@ -284,7 +284,7 @@
 
 | 包 | 承载 | 理由 |
 |---|---|---|
-| `ts`（顶层，`0.7.0`） | `ts` | RFC 3161 协议栈，含 ASN.1 结构与 HTTP 传输，体量与 `x509` 相当 |
+| `ts`（顶层，`0.8.0`） | `ts` | RFC 3161 协议栈，含 ASN.1 结构与 HTTP 传输，体量与 `x509` 相当 |
 
 **归入既有包的 7 项**：`ca` → `x509`；`ecparam` → `ecdh`；`pkeyparam`、`storeutl` → `asym`
 （`storeutl` 另有 `x509` 部分）；`sess_id` → `tls`；`cms`、`crl2pkcs7` → `pkcs/pkcs7`。
