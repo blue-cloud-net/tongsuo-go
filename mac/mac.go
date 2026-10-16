@@ -29,7 +29,7 @@ var ErrUnknownAlgorithm = errors.New("mac: unknown algorithm")
 //	Custom   → -macopt custom:<hex>       （KMAC 时使用）
 //	OutputLen → -macopt size:<bytes>      （KMAC / SipHash 等可截断输出）
 //
-// 本版走 legacy HMAC_CTX_* 路径，本类型未生效；保留字段以便 0.4.0 接 EVP_MAC_*
+// 本版走 legacy HMAC_CTX_* 路径，本类型未生效；保留字段以便 0.5.0 接 EVP_MAC_*
 // 时直接复用。
 //
 // Options holds optional MAC algorithm parameters. Zero values mean
@@ -37,7 +37,7 @@ var ErrUnknownAlgorithm = errors.New("mac: unknown algorithm")
 // see the per-field comments.
 //
 // This version uses the legacy HMAC_CTX_* path and ignores Options;
-// the type is reserved so the 0.4.0 EVP_MAC_* migration can reuse it
+// the type is reserved so the 0.5.0 EVP_MAC_* migration can reuse it
 // without breaking callers.
 type Options struct {
 	// Cipher 指定 CMAC / GMAC 用的对称算法名（如 "SM4"、"AES-128-CBC"）。
@@ -115,16 +115,16 @@ func Names() []string {
 }
 
 // New 按算法名返回可流式写入的 hash.Hash（实现 HMAC）。
-// 未知算法名返回 ErrUnknownAlgorithm；opts 在本版未生效，保留供 0.4.0。
+// 未知算法名返回 ErrUnknownAlgorithm；opts 在本版未生效，保留供 0.5.0。
 // 仅当底层铜锁初始化失败（正常使用不会发生）时 panic。
 //
 // New returns a streaming hash.Hash for the named algorithm (HMAC).
 // Unknown names return ErrUnknownAlgorithm. opts is reserved for the
-// 0.4.0 EVP_MAC_* migration and is currently ignored. It panics only
+// 0.5.0 EVP_MAC_* migration and is currently ignored. It panics only
 // if the underlying Tongsuo initialization fails, which does not occur
 // in normal use.
 func New(name string, key []byte, opts *Options) (hash.Hash, error) {
-	_ = opts // reserved for 0.4.0
+	_ = opts // reserved for 0.5.0
 	a, err := lookup(name)
 	if err != nil {
 		return nil, err
@@ -137,7 +137,7 @@ func New(name string, key []byte, opts *Options) (hash.Hash, error) {
 //
 // Sum computes the HMAC tag for data in one shot under the named
 // algorithm; unknown names return ErrUnknownAlgorithm. opts is reserved
-// for the 0.4.0 EVP_MAC_* migration and is currently ignored.
+// for the 0.5.0 EVP_MAC_* migration and is currently ignored.
 func Sum(name string, key, data []byte, opts *Options) ([]byte, error) {
 	_ = opts
 	h, err := New(name, key, nil)
