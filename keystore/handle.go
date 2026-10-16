@@ -334,7 +334,8 @@ func marshalKeyPEM(key any) ([]byte, error) {
 // 字符串类型（asym.Algorithm / sym.Algorithm 都是 type Algorithm string）转成
 // string。之所以需要反射：Go 的接口满足要求方法签名完全一致，返回具名类型的
 // Algorithm() 无法满足返回 string 的结构化接口；而本包又不能 import asym / sym
-// （见 docs/refactor-roadmap.md §3.9）。对象不提供 Algorithm() 时返回空串，由
+// （否则会与「keystore 只依赖 internal/core」的依赖方向成环，见 docs/
+// architecture.md §2）。对象不提供 Algorithm() 时返回空串，由
 // 调用方自行填写 Handle.Algorithm。
 //
 // algorithmName extracts the algorithm name from any key object.
@@ -345,9 +346,9 @@ func marshalKeyPEM(key any) ([]byte, error) {
 // Reflection is required because Go interface satisfaction demands an
 // exactly matching signature: an Algorithm() returning a named type cannot
 // satisfy a structural interface returning string, and this package must not
-// import asym or sym (see docs/refactor-roadmap.md §3.9). Objects without an
-// Algorithm() method yield an empty string, leaving Handle.Algorithm for the
-// caller to fill in.
+// import asym or sym (that would invert the dependency direction; see
+// docs/architecture.md §2). Objects without an Algorithm() method yield an
+// empty string, leaving Handle.Algorithm for the caller to fill in.
 func algorithmName(key any) string {
 	if key == nil {
 		return ""

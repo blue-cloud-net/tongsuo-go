@@ -6,7 +6,7 @@
 //
 // 所有公开密钥对象对外只暴露 PrivateKey / PublicKey 接口，具体类型非导出。
 // 内部句柄访问走 internal/keyaccess 桥接（详见 internal/keyaccess 与 docs/
-// refactor-roadmap.md §5.2）。
+// architecture.md §3.3）。
 //
 // Package asym is the unified entry point for the Tongsuo asymmetric
 // algorithms (SM2 / RSA / ECDSA / Ed25519 / Ed448 / X25519 / X448).
@@ -18,5 +18,5 @@
 // All public key objects expose only the PrivateKey / PublicKey
 // interfaces; the concrete types are unexported. Internal handle access
 // goes through the internal/keyaccess bridge (see internal/keyaccess and
-// docs/refactor-roadmap.md §5.2).
+// docs/architecture.md §3.3).
 package asym

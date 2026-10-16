@@ -3,7 +3,7 @@
 本文档规定 `tongsuo-go` 的测试组织、命名以及各类算法**必须覆盖**的用例。
 整体开发规范见 [development-guide.md](development-guide.md)，架构说明见
 [architecture.md](architecture.md)，重构后的包清单见 [api-reference.md](api-reference.md)，
-包结构迁移路径见 [refactor-roadmap.md](refactor-roadmap.md)。
+后续版本规划见 [roadmap.md](roadmap.md)。
 
 > 包名约定：本文档统一使用**重构后的 16 包名**（`digest` / `mac` / `kdf` / `rand` /
 > `sym` / `asym` / `ecdh` / `keystore` / `x509` / `tls` / `meta` / `asn1` /

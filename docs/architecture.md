@@ -48,6 +48,70 @@ API 层（16 个顶级包：meta / digest / mac / sym / asym / ecdh / kdf / rand
 - API 层内部：`ecdh → asym`（加载 `asym` 密钥对象）、`x509 → asym`（公钥/私钥接口）、
   `tls/jwk/pkcs12 → x509` + `asym`；算法原语包只依赖 `internal/core`，不互相依赖
 
+```mermaid
+graph TD
+  subgraph 原语
+    digest
+    mac
+    sym
+    kdf
+    rand
+  end
+  subgraph 密钥
+    asym
+    ecdh
+    keystore
+  end
+  subgraph PKI
+    x509
+  end
+  subgraph 传输与格式
+    tls
+    jwk
+    pkcs7["pkcs/pkcs7"]
+    pkcs12["pkcs/pkcs12"]
+    asn1
+    xmlrsa["xml/rsa"]
+  end
+  core["internal/core"]
+  keyaccess["internal/keyaccess"]
+  certaccess["internal/certaccess"]
+
+  meta --> core
+  digest --> core
+  mac --> core
+  sym --> core
+  kdf --> core
+  rand --> core
+  asym --> core
+  ecdh --> core
+  ecdh --> asym
+  keystore --> core
+  x509 --> core
+  x509 --> asym
+  tls --> x509
+  tls --> asym
+  tls --> core
+  jwk --> asym
+  pkcs12 --> x509
+  pkcs12 --> asym
+  pkcs7 --> x509
+  ecdh --> keyaccess
+  x509 --> keyaccess
+  tls --> keyaccess
+  jwk --> keyaccess
+  keystore --> keyaccess
+  pkcs12 --> keyaccess
+  tls --> certaccess
+  pkcs7 --> certaccess
+  pkcs12 --> certaccess
+  keyaccess --> core
+  certaccess --> core
+```
+
+- `asym` / `xml/rsa` 不认识 `ecdh` / `x509`；依赖方向单向，无环
+- `tls` / `meta` 均**不**直接 import `internal/native`，统一经 `internal/core`
+
 ---
 
 ## 3. 各层职责
@@ -107,14 +171,21 @@ API 层内部存在必须先拿到 `*core.PKey` 才能工作的场景（如 `ecd
   因此不进公开 godoc
 - `internal/keyaccess` 只声明形状 `interface{ CorePKey() *core.PKey }` + `PKey(v any) (*core.PKey, bool)`
   并做类型断言：**无注册表、无 `init()` 顺序依赖、无全局状态**；`asym` 也不需要 import 它
-- 消费方：`ecdh`、`x509`、`tls`、`jwk`、`keystore`、`pkcs/pkcs12`；拿到句柄后用 `EVP_PKEY_dup` 复制，
-  保证两侧生命周期独立
+- **为何优于反向注册表**：无全局可变状态、无 `init()` 顺序依赖、无并发写入，且契约由类型系统
+  隐式校验——改签名会在断言处立刻暴露
+- 消费方：`ecdh`、`x509`、`tls`、`jwk`、`keystore`、`pkcs/pkcs12`；拿到句柄后**必须**用
+  `EVP_PKEY_dup` 复制，保证两侧生命周期独立（否则 `asym` 侧 `Close()` 后消费方即为悬垂指针）
 - 验收：`go doc -all ./asym` 输出中不得出现 `CorePKey`；`internal/` 路径规则保证外部模块无法 import
+- **已接受的残余瑕疵**：外部包可写匿名接口断言 `k.(interface{ CorePKey() *core.PKey })` 并调用
+  成功，但拿到的 `*core.PKey` 无法被使用——外部模块 import 不到 `internal/core`，**拿到也用不了**。
+  若要连这点也消除，唯一替代是「DER 往返」（`MarshalDER` → `d2i_PrivateKey`），代价是每次加载一次
+  编解码，已评估不采用
 
 证书句柄走同构的 `internal/certaccess`：`Certificate(v any) (*core.Certificate, bool)`
 供 `tls` / `pkcs/pkcs7` / `pkcs/pkcs12` 取句柄，反向的 `Wrap(*core.Certificate)` 用
-**DER 往返**产出 owned 副本（因此 `x509.Certificate.CoreCertificate()` 是§5.2 已接受的
-残余：方法虽在 godoc，但外部模块无法 import `internal/core`，拿到也用不了）。
+**DER 往返**产出 owned 副本（因此 `x509.Certificate.CoreCertificate()` 是**已接受的残余**：
+方法虽在 godoc，但外部模块无法 import `internal/core`，拿到也用不了；且 owned 副本语义与
+`tls.peerCertificateChain` 声明的契约「每个返回的证书由调用方各自 `Close`」一致）。
 
 #### tls 包公开 API（v0.2.0+）
 
@@ -205,6 +276,7 @@ tongsuo-go/
 │   ├── csr.go                 # CertificateRequest
 │   ├── crl.go                 # CRL / RevokedEntry / CRLBuilder / RevocationCheck
 │   ├── ocsp.go                # Request / Response / CreateOCSPRequest / ParseOCSPResponse
+│   ├── issue.go               # IssueCertificateFromRequest / IssueOptions
 │   ├── store.go               # Store / VerifyError / ChainVerify
 │   └── helpers.go             # convertEntries / convertExtensions
 ├── tls/                       # 【传输】TLS / NTLS
@@ -252,7 +324,7 @@ tongsuo-go/
 │       └── openssl.go
 │
 ├── docs/                      # 设计文档（architecture / development-guide / testing-guide /
-│                              #   bilingual-doc-guide / api-reference ×2 / refactor-roadmap …）
+│                              #   bilingual-doc-guide / api-reference ×2 / roadmap …）
 ├── scripts/                   # check-coverage.sh / extract_release_notes.py
 └── examples/                  # 示例（对应 C# Demo/），每个示例是独立 Go module
     └── sm2/ self-signed-cert/ ntls-loopback/ ed25519/ x25519/ ecdh/
@@ -366,6 +438,6 @@ go build ./...
 - [参考项目（C# 封装）](https://github.com/blue-cloud-net/tongsuo-csharp)
 - [官方 Go SDK](https://github.com/tongsuo-project/tongsuo-go-sdk)
 - [与官方 SDK 的功能对比与对齐路线图](official-sdk-comparison.md)
-- [包结构重构路线图](refactor-roadmap.md)
+- [版本路线图（`0.5.0` 及以后）](roadmap.md)
 - [开发规范](development-guide.md) · [测试规范](testing-guide.md)
 - [公开 API 清单](api-reference.md) · [内部 API 清单](api-reference-internal.md)

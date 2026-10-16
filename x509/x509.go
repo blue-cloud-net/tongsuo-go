@@ -55,6 +55,7 @@ package x509
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -156,6 +157,75 @@ func LoadCertificateDER(der []byte) (*Certificate, error) {
 	return &Certificate{cert: c}, nil
 }
 
+// LoadCertificatePEMFile 从 PEM 文件加载证书（等价 `openssl x509 -in <path>`）。
+//
+// 对应官方 SDK 的 LoadCertificateFromPEM 文件入口；本库不提供 PEM 解析辅助，
+// 调用方也可自行 os.ReadFile + LoadCertificatePEM。
+//
+// 返回的证书拥有自己的句柄，调用方须调用 Close。
+//
+// 失败时返回包装了 OpError 的错误；文件不存在或读失败时返回带上下文的错误。
+//
+// LoadCertificatePEMFile loads a certificate from a PEM file (the equivalent of
+// `openssl x509 -in <path>`).
+//
+// It corresponds to the official SDK's LoadCertificateFromPEM file entry
+// point; since this package ships no PEM parsing helpers, callers may also do
+// os.ReadFile plus LoadCertificatePEM themselves.
+//
+// The returned certificate owns its handle; the caller must Close it.
+//
+// On failure, it returns an error wrapping an OpError; a missing or unreadable
+// file yields an error carrying that context.
+func LoadCertificatePEMFile(path string) (*Certificate, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("x509: read %s: %w", path, err)
+	}
+	cert, err := LoadCertificatePEM(data)
+	if err != nil {
+		return nil, fmt.Errorf("x509: load %s: %w", path, err)
+	}
+	return cert, nil
+}
+
+// SaveCertificatePEMFile 把证书以 PEM 写入文件（等价 `openssl x509 -out <path>`）。
+//
+// perm 为文件权限（如 0o644）；文件已存在时按该权限截断覆写并重新 chmod
+// （os.WriteFile 只在创建时应用权限，故此处显式补一次）。
+// 写入的是**公开**证书，不含私钥；私钥请走 asym 包的 MarshalPrivateKeyPEM。
+//
+// 失败时返回包装了 OpError 的错误；文件写入失败时返回带上下文的错误。
+//
+// SaveCertificatePEMFile writes the certificate to a PEM file (the equivalent of
+// `openssl x509 -out <path>`).
+//
+// perm is the file mode (for example 0o644); an existing file is truncated,
+// overwritten and re-chmod'ed to that mode (os.WriteFile only applies the mode
+// when creating the file, so this call sets it explicitly).
+//
+// Only the **public** certificate is written, never a private key; use the asym
+// package's MarshalPrivateKeyPEM for keys.
+//
+// On failure, it returns an error wrapping an OpError; a failed write yields an
+// error carrying that context.
+func SaveCertificatePEMFile(path string, c *Certificate, perm os.FileMode) error {
+	if c == nil {
+		return fmt.Errorf("x509: nil certificate")
+	}
+	pemBytes, err := c.MarshalPEM()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, pemBytes, perm); err != nil {
+		return fmt.Errorf("x509: write %s: %w", path, err)
+	}
+	if err := os.Chmod(path, perm); err != nil {
+		return fmt.Errorf("x509: chmod %s: %w", path, err)
+	}
+	return nil
+}
+
 // wrapCertificate 用底层核心证书构造 Certificate（包内辅助）。
 //
 // 实现方式是 **DER 往返**（`MarshalDER` → `LoadCertificateDER`），因此返回的
@@ -230,6 +300,40 @@ func (c *Certificate) NotAfter() time.Time { return c.cert.NotAfter() }
 //
 // Serial returns the certificate's serial number.
 func (c *Certificate) Serial() int64 { return c.cert.Serial() }
+
+// SerialHex 返回证书序列号的大写十六进制文本（不含 "serial=" 与 0x 前缀）。
+//
+// 序列号可能超出 int64 范围（如 openssl rand -hex 生成的 20 字节值），此时应改用
+// 本方法而非 Serial；对齐 `openssl x509 -serial` 的取值格式。已关闭的证书返回空串。
+//
+// SerialHex returns the certificate serial number as uppercase hexadecimal
+// without the "serial=" or 0x prefix.
+//
+// The serial number may exceed the int64 range (for example a 20-byte value
+// from `openssl rand -hex`), in which case this method should be used instead
+// of Serial. The format matches `openssl x509 -serial`. A closed certificate
+// yields "".
+func (c *Certificate) SerialHex() string { return c.cert.SerialHex() }
+
+// SubjectHash 返回证书 subject 名字的 X509_NAME_hash。
+//
+// 对应 `openssl x509 -subject_hash`，也是 CA 目录中 hash.N 文件名里的那个 hash；
+// 已关闭的证书返回 0。
+//
+// SubjectHash returns the X509_NAME_hash of the certificate's subject name.
+//
+// It corresponds to `openssl x509 -subject_hash`, which is also the hash used
+// in a CA directory's hash.N file names. A closed certificate yields 0.
+func (c *Certificate) SubjectHash() uint32 { return c.cert.SubjectHash() }
+
+// IssuerHash 返回证书 issuer 名字的 X509_NAME_hash。
+//
+// 对应 `openssl x509 -issuer_hash`；已关闭的证书返回 0。
+//
+// IssuerHash returns the X509_NAME_hash of the certificate's issuer name.
+//
+// It corresponds to `openssl x509 -issuer_hash`. A closed certificate yields 0.
+func (c *Certificate) IssuerHash() uint32 { return c.cert.IssuerHash() }
 
 // Version 返回证书版本（0=v1，2=v3）。
 //
@@ -377,9 +481,18 @@ func (c *Certificate) Extensions() []Extension { return convertExtensions(c.cert
 
 // AddSubjectAltName 添加 SAN 扩展（如 "DNS:example.com,IP:1.2.3.4"；须在 Sign 之前调用）。
 //
+// ⚠️ subjectAltName 属于可重复 OID：重复调用会把新值**合并**进同一条目
+// （等价于把两次调用的值用逗号拼接后一次写入），而不是产生第二个扩展条目。
+// 因此多次调用与一次传入 "DNS:a,DNS:b" 结果相同。
+//
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
 // AddSubjectAltName appends a subjectAltName extension (for example "DNS:example.com,IP:1.2.3.4"). It must be called before Sign.
+//
+// ⚠️ subjectAltName is a repeatable OID: repeated calls **merge** the new values
+// into the single existing entry (equivalent to joining both calls' values with
+// commas into one call) rather than producing a second extension entry. Calling
+// it twice is therefore identical to a single call with "DNS:a,DNS:b".
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (c *Certificate) AddSubjectAltName(value string) error {
@@ -432,6 +545,166 @@ func (c *Certificate) AddAuthorityKeyID(issuer *Certificate) error {
 		return fmt.Errorf("x509: nil issuer certificate")
 	}
 	return c.cert.AddAuthorityKeyID(issuer.cert)
+}
+
+// AddExtension 按 NID 添加任意 X.509 扩展（如 NID 85 的 subjectAltName）。
+//
+// value 采用 OpenSSL X509V3_EXT_conf 配置语法（如 "DNS:example.com"、"critical,CA:TRUE"），
+// 具体取值随扩展类型而定，详见 `openssl x509 -ext` 与 OpenSSL v3 扩展配置文档。
+// 须在 Sign 之前调用；Sign 之后证书即不可变，再次调用返回错误。
+//
+// 同 NID 扩展已存在时：可重复 OID（subjectAltName / issuerAltName /
+// subjectDirectoryAttributes / certificateIssuer）把新值**合并**进已有条目并保持原
+// 位置与 critical 标记——OpenSSL 不接受同一证书内出现两个同 NID 条目，那会让
+// SAN() 与 VerifyHostname() 全部失效；其余 OID 返回
+// "x509: extension already present (nid N)"，需覆盖请改用 ReplaceExtension。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// AddExtension adds an arbitrary X.509 extension identified by nid (for example
+// subjectAltName, NID 85).
+//
+// value uses the OpenSSL X509V3_EXT_conf configuration syntax (for example
+// "DNS:example.com" or "critical,CA:TRUE"); the accepted values depend on the
+// extension type, see `openssl x509 -ext` and the OpenSSL v3 extension
+// configuration documentation.
+//
+// It must be called before Sign. Once the certificate is signed it becomes
+// immutable and further calls return an error.
+//
+// When an extension with the same NID is already present, repeatable OIDs
+// (subjectAltName / issuerAltName / subjectDirectoryAttributes /
+// certificateIssuer) **merge** the new value into the existing entry, keeping
+// its position and critical flag — OpenSSL rejects two entries with the same
+// NID on one certificate, which would silently break both SAN() and
+// VerifyHostname(). Every other OID returns
+// "x509: extension already present (nid N)"; use ReplaceExtension to
+// overwrite instead.
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (c *Certificate) AddExtension(nid int, value string) error {
+	return c.cert.AddExtension(nid, value)
+}
+
+// AddExtensionByName 按名字添加任意 X.509 扩展。
+//
+// name 可为扩展短名（"keyUsage"、"extendedKeyUsage"、"subjectDirectoryAttributes"）、
+// 长名或点分 OID（"2.5.29.15"），内部经 OBJ_txt2nid 解析，无需事先知道 NID 数值；
+// name 为空或无法识别时返回 "x509: unknown extension name %q"。
+// value 语法与 AddExtension 完全一致；重复检测与 Sign 后不可变规则同 AddExtension。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// AddExtensionByName adds an arbitrary X.509 extension addressed by name.
+//
+// name may be an extension short name ("keyUsage", "extendedKeyUsage",
+// "subjectDirectoryAttributes"), a long name, or a dotted OID ("2.5.29.15");
+// it is resolved through OBJ_txt2nid so callers need not know the numeric
+// NID. An empty or unrecognized name returns
+// "x509: unknown extension name %q".
+//
+// The value syntax is identical to AddExtension, and duplicate detection and
+// the post-Sign immutability rule behave the same way.
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (c *Certificate) AddExtensionByName(name, value string) error {
+	return c.cert.AddExtensionByName(name, value)
+}
+
+// AddExtensions 批量添加多个扩展（如 SAN + KeyUsage + EKU）。
+//
+// nil 或空切片为 no-op，返回 nil。每个 Extension 只使用 Nid 与 Value 两个字段
+// （Field / OID / Critical / Data 为读取态，构建时忽略）。
+// 按顺序逐条追加，中途失败时已追加的扩展会保留——调用方应丢弃该证书重建，
+// 不得在不确定状态下继续签发。须在 Sign 之前调用。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// AddExtensions adds several extensions at once (for example SAN, KeyUsage and
+// EKU).
+//
+// A nil or empty slice is a no-op and returns nil. Only the Nid and Value fields
+// of each Extension are used; Field, OID, Critical and Data are populated on
+// read and ignored here.
+//
+// The extensions are appended in order. When the call fails partway through,
+// the extensions already appended are kept, so the caller must discard the
+// certificate and rebuild rather than issuing it in an indeterminate state.
+// It must be called before Sign.
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (c *Certificate) AddExtensions(exts ...Extension) error {
+	cexts := make([]core.Extension, 0, len(exts))
+	for _, e := range exts {
+		cexts = append(cexts, core.Extension{Nid: e.Nid, Value: e.Value})
+	}
+	return c.cert.AddExtensions(cexts...)
+}
+
+// HasExtension 报告证书是否已包含 name 指定的扩展。
+//
+// name 为扩展短名、长名或点分 OID；未知名字与 nil / 已关闭证书均返回 false。
+// 本方法只读不改，已签名证书可安全调用。用于在 AddExtension 前判断是否已存在，
+// 或在验证证书结构时检查某个扩展的缺失。
+//
+// HasExtension reports whether the certificate already carries the extension
+// identified by name.
+//
+// name may be a short name, a long name, or a dotted OID. An unknown name and a
+// nil or closed certificate both yield false.
+//
+// The call never mutates the certificate, so it is safe on signed ones. Use it
+// to check for presence before AddExtension, or to assert that an expected
+// extension is present.
+func (c *Certificate) HasExtension(name string) bool {
+	return c.cert.HasExtension(name)
+}
+
+// RemoveExtension 删除 name 指定的扩展。
+//
+// name 为扩展短名、长名或点分 OID；未知名字返回 "x509: unknown extension name %q"，
+// 证书中不存在该扩展返回 "x509: extension not present (nid N)"。
+// ⚠️ 删除会改变证书 DER 字节，因此**必须在 Sign 之前调用**；若证书已签名，
+// 删除操作会被拒绝（返回 "x509: certificate already signed"），
+// 以免产出签名与内容不一致的证书。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// RemoveExtension removes the extension identified by name.
+//
+// An unknown name returns "x509: unknown extension name %q"; a name the
+// certificate does not carry returns "x509: extension not present (nid N)".
+//
+// ⚠️ Removing an extension changes the DER encoding of the certificate, so it
+// **must** be called before Sign. On an already signed certificate the call is
+// rejected with "x509: certificate already signed" rather than producing a
+// certificate whose signature no longer matches its content.
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (c *Certificate) RemoveExtension(name string) error {
+	return c.cert.RemoveExtension(name)
+}
+
+// ReplaceExtension 覆盖 name 指定的扩展，并保持它在证书中的原有位置。
+//
+// 语义与 BouncyCastle X509ExtensionsGenerator.ReplaceExtension 一致：扩展不存在时
+// 返回 "x509: extension not present (nid N)"，而不是替调用方新建。
+// value 语法与 AddExtension 一致；须在 Sign 之前调用。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// ReplaceExtension overwrites the extension identified by name while keeping
+// its original position in the certificate.
+//
+// The semantics match BouncyCastle's X509ExtensionsGenerator.ReplaceExtension:
+// when the extension is absent the call returns
+// "x509: extension not present (nid N)" instead of creating it on the caller's
+// behalf. The value syntax matches AddExtension, and it must be called before
+// Sign.
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (c *Certificate) ReplaceExtension(name, value string) error {
+	return c.cert.ReplaceExtension(name, value)
 }
 
 // Fingerprint 计算证书指纹（十六进制小写）。
@@ -563,9 +836,19 @@ func (c *Certificate) AddBasicConstraints(isCA bool) error {
 // Sign 使用签名私钥对证书签名（须先配置好版本/序列号/主题/签发者/有效期/公钥/扩展）。
 // signer 支持 asym 包提供的算法，摘要按密钥类型自动选择。
 //
+// ⚠️ Sign 是单向终态：成功后证书不可变，任何 Set* / Add* / 再次 Sign 调用均返回
+// "x509: certificate already signed"。这避免了「改了字段或扩展却忘了重签」而静默
+// 产出签名失效的证书；确需修改请丢弃证书重建。
+//
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
 // Sign signs the certificate with signer after version, serial, subject, issuer, validity, public key, and extensions have been configured. signer may be any algorithm the asym package provides, and the digest is chosen automatically based on the key type.
+//
+// ⚠️ Sign is a one-way transition: on success the certificate becomes immutable
+// and every later Set*, Add* or repeated Sign call returns
+// "x509: certificate already signed". This prevents silently emitting a
+// certificate whose signature no longer covers the modified content; discard
+// the certificate and rebuild when changes are needed.
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (c *Certificate) Sign(signer asym.PrivateKey) error {
@@ -637,6 +920,29 @@ func (c *Certificate) VerifyHostname(host string) error {
 		return fmt.Errorf("x509: nil certificate")
 	}
 	return c.cert.VerifyHostname(host)
+}
+
+// CheckEmail 校验证书是否对给定邮箱地址有效（对应 SAN 的 rfc822Name 条目）。
+//
+// ⚠️ 本函数只做「邮箱名字匹配」，**不**验证证书链、有效期或用途；客户端的正确顺序是
+// 先 ChainVerify 建立信任，再调用本函数。对任意自签证书，本函数都可能返回 nil。
+//
+// 匹配返回 nil；不匹配返回描述性错误；email 为空或格式非法返回描述性错误；
+// 已关闭的证书返回 "x509: invalid certificate"。
+//
+// CheckEmail checks whether the certificate is valid for the given e-mail
+// address (matching a rfc822Name SAN entry).
+//
+// ⚠️ This performs name matching only. It does **not** validate the chain, the
+// validity window or the key usage; the correct client-side order is to
+// establish trust with ChainVerify first and then call this. For any
+// self-signed certificate it may return nil.
+//
+// A match returns nil; a mismatch, an empty address and a malformed address
+// return descriptive errors; a closed certificate returns
+// "x509: invalid certificate".
+func (c *Certificate) CheckEmail(email string) error {
+	return c.cert.CheckEmail(email)
 }
 
 // Verify 使用签发者公钥验证证书签名。

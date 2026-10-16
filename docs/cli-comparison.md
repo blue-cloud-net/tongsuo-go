@@ -6,8 +6,8 @@
 >
 > 报告**不写代码改动、不给新 API 签名**；所有「本库现状」结论均可在源码中校验。
 >
-> **包名口径**：本文件的「本库现状」列使用**重构前**包名（`crypto/*` / `key` / `ocsp`）——那是采集时的真实状态。重构后的 16 包名与逐符号签名见 [api-reference.md](api-reference.md)，包级迁移对照见 [refactor-roadmap.md](refactor-roadmap.md) §2 / §4。
-> 公开面收敛（§6.E 的 12 项内部类型泄露）已在 [refactor-roadmap.md](refactor-roadmap.md) §5 全部落实。
+> **包名口径**：本文件的「本库现状」列使用**重构前**包名（`crypto/*` / `key` / `ocsp`）——那是采集时的真实状态。重构后的 16 包名与逐符号签名见 [api-reference.md](api-reference.md)，迁移对照见 [api-reference.md](api-reference.md) §0.1。
+> 公开面收敛（§6.E 的 12 项内部类型泄露 E1）已在 `0.3.0` 全部落实；剩余的 E2 / E3 见 [roadmap.md](roadmap.md) §2.5。
 
 ---
 
@@ -38,7 +38,7 @@
 |---|---|
 | **对比基线（CLI）** | `/opt/tongsuo/bin/tongsuo`<br>`Tongsuo: Tongsuo 8.5.0-pre2 (Library: Tongsuo 8.5.0-pre2)`<br>`OpenSSL 3.5.4 3 Aug 2026 (Library: OpenSSL 3.5.4 3 Aug 2026)`<br>`platform: linux-x86_64`，`OPENSSLDIR: "/opt/tongsuo/ssl"` |
 | **铜锁源码基线** | `/workspace/opensources/nginx/tongsuo`（`configdata.pm`：`linux-x86_64`，`--prefix=/opt/tongsuo`） |
-| **本库基线** | `github.com/blue-cloud-net/tongsuo-go`，CHANGELOG `0.3.0`（2026-09-30 发布） |
+| **本库基线** | `github.com/blue-cloud-net/tongsuo-go`，CHANGELOG `0.4.0`（2026-10-16 发布） |
 | **CLI 侧检索方式** | 实机采集：`tongsuo version -a`、`tongsuo help`、`tongsuo list -commands -1`、`tongsuo list -<family> -1`（14 个族）、`tongsuo list -options <cmd>`（逐命令）、`tongsuo ciphers -v`；并与 `apps/progs.h`、`apps/progs.pl`、`configdata.pm` 交叉校验 |
 | **本库侧检索方式** | 全仓库检索导出符号 + `internal/native/binding_*.go`（已绑定的 C 函数）+ 逐符号复核（文件:行） |
 | **环境声明** | 本机**已安装铜锁 8.5.0-pre2**，故「CLI 能力」列全部为实机输出；本库侧为**静态检索**，未运行 `go build` / `go vet` / `go test`。 |
@@ -174,15 +174,15 @@
 
 | 项 | 现状 |
 |---|---|
-| 加载/导出 | `LoadCertificatePEM`/`LoadCertificateDER`/`WrapCertificate`/`MarshalPEM`/`MarshalDER`/`Core()`（**泄漏 `*core.Certificate`**） |
-| 读取 | `Subject`/`Issuer`/`NotBefore`/`NotAfter`/`Serial(int64)`/`Version`、`SubjectName`/`IssuerName`/`SubjectEntries`/`IssuerEntries`/`SubjectText`/`IssuerText` |
+| 加载/导出 | `LoadCertificatePEM`/`LoadCertificateDER`/`WrapCertificate`/`MarshalPEM`/`MarshalDER`/`Core()`（**泄漏 `*core.Certificate`**）、`LoadCertificatePEMFile`/`SaveCertificatePEMFile` |
+| 读取 | `Subject`/`Issuer`/`NotBefore`/`NotAfter`/`Serial(int64)`/`SerialHex()`/`Version`、`SubjectHash()`/`IssuerHash()`、`SubjectName`/`IssuerName`/`SubjectEntries`/`IssuerEntries`/`SubjectText`/`IssuerText` |
 | 扩展读取 | `SAN`/`KeyUsage`/`ExtendedKeyUsage`/`IsCA`/`PathLen`/`SubjectKeyID`/`AuthorityKeyID`/`CertificateType()`/`Extensions()`/`Fingerprint(alg)` |
-| 构建 | `NewCertificate()` + `SetVersion`/`SetSerial`/`SetIssuer`/`SetSubject`/`SetValidity`/`SetPublicKey`/`AddBasicConstraints`/`AddSubjectAltName`/`AddKeyUsage`/`AddExtendedKeyUsage`/`AddSubjectKeyID`/`AddAuthorityKeyID` + `Sign`；便捷函数 `CreateCertificate(...)` |
-| 验签 | `Verify(signerPub)`、`SelfSigned()`、`PublicKey()`(SM2 包装)、`PublicKeyPKey()`(任意算法，**泄漏 `*core.PKey`**)、`Signature()`/`SignatureAlgorithm()`/`SignatureAlgorithmOID()` |
-| CSR | `NewCertificateRequest`/`NewEmptyCertificateRequest`/`SetSubject`/`SetPublicKey`/`Sign`/`Verify`/`LoadCertificateRequestPEM`/`LoadCertificateRequestDER`/`MarshalPEM`/`MarshalDER`/`SetChallengePassword`/`AddExtensions`/`AddSubjectAltName`/`Extensions` |
+| 构建 | `NewCertificate()` + `SetVersion`/`SetSerial`/`SetIssuer`/`SetSubject`/`SetValidity`/`SetPublicKey`/`AddBasicConstraints`/`AddSubjectAltName`/`AddKeyUsage`/`AddExtendedKeyUsage`/`AddSubjectKeyID`/`AddAuthorityKeyID` + `Sign`；任意扩展 `AddExtension`/`AddExtensionByName`/`AddExtensions` + `HasExtension`/`RemoveExtension`/`ReplaceExtension`；便捷函数 `CreateCertificate(...)`、`CreateSelfSigned(...)` |
+| 验签 | `Verify(signerPub)`、`SelfSigned()`、`PublicKey()`(SM2 包装)、`PublicKeyPKey()`(任意算法，**泄漏 `*core.PKey`**)、`Signature()`/`SignatureAlgorithm()`/`SignatureAlgorithmOID()`；`VerifyHostname(host)`/`CheckEmail(email)` |
+| CSR | `NewCertificateRequest`/`NewEmptyCertificateRequest`/`SetSubject`/`SetPublicKey`/`Sign`/`Verify`/`LoadCertificateRequestPEM`/`LoadCertificateRequestDER`/`MarshalPEM`/`MarshalDER`/`SetChallengePassword`/`AddExtensions`/`AddExtension`/`AddExtensionByName`/`AddKeyUsage`/`AddExtendedKeyUsage`/`AddBasicConstraints`/`AddSubjectAltName`/`Extensions`；`Certificate.ToCertificateRequest(priv)`（`-x509toreq`）、`IssueCertificateFromRequest(req, issuer, signer, opts)` |
 | CRL | `ParseCRL`/`LoadCRLPEM`/`LoadCRLDER`/`MarshalPEM`/`MarshalDER`/`RevokedEntries`/`IsRevoked`/`Verify`/`Extensions`，顶层 `RevocationCheck(cert, crls)` |
 | 链验证 | `NewStore`/`AddCert`/`AddCRL`/`SetCRLCheck`/`SetCRLCheckAll`/`SetFlags`/`Core()`、`ChainVerify(cert, roots, intermediates)`、`VerifyError` |
-| **缺失** | 主机名/邮箱/IP 校验（`CheckHost`/`CheckIP`/`VerifyHostname`）、任意扩展按 NID+文本添加、`-x509toreq` 等价、`-addtrust`/`-setalias`/`-subject_hash`、`ca` 式数据库工作流、`-attime`/`-crl_download` |
+| **缺失** | `-addtrust`/`-setalias`、`ca` 式数据库工作流、`-attime`/`-crl_download`、`-ocspid` |
 
 ### 5.4 传输（`tls/`）
 
@@ -458,7 +458,7 @@
 
 ## 8. 全量对齐路线图（能力级）
 
-> 本节按**能力**排期；按**包结构**排期的 Phase 划分见 [refactor-roadmap.md](refactor-roadmap.md) §7。两者合并后：`0.3.0` 只做结构重构与少量顺带补全，本节的「Phase 1 采集型小件」自 `0.4.0` 起。
+> 本节按**能力**分组，不带版本号。**某个能力落在哪个版本，以 [roadmap.md](roadmap.md) §2 为准**（该文是唯一的版本归属来源）。
 >
 > 排序原则：先补「让本库像 CLI 一样直接用」的地基（形态），再补算法覆盖，最后补协议与破坏性收敛。
 
@@ -519,15 +519,17 @@
 | 需重编铜锁方可验证 | Bulletproofs、SM2 门限、SDF、SMTC、白盒 SM4、Delegated Credential | §6.D D14–D19 |
 | **公开面收敛（破坏性）** | §6.E 的 E1（内部类型泄漏）→ E2（原语级公开面）→ E3（多步组装面）；需配迁移说明 | §6.E |
 
-### 版本归属建议
+### 版本归属
 
-| 版本 | 内容 |
+见 [roadmap.md](roadmap.md) §2（本节各 Phase 与该文版本的对应关系）：
+
+| 本节 Phase | 落点版本 |
 |---|---|
-| `0.4.0` | Phase 1 全部 + Phase 2 起步 |
-| `0.5.0` | Phase 2 完整 + Phase 3 主体（摘要 / MAC / KDF / 对称 / AES-192） |
-| `0.6.0` | Phase 3 剩余（SM2DH / PQC）+ Phase 4 的格式容器部分 |
-| `0.7.0` | Phase 4 的协议部分（CMS / ts / OCSP HTTP / `ca`） |
-| `1.0.0` | Phase 5 + §6.E 公开面收敛（破坏性，需迁移指南） |
+| Phase 1 采集型小件 + Phase 2 输入输出形态 | `0.5.0` |
+| Phase 2 收尾 + Phase 3 算法覆盖主体 + Phase 4 的格式容器部分 | `0.6.0` |
+| Phase 3 剩余（SM2DH / PQC / KEM）+ Phase 4 的 `pkcs7` 签名加密族 | `0.7.0` |
+| Phase 4 的协议部分（CMS / ts / `ca`） | `0.8.0` |
+| Phase 5 传输深度与扩展算法 + §6.E 公开面收敛（破坏性，需迁移指南） | `1.0.0` |
 
 ---
 

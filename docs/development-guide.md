@@ -134,7 +134,7 @@ func Cgo_SM2_Encrypt(...) (...) { ... }
 
 > 命名以**语义清晰**为优先，具体符号在实现阶段可按实际调整，但三层边界与导出面约定不变。
 > 重构后的完整包清单与逐符号签名见 [api-reference.md](api-reference.md)（+ [api-reference-internal.md](api-reference-internal.md)），
-> 迁移对照见 [refactor-roadmap.md](refactor-roadmap.md) §4。**公开签名中不得出现 `internal/` 类型。**
+> 包清单与依赖方向见 [architecture.md](architecture.md) §2 / §3。**公开签名中不得出现 `internal/` 类型。**
 
 ---
 

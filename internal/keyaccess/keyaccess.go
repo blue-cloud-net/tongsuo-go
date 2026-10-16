@@ -1,42 +1,39 @@
 // Package keyaccess 提供跨包获取非对称密钥底层 *core.PKey 的桥接机制。
 //
-// 本包的设计动机见 docs/refactor-roadmap.md §5.2：
+// 本包的设计动机见 docs/architecture.md §3.3「跨包取原生句柄」：
 //
 //  1. asym 包的具体类型（如 *sm2PrivateKey、*rsaPrivateKey）一律非导出，
 //     因此不能在任何对外接口中暴露 CorePKey() 方法；
-//  2. ecdh / x509 / tls / jwk / pkcs12 等消费方又必须拿到底层 *core.PKey
-//     （用于 EVP_PKEY_derive / X509_set_pubkey / X509_sign / PEM_write_bio_PrivateKey 等）；
+//  2. ecdh / x509 / tls / jwk / keystore / pkcs12 等消费方又必须拿到底层
+//     *core.PKey（用于 EVP_PKEY_derive / X509_set_pubkey / X509_sign /
+//     PEM_write_bio_PrivateKey 等）；
 //  3. 消费方又不能直接 import asym（会与 x509 → asym 单向依赖冲突）；
 //  4. 不能在 internal/core 写「类型开关」反查公开类型（核心层位于依赖最底层，
 //     import asym 会成环）。
 //
 // 方案：用结构化接口满足 + 集中断言点。消费方把任意 asym 密钥传入 PKey()，
-// 本包通过 interface{ CorePKey() *core.PKey }（asym 具体类型）或
-// interface{ Key() *core.PKey }（过渡期 key 包类型）做类型断言；
-// **取到后必须立即调用 (*core.PKey).Dup() 复制一份**，以免源密钥
-// Close 后消费方拿到悬垂指针（roadmap §10 风险项）。
+// 本包通过 interface{ CorePKey() *core.PKey }（asym 的各具体类型，见
+// asym/corepkey.go）做类型断言；**取到后必须立即调用 (*core.PKey).Dup() 复制
+// 一份**，以免源密钥 Close 后消费方拿到悬垂指针。
 //
-// asym 包已落地（roadmap commit 10～17），其具体类型统一实现
-// CorePKey() *core.PKey（见 asym/corepkey.go）。Key() *core.PKey 形状
-// 仅用于兼容尚未删除的 key 包，将在 roadmap commit 21 移除。
+// 已知残余瑕疵：外部包可写匿名接口断言并调用成功，但拿到的 *core.PKey 无法被
+// 使用——外部模块 import 不到 internal/core。详见 docs/architecture.md §3.3。
 //
 // Package keyaccess provides a bridge for retrieving the underlying
 // *core.PKey handle from any asym package private key type without
 // breaking the dependency direction.
 //
-// See docs/refactor-roadmap.md §5.2 for the full rationale. In short:
+// See docs/architecture.md §3.3 for the full rationale. In short:
 // asym's concrete types are unexported, so the CorePKey() accessor cannot
-// appear on any public interface; yet ecdh / x509 / tls / jwk / pkcs12
-// need the underlying *core.PKEY for EVP_PKEY_derive, X509_set_pubkey,
+// appear on any public interface; yet ecdh / x509 / tls / jwk / keystore /
+// pkcs12 need the underlying *core.PKey for EVP_PKEY_derive, X509_set_pubkey,
 // X509_sign, PEM_write_bio_PrivateKey, etc. This package centralises the
 // type assertion and reminds every caller to Dup() the result so the
 // source key's Close does not leave a dangling pointer.
 //
-// The two accepted shapes are CorePKey() *core.PKey (asym's concrete
-// types, see asym/corepkey.go) and Key() *core.PKey (transitional key
-// package types, removed in roadmap commit 21). This package centralises
-// the type assertion and reminds every caller to Dup() the result so the
-// source key's Close does not leave a dangling pointer.
+// Known residual leak: an out-of-package anonymous assertion can still
+// succeed, but the resulting *core.PKey is unusable because internal/core
+// cannot be imported from outside. See docs/architecture.md §3.3.
 package keyaccess
 
 import (

@@ -6,7 +6,7 @@
 > 1. 只产出**应用级函数**（一个调用完成一件事，明确输入源与输出形态），**不产出底层函数、不暴露底层 cgo 函数**；
 > 2. API **放进现有包**；确实无现成归属的，标注「建议新增包」并在附录 A 汇总；
 > 3. 判定与优先级沿用 `docs/cli-comparison.md` §6.A 的编号、优先级与理由；
-> 4. **包名已按重构后形态归一**——重构前的 `tongsuo` / `crypto/mac` / `crypto/ecdh` / `key` 等写法已替换；目标包结构见 [refactor-roadmap.md](refactor-roadmap.md) §2，逐符号签名见 [api-reference.md](api-reference.md)。
+> 4. **包名已按重构后形态归一**——重构前的 `tongsuo` / `crypto/mac` / `crypto/ecdh` / `key` 等写法已替换；逐符号签名见 [api-reference.md](api-reference.md)，落地版本见 [roadmap.md](roadmap.md) §2。
 >
 > **范围**：**14 个子命令 / 100 条 API**。不含 ⚠️ 部分对齐项、不含 §9「明确不实现」项、不含无对应子命令的扩展算法（PQC 等）——三者见附录 B。
 
@@ -16,22 +16,22 @@
 
 | 次序 | 子命令 | §6.A 编号 | 优先级 | 归属包 | API 数 | 需新增 native 绑定 |
 |---|---|---|---|---|---|---|
-| 1 | `version` | 55 | P1 | `meta`（本版新增） | 4 | 否（`internal/core` 已有实现） |
-| 2 | `mac` | 26 | P1 | `mac`（本版新增） | 13 | 是（`EVP_MAC_*`；本版仅 HMAC，其余见 `0.4.0`） |
+| 1 | `version` | 55 | P1 | `meta`（已建） | 4 | 否（`internal/core` 已有实现） |
+| 2 | `mac` | 26 | P1 | `mac`（已建） | 13 | 是（`EVP_MAC_*`；当前仅 HMAC，其余见 [roadmap.md](roadmap.md) §2.1） |
 | 3 | `ca` | 2 | P1 | `x509`（现有） | 12 | 否 |
 | 4 | `cms` | 5 | P2 | `pkcs/pkcs7`（现有） | 8 | 是（`CMS_*`） |
 | 5 | `crl2pkcs7` | 7 | P2 | `pkcs/pkcs7`（现有） | 2 | 否 |
 | 6 | `ec_elgamal` | 13 | P2 | ❌ 不做（见备注） | 10 | 是（`EC_ELGAMAL_*`） |
 | 7 | `ecparam` | 14 | P2 | `ecdh`（现有） | 7 | 否 |
-| 8 | `errstr` | 17 | P2 | `meta`（本版新增） | 3 | 否 |
-| 9 | `info` | 23 | P2 | `meta`（本版新增） | 5 | 是（`OPENSSL_info`） |
+| 8 | `errstr` | 17 | P2 | `meta`（已建） | 3 | 否 |
+| 9 | `info` | 23 | P2 | `meta`（已建） | 5 | 是（`OPENSSL_info`） |
 | 10 | `paillier` | 29 | P2 | ❌ 不做（见备注） | 9 | 是（`Paillier_*`） |
 | 11 | `pkeyparam` | 35 | P2 | `asym`（现有） | 5 | 否 |
 | 12 | `sess_id` | 46 | P2 | `tls`（现有） | 8 | 是（`SSL_SESSION_*`） |
 | 13 | `storeutl` | 52 | P2 | `asym` + `x509`（现有） | 6 | 否 |
 | 14 | `ts` | 53 | P2 | 建议新增顶层包 `ts` | 8 | 是（`TS_*`） |
 
-> **备注**：`ec_elgamal` 与 `paillier` 在 [refactor-roadmap.md](refactor-roadmap.md) §11
+> **备注**：`ec_elgamal` 与 `paillier` 在 [roadmap.md](roadmap.md) §4
 > 「明确不做」中已列为**不做**（非国密目标场景）；本表保留行仅为与
 > `docs/cli-comparison.md` §6.A 编号对应。若后续确要做，包名建议 `asym/elgamal`
 > 与 `asym/paillier`，而非顶层 `crypto/*`。
@@ -187,7 +187,7 @@
 - [ ] `meta.ReadBuildInfo() *BuildInfo` — 一次性获取构建与运行环境信息（**备注**：不能取名 `BuildInfo()`，会与同名类型冲突，见 [api-reference.md](api-reference.md) §1）
 - [ ] `type BuildInfo struct { Platform, Compiler, BuildDate, OpenSSLDir, EnginesDir, ModulesDir, SeedingSource, CPUInfo string; Options []string }`
 - [ ] `(BuildInfo) String() string` — 文本视图（等价 `tongsuo version -a` 输出）
-- [ ] `meta.Providers() []ProviderInfo` — 活跃 provider 名称/版本/状态（`0.4.0`，需 `OSSL_PROVIDER_*`）
+- [ ] `meta.Providers() []ProviderInfo` — 活跃 provider 名称/版本/状态（`0.5.0`，需 `OSSL_PROVIDER_*`）
 - [ ] `type ProviderInfo struct { Name, Version, Status string }`
 
 ---
@@ -279,19 +279,17 @@
 
 ## 附录 A — 需新增的包
 
-> 与 [refactor-roadmap.md](refactor-roadmap.md) §2（目标 16 包）对齐后，
-> 「需新增的包」只剩 **2 个外部包**；其余均已归入重构后的既有包。
+> 与 [api-reference.md](api-reference.md) §0 的 16 包形态对齐后，
+> 「需新增的包」只剩 **1 个外部包**（`ts`）；其余均已归入既有包。
 
 | 包 | 承载 | 理由 |
 |---|---|---|
-| `meta`（本版新增） | `version` / `info` / `errstr` | 属运行环境与元信息，重构后的既有包均无归属；仅暴露查询函数，不涉密码学操作 |
-| `ts`（顶层，`0.7.0`） | `ts` | RFC 3161 协议栈，含 ASN.1 结构与 HTTP 传输，体量与 `x509` 相当 |
+| `ts`（顶层，`0.8.0`） | `ts` | RFC 3161 协议栈，含 ASN.1 结构与 HTTP 传输，体量与 `x509` 相当 |
 
-**归入重构后既有包的 7 项**：`mac`（本版新增，承载 `EVP_MAC_*` 系算法）；`ca` → `x509`；
-`ecparam` → `ecdh`；`pkeyparam`、`storeutl` → `asym`（`storeutl` 另有 `x509` 部分）；
-`sess_id` → `tls`；`cms`、`crl2pkcs7` → `pkcs/pkcs7`。
+**归入既有包的 7 项**：`ca` → `x509`；`ecparam` → `ecdh`；`pkeyparam`、`storeutl` → `asym`
+（`storeutl` 另有 `x509` 部分）；`sess_id` → `tls`；`cms`、`crl2pkcs7` → `pkcs/pkcs7`。
 
-**明确不做 2 项**：`ec_elgamal`、`paillier`（见 [refactor-roadmap.md](refactor-roadmap.md) §11）。
+**明确不做 2 项**：`ec_elgamal`、`paillier`（见 [roadmap.md](roadmap.md) §4）。
 
 > 不再需要「新增 `crypto/mac`」：重构后算法原语包本就扁平在顶层，`mac` 已是 16 包之一；
 > 同理「新增 `crypto/ecdh`」也无需讨论，`ecdh` 已存在。

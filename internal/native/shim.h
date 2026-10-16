@@ -111,6 +111,20 @@ int X_X509V3_EXT_conf_nid_ctx(X509 *target, X509 *subject, X509 *issuer,
 int X_X509V3_EXT_conf_nid_ctx_crl(X509_CRL *target, X509 *issuer,
                                    int nid, const char *value);
 
+/*
+ * 把 value 解析出的扩展并入 x 上已有的同 NID 扩展，保持原位置与 critical 标记。
+ *
+ * 可重复 OID（subjectAltName / issuerAltName / subjectDirectoryAttributes /
+ * certificateIssuer）的扩展值均为 SEQUENCE，OpenSSL 不接受同一证书里出现两个同
+ * NID 的条目——X509_get_ext_d2i 会直接返回 NULL，导致 SAN() 与 X509_check_host
+ * 全部失效。因此这里走 BouncyCastle 的做法：拼接两个 SEQUENCE 的元素，重新编码
+ * 后替换原扩展。
+ *
+ * x 上不存在同 NID 扩展时返回 0 且不做任何修改（调用方应走普通追加路径）。
+ * 成功返回 1；解析、编码或替换失败返回 0 并保留原有错误队列。
+ */
+int X_X509V3_EXT_conf_nid_merge(X509 *x, int nid, const char *value);
+
 /* SAN（GENERAL_NAMES 栈） */
 void *X_X509_get_san(const X509 *x);                       /* GENERAL_NAMES* 或 NULL */
 void X_GENERAL_NAMES_free(void *sk);
@@ -138,7 +152,7 @@ long X_BASIC_CONSTRAINTS_pathlen(const void *bc);
 
 /* CSR 扩展栈 */
 void *X_sk_X509_EXTENSION_new_null(void);                  /* STACK_OF(X509_EXTENSION)* */
-int X_sk_X509_EXTENSION_push(void *sk, void *ext);
+int X_sk_X509_EXTENSION_push(void *sk, void *ext); /* 返回压入后的栈长度，> 0 即成功 */
 void X_sk_X509_EXTENSION_free(void *sk);
 void X_sk_X509_EXTENSION_pop_free(void *sk);               /* 连同元素一起释放 */
 int X_sk_X509_EXTENSION_num(const void *sk);

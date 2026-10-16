@@ -127,7 +127,7 @@ API 层（16 个顶级包：meta / digest / mac / sym / asym / ecdh / kdf / rand
 （桥接：internal/keyaccess ← 公开密钥对象 → *core.PKey；internal/certaccess ↔ 公开证书对象 → *core.Certificate）
 ```
 
-- `crypto/` 整目录与 `key/` 已在包结构重构中**取消**；详见 `docs/refactor-roadmap.md`
+- `crypto/` 整目录与 `key/` 已在 `0.3.0` 的包结构重构中**取消**；当前 16 包形态与依赖方向见 `docs/architecture.md` §2 / §3
 - API 层内部依赖：算法原语包只依赖 `internal/core`；`ecdh → asym`；`x509 → asym`；
   `tls` / `jwk` / `pkcs12` → `x509` + `asym`（单向，无环）
 
@@ -243,7 +243,7 @@ docs/testing-guide.md         # 测试组织、各算法必测用例、向量来
 docs/bilingual-doc-guide.md   # 双语 GoDoc 段式规则与检查清单
 docs/api-reference.md         # 公开 API 清单（重构后 16 包，三态标记）
 docs/api-reference-internal.md# 内部 API 清单（internal/* 五个包）
-docs/refactor-roadmap.md      # 包结构重构路线图（决策 / 迁移 / 排期 / 验证）
+docs/roadmap.md                 # 版本路线图（0.5.0–1.0.0：范围 / 前置绑定 / 不做）
 docs/cli-comparison.md        # 铜锁 CLI 与本库能力对比（能力级）
 docs/official-sdk-comparison.md # 与官方 SDK 对比
 ```
@@ -429,7 +429,7 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 - **type**（本仓库实际使用）：`feat` / `fix` / `docs` / `test` / `chore` / `ci` /
   `refactor` / `perf` / `release`
 - **scope**：用「层-包」或模块名，例如 `asym`、`sym`、`digest`、`x509`、`tls`、
-  `core-pkey`、`native-binding`、`architecture`、`refactor-roadmap`、`changelog`、
+  `core-pkey`、`native-binding`、`architecture`、`roadmap`、`changelog`、
   `workflows`、`scripts`
 - 真实历史示例（可对齐风格）：
   - `feat(asym): 新增 RSA 算法 API（生成/PEM/签名验签/加解密/参数提取）`
@@ -452,14 +452,21 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 - `CHANGELOG.md`（英文）与 `CHANGELOG.zh.md`（中文）**必须同步更新同一版本段**
 - 格式遵循 [Keep a Changelog 1.1.0](https://keepachangelog.com/)，
   版本号遵循 [SemVer 2.0.0](https://semver.org/)
-- 分类标题：`新增功能` / `行为变化与重构` / `Bug 修复` / `文档` / `BREAKING / 已知限制`
+- 分类标题：`新增功能` / `行为变化与重构` / `Bug 修复` / `BREAKING / 已知限制`
+- **CHANGELOG 只记录代码与行为变更**（新增 API / 行为变化 / Bug 修复 / BREAKING）：
+  纯文档整理（新增、删除、改指文档，链接与文案修订）**不单列条目**；文档同步
+  责任见 §7
+  - ❌ 反例：新增 `### 文档` 段，罗列「删除 `docs/refactor-roadmap.md`」
+    「链接与版本引用改指新文档」这类条目
+  - 历史版本段里既有的 `### 文档` / `### Documentation` 属历史记录，保持原样，
+    新版本段不再沿用该分类
 - **版本段一律按版本号降序排列**；新增版本段必须**插到列表最顶部**（禁止追加在
   最新已发布段之下 —— 否则会把 `0.2.0` 错位到 `0.1.1` / `0.1.2` 之间）
 - 两套"未发布"语义，分工清晰、不重复：
   - `## [Unreleased]`（**尚未决定归入哪个版本**的改动暂存区）放在**最顶部**；
   - `## [x.y.z] - TBD`（**已定目标版本、尚未发 tag**的条目）紧随其后；
   - 打 tag 时把 `TBD` 换成真实日期（推荐格式 `YYYY-MM-DD`）
-- 待发布版本用 `## [0.3.0] - TBD`
+- 待发布版本用 `## [0.4.0] - TBD`
 - 术语保留英文（SM2 / SM4 / PEM / DER / PKCS#8 / NTLS / RFC xxxx …）
 - 底部链接定义区必须与正文标题一一对应（无引用即无定义）
 - ❌ 反例：只改 `CHANGELOG.zh.md` 而不改 `CHANGELOG.md`（发版会被脚本拦下）
@@ -489,9 +496,11 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 | 改动内容 | 必须同步 |
 |----------|----------|
 | 任何功能/行为/API 变化 | `CHANGELOG.md` + `CHANGELOG.zh.md`（同一版本段） |
+| 纯文档改动（无功能/行为/API 变化） | **不**写进 CHANGELOG（§6.3）；只更新受影响的那份文档 |
 | 新增算法包、新增公开 API | `README.md` + `README.zh.md` 的功能列表与示例（如适用） |
 | 目录结构、分层、依赖、构建方式变化 | `docs/architecture.md` |
-| 包结构/公开签名变化（含迁移路径与排期） | `docs/refactor-roadmap.md` + `docs/api-reference.md`（+ `docs/api-reference-internal.md`） |
+| 包结构/公开签名变化 | `docs/api-reference.md` + `docs/architecture.md`（+ `docs/api-reference-internal.md`） |
+| 版本归属 / 排期变化 | `docs/roadmap.md` §2（并同步 `docs/api-reference.md` 的 🧭 行） |
 | 注释/命名/cgo/错误/内存约定变化 | `docs/development-guide.md`（+ `docs/bilingual-doc-guide.md`） |
 | 测试组织或新增必测用例 | `docs/testing-guide.md` |
 | 新增示例 | `examples/README.md` + 示例目录内代码 |
@@ -537,8 +546,8 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 3. 读目标包源码 **+ 相邻同类包**作为模板（如做 `ecdh` 时先看 `asym`；
    做 `pkcs/pkcs12` 时先看 `pkcs/pkcs7`）
 4. 若涉及既有问题清单，先看 `docs/issues/` 下对应日期的目录是否已记录同类问题
-5. 涉及包结构 / 公开签名改动时，先读 `docs/refactor-roadmap.md`（目标形态与迁移路径）
-   与 `docs/api-reference.md`（逐符号签名）
+5. 涉及包结构 / 公开签名改动时，先读 `docs/architecture.md` §2 / §3（分层与包清单）
+   与 `docs/api-reference.md`（逐符号签名）；涉及排期时读 `docs/roadmap.md` §2
 
 ### 9.2 改动后：必须执行并如实汇报
 
@@ -568,7 +577,7 @@ go test -count=1 ./...    # 必须 ok（无铜锁环境则如实说明未能运�
 - [ ] 如需新句柄：`internal/core/` 包装（`handle` 基类 + 幂等 `Close()`）
 - [ ] 公开签名**无 `internal/` 类型**；若需取句柄，经 `internal/keyaccess`（§3.3）
 - [ ] `docs/api-reference.md` 对应小节（含状态标记）
-- [ ] `docs/refactor-roadmap.md` §3 / §4 / §6（若涉及新绑定或新包）
+- [ ] `docs/roadmap.md` §3（若需新增 cgo 绑定）；`docs/architecture.md` §5（若新增目录/文件）
 - [ ] `docs/architecture.md` §3.3 / §5 目录与包列表
 - [ ] `docs/testing-guide.md` 用例表
 - [ ] `README.md` + `README.zh.md` 功能列表（成对）
@@ -606,7 +615,7 @@ go test -count=1 ./...    # 必须 ok（无铜锁环境则如实说明未能运�
 | 双语注释规则 | `docs/bilingual-doc-guide.md` |
 | 三层边界与目录 | `docs/architecture.md` §2 / §3 / §5 |
 | 生命周期与所有权 | `docs/architecture.md` §7 / §8 |
-| **包结构重构路线图（16 包目标形态 / 迁移 / 排期）** | `docs/refactor-roadmap.md` |
+| **版本路线图（0.5.0–1.0.0：范围 / 前置绑定 / 不做）** | `docs/roadmap.md` |
 | **公开 API 逐符号清单（三态）** | `docs/api-reference.md` |
 | **内部 API 清单（`internal/*`）** | `docs/api-reference-internal.md` |
 | 各算法必测用例 | `docs/testing-guide.md` §3～§7 |

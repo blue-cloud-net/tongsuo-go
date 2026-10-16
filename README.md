@@ -25,7 +25,8 @@ The API layer is **16 top-level packages** (`meta` / `digest` / `mac` / `kdf` / 
 `asym` / `ecdh` / `keystore` / `x509` / `tls` / `asn1` / `jwk` / `pkcs/pkcs7` / `pkcs/pkcs12` /
 `xml/rsa`) with no intermediate `crypto/` directory. Every package exposes both the idiomatic Go
 interfaces and a CLI-style by-name entry point; see the
-[package restructuring roadmap](docs/refactor-roadmap.md).
+[version roadmap](docs/roadmap.md) for what comes next and
+[docs/architecture.md](docs/architecture.md) for the layered design.
 
 - 🔐 **SM2 asymmetric algorithm** (GB/T 32918, `asym`): key generation, PEM serialization, encrypt/decrypt (ASN.1 DER, C1C3C2 internal order),
   SM2withSM3 sign/verify, customizable userId
@@ -40,7 +41,7 @@ interfaces and a CLI-style by-name entry point; see the
 - 🤝 **Curve-based ECDH** (`ecdh`): NIST P-256 / P-384 / P-521 (X9.63), the OKP curves X25519 / X448 (RFC 7748) and secp256k1; PEM (PKCS#8 / SPKI) round-trip and shared-secret derivation matching Go's standard `crypto/ecdh` semantics
 - 🎲 **Cryptographically secure random** (`rand`): based on Tongsuo `RAND_bytes`
 - 🗄️ **Key storage and rotation** (`keystore`): key metadata, in-memory / custom stores, version rotation and history
-- 📜 **X.509 certificate management** (`x509`): parse and issue certificates / CSR / CRL / OCSP, one-line self-signed certificates (`CreateSelfSigned`), step-by-step CRL issuance (`CRLBuilder`), CA-signed certificates (SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448), hostname / IP verification (`VerifyHostname`) and chain verification with an optional pinned verification instant (`Store.SetTime`)
+- 📜 **X.509 certificate management** (`x509`): parse and issue certificates / CSR / CRL / OCSP, one-line self-signed certificates (`CreateSelfSigned`), step-by-step CRL issuance (`CRLBuilder`), CA-signed certificates (SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448), arbitrary X.509 v3 extensions by NID or name (`AddExtension` / `AddExtensionByName` / `AddExtensions`), CSR-driven issuance (`IssueCertificateFromRequest`), hostname / IP / e-mail verification (`VerifyHostname` / `CheckEmail`), subject / issuer name hashes (`SubjectHash` / `IssuerHash`) and chain verification with an optional pinned verification instant (`Store.SetTime`)
 - 🌐 **TLS / NTLS transport** (`tls`): client / server wrappers, supporting Tongsuo NTLS dual certificates (signing certificate + encryption certificate)
 - 📦 **Containers and formats**: PKCS#7 (`pkcs/pkcs7`), PKCS#12 (`pkcs/pkcs12`), JWK (`jwk`), ASN.1 DER viewer (`asn1`), .NET-style RSA XML (`xml/rsa`)
 - 🧪 **Standard-vector tests**: every algorithm package covers national-standard vectors, round-trips, edge cases and error paths, with bidirectional cross-validation against the openssl CLI
@@ -314,7 +315,7 @@ Binding layer (internal/native/)   ← cgo + inline C shim; maps directly to Ton
 - **Concurrency model**: distinct handles can be used in parallel; a single handle must be serialized by its caller
 - **Internal implementation is hidden**: `internal/` is protected by Go's `internal` mechanism and cannot be imported from outside; no `internal/` type appears in a public signature
 
-See [docs/architecture.md](docs/architecture.md) for the detailed design, and [docs/refactor-roadmap.md](docs/refactor-roadmap.md) for the package-structure decisions and migration path.
+See [docs/architecture.md](docs/architecture.md) for the detailed design and the dependency graph, and [docs/roadmap.md](docs/roadmap.md) for the `0.5.0`+ version plan.
 
 ## License
 

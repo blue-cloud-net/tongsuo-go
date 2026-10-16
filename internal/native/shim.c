@@ -203,6 +203,150 @@ int X_X509V3_EXT_conf_nid_ctx_crl(X509_CRL *target, X509 *issuer,
     return ok;
 }
 
+/*
+ * 读取 ASN.1 对象的 tag、长度头字节数与内容长度（DER）。
+ * 返回内容字节数；失败返回 -1。
+ */
+static int der_seq_content(const unsigned char *der, int len,
+                           unsigned char *tag_out, int *hdr_out,
+                           int *content_out)
+{
+    if (der == NULL || len < 2)
+        return -1;
+    int idx = 0;
+    tag_out[0] = der[idx++];
+    unsigned char l = der[idx++];
+    int content;
+    if ((l & 0x80) == 0) {
+        content = l;
+    } else {
+        int nbytes = l & 0x7F;
+        if (nbytes < 1 || nbytes > 4 || idx + nbytes > len)
+            return -1;
+        content = 0;
+        for (int i = 0; i < nbytes; i++)
+            content = (content << 8) | der[idx + i];
+        idx += nbytes;
+    }
+    if (content < 0 || idx + content > len)
+        return -1;
+    *hdr_out = idx;
+    *content_out = content;
+    return content;
+}
+
+/* 按 DER 长度规则写长度字节，返回写入的字节数。 */
+static int der_write_len(unsigned char *buf, int content)
+{
+    if (content < 0x80) {
+        buf[0] = (unsigned char)content;
+        return 1;
+    }
+    unsigned char tmp[4];
+    int n = 0;
+    unsigned int v = (unsigned int)content;
+    while (v > 0) {
+        tmp[n++] = (unsigned char)(v & 0xFF);
+        v >>= 8;
+    }
+    buf[0] = (unsigned char)(0x80 | n);
+    for (int i = 0; i < n; i++)
+        buf[1 + i] = tmp[n - 1 - i];
+    return 1 + n;
+}
+
+int X_X509V3_EXT_conf_nid_merge(X509 *x, int nid, const char *value)
+{
+    if (x == NULL || value == NULL)
+        return 0;
+
+    /* 1. 定位已有的同 NID 扩展 */
+    int loc = -1;
+    int n = X509_get_ext_count(x);
+    for (int i = 0; i < n; i++) {
+        X509_EXTENSION *e = X509_get_ext(x, i);
+        if (e != NULL &&
+            OBJ_obj2nid(X509_EXTENSION_get_object(e)) == nid) {
+            loc = i;
+            break;
+        }
+    }
+    if (loc < 0)
+        return 0; /* 无既有扩展：调用方走普通追加 */
+
+    X509_EXTENSION *old = X509_get_ext(x, loc);
+    int crit = X509_EXTENSION_get_critical(old);
+
+    /* 2. 解析出两侧的 SEQUENCE 内容 */
+    ASN1_OCTET_STRING *os_old = X509_EXTENSION_get_data(old);
+    const unsigned char *d_old = ASN1_STRING_get0_data(os_old);
+    int l_old = ASN1_STRING_length(os_old);
+
+    unsigned char tag_old = 0, tag_new = 0;
+    int hdr_old = 0, con_old = 0, hdr_new = 0, con_new = 0;
+    if (der_seq_content(d_old, l_old, &tag_old, &hdr_old, &con_old) < 0)
+        return 0;
+
+    X509_EXTENSION *tmp = X509V3_EXT_conf_nid(NULL, NULL, nid, (char *)value);
+    if (tmp == NULL)
+        return 0;
+    ASN1_OCTET_STRING *os_new = X509_EXTENSION_get_data(tmp);
+    const unsigned char *d_new = ASN1_STRING_get0_data(os_new);
+    int l_new = ASN1_STRING_length(os_new);
+    int parsed = der_seq_content(d_new, l_new, &tag_new, &hdr_new, &con_new);
+    if (parsed < 0) {
+        X509_EXTENSION_free(tmp);
+        return 0;
+    }
+    /* 只在两侧都是同 tag 的 SEQUENCE 时合并；否则退回普通追加。 */
+    if (tag_old != tag_new || tag_old != 0x30) {
+        X509_EXTENSION_free(tmp);
+        return 0;
+    }
+
+    /* 3. 拼接内容并重新封装成 DER */
+    int total = con_old + con_new;
+    unsigned char *merged = OPENSSL_malloc((size_t)hdr_old + total + 8);
+    if (merged == NULL) {
+        X509_EXTENSION_free(tmp);
+        return 0;
+    }
+    int p = 0;
+    merged[p++] = 0x30;
+    p += der_write_len(merged + p, total);
+    memcpy(merged + p, d_old + hdr_old, (size_t)con_old);
+    p += con_old;
+    memcpy(merged + p, d_new + hdr_new, (size_t)con_new);
+    p += con_new;
+    X509_EXTENSION_free(tmp);
+
+    ASN1_OCTET_STRING *os = ASN1_OCTET_STRING_new();
+    if (os == NULL) {
+        OPENSSL_free(merged);
+        return 0;
+    }
+    if (!ASN1_OCTET_STRING_set(os, merged, p)) {
+        OPENSSL_free(merged);
+        ASN1_OCTET_STRING_free(os);
+        return 0;
+    }
+    OPENSSL_free(merged);
+
+    X509_EXTENSION *newext =
+        X509_EXTENSION_create_by_OBJ(NULL, OBJ_nid2obj(nid), crit, os);
+    ASN1_OCTET_STRING_free(os);
+    if (newext == NULL)
+        return 0;
+
+    /* 4. 原位替换 */
+    X509_EXTENSION *rm = X509_delete_ext(x, loc);
+    if (rm != NULL)
+        X509_EXTENSION_free(rm);
+    int ok = X509_add_ext(x, newext, loc);
+    X509_EXTENSION_free(newext);
+    return ok == 1 ? 1 : 0;
+}
+
 void *X_X509_get_san(const X509 *x)
 {
     return X509_get_ext_d2i(x, NID_subject_alt_name, NULL, NULL);
@@ -687,7 +831,9 @@ PKCS12 *X_PKCS12_create(const char *pass, const char *name, EVP_PKEY *pkey,
             return NULL;
         X509 **arr = (X509 **)ca;
         for (int i = 0; i < ca_len; i++) {
-            if (arr[i] == NULL || !sk_X509_push(ca_sk, arr[i])) {
+            /* sk_X509_push 在 OpenSSL 3 返回压入后的栈长度而非 0/1，
+             * 故这里判断 <= 0（失败时返回 0）。 */
+            if (arr[i] == NULL || sk_X509_push(ca_sk, arr[i]) <= 0) {
                 sk_X509_free(ca_sk);
                 return NULL;
             }

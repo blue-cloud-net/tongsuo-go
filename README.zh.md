@@ -23,7 +23,8 @@
 API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `sym` / `asym` / `ecdh` /
 `keystore` / `x509` / `tls` / `asn1` / `jwk` / `pkcs/pkcs7` / `pkcs/pkcs12` / `xml/rsa`），
 无 `crypto/` 中间目录；每个包同时提供 Go 惯例接口与「按算法名分发」的 CLI 式入口，
-详见[包结构重构路线图](docs/refactor-roadmap.md)。
+分层设计与依赖方向见 [docs/architecture.md](docs/architecture.md)，后续版本规划见
+[版本路线图](docs/roadmap.md)。
 
 - 🔐 **SM2 非对称算法**（GB/T 32918，`asym`）：密钥生成、PEM 序列化、加密/解密（ASN.1 DER，内含 C1C3C2）、
   SM2withSM3 签名/验签、自定义 userId
@@ -38,7 +39,7 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 - 🤝 **曲线 ECDH**（`ecdh`）：NIST P-256 / P-384 / P-521（X9.63）、OKP 曲线 X25519 / X448（RFC 7748）与 secp256k1；PEM（PKCS#8 / SPKI）往返与共享密钥派生，语义对齐 Go 标准库 `crypto/ecdh`
 - 🎲 **安全随机数**（`rand`）：基于铜锁 `RAND_bytes`
 - 🗄️ **密钥存储与轮转**（`keystore`）：密钥元数据、内存 / 自定义 Store、版本轮转与历史
-- 📜 **X.509 证书管理**（`x509`）：证书 / CSR / CRL / OCSP 解析与签发、一行自签证书（`CreateSelfSigned`）、分步签发 CRL（`CRLBuilder`）、CA 签发证书（SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448）、主机名 / IP 校验（`VerifyHostname`）与链验证（可用 `Store.SetTime` 指定验证时刻）
+- 📜 **X.509 证书管理**（`x509`）：证书 / CSR / CRL / OCSP 解析与签发、一行自签证书（`CreateSelfSigned`）、分步签发 CRL（`CRLBuilder`）、CA 签发证书（SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448）、按 NID 或名字添加任意 X.509 v3 扩展（`AddExtension` / `AddExtensionByName` / `AddExtensions`）、按 CSR 签发（`IssueCertificateFromRequest`）、主机名 / IP / 邮箱校验（`VerifyHostname` / `CheckEmail`）、subject / issuer 名字 hash（`SubjectHash` / `IssuerHash`）与链验证（可用 `Store.SetTime` 指定验证时刻）
 - 🌐 **TLS / NTLS 传输层**（`tls`）：客户端 / 服务端封装，支持国密 NTLS 双证书（签名证书 + 加密证书）
 - 📦 **容器与格式**：PKCS#7（`pkcs/pkcs7`）、PKCS#12（`pkcs/pkcs12`）、JWK（`jwk`）、ASN.1 DER 查看（`asn1`）、.NET 风格 RSA XML（`xml/rsa`）
 - 🧪 **标准向量测试**：每个算法包覆盖国标标准向量、往返、边界与错误路径，并与 openssl CLI 双向交叉验证
@@ -313,7 +314,7 @@ API 层（16 个顶级包）          ← 对外高层 API，仅此层可被外�
 - **并发模型**：不同句柄可并行使用；单句柄需调用方串行化
 - **内部实现隐藏**：`internal/` 受 Go `internal` 机制保护，外部不可导入；公开签名中不出现 `internal/` 类型
 
-详细设计见 [docs/architecture.md](docs/architecture.md)，包结构决策与迁移路径见 [docs/refactor-roadmap.md](docs/refactor-roadmap.md)。
+详细设计与依赖方向见 [docs/architecture.md](docs/architecture.md)，`0.5.0` 及以后的版本规划见 [docs/roadmap.md](docs/roadmap.md)。
 
 ## 协议
 

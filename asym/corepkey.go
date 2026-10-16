@@ -12,7 +12,7 @@ import "github.com/blue-cloud-net/tongsuo-go/internal/core"
 // 为何方法名导出而类型不导出：Go 的非导出标识符带包限定，包外无法满足
 // `corePKey()` 这类方法；只有导出名才能被其它包的结构化接口断言命中。而宿主
 // 类型非导出，因此这些方法不会出现在 `go doc -all ./asym` 的公开面中（见
-// docs/refactor-roadmap.md §5.2 验收：`grep -c CorePKey` 应为 0）。
+// docs/architecture.md §3.3 验收：`grep -c CorePKey` 应为 0）。
 //
 // 该契约**不进入任何导出接口**（`Key` / `PrivateKey` / `PublicKey` 均无此方法），
 // 以免它变成公开 API 的一部分。
@@ -30,7 +30,7 @@ import "github.com/blue-cloud-net/tongsuo-go/internal/core"
 // identifiers are package-qualified, so an out-of-package structural
 // assertion can never satisfy `corePKey()`; only an exported name works.
 // Because the host types are unexported, these methods never appear in the
-// public surface of `go doc -all ./asym` (see docs/refactor-roadmap.md §5.2
+// public surface of `go doc -all ./asym` (see docs/architecture.md §3.3
 // acceptance: `grep -c CorePKey` must be 0).
 //
 // The contract is deliberately kept out of every exported interface
