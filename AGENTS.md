@@ -452,7 +452,14 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 - `CHANGELOG.md`（英文）与 `CHANGELOG.zh.md`（中文）**必须同步更新同一版本段**
 - 格式遵循 [Keep a Changelog 1.1.0](https://keepachangelog.com/)，
   版本号遵循 [SemVer 2.0.0](https://semver.org/)
-- 分类标题：`新增功能` / `行为变化与重构` / `Bug 修复` / `文档` / `BREAKING / 已知限制`
+- 分类标题：`新增功能` / `行为变化与重构` / `Bug 修复` / `BREAKING / 已知限制`
+- **CHANGELOG 只记录代码与行为变更**（新增 API / 行为变化 / Bug 修复 / BREAKING）：
+  纯文档整理（新增、删除、改指文档，链接与文案修订）**不单列条目**；文档同步
+  责任见 §7
+  - ❌ 反例：新增 `### 文档` 段，罗列「删除 `docs/refactor-roadmap.md`」
+    「链接与版本引用改指新文档」这类条目
+  - 历史版本段里既有的 `### 文档` / `### Documentation` 属历史记录，保持原样，
+    新版本段不再沿用该分类
 - **版本段一律按版本号降序排列**；新增版本段必须**插到列表最顶部**（禁止追加在
   最新已发布段之下 —— 否则会把 `0.2.0` 错位到 `0.1.1` / `0.1.2` 之间）
 - 两套"未发布"语义，分工清晰、不重复：
@@ -489,6 +496,7 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 | 改动内容 | 必须同步 |
 |----------|----------|
 | 任何功能/行为/API 变化 | `CHANGELOG.md` + `CHANGELOG.zh.md`（同一版本段） |
+| 纯文档改动（无功能/行为/API 变化） | **不**写进 CHANGELOG（§6.3）；只更新受影响的那份文档 |
 | 新增算法包、新增公开 API | `README.md` + `README.zh.md` 的功能列表与示例（如适用） |
 | 目录结构、分层、依赖、构建方式变化 | `docs/architecture.md` |
 | 包结构/公开签名变化 | `docs/api-reference.md` + `docs/architecture.md`（+ `docs/api-reference-internal.md`） |

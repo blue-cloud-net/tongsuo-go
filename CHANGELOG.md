@@ -7,9 +7,12 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 > The project's major version is `0`, so the API is **not** considered stable;
-> downstream consumers should read this file before upgrading. Section headers
-> (`Added` / `Changed` / `Fixed` / `Documentation` / `BREAKING`, etc.) follow
-> the Keep a Changelog convention. Technical terms (SM2 / SM3 / SM4 / PEM /
+> downstream consumers should read this file before upgrading. This file
+> records **code and behaviour changes only** (new APIs / behaviour changes /
+> bug fixes / BREAKING); pure documentation housekeeping is not listed
+> (see `AGENTS.md` section 6.3). Section headers (`Added` / `Changed` /
+> `Fixed` / `BREAKING`, etc.) follow the Keep a Changelog convention; older
+> sections also used `Documentation`. Technical terms (SM2 / SM3 / SM4 / PEM /
 > DER / PKCS#7 / PKCS#8 / PKCS#12 / openssl / CRL / CSR / OCSP / NTLS / JWK
 > / RFC xxxx, etc.) are kept verbatim and **not** translated.
 >

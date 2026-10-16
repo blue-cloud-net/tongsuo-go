@@ -6,9 +6,11 @@
 [Keep a Changelog 1.1.0](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本 2.0.0](https://semver.org/lang/zh-CN/)。
 
-> 本项目主版本号为 `0`，期间 API 视不预稳定，下游升级前请阅读本文件。分类
-> 标题（`新增功能` / `行为变化与重构` / `Bug 修复` / `文档` /
-> `BREAKING / 已知限制` 等）取 Keep a Changelog 约定。术语（SM2 / SM3 /
+> 本项目主版本号为 `0`，期间 API 视不预稳定，下游升级前请阅读本文件。本文件
+> **只记录代码与行为变更**（新增 API / 行为变化 / Bug 修复 / BREAKING），
+> 纯文档整理不单列条目（细则见 `AGENTS.md` §6.3）。分类标题（`新增功能` /
+> `行为变化与重构` / `Bug 修复` / `BREAKING / 已知限制` 等）取 Keep a Changelog
+> 约定，历史版本段沿用过 `文档` 分类。术语（SM2 / SM3 /
 > SM4 / PEM / DER / PKCS#7 / PKCS#8 / PKCS#12 / openssl / CRL / CSR / OCSP /
 > NTLS / JWK / RFC xxxx 等）保留英文原文，不做翻译。
 >
