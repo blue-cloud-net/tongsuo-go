@@ -6,7 +6,7 @@
 >
 > 报告**不写代码改动**。所有「涉及文件 / 验收方式」推迟到具体 PR 的实施阶段另行设计。
 >
-> **包名口径**：本文件的「本库现状」列使用**重构前**包名（`crypto/*` / `key`）；重构后的 16 包名与逐符号签名见 [api-reference.md](api-reference.md)，包级对照见 [refactor-roadmap.md](refactor-roadmap.md) §2 / §4。
+> **包名口径**：本文件的「本库现状」列使用**重构前**包名（`crypto/*` / `key`）；重构后的 16 包名与逐符号签名见 [api-reference.md](api-reference.md)，包级迁移对照见 [api-reference.md](api-reference.md) §0.1。
 
 ---
 
@@ -54,7 +54,7 @@
 
 本库「三层 + `internal/`」的代价是「需要做更多适配代码」（详见 §6.B）来把官方那一堆 OpenSSL 配置项以 Go 惯例形态补齐；收益是「暴露面收敛到 Go 惯例类型」。
 重构前 `crypto/rand` / `crypto/aes` 这类与标准库/常识**同名的包**对 Go 开发者有认知摩擦，
-现由 [refactor-roadmap.md](refactor-roadmap.md) §2 的 16 包扁平结构消解（本包改为 `rand` / `sym`）。
+现由 `0.3.0` 的 16 包扁平结构消解（本包改为 `rand` / `sym`），依赖方向见 [architecture.md](architecture.md) §2。
 
 ---
 
@@ -207,7 +207,7 @@
 
 > 本节**只列能力 + 优先级**。每个 PR 自行设计「涉及文件 / 验收方式」，按 §10 的验证与维护约定走。
 >
-> 包结构重构（`0.3.0`）与本节的能力补全（`0.4.0` 起）分开排期：结构重构见 [refactor-roadmap.md](refactor-roadmap.md) §7，两者合并后的版本归属以该节为准。
+> 本节**只列能力与优先级，不带版本号**。版本归属以 [roadmap.md](roadmap.md) §2 为准：包结构重构已于 `0.3.0` 落地，本节的能力补全自 `0.4.0` 起，其中传输深度（Phase 3 / Phase 4 的 TLS 项）归 `1.0.0`。
 
 ### Phase 1 — 基础设施小件（风险低、价值高、几乎不动 native shim）
 

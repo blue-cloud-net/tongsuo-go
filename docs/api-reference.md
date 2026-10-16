@@ -10,11 +10,13 @@
 > 5. 本文描述的是**重构后的目标形态**：`crypto/` 整目录与 `key/` 已被 `digest` / `mac` / `sym` / `asym` / `ecdh` / `kdf` / `rand` / `keystore` 取代；`csr` / `crl` / `ocsp` **未拆**，全部留在 `x509`。
 >
 > **范围**：**16 个包**。生成基线：`0.3.0`（2026-09-30 发布）。
+> **版本归属**：本文件不负责版本分配，哪个 🧭 符号落在哪个版本见 [roadmap.md](roadmap.md) §2。
 >
 > **状态标记**：
 > - ✅ **已有** — 已发布可用（`0.3.0` 及之前）；
 > - 🚧 **变更中** — 目标版本另标，尚不可用；
-> - 🧭 **规划中** — 目标版本另标；仅表达**目标 API 形态**，尚不可用。
+> - 🧭 **规划中** — 仅表达**目标 API 形态**，尚不可用；**目标版本以 [roadmap.md](roadmap.md) §2 为准**，
+>   下表的版本列仅为速查，若与该文冲突以 roadmap 为准。
 >
 > 符号行前缀：`🆕` `0.3.0` 新增 / `♻️` 迁移自其他包（附原名） / `🧭` 规划中。
 
@@ -243,6 +245,8 @@
 - 🆕 `func Derive(name string, opts *Options) ([]byte, error)` — 按名分发派生（对应 `tongsuo kdf HKDF -kdfopt …`）
 
 **规划中（`0.4.0`～`0.5.0`）**
+
+> 完整范围与版本拆分见 [roadmap.md](roadmap.md) §2.1 / §2.2。
 
 | 符号 | 前置（需新增 `internal/native` 绑定） |
 |---|---|
@@ -834,15 +838,17 @@
 - ♻️ `func CipherSuites(version uint16) []CipherSuiteInfo` — 枚举指定协议版本下铜锁支持的套件
 - 🆕 `func CipherSuiteByName(name string) (CipherSuiteInfo, error)` — 名称/ID → 套件信息（对应 `ciphers -convert` / `-stdname`）。名称**大小写不敏感**且只匹配枚举报告的**主名**（不含 OpenSSL 旧式别名）；ID 为 16 位 wire ID 的文本形式，接受十进制（`4865`）或 `0x` 前缀十六进制（`0x1301`）；空串/未命中返回错误
 
-**规划中（`0.5.0`～`0.6.0`）**
+**规划中（传输深度归 `1.0.0`；`NewListener` 归 `0.4.0`）**
 
-| 符号 | 说明 | 前置（需新增 `internal/native` 绑定） |
-|---|---|---|
-| 🧭 `Config.NextProtos []string` | ALPN（对应 `-alpn`） | `SSL_CTX_set_alpn_protos` / `SSL_get0_alpn_selected` |
-| 🧭 会话复用 / 票据 | `Config.SessionCache`、`Conn.SessionState()` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
-| 🧭 `Config.ClientAuth` + `Config.ClientCAs` | 客户端证书认证（服务端） | `SSL_CTX_set_client_CA_list` / `SSL_CTX_set_verify` 回调 |
-| 🧭 `Config.GetCertificate func(*ClientHelloInfo)` | 服务端 SNI 多证书（对应 `-sign_cert2` / `-enc_cert2`） | `SSL_CTX_set_tlsext_servername_callback` |
-| 🆕 `func NewListener(config *Config, ln net.Listener) net.Listener` | `net.Listener` 包装（本次会话已写入计划，归 `0.4.0`） | 无（Go 侧实现） |
+> 前置：均需在 `internal/native` 新增 `internal/native` 绑定（见 [roadmap.md](roadmap.md) §3），`NewListener` 除外（Go 侧实现）。
+
+| 符号 | 说明 | 版本 | 前置（需新增 `internal/native` 绑定） |
+|---|---|---|---|
+| 🧭 `Config.NextProtos []string` | ALPN（对应 `-alpn`） | `1.0.0` | `SSL_CTX_set_alpn_protos` / `SSL_get0_alpn_selected` |
+| 🧭 会话复用 / 票据 | `Config.SessionCache`、`Conn.SessionState()` | `1.0.0` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
+| 🧭 `Config.ClientAuth` + `Config.ClientCAs` | 客户端证书认证（服务端） | `1.0.0` | `SSL_CTX_set_client_CA_list` / `SSL_CTX_set_verify` 回调 |
+| 🧭 `Config.GetCertificate func(*ClientHelloInfo)` | 服务端 SNI 多证书（对应 `-sign_cert2` / `-enc_cert2`） | `1.0.0` | `SSL_CTX_set_tlsext_servername_callback` |
+| 🧭 `func NewListener(config *Config, ln net.Listener) net.Listener` | `net.Listener` 包装 | `0.4.0` | 无（Go 侧实现） |
 
 **破坏性变更**
 

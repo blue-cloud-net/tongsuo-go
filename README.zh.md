@@ -23,7 +23,8 @@
 API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `sym` / `asym` / `ecdh` /
 `keystore` / `x509` / `tls` / `asn1` / `jwk` / `pkcs/pkcs7` / `pkcs/pkcs12` / `xml/rsa`），
 无 `crypto/` 中间目录；每个包同时提供 Go 惯例接口与「按算法名分发」的 CLI 式入口，
-详见[包结构重构路线图](docs/refactor-roadmap.md)。
+分层设计与依赖方向见 [docs/architecture.md](docs/architecture.md)，后续版本规划见
+[版本路线图](docs/roadmap.md)。
 
 - 🔐 **SM2 非对称算法**（GB/T 32918，`asym`）：密钥生成、PEM 序列化、加密/解密（ASN.1 DER，内含 C1C3C2）、
   SM2withSM3 签名/验签、自定义 userId
@@ -313,7 +314,7 @@ API 层（16 个顶级包）          ← 对外高层 API，仅此层可被外�
 - **并发模型**：不同句柄可并行使用；单句柄需调用方串行化
 - **内部实现隐藏**：`internal/` 受 Go `internal` 机制保护，外部不可导入；公开签名中不出现 `internal/` 类型
 
-详细设计见 [docs/architecture.md](docs/architecture.md)，包结构决策与迁移路径见 [docs/refactor-roadmap.md](docs/refactor-roadmap.md)。
+详细设计与依赖方向见 [docs/architecture.md](docs/architecture.md)，`0.4.0` 及以后的版本规划见 [docs/roadmap.md](docs/roadmap.md)。
 
 ## 协议
 

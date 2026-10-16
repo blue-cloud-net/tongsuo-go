@@ -25,7 +25,8 @@ The API layer is **16 top-level packages** (`meta` / `digest` / `mac` / `kdf` / 
 `asym` / `ecdh` / `keystore` / `x509` / `tls` / `asn1` / `jwk` / `pkcs/pkcs7` / `pkcs/pkcs12` /
 `xml/rsa`) with no intermediate `crypto/` directory. Every package exposes both the idiomatic Go
 interfaces and a CLI-style by-name entry point; see the
-[package restructuring roadmap](docs/refactor-roadmap.md).
+[version roadmap](docs/roadmap.md) for what comes next and
+[docs/architecture.md](docs/architecture.md) for the layered design.
 
 - 🔐 **SM2 asymmetric algorithm** (GB/T 32918, `asym`): key generation, PEM serialization, encrypt/decrypt (ASN.1 DER, C1C3C2 internal order),
   SM2withSM3 sign/verify, customizable userId
@@ -314,7 +315,7 @@ Binding layer (internal/native/)   ← cgo + inline C shim; maps directly to Ton
 - **Concurrency model**: distinct handles can be used in parallel; a single handle must be serialized by its caller
 - **Internal implementation is hidden**: `internal/` is protected by Go's `internal` mechanism and cannot be imported from outside; no `internal/` type appears in a public signature
 
-See [docs/architecture.md](docs/architecture.md) for the detailed design, and [docs/refactor-roadmap.md](docs/refactor-roadmap.md) for the package-structure decisions and migration path.
+See [docs/architecture.md](docs/architecture.md) for the detailed design and the dependency graph, and [docs/roadmap.md](docs/roadmap.md) for the `0.4.0`+ version plan.
 
 ## License
 

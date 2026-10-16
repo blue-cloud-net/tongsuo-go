@@ -6,8 +6,8 @@
 >
 > 报告**不写代码改动、不给新 API 签名**；所有「本库现状」结论均可在源码中校验。
 >
-> **包名口径**：本文件的「本库现状」列使用**重构前**包名（`crypto/*` / `key` / `ocsp`）——那是采集时的真实状态。重构后的 16 包名与逐符号签名见 [api-reference.md](api-reference.md)，包级迁移对照见 [refactor-roadmap.md](refactor-roadmap.md) §2 / §4。
-> 公开面收敛（§6.E 的 12 项内部类型泄露）已在 [refactor-roadmap.md](refactor-roadmap.md) §5 全部落实。
+> **包名口径**：本文件的「本库现状」列使用**重构前**包名（`crypto/*` / `key` / `ocsp`）——那是采集时的真实状态。重构后的 16 包名与逐符号签名见 [api-reference.md](api-reference.md)，迁移对照见 [api-reference.md](api-reference.md) §0.1。
+> 公开面收敛（§6.E 的 12 项内部类型泄露 E1）已在 `0.3.0` 全部落实；剩余的 E2 / E3 见 [roadmap.md](roadmap.md) §2.5。
 
 ---
 
@@ -458,7 +458,7 @@
 
 ## 8. 全量对齐路线图（能力级）
 
-> 本节按**能力**排期；按**包结构**排期的 Phase 划分见 [refactor-roadmap.md](refactor-roadmap.md) §7。两者合并后：`0.3.0` 只做结构重构与少量顺带补全，本节的「Phase 1 采集型小件」自 `0.4.0` 起。
+> 本节按**能力**分组，不带版本号。**某个能力落在哪个版本，以 [roadmap.md](roadmap.md) §2 为准**（该文是唯一的版本归属来源）。
 >
 > 排序原则：先补「让本库像 CLI 一样直接用」的地基（形态），再补算法覆盖，最后补协议与破坏性收敛。
 
@@ -519,15 +519,17 @@
 | 需重编铜锁方可验证 | Bulletproofs、SM2 门限、SDF、SMTC、白盒 SM4、Delegated Credential | §6.D D14–D19 |
 | **公开面收敛（破坏性）** | §6.E 的 E1（内部类型泄漏）→ E2（原语级公开面）→ E3（多步组装面）；需配迁移说明 | §6.E |
 
-### 版本归属建议
+### 版本归属
 
-| 版本 | 内容 |
+见 [roadmap.md](roadmap.md) §2（本节各 Phase 与该文版本的对应关系）：
+
+| 本节 Phase | 落点版本 |
 |---|---|
-| `0.4.0` | Phase 1 全部 + Phase 2 起步 |
-| `0.5.0` | Phase 2 完整 + Phase 3 主体（摘要 / MAC / KDF / 对称 / AES-192） |
-| `0.6.0` | Phase 3 剩余（SM2DH / PQC）+ Phase 4 的格式容器部分 |
-| `0.7.0` | Phase 4 的协议部分（CMS / ts / OCSP HTTP / `ca`） |
-| `1.0.0` | Phase 5 + §6.E 公开面收敛（破坏性，需迁移指南） |
+| Phase 1 采集型小件 + Phase 2 输入输出形态 | `0.4.0` |
+| Phase 2 收尾 + Phase 3 算法覆盖主体 + Phase 4 的格式容器部分 | `0.5.0` |
+| Phase 3 剩余（SM2DH / PQC / KEM）+ Phase 4 的 `pkcs7` 签名加密族 | `0.6.0` |
+| Phase 4 的协议部分（CMS / ts / `ca`） | `0.7.0` |
+| Phase 5 传输深度与扩展算法 + §6.E 公开面收敛（破坏性，需迁移指南） | `1.0.0` |
 
 ---
 
