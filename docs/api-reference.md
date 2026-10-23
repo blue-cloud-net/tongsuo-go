@@ -750,6 +750,8 @@
 - 🆕 `func NewCRLBuilder(issuer *Certificate) (*CRLBuilder, error)` — 创建构建器（自动取 issuer、补 AKID）
 - 🆕 `func (b *CRLBuilder) SetNumber(n int64) error` / `SetThisUpdate(t time.Time) error` / `SetNextUpdate(t time.Time) error` — 设置元数据
 - 🆕 `func (b *CRLBuilder) Revoke(cert *Certificate, at time.Time, reason RevocationReason) error` — 追加一条吊销记录
+- 🆕 `func (b *CRLBuilder) AddExtension(nid int, value string) error` — 追加任意 CRL 扩展（按 NID，`value` 为 OpenSSL `X509V3_EXT_conf` 配置串；issuer 取自构建器）
+- 🆕 `func (b *CRLBuilder) AddExtensionByName(name, value string) error` — 追加任意 CRL 扩展（按短名 / 长名 / 点分 OID）
 - 🆕 `func (b *CRLBuilder) Sign(signer asym.PrivateKey) (*CRL, error)` — 签发并返回可导出的 CRL
 - 🆕 `func (b *CRLBuilder) Close() error` — 释放尚未签发的句柄（幂等；已签发后为 no-op，因句柄已转移给 `*CRL`）
 - ♻️ `func RevocationCheck(cert *Certificate, crls []*CRL) error` — 在给定 CRL 集合中检查吊销状态

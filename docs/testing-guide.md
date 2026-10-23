@@ -240,3 +240,31 @@ go test -fuzz FuzzRoundTrip ./sym
 | PBKDF2 | RFC 6070 |
 | Argon2ID | RFC 9106 §5 |
 | SHA-224 / SHA-256 / SHA-384 / SHA-512 | FIPS 180-4 示例向量 |
+
+---
+
+## 11. X.509 扩展测试（`x509`）
+
+扩展创建横跨证书、CSR 与 CRL 三条路径，**每条路径都必须独立覆盖**——
+它们在底层走的是不同的 `X509V3_CTX` 装配路径，一处遗漏就会在该路径上单独失效。
+
+| 路径 | 测试用例 | 断言要点 |
+|------|---------|---------|
+| **证书** | `certificatePolicies`（OID `2.5.29.32` / NID `89`） | 逐字节断言 DER（`1.2.3.4` → `3007300506032a0304`）；`critical,` 前缀置 critical 位；`ia5org,` 多策略；anyPolicy（`2.5.29.32.0`） |
+| **证书** | `ReplaceExtension` 覆盖 `certificatePolicies` | 替换成功、DER 更新、扩展在证书中的**位置不变** |
+| **证书** | `subjectAltName` = `email:copy` | subject 含 `emailAddress` 时成功，且 SAN 中出现该邮箱（验证 `ctx->subject_cert` 已接入） |
+| **CSR** | `certificatePolicies` | 创建成功、`Extensions()` 可读、DER 往返后仍在 |
+| **CSR** | `subjectAltName` = `email:copy` | 同上，验证 `ctx->subject_req` 已接入 |
+| **CRL** | `issuingDistributionPoint` / `freshestCRL` | 按名与按 NID 两条路径均成功；`Extensions()` 可见且 `OID` 字段已填充；签名后 `Verify` 通过 |
+| **通用** | 扩展往返 | 证书签名 → PEM 往返 → 扩展仍在、验签仍通过 |
+
+> ⚠️ **回归重点**：OpenSSL 的 `r2i` 类扩展（`certificatePolicies` 等）要求扩展
+> 上下文中**存在配置库**，否则报 `X509V3_R_NO_CONFIG_DATABASE`（`0x11000088`）；
+> 而 `ctx->subject_cert` / `subject_req` / `issuer_cert` 会被扩展解析器
+> **直接解引用**（如 `email:copy`），缺失即 `SIGSEGV`。因此上述用例必须断言
+> **成功 + 正确的 DER / 语义**，不得以"错误信息不含某个串"代替——那是把问题
+> 藏起来而不是修好它。
+
+**CLI 对比测试**：`openssl x509 -text` / `-ext certificatePolicies` 断言
+"Certificate Policies" 与策略 OID；`openssl crl -text` 断言
+"Issuing Distribution Point"。

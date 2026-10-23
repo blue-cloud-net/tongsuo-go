@@ -180,7 +180,7 @@
 | 构建 | `NewCertificate()` + `SetVersion`/`SetSerial`/`SetIssuer`/`SetSubject`/`SetValidity`/`SetPublicKey`/`AddBasicConstraints`/`AddSubjectAltName`/`AddKeyUsage`/`AddExtendedKeyUsage`/`AddSubjectKeyID`/`AddAuthorityKeyID` + `Sign`；任意扩展 `AddExtension`/`AddExtensionByName`/`AddExtensions` + `HasExtension`/`RemoveExtension`/`ReplaceExtension`；便捷函数 `CreateCertificate(...)`、`CreateSelfSigned(...)` |
 | 验签 | `Verify(signerPub)`、`SelfSigned()`、`PublicKey()`(SM2 包装)、`PublicKeyPKey()`(任意算法，**泄漏 `*core.PKey`**)、`Signature()`/`SignatureAlgorithm()`/`SignatureAlgorithmOID()`；`VerifyHostname(host)`/`CheckEmail(email)` |
 | CSR | `NewCertificateRequest`/`NewEmptyCertificateRequest`/`SetSubject`/`SetPublicKey`/`Sign`/`Verify`/`LoadCertificateRequestPEM`/`LoadCertificateRequestDER`/`MarshalPEM`/`MarshalDER`/`SetChallengePassword`/`AddExtensions`/`AddExtension`/`AddExtensionByName`/`AddKeyUsage`/`AddExtendedKeyUsage`/`AddBasicConstraints`/`AddSubjectAltName`/`Extensions`；`Certificate.ToCertificateRequest(priv)`（`-x509toreq`）、`IssueCertificateFromRequest(req, issuer, signer, opts)` |
-| CRL | `ParseCRL`/`LoadCRLPEM`/`LoadCRLDER`/`MarshalPEM`/`MarshalDER`/`RevokedEntries`/`IsRevoked`/`Verify`/`Extensions`，顶层 `RevocationCheck(cert, crls)` |
+| CRL | `ParseCRL`/`LoadCRLPEM`/`LoadCRLDER`/`MarshalPEM`/`MarshalDER`/`RevokedEntries`/`IsRevoked`/`Verify`/`Extensions`，`NewCRLBuilder`（`SetNumber`/`SetThisUpdate`/`SetNextUpdate`/`Revoke`/`AddExtension`/`AddExtensionByName`/`Sign`），顶层 `RevocationCheck(cert, crls)` |
 | 链验证 | `NewStore`/`AddCert`/`AddCRL`/`SetCRLCheck`/`SetCRLCheckAll`/`SetFlags`/`Core()`、`ChainVerify(cert, roots, intermediates)`、`VerifyError` |
 | **缺失** | `-addtrust`/`-setalias`、`ca` 式数据库工作流、`-attime`/`-crl_download`、`-ocspid` |
 
@@ -245,7 +245,7 @@
 | 3 | `ciphers` | TLS 套件枚举与名称转换（`-v`/`-V`/`-stdname`/`-convert`） | `tls.CipherSuites(version)`（含 NTLS） | ⚠️ | P2 | 枚举已覆盖，缺 name↔ID 双向转换 |
 | 4 | `cmp` | CMP（RFC 4210）客户端/服务端 | 无 | ❌ | P3 | 协议栈重、无 Go 标准对应；不做 |
 | 5 | `cms` | CMS 签名/加密/验签/解封装/回执 | 无 | ❌ | P2 | 与 PKCS#7 同源，应在 PKCS#7 之后 |
-| 6 | `crl` | CRL 签发（config 驱动）、解析、`-hash_old`、`-nameopt` | `ParseCRL`/`Load*`/`Marshal*`/`RevokedEntries`/`IsRevoked`/`Verify`/`RevocationCheck` | ⚠️ | P1 | 缺「按配置签发 CRL」的应用级入口与 `-nameopt` 形式 |
+| 6 | `crl` | CRL 签发（config 驱动）、解析、`-hash_old`、`-nameopt` | `ParseCRL`/`Load*`/`Marshal*`/`RevokedEntries`/`IsRevoked`/`Verify`/`RevocationCheck`；`NewCRLBuilder` + `AddExtension`/`AddExtensionByName`（对应 `-crlexts`） | ⚠️ | P1 | 缺「按配置签发 CRL」的应用级入口与 `-nameopt` 形式；CRL 扩展已可写 |
 | 7 | `crl2pkcs7` | CRL（+证书）打包为 PKCS#7 | 无 | ❌ | P2 | 依赖 PKCS#7 签名族 |
 | 8 | `dgst` | 摘要 / HMAC / 签名 / 验签 / `-binary`/`-hex`/`-r`/`-C` / 文件输入 | 各摘要包 `Sum` + `hmac.*` + 各算法 `Sign`/`Verify` | ⚠️ | **P0** | 缺「按算法名 + 输入源 + 输出编码」的单一入口；CLI 最常用命令 |
 | 9 | `dhparam` | DH 参数生成/校验 | 无 | ❌ | P3 | 经典 DH 非目标场景 |
@@ -313,7 +313,7 @@
 | B6 | 用 CA 签发证书（含 serial/有效期/扩展） | `x509 -req -CA ca.pem -CAkey ca.key -CAcreateserial -days 365 -extfile x.cnf` | `CreateCertificate(...)` + 扩展 `Add*` | ⚠️ | P1 |
 | B7 | 校验证书链（受信根 + 中间 + 叶子） | `verify -CAfile ca.pem -untrusted i.pem leaf.pem` | `x509.ChainVerify(cert, roots, intermediates)` | ⚠️ | P1 |
 | B8 | 校验证书主机名/IP | `verify -verify_hostname h -CAfile ca.pem leaf.pem` | **无对应 API** | ❌ | P1 |
-| B9 | 生成 CRL 并检查吊销 | `ca -gencrl -config x.cnf -out c.crl` / `crl -verify` | `x509.NewCRL` + `Add*` + `Sign`；`RevocationCheck(cert, crls)` | ⚠️ | P1 |
+| B9 | 生成 CRL 并检查吊销 | `ca -gencrl -config x.cnf -out c.crl` / `crl -verify` | `x509.NewCRLBuilder` + `Add*`（含 `AddExtension`/`AddExtensionByName`）+ `Sign`；`RevocationCheck(cert, crls)` | ⚠️ | P1 |
 | B10 | PEM ↔ DER ↔ PKCS#1 ↔ PKCS#8 ↔ SPKI 格式互转 | `pkcs8 -topk8` / `pkey -outform DER` / `rsa -RSAPublicKey_out` | 各算法 `MarshalPEM`/`MarshalPKCS1PEM`/`MarshalPKCS8`；**无 `-topk8` 等价、无 PKCS#1 公钥** | ⚠️ | P1 |
 | B11 | PKCS#12 打包/解包/改密 | `pkcs12 -export -in c -inkey k -certfile ca -passout pass:x` | `pkcs12.Pack` / `Parse` / `ChangePassword` | ⚠️ | P1 |
 | B12 | PKCS#7 签名/验签/加解密 | `pkcs7 -sign -in f -signer c -inkey k -out s.p7` | **仅证书袋** `Build`/`Extract` | ❌ | P1 |
@@ -686,7 +686,7 @@
 | `x509 -x509toreq` | 无 | ❌ |
 | `verify`（链验证） | `x509.ChainVerify` / `x509.Store` | ⚠️ |
 | `crl`（CRL 解析/校验） | `x509.ParseCRL` / `RevokedEntries` / `IsRevoked` / `Verify` | ⚠️ |
-| `ca -gencrl` | 无 | ❌ |
+| `ca -gencrl` | `x509.NewCRLBuilder` + `Add*` + `Sign`（含 CRL 扩展 `AddExtension`/`AddExtensionByName`） | ⚠️ |
 | `ocsp`（请求/响应/验签） | `ocsp.CreateRequest` / `ParseResponse` / `Verify` | ⚠️ |
 | `ocsp -url`（HTTP） | 无 | ❌ |
 | `asn1parse`（解析/转储） | `asn1.Parse` / `Dump` | ⚠️ |

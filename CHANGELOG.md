@@ -24,6 +24,58 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
+## [0.4.2] - TBD
+
+### Added
+
+- `x509`: added generic extension entry points to the CRL builder —
+  `(*CRLBuilder).AddExtension(nid int, value string)` and
+  `(*CRLBuilder).AddExtensionByName(name, value string)`. They accept the
+  OpenSSL `X509V3_EXT_conf` value syntax, so a CRL can now carry extensions
+  such as `issuingDistributionPoint` (RFC 5280 §5.2.5) and `freshestCRL`
+  (RFC 5280 §5.2.6) — previously only `crlNumber` and
+  `authorityKeyIdentifier` could be written, which left the Tongsuo
+  `openssl ca -crlexts` option without an equivalent in this library.
+  `(*CRL).Extensions()` now also fills in the `OID` field, matching the
+  certificate side.
+
+### Fixed
+
+- `x509`: fixed `AddExtension` / `AddExtensionByName` /
+  `ReplaceExtension` failing on `certificatePolicies` (OID `2.5.29.32`, NID
+  `89`) with `X509 V3 routines::no config database` (`0x11000088`), and
+  crashing the whole process with `SIGSEGV` on the CSR path. The extension
+  context was built without a configuration database, while OpenSSL requires
+  one for `r2i`-style extensions such as `certificatePolicies`; on the CSR path
+  the context was `NULL` altogether, which the `r2i` parser dereferenced
+  directly. The context now carries a configuration database plus the correct
+  subject / issuer / request objects, so extensions that read subject
+  information (`subjectAltName` with `email:copy`) work on both certificates
+  and CSRs as well. The `@section` form of `certificatePolicies` (CPS /
+  userNotice qualifiers) remains unsupported, since the library does not read
+  configuration files.
+
+---
+
+## [0.4.1] - 2026-10-16
+
+### Fixed
+
+- `x509`: fixed silently keeping only the **first** extension when the CSR
+  extension helpers (`AddSubjectAltName` / `AddKeyUsage` /
+  `AddExtendedKeyUsage` / `AddBasicConstraints` / `AddExtensionByName`) were
+  called repeatedly on Tongsuo 8.4. The cause is that `X509_REQ_add_extensions`
+  merges differently across Tongsuo versions: 8.4 appends a fresh attribute per
+  call while `X509_REQ_get_extensions` only reads the **first** one, whereas 8.5
+  merges the new extensions with the existing ones. Extensions are now staged on
+  the Go side — visible immediately through `Extensions()` — and committed with
+  a **single** native call before `Sign` / `MarshalDER` / `CopyExtensionTo`, so
+  the outcome no longer depends on the Tongsuo version. The exported CSR DER
+  always carries a single `extensionRequest` attribute holding every extension
+  and stays readable by `openssl req`.
+
+---
+
 ## [0.4.0] - 2026-10-16
 
 ### Added
@@ -673,7 +725,9 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.2...v0.2.0

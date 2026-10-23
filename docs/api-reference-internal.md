@@ -336,10 +336,17 @@ internal/testutil ← 仅被 *_test.go 使用
 - **对象与名字**：`OBJ_nid2sn` `OBJ_obj2nid` `OBJ_txt2nid` `OBJ_obj2txt` `OBJ_to_string`；`X509_NAME_new` `free` `add_entry_by_txt` `get_entry_count` `get_entry` `get_text_by_txt` `get_text_by_NID` `oneline` `cmp`；`X509_NAME_ENTRY_nid` `_value`
 - **证书主体**：`X509_new` `free` `dup`、`X509_set_version` `set_serial_int` `get_serial_int`、`X509_set_issuer_name` `set_subject_name` `get_issuer_name` `get_subject_name`、`X509_set_pubkey` `get_pubkey`、`X509_set_not_before` `set_not_after` `get_not_before` `get_not_after`、`X509_get_version`、`X509_get_serial_hex`（大写十六进制，对齐 `-serial`）、`X509_subject_name_hash` `X509_issuer_name_hash`、`X509_check_email`
 - **签名与编码**：`X509_sign` `X509_verify` `X509_sign_ctx`、`X509_digest`、`I2d_X509` `D2i_X509`、`X_PEM_read_bio_X509` `X_PEM_write_bio_X509`、`X509_get_signature_info`
-- **扩展**：`X509V3_EXT_conf_nid` `_ctx` `_crl` `_ctx_crl`、`X509V3_EXT_conf_nid_merge`（拼接同 NID 的 SEQUENCE，供可重复 OID 合并）、`X509_add_ext` `X509_add_ext_loc` `X509_add_ext_dup` `X509_delete_ext`、`X509_EXTENSION_free/get_object/get_critical/get_data/get_nid`、`X509_get_ext_count` `X509_get_ext`、`X509_sk_X509_EXTENSION_*`、`ASN1_STRING_data_bytes`、`ASN1_INTEGER_free` `ASN1_INTEGER_get`
+- **扩展**：`X509V3_EXT_conf_nid` `_req` `_ctx` `_ctx_crl`、`X509V3_EXT_conf_nid_ctx_new`（只构造不追加）、`X509V3_EXT_conf_nid_merge`（拼接同 NID 的 SEQUENCE，供可重复 OID 合并）、`X509_add_ext` `X509_add_ext_loc` `X509_add_ext_dup` `X509_delete_ext`、`X509_EXTENSION_free/get_object/get_critical/get_data/get_nid`、`X509_get_ext_count` `X509_get_ext`、`X509_sk_X509_EXTENSION_*`、`ASN1_STRING_data_bytes`、`ASN1_INTEGER_free` `ASN1_INTEGER_get`
 
   > ⚠️ `X509_sk_X509_EXTENSION_push` / `X509_sk_X509_push`：OpenSSL 3 的 `sk_TYPE_push`
   > 返回压入后的**栈长度**而非 0/1 布尔，Go 侧必须判 `> 0`。
+
+  > ⚠️ 扩展上下文（`X509V3_CTX`）必须同时具备**配置库**与**上下文对象**：
+  > `r2i` 类扩展（`certificatePolicies` 等）要求 `ctx->db` 非空，否则报
+  > `X509V3_R_NO_CONFIG_DATABASE`（`0x11000088`）；`ctx->subject_cert` /
+  > `subject_req` / `issuer_cert` 会被扩展解析器直接解引用（如
+  > `subjectAltName` 的 `email:copy`），缺失即段错误。本库的
+  > `X_X509V3_EXT_conf_nid_ctx_new` 负责统一注入两者。
 - **扩展语义读取**：`X509_get_san` `X509_get_key_usage` `X509_get_eku` `X509_get_basic_constraints`、`X509_get0_subject_key_id` `X509_get0_authority_key_id`、`X509_GENERAL_NAMES_{free,num,value}` `X509_GENERAL_NAME_{type,to_string}`、`X509_EXTENDED_KEY_USAGE_{free,num,value}`、`X509_BASIC_CONSTRAINTS_{free,ca,pathlen}`、`X509_ASN1_BIT_STRING_free` `ASN1_BIT_STRING_get_bit`
 - **CSR**：`X509_REQ_new` `free` `set_pubkey` `get_pubkey` `set_subject_name` `get_subject_name` `sign` `sign_ctx` `verify`、`X509_REQ_add_extensions` `get_extensions`、`X509_REQ_set/get_challenge_password`、`I2d_X509_REQ` `D2i_X509_REQ` `I2d_X509_REQ_INFO`、`X509_REQ_get0_signature` `_get_signature_info`、`X_PEM_read_bio_X509_REQ` `X_PEM_write_bio_X509_REQ`
 - **Store 与链验证**：`X509_STORE_new` `free` `add_cert` `add_crl` `set_flags` `get0_param`、`X509_VERIFY_PARAM_set_time`、`X509_STORE_CTX_new` `free` `init` `set0_untrusted` `get_error` `get_error_depth` `get_current_cert` `get0_chain`、`X509_verify_cert` `X509_verify_cert_error_string`、`X509_sk_X509_*`

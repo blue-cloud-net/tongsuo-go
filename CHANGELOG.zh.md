@@ -22,6 +22,49 @@
 
 ---
 
+## [0.4.2] - TBD
+
+### 新增功能
+
+- `x509`：CRL 构建器新增通用扩展入口——`(*CRLBuilder).AddExtension(nid int,
+  value string)` 与 `(*CRLBuilder).AddExtensionByName(name, value string)`。
+  value 采用 OpenSSL `X509V3_EXT_conf` 配置语法，因此现在可以为 CRL 写入
+  `issuingDistributionPoint`（RFC 5280 §5.2.5）、`freshestCRL`
+  （RFC 5280 §5.2.6）等扩展——此前 CRL 侧只能写 `crlNumber` 与
+  `authorityKeyIdentifier`，铜锁 `openssl ca -crlexts` 在本库中没有等价能力。
+  同时 `(*CRL).Extensions()` 补齐了 `OID` 字段，与证书侧保持一致。
+
+### Bug 修复
+
+- `x509`：修复 `AddExtension` / `AddExtensionByName` / `ReplaceExtension`
+  对 `certificatePolicies`（OID `2.5.29.32`，NID `89`）一律报
+  `X509 V3 routines::no config database`（`0x11000088`）、且在 CSR 路径上
+  直接使整个进程 `SIGSEGV` 崩溃的问题。根因是扩展上下文构造时**未注入配置库**，
+  而 OpenSSL 的 `r2i` 类扩展（如 `certificatePolicies`）要求上下文中有配置库；
+  CSR 路径上上下文更是整个为 `NULL`，被 `r2i` 解析器直接解引用。现改为在上下文中
+  注入配置库并接入正确的 subject / issuer / 请求对象，因此依赖 subject 信息的
+  扩展值（`subjectAltName` 的 `email:copy`）在证书与 CSR 上均可正常使用。
+  `certificatePolicies` 带 CPS / userNotice 限定符的 `@section` 形式仍**不支持**
+  ——本库不读取配置文件。
+
+---
+
+## [0.4.1] - 2026-10-16
+
+### Bug 修复
+
+- `x509`：修复在 Tongsuo 8.4 上多次调用 CSR 扩展接口（`AddSubjectAltName` /
+  `AddKeyUsage` / `AddExtendedKeyUsage` / `AddBasicConstraints` /
+  `AddExtensionByName`）时只保留**第一次**添加的扩展、其余被静默丢弃的问题。
+  根因是铜锁两个版本的 `X509_REQ_add_extensions` 合并语义不同：8.4 每次调用
+  **追加一个新属性**，而 `X509_REQ_get_extensions` 只取**第一个**属性；8.5 则把新
+  扩展与已有扩展合并。现改为在 Go 侧暂存扩展（`Extensions()` 立即可见），并在
+  `Sign` / `MarshalDER` / `CopyExtensionTo` 之前以**单次**原生调用提交，因此结果
+  不再依赖铜锁版本。导出的 CSR DER 中 `extensionRequest` 属性恒为一条且包含全部
+  扩展，可被 `openssl req` 正常读取。
+
+---
+
 ## [0.4.0] - 2026-10-16
 
 ### 新增功能
@@ -554,7 +597,9 @@
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.2...v0.2.0
