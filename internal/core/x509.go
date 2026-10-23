@@ -484,15 +484,7 @@ func (c *Certificate) AddBasicConstraints(isCA bool) error {
 	if isCA {
 		val = "critical,CA:TRUE"
 	}
-	ext := native.X509V3_EXT_conf_nid(native.NidBasicConstraints, val)
-	if ext == nil {
-		return NewOpError("x509: X509V3_EXT_conf_nid(basicConstraints)", native.PopError())
-	}
-	defer native.X509_EXTENSION_free(ext)
-	if !native.X509_add_ext(c.handle.Ptr(), ext) {
-		return NewOpError("x509: X509_add_ext", native.PopError())
-	}
-	return nil
+	return c.addExtCtx(c, nil, native.NidBasicConstraints, val)
 }
 
 // Sign 使用签名私钥对证书签名。
@@ -1450,6 +1442,10 @@ func (c *Certificate) RemoveExtension(name string) error {
 //
 // 语义与 BouncyCastle X509ExtensionsGenerator.ReplaceExtension 一致（不存在时报错而非创建）；按 OpenSSL X509V3_EXT_conf_nid 语法解析 value；已签名或已关闭证书返回错误。
 //
+// raw 扩展（如 certificatePolicies / OID 2.5.29.32）同样可用，内联形式为逗号
+// 分隔的策略 OID（如 "1.2.3.4"）；带 CPS / userNotice 限定符的 "@section" 形式
+// **不支持**——本库不读取配置文件，传入 "@polsect" 会被 OpenSSL 拒绝。
+//
 // ReplaceExtension overwrites the extension identified by name while keeping
 // its original position in the certificate.
 //
@@ -1457,6 +1453,12 @@ func (c *Certificate) RemoveExtension(name string) error {
 // which fails when the extension is absent instead of creating it. value uses
 // the OpenSSL X509V3_EXT_conf syntax. Calls on a signed or closed certificate
 // fail.
+//
+// raw extensions (such as certificatePolicies / OID 2.5.29.32) work as well; the
+// inline form is a comma-separated list of policy OIDs (for example "1.2.3.4").
+// The "@section" form carrying CPS / userNotice qualifiers is **not
+// supported** — the library does not read configuration files, so passing
+// "@polsect" is rejected by OpenSSL.
 func (c *Certificate) ReplaceExtension(name, value string) error {
 	if err := c.ensureMutable("replace extension"); err != nil {
 		return err
@@ -1469,7 +1471,9 @@ func (c *Certificate) ReplaceExtension(name, value string) error {
 	if loc < 0 {
 		return fmt.Errorf("x509: extension not present (nid %d)", nid)
 	}
-	ext := native.X509V3_EXT_conf_nid(nid, value)
+	// 以本证书作为 subject 上下文：依赖 subject 信息的扩展值
+	// （如 subjectAltName 的 "email:copy"）在替换时同样可用。
+	ext := native.X509V3_EXT_conf_nid_ctx_new(c.handle.Ptr(), nil, nil, nid, value)
 	if ext == nil {
 		return NewOpError("x509: X509V3_EXT_conf_nid", native.PopError())
 	}
@@ -1924,7 +1928,9 @@ func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
 	// 真正提交时（flushExtensions）会按 Nid/Value 重新构造。
 	staged := make([]Extension, 0, len(exts))
 	for _, e := range exts {
-		ext := native.X509V3_EXT_conf_nid(e.Nid, e.Value)
+		// 以本 CSR 作为 subject 来源：依赖 subject 信息的扩展值
+		// （如 subjectAltName 的 "email:copy"）在 CSR 上同样可用。
+		ext := native.X509V3_EXT_conf_nid_req(r.handle.Ptr(), e.Nid, e.Value)
 		if ext == nil {
 			return NewOpError("x509: X509V3_EXT_conf_nid", native.PopError())
 		}
@@ -1972,7 +1978,7 @@ func (r *CertificateRequest) flushExtensions() error {
 		}
 	}
 	for _, e := range r.pendingExts {
-		ext := native.X509V3_EXT_conf_nid(e.Nid, e.Value)
+		ext := native.X509V3_EXT_conf_nid_req(r.handle.Ptr(), e.Nid, e.Value)
 		if ext == nil {
 			freeAll()
 			return NewOpError("x509: X509V3_EXT_conf_nid", native.PopError())

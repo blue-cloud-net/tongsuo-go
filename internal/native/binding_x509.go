@@ -443,13 +443,55 @@ func X509_verify(x, pkey unsafe.Pointer) bool {
 }
 
 // X509V3_EXT_conf_nid 按 NID 与配置值创建扩展对象（如 basicConstraints）。
+// 底层会注入空 CONF 与空证书上下文，使 r2i 类扩展（如 certificatePolicies）
+// 可用。依赖 subject / issuer 信息的扩展值（如 subjectAltName 的 "email:copy"）
+// 在本入口**不可用**——那类值需要带上下文的入口（X509V3_EXT_conf_nid_req /
+// X509V3_EXT_conf_nid_ctx_new）。返回的扩展由调用方负责用 X509_EXTENSION_free 释放。
 // X509V3_EXT_conf_nid parses the OpenSSL config-format string value and
 // builds a new X509_EXTENSION for nid (e.g. "CA:TRUE" for NidBasicConstraints).
-// Caller owns the returned extension and must release with X509_EXTENSION_free.
+// An empty CONF and an empty certificate context are injected underneath, so
+// r2i-style extensions (such as certificatePolicies) can be built. Extension
+// values that read subject or issuer information (such as subjectAltName's
+// "email:copy") are **not** available through this entry point — those need
+// the context-carrying ones (X509V3_EXT_conf_nid_req /
+// X509V3_EXT_conf_nid_ctx_new). The caller owns the returned extension and
+// must release it with X509_EXTENSION_free.
 func X509V3_EXT_conf_nid(nid int, value string) unsafe.Pointer {
 	cVal := C.CString(value)
 	defer C.free(unsafe.Pointer(cVal))
-	return unsafe.Pointer(C.X509V3_EXT_conf_nid(nil, nil, C.int(nid), cVal))
+	return unsafe.Pointer(C.X_X509V3_EXT_conf_nid_ctx_new(nil, nil, nil, C.int(nid), cVal))
+}
+
+// X509V3_EXT_conf_nid_req 按 NID 与配置值创建 CSR 扩展对象。
+// req 作为 subject 来源传入上下文，使依赖 subject 信息的扩展值
+// （如 subjectAltName 的 "email:copy"）在 CSR 上同样可用。
+// 返回的扩展由调用方负责用 X509_EXTENSION_free 释放。
+// X509V3_EXT_conf_nid_req builds a new X509_EXTENSION for nid, taking req as
+// the subject source of the extension context so that extensions reading
+// subject information (such as subjectAltName's "email:copy") also work on a
+// certificate request.
+// The caller owns the returned extension and must release it with
+// X509_EXTENSION_free.
+func X509V3_EXT_conf_nid_req(req unsafe.Pointer, nid int, value string) unsafe.Pointer {
+	cVal := C.CString(value)
+	defer C.free(unsafe.Pointer(cVal))
+	return unsafe.Pointer(C.X_X509V3_EXT_conf_nid_ctx_new(nil, nil, (*C.X509_REQ)(req), C.int(nid), cVal))
+}
+
+// X509V3_EXT_conf_nid_ctx_new 按 NID 与配置值创建扩展对象，并注入指定的上下文。
+// subject 提供 subject 侧信息，issuer 提供签发者侧信息，req 提供 CSR 的
+// subject 来源；三者均可为 nil。返回的扩展由调用方负责用 X509_EXTENSION_free 释放。
+// X509V3_EXT_conf_nid_ctx_new builds a new X509_EXTENSION for nid, injecting
+// the supplied extension context.
+// subject provides subject-side information, issuer provides issuer-side
+// information and req provides the subject source of a certificate request;
+// any of them may be nil. The caller owns the returned extension and must
+// release it with X509_EXTENSION_free.
+func X509V3_EXT_conf_nid_ctx_new(subject, issuer, req unsafe.Pointer, nid int, value string) unsafe.Pointer {
+	cVal := C.CString(value)
+	defer C.free(unsafe.Pointer(cVal))
+	return unsafe.Pointer(C.X_X509V3_EXT_conf_nid_ctx_new((*C.X509)(subject),
+		(*C.X509)(issuer), (*C.X509_REQ)(req), C.int(nid), cVal))
 }
 
 // X509_add_ext 向证书追加扩展。
@@ -515,6 +557,8 @@ func X509_delete_ext(x unsafe.Pointer, loc int) unsafe.Pointer {
 // critical 标记。
 //
 // x 上不存在同 NID 扩展时返回 false 且不修改 x，调用方应改走普通追加路径。
+// 底层会注入空 CONF，并把 x 本身作为 subject 上下文，使 r2i 类扩展与依赖
+// subject 信息的扩展值同样可用。
 // X509V3_EXT_conf_nid_merge folds value into the extension already present on x.
 //
 // Repeatable OIDs (subjectAltName / issuerAltName / subjectDirectoryAttributes /
@@ -525,7 +569,9 @@ func X509_delete_ext(x unsafe.Pointer, loc int) unsafe.Pointer {
 // in place, preserving its position and critical flag.
 //
 // It returns false without touching x when no extension with that NID exists;
-// callers must use the plain append path in that case.
+// callers must use the plain append path in that case. An empty CONF and the
+// certificate itself as subject context are injected underneath, so r2i-style
+// extensions and extensions reading subject information also work.
 func X509V3_EXT_conf_nid_merge(x unsafe.Pointer, nid int, value string) bool {
 	cVal := C.CString(value)
 	defer C.free(unsafe.Pointer(cVal))
@@ -742,30 +788,17 @@ func X_PEM_write_bio_X509_REQ(bio unsafe.Pointer, r unsafe.Pointer) bool {
 
 // X509V3_EXT_conf_nid_ctx 带 X509V3_CTX 创建并追加扩展（SKID/AKID 需要 ctx）。
 // subject/issuer 可传 nil（分别用于 SKID 的 subject 公钥、AKID 的 issuer 证书）。
+// 底层会注入空 CONF，使 r2i 类扩展（如 certificatePolicies）同样可用。
 // X509V3_EXT_conf_nid_ctx builds an extension on target using the subject
 // / issuer context (needed for SKID / AKID). Pass nil for subject or issuer
-// when the OID does not require them. Returns true on success.
+// when the OID does not require them. An empty CONF is injected underneath so
+// r2i-style extensions (such as certificatePolicies) work as well.
+// Returns true on success.
 func X509V3_EXT_conf_nid_ctx(target, subject, issuer unsafe.Pointer, nid int, value string) bool {
 	cVal := C.CString(value)
 	defer C.free(unsafe.Pointer(cVal))
 	return C.X_X509V3_EXT_conf_nid_ctx((*C.X509)(target),
 		(*C.X509)(subject), (*C.X509)(issuer), C.int(nid), cVal) == 1
-}
-
-// X509V3_EXT_conf_nid_crl 在 CRL 上创建并追加通用扩展（无 ctx）。
-// X509V3_EXT_conf_nid_crl builds a new X509_EXTENSION for nid on a CRL
-// using the OpenSSL config-format value. The extension is added in place.
-// Returns true on success.
-func X509V3_EXT_conf_nid_crl(crl unsafe.Pointer, nid int, value string) bool {
-	cVal := C.CString(value)
-	defer C.free(unsafe.Pointer(cVal))
-	ext := C.X509V3_EXT_conf_nid(nil, nil, C.int(nid), cVal)
-	if ext == nil {
-		return false
-	}
-	ok := C.X509_CRL_add_ext((*C.X509_CRL)(crl), ext, C.int(-1)) == 1
-	C.X509_EXTENSION_free(ext)
-	return ok
 }
 
 // X509_CRL_set_crl_number 设置 CRL Number 扩展（值为整型）。
@@ -790,8 +823,11 @@ func X509_CRL_set_crl_number(crl unsafe.Pointer, value int64) bool {
 }
 
 // X509V3_EXT_conf_nid_ctx_crl 在 CRL 上创建并追加需要 X509V3_CTX 的扩展（CRL 的 AKID）。
+// 底层会注入空 CONF，使 r2i 类扩展同样可用。
 // X509V3_EXT_conf_nid_ctx_crl builds an extension on a CRL target using
-// the issuer context (needed for CRL AKID). Returns true on success.
+// the issuer context (needed for CRL AKID). An empty CONF is injected
+// underneath so r2i-style extensions work as well.
+// Returns true on success.
 func X509V3_EXT_conf_nid_ctx_crl(target, issuer unsafe.Pointer, nid int, value string) bool {
 	cVal := C.CString(value)
 	defer C.free(unsafe.Pointer(cVal))

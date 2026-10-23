@@ -177,12 +177,47 @@ char *X_X509_NAME_oneline(const X509_NAME *n)
     return OPENSSL_strdup(buf);
 }
 
+/*
+ * x_ext_build 按 OpenSSL 扩展配置语法构造一个 X509_EXTENSION。
+ *
+ * 两件事必须同时做到，缺一扩展就会失败或崩溃：
+ *   1. 注入配置库（X509V3_set_nconf）。OpenSSL 的 do_ext_nconf 在处理
+ *      r2i 类扩展（certificatePolicies / proxyCertInfo 等）时要求
+ *      ctx->db 与 ctx->db_meth 均非空，否则抛 X509V3_R_NO_CONFIG_DATABASE。
+ *      这里用空 CONF 满足该要求：内联 OID 形式的 value 不需要任何配置段。
+ *   2. 传入正确的上下文对象。ctx->subject_cert / subject_req / issuer_cert
+ *      会被扩展解析器直接解引用——例如 subjectAltName 的 "email:copy" 要读
+ *      subject 的 emailAddress、authorityKeyIdentifier 要读 issuer 的 SKID。
+ *      ctx 为 NULL 时这些路径会直接段错误。
+ *
+ * subject / issuer / req 均可为 NULL（表示该维度无上下文）。
+ * 返回的扩展由调用方负责 X509_EXTENSION_free。
+ */
+static X509_EXTENSION *x_ext_build(X509 *subject, X509 *issuer, X509_REQ *req,
+                                    int nid, const char *value)
+{
+    if (value == NULL)
+        return NULL;
+
+    CONF *conf = NCONF_new(NULL);
+    if (conf == NULL)
+        return NULL;
+
+    X509V3_CTX ctx;
+    X509V3_set_ctx(&ctx, issuer, subject, req, NULL, 0);
+    /* 必须放在 X509V3_set_ctx 之后：set_ctx 会把 ctx->db 置空。 */
+    X509V3_set_nconf(&ctx, conf);
+
+    X509_EXTENSION *ext = X509V3_EXT_conf_nid(NULL, &ctx, nid, value);
+
+    NCONF_free(conf);
+    return ext;
+}
+
 int X_X509V3_EXT_conf_nid_ctx(X509 *target, X509 *subject, X509 *issuer,
                               int nid, const char *value)
 {
-    X509V3_CTX ctx;
-    X509V3_set_ctx(&ctx, issuer, subject, NULL, NULL, 0);
-    X509_EXTENSION *ext = X509V3_EXT_conf_nid(NULL, &ctx, nid, value);
+    X509_EXTENSION *ext = x_ext_build(subject, issuer, NULL, nid, value);
     if (ext == NULL)
         return 0;
     int ok = X509_add_ext(target, ext, -1);
@@ -190,12 +225,17 @@ int X_X509V3_EXT_conf_nid_ctx(X509 *target, X509 *subject, X509 *issuer,
     return ok;
 }
 
+X509_EXTENSION *X_X509V3_EXT_conf_nid_ctx_new(X509 *subject, X509 *issuer,
+                                               X509_REQ *req, int nid,
+                                               const char *value)
+{
+    return x_ext_build(subject, issuer, req, nid, value);
+}
+
 int X_X509V3_EXT_conf_nid_ctx_crl(X509_CRL *target, X509 *issuer,
                                    int nid, const char *value)
 {
-    X509V3_CTX ctx;
-    X509V3_set_ctx(&ctx, issuer, NULL, NULL, NULL, 0);
-    X509_EXTENSION *ext = X509V3_EXT_conf_nid(NULL, &ctx, nid, value);
+    X509_EXTENSION *ext = x_ext_build(NULL, issuer, NULL, nid, value);
     if (ext == NULL)
         return 0;
     int ok = X509_CRL_add_ext(target, ext, -1);
@@ -287,7 +327,9 @@ int X_X509V3_EXT_conf_nid_merge(X509 *x, int nid, const char *value)
     if (der_seq_content(d_old, l_old, &tag_old, &hdr_old, &con_old) < 0)
         return 0;
 
-    X509_EXTENSION *tmp = X509V3_EXT_conf_nid(NULL, NULL, nid, (char *)value);
+    /* 用 x 本身作为 subject 上下文：可重复 OID 的合并值可能引用
+     * subject 的 emailAddress 等信息（subjectAltName 的 "email:copy"）。 */
+    X509_EXTENSION *tmp = x_ext_build(x, NULL, NULL, nid, value);
     if (tmp == NULL)
         return 0;
     ASN1_OCTET_STRING *os_new = X509_EXTENSION_get_data(tmp);

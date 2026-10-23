@@ -5,6 +5,7 @@
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <openssl/crypto.h>
+#include <openssl/conf.h>
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
@@ -106,6 +107,19 @@ char *X_X509_NAME_oneline(const X509_NAME *n);             /* "/CN=.." 文本，
 /* 带 X509V3_CTX 的扩展创建（SKID 需要 subject 公钥、AKID 需要 issuer 证书）。 */
 int X_X509V3_EXT_conf_nid_ctx(X509 *target, X509 *subject, X509 *issuer,
                               int nid, const char *value);
+
+/*
+ * 只构造扩展、不追加到任何容器；调用方负责 X509_EXTENSION_free。
+ *
+ * subject / issuer / req 决定扩展解析时可用的上下文：
+ *   - subject：扩展需要读取 subject 信息时（如 subjectAltName 的 "email:copy"）；
+ *   - issuer：扩展需要读取签发者信息时（如 authorityKeyIdentifier 的 "keyid"）；
+ *   - req：CSR 场景下的 subject 来源。
+ * 三者均可为 NULL 表示该维度无上下文。
+ */
+X509_EXTENSION *X_X509V3_EXT_conf_nid_ctx_new(X509 *subject, X509 *issuer,
+                                               X509_REQ *req, int nid,
+                                               const char *value);
 
 /* 同上，但 target 为 X509_CRL（CRL 的 AKID 扩展）。 */
 int X_X509V3_EXT_conf_nid_ctx_crl(X509_CRL *target, X509 *issuer,

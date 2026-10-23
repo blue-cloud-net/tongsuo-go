@@ -332,11 +332,21 @@ func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
 //
 // value 采用 OpenSSL X509V3_EXT_conf 配置语法。Sign 之后 CSR 即不可变，再次调用返回错误。
 //
+// raw 扩展（如 certificatePolicies / OID 2.5.29.32）同样可用，内联形式为逗号
+// 分隔的策略 OID（如 "1.2.3.4"）；带 CPS / userNotice 限定符的 "@section" 形式
+// **不支持**——本库不读取配置文件，传入 "@polsect" 会被 OpenSSL 拒绝。
+//
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
 // AddExtension appends a single extension identified by nid (for example a subjectAltName extension) to the CSR. It must be called before Sign.
 //
 // The value uses the OpenSSL X509V3_EXT_conf configuration syntax. Once the CSR is signed it becomes immutable and further calls return an error.
+//
+// raw extensions (such as certificatePolicies / OID 2.5.29.32) work as well; the
+// inline form is a comma-separated list of policy OIDs (for example "1.2.3.4").
+// The "@section" form carrying CPS / userNotice qualifiers is **not
+// supported** — the library does not read configuration files, so passing
+// "@polsect" is rejected by OpenSSL.
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) AddExtension(nid int, value string) error {
