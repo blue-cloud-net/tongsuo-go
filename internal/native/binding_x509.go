@@ -42,7 +42,9 @@ const (
 	NidExtKeyUsage            = 126
 	NidSubjectKeyIdentifier   = 82
 	NidAuthorityKeyIdentifier = 90
-	NidUndef                  = 0
+	// NidCertificatePolicies 为 certificatePolicies 扩展 NID（OID 2.5.29.32）。
+	NidCertificatePolicies = 89
+	NidUndef               = 0
 )
 
 // GENERAL_NAME 类型常量（来自 x509v3.h 宏）。
@@ -117,6 +119,19 @@ func OBJ_obj2txt(o unsafe.Pointer, noName int) string {
 		return ""
 	}
 	return C.GoString(&buf[0])
+}
+
+// OBJ_nid2oid 返回 NID 对应的点分 OID（如 NidCertificatePolicies 的
+// "2.5.29.32"）；NID 未知或没有对应对象时返回 ""。
+// OBJ_nid2oid returns the dotted OID of a NID (for example "2.5.29.32" for
+// NidCertificatePolicies); it returns "" when the NID is unknown or has no
+// corresponding object.
+func OBJ_nid2oid(nid int) string {
+	obj := unsafe.Pointer(C.OBJ_nid2obj(C.int(nid)))
+	if obj == nil {
+		return ""
+	}
+	return OBJ_obj2txt(obj, 1)
 }
 
 // X509_NAME_get_entry_count 返回名字条目数。
@@ -583,6 +598,39 @@ func X509V3_EXT_conf_nid_merge(x unsafe.Pointer, nid int, value string) bool {
 // used after free.
 func X509_EXTENSION_free(ext unsafe.Pointer) {
 	C.X509_EXTENSION_free((*C.X509_EXTENSION)(ext))
+}
+
+// X509_EXTENSION_create_by_NID_der 按 NID 与已编码的 DER 值创建扩展对象。
+// der 是扩展值的完整 DER 编码（不含外层 OCTET STRING 的 tag / length），
+// 其结构合法性由调用方保证——OpenSSL 不校验扩展值内容。critical 为真时
+// 扩展标记为 critical。返回的扩展由调用方负责用 X509_EXTENSION_free 释放；
+// 失败时返回 nil。
+// X509_EXTENSION_create_by_NID_der creates an X509_EXTENSION for nid from an
+// already encoded DER value.
+// der is the complete DER encoding of the extension value (without the
+// enclosing OCTET STRING tag and length); its structural validity is the
+// caller's responsibility, as OpenSSL does not validate extension content.
+// The caller owns the returned extension and must release it with
+// X509_EXTENSION_free; nil is returned on failure.
+func X509_EXTENSION_create_by_NID_der(nid int, critical bool, der []byte) unsafe.Pointer {
+	if len(der) == 0 {
+		return nil
+	}
+	crit := C.int(0)
+	if critical {
+		crit = C.int(1)
+	}
+	return unsafe.Pointer(C.X_X509_EXTENSION_create_by_NID_der(C.int(nid), crit,
+		(*C.uchar)(unsafe.Pointer(&der[0])), C.int(len(der))))
+}
+
+// X509_CRL_add_ext 向 CRL 追加扩展，loc 为 -1 时追加到末尾。
+// OpenSSL 复制 ext，故调用方仍持有其所有权。成功返回 true。
+// X509_CRL_add_ext appends ext to the CRL's extension stack; passing -1
+// appends to the end. OpenSSL duplicates ext internally so the caller
+// retains ownership. Returns true on success.
+func X509_CRL_add_ext(crl, ext unsafe.Pointer) bool {
+	return C.X509_CRL_add_ext((*C.X509_CRL)(crl), (*C.X509_EXTENSION)(ext), C.int(-1)) == 1
 }
 
 // X_PEM_read_bio_X509 从 BIO 读取 PEM 证书。

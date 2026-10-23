@@ -562,7 +562,8 @@ func (c *Certificate) AddAuthorityKeyID(issuer *Certificate) error {
 // raw 扩展（如 certificatePolicies / OID 2.5.29.32）同样可用，但其值语法由扩展
 // 自身定义：内联形式为逗号分隔的策略 OID（如 "1.2.3.4"、"ia5org,1.2.3.4,1.5.6.7.8"）；
 // 带 CPS / userNotice 限定符的 "@section" 形式**不支持**——本库不读取配置文件，
-// 传入 "@polsect" 会被 OpenSSL 拒绝。
+// 传入 "@polsect" 会被 OpenSSL 拒绝。需要限定符请改用
+// AddCertificatePolicies（它不经过 OpenSSL 的扩展配置解析）。
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
@@ -589,7 +590,9 @@ func (c *Certificate) AddAuthorityKeyID(issuer *Certificate) error {
 // comma-separated list of policy OIDs (for example "1.2.3.4" or
 // "ia5org,1.2.3.4,1.5.6.7.8"). The "@section" form carrying CPS / userNotice
 // qualifiers is **not supported** — the library does not read configuration
-// files, so passing "@polsect" is rejected by OpenSSL.
+// files, so passing "@polsect" is rejected by OpenSSL. Use
+// AddCertificatePolicies for qualifiers (it does not go through OpenSSL's
+// extension configuration parser).
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (c *Certificate) AddExtension(nid int, value string) error {

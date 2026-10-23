@@ -334,7 +334,8 @@ func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
 //
 // raw 扩展（如 certificatePolicies / OID 2.5.29.32）同样可用，内联形式为逗号
 // 分隔的策略 OID（如 "1.2.3.4"）；带 CPS / userNotice 限定符的 "@section" 形式
-// **不支持**——本库不读取配置文件，传入 "@polsect" 会被 OpenSSL 拒绝。
+// **不支持**——本库不读取配置文件，传入 "@polsect" 会被 OpenSSL 拒绝。需要限定符
+// 请改用 AddCertificatePolicies（它不经过 OpenSSL 的扩展配置解析）。
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
@@ -346,7 +347,9 @@ func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
 // inline form is a comma-separated list of policy OIDs (for example "1.2.3.4").
 // The "@section" form carrying CPS / userNotice qualifiers is **not
 // supported** — the library does not read configuration files, so passing
-// "@polsect" is rejected by OpenSSL.
+// "@polsect" is rejected by OpenSSL. Use AddCertificatePolicies for
+// qualifiers (it does not go through OpenSSL's extension configuration
+// parser).
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) AddExtension(nid int, value string) error {

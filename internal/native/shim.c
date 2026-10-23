@@ -389,6 +389,34 @@ int X_X509V3_EXT_conf_nid_merge(X509 *x, int nid, const char *value)
     return ok == 1 ? 1 : 0;
 }
 
+/*
+ * X_X509_EXTENSION_create_by_NID_der：按 NID 与已编码的 DER 值构造扩展。
+ *
+ * X509_EXTENSION_create_by_NID 要求扩展值以 ASN1_OCTET_STRING 形式给出；
+ * 这里把调用方提供的 der 原样装进去，因此 der 就是扩展值的完整 DER
+ * （不含外层 OCTET STRING 的 tag / length）。OpenSSL 不校验扩展值内容，
+ * 合法性由调用方保证。
+ */
+X509_EXTENSION *X_X509_EXTENSION_create_by_NID_der(int nid, int crit,
+                                                   const unsigned char *der,
+                                                   int len)
+{
+    if (der == NULL || len < 0)
+        return NULL;
+
+    ASN1_OCTET_STRING *os = ASN1_OCTET_STRING_new();
+    if (os == NULL)
+        return NULL;
+    if (!ASN1_OCTET_STRING_set(os, der, len)) {
+        ASN1_OCTET_STRING_free(os);
+        return NULL;
+    }
+    /* create_by_NID 内部会复制 os，故此处可立即释放。 */
+    X509_EXTENSION *ext = X509_EXTENSION_create_by_NID(NULL, nid, crit, os);
+    ASN1_OCTET_STRING_free(os);
+    return ext;
+}
+
 void *X_X509_get_san(const X509 *x)
 {
     return X509_get_ext_d2i(x, NID_subject_alt_name, NULL, NULL);
