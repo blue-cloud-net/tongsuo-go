@@ -257,6 +257,27 @@ go test -fuzz FuzzRoundTrip ./sym
 | **CSR** | `subjectAltName` = `email:copy` | 同上，验证 `ctx->subject_req` 已接入 |
 | **CRL** | `issuingDistributionPoint` / `freshestCRL` | 按名与按 NID 两条路径均成功；`Extensions()` 可见且 `OID` 字段已填充；签名后 `Verify` 通过 |
 | **通用** | 扩展往返 | 证书签名 → PEM 往返 → 扩展仍在、验签仍通过 |
+| **证书 / CSR / CRL** | `AddCertificatePolicies`（类型化策略入口） | 逐字节断言扩展 DER 与黄金向量一致；CPS 限定符为 IA5String；`organization` / `explicitText` 为 UTF8String；`critical` 位正确；多条策略各成一条 `PolicyInformation`；读回（`CertificatePolicies()`）与写入一致 |
+| **证书 / CSR / CRL** | `AddCertificatePolicies` 错误路径 | 空列表、非法 OID、重复 OID、非 IA5 的 CPS URL、只有通知编号而无机构名均报错；已存在该扩展时重复添加报 `x509: extension already present (nid 89)`；`Sign` 之后添加报 `x509: certificate already signed` |
+| **证书 / CSR / CRL** | 编码器单测（纯 Go，脱离 cgo） | 黄金向量逐字节比对（单策略无限定符 / 单策略带 CPS 与 userNotice）；OID 编解码往返；整数补码往返；DER 长度长式编码；畸形 DER（截断 / 尾随字节 / 空序列 / tag 错误）一律报错；未知限定符 OID 被跳过而非报错 |
+| **证书 / CSR / CRL** | 读回 openssl 产物 | 解析 `openssl` 用 `[polsect]` 段生成的证书（DisplayText 为 VisibleString）→ 策略、机构名、通知编号与文本全部一致 |
+
+> ⚠️ **DisplayText 编码差异**：铜锁 openssl 的配置文件路径用 **VisibleString** 承载
+> `organization` / `explicitText`，对非 ASCII 内容会产出**不合规**的 DER（VisibleString
+> 的字符集是 7-bit ISO 646）；本库统一用 **UTF8String**（RFC 5280 的 DisplayText
+> CHOICE 允许），产出合规 DER 且 openssl 能正常读回。因此**逐字节**对拍只对
+> 「无 userNotice」或「纯 ASCII userNotice 且库侧也用 VisibleString」的样例成立；
+> 含非 ASCII 文本时对拍断言**语义**（`openssl x509 -ext certificatePolicies` 的
+> 文本输出）而非字节。读侧必须同时接受四种 DisplayText 分支，否则读不回
+> openssl 生成的证书。
+
+**CLI 对比测试**：`openssl x509 -text` / `-ext certificatePolicies` 断言
+"Certificate Policies" 与策略 OID；`openssl crl -text` 断言
+"Issuing Distribution Point"。
+`certificatePolicies` 另需双向对拍：① 用 `openssl req -x509` 的 `[polsect]` 段
+生成证书后由本库读回（校验 VisibleString 兼容）；② 本库生成的证书交
+`openssl x509 -ext certificatePolicies` 展示（校验 UTF8String 可被铜锁读回，
+含非 ASCII 文本时逐字断言）。
 
 > ⚠️ **回归重点**：OpenSSL 的 `r2i` 类扩展（`certificatePolicies` 等）要求扩展
 > 上下文中**存在配置库**，否则报 `X509V3_R_NO_CONFIG_DATABASE`（`0x11000088`）；
@@ -268,3 +289,7 @@ go test -fuzz FuzzRoundTrip ./sym
 **CLI 对比测试**：`openssl x509 -text` / `-ext certificatePolicies` 断言
 "Certificate Policies" 与策略 OID；`openssl crl -text` 断言
 "Issuing Distribution Point"。
+`certificatePolicies` 另需双向对拍：① 用 `openssl req -x509` 的 `[polsect]` 段
+生成证书后由本库读回（校验 VisibleString 兼容）；② 本库生成的证书交
+`openssl x509 -ext certificatePolicies` 展示（校验 UTF8String 可被铜锁读回，
+含非 ASCII 文本时逐字断言）。

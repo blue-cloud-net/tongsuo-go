@@ -169,6 +169,10 @@ provider `EVP_MAC_*`，与旧版 HMAC legacy 路径需双向验证一致）。
 的返回值语义（OpenSSL 3 的 `sk_TYPE_push` 返回压入后的**栈长度**，原实现按 0/1 布尔判断），
 未引入新的绑定。
 
+**已在 `0.4.2` 落地的相关绑定**：`X_X509_EXTENSION_create_by_NID_der`（按调用方给出的
+DER 值构造扩展，绕开 OpenSSL 的扩展配置语法）、`X509_CRL_add_ext`（向 CRL 追加扩展）、
+`OBJ_nid2oid`（NID → 点分 OID）——均服务于 `x509` 的类型化 certificatePolicies 入口。
+
 ---
 
 ## 4. 明确不做 / 暂缓
