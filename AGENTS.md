@@ -246,6 +246,7 @@ docs/api-reference-internal.md# 内部 API 清单（internal/* 五个包）
 docs/roadmap.md                 # 版本路线图（0.5.0–1.0.0：范围 / 前置绑定 / 不做）
 docs/cli-comparison.md        # 铜锁 CLI 与本库能力对比（能力级）
 docs/official-sdk-comparison.md # 与官方 SDK 对比
+docs/release-guide.md         # 发版操作手册（前置 / 重排 / 验证 / tag / 回退）
 ```
 
 **其他**
@@ -474,10 +475,16 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 
 ### 6.4 发版
 
+> **完整操作手册见 [`docs/release-guide.md`](docs/release-guide.md)**（前置环境、重排提交、CHANGELOG
+> 定版、验证清单、act 与代理、合并 main、tag 与回退）。本节只列不可违反的底线。
+
 - `release.yml` 复用 `ci.yml`（`workflow_call`），保证发布测试与 CI 完全同源
 - `scripts/extract_release_notes.py` 从两份 CHANGELOG 抽取当前 tag 版本段，
   **任一缺失即 `exit 1`，发版中断**；拼接格式为「英文 + 3 空行 + 中文」
 - 发布物**只有 CHANGELOG 文本**，不上传二进制
+- 发版前必须用 **CI 同款铜锁 8.4.0** 复跑（本地 8.5 全绿不能证明 8.4 通过），
+  且 `python3 scripts/extract_release_notes.py <ver>` 预检通过
+- 未发布过的版本，其内部修补**并入新增条目**，不拆成多个 patch 段（细则见手册 §1/§3）
 
 ### 6.5 git 权限（agent 行为约定）
 
@@ -623,6 +630,7 @@ go test -count=1 ./...    # 必须 ok（无铜锁环境则如实说明未能运�
 | 与官方 SDK 对比与对齐路线图 | `docs/official-sdk-comparison.md` |
 | CLI 对拍工具 | `internal/testutil/openssl.go` |
 | 覆盖率脚本 | `scripts/check-coverage.sh` |
+| **发版操作手册（前置 / 重排 / 验证 / tag / 回退）** | `docs/release-guide.md` |
 | 发版说明抽取 | `scripts/extract_release_notes.py` |
 | CI / 发版流程 | `.github/workflows/ci.yml` / `.github/workflows/release.yml` |
 | 示例程序 | `examples/`（见 `examples/README.md`） |
