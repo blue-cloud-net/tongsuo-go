@@ -3150,6 +3150,52 @@ func (c *CRL) AddAuthorityKeyID(issuer *Certificate) error {
 	return nil
 }
 
+// AddExtension 向 CRL 追加通用扩展。
+//
+// nid 为扩展 NID；value 为 X509V3_EXT_conf 配置串（如 "critical,onlyuser:TRUE"）；
+// issuer 为 CRL 的签发者证书，作为扩展上下文的 issuer 传入——依赖签发者信息的扩展值
+// 需要它。须在 MarshalPEM / MarshalDER 之前调用；底层 OpenSSL 错误以 OpError 包装。
+//
+// AddExtension appends a generic extension to the CRL.
+//
+// nid is the extension NID and value is the X509V3_EXT_conf configuration
+// string (for example "critical,onlyuser:TRUE"). issuer is the CRL's
+// issuer certificate, passed as the issuer of the extension context because
+// extension values reading issuer information need it. Must be invoked before
+// MarshalPEM / MarshalDER. Errors from the underlying OpenSSL call are
+// wrapped as OpError.
+func (c *CRL) AddExtension(nid int, value string, issuer *Certificate) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: CRL closed")
+	}
+	if issuer == nil || issuer.handle == nil || issuer.handle.IsClosed() {
+		return fmt.Errorf("x509: invalid issuer certificate")
+	}
+	if !native.X509V3_EXT_conf_nid_ctx_crl(c.handle.Ptr(), issuer.handle.Ptr(),
+		nid, value) {
+		return NewOpError("x509: X509V3_EXT_conf_nid (CRL)", native.PopError())
+	}
+	return nil
+}
+
+// AddExtensionByName 按名字或 OID 向 CRL 追加通用扩展。
+//
+// name 可为扩展短名、长名或点分 OID，内部经 OBJ_txt2nid 解析；解析失败返回
+// "x509: unknown extension name %q"；其余语义与 AddExtension 相同。
+//
+// AddExtensionByName appends a generic extension to the CRL, addressed by name.
+//
+// name may be an extension short name, long name, or dotted OID; it is
+// resolved through OBJ_txt2nid. An unknown name returns
+// "x509: unknown extension name %q". Otherwise the semantics match AddExtension.
+func (c *CRL) AddExtensionByName(name, value string, issuer *Certificate) error {
+	nid, err := extNidByName(name)
+	if err != nil {
+		return err
+	}
+	return c.AddExtension(nid, value, issuer)
+}
+
 // Issuer 返回 CRL 的签发者名字。
 //
 // 返回的 *Name 包装了底层 X509_CRL 借用的内部 X509_NAME 指针；调用方不得对其调用 Close，指针在 CRL 生命周期内有效。
@@ -3342,12 +3388,12 @@ func (c *CRL) Number() int64 {
 
 // Extensions 按出现顺序返回 CRL 的全部扩展。
 //
-// 对 nil 或已关闭的 CRL 返回 nil；每条包含扩展 NID、短名、critical 标志及 DER 字节。
+// 对 nil 或已关闭的 CRL 返回 nil；每条包含扩展 NID、短名、点分 OID、critical 标志及 DER 字节。
 //
 // Extensions returns every extension of the CRL in their original order.
 //
 // The result is nil for a nil or closed CRL. Each entry contains the
-// extension NID, short name, critical flag and DER bytes.
+// extension NID, short name, dotted OID, critical flag and DER bytes.
 func (c *CRL) Extensions() []Extension {
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return nil
@@ -3359,10 +3405,12 @@ func (c *CRL) Extensions() []Extension {
 		if e == nil {
 			continue
 		}
-		nid := native.OBJ_obj2nid(native.X509_EXTENSION_get_object(e))
+		obj := native.X509_EXTENSION_get_object(e)
+		nid := native.OBJ_obj2nid(obj)
 		out = append(out, Extension{
 			Nid:      nid,
 			Field:    native.OBJ_nid2sn(nid),
+			OID:      native.OBJ_obj2txt(obj, 1),
 			Critical: native.X509_EXTENSION_get_critical(e) != 0,
 			Data:     native.ASN1_STRING_data_bytes(native.X509_EXTENSION_get_data(e)),
 		})

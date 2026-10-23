@@ -431,6 +431,7 @@ func validRevocationReason(r RevocationReason) bool {
 // on the finalizer (AGENTS.md §4.4).
 type CRLBuilder struct {
 	crl       *core.CRL
+	issuer    *Certificate
 	hasNumber bool
 	hasThis   bool
 }
@@ -465,7 +466,73 @@ func NewCRLBuilder(issuer *Certificate) (*CRLBuilder, error) {
 		_ = crl.Close()
 		return nil, err
 	}
-	return &CRLBuilder{crl: crl}, nil
+	return &CRLBuilder{crl: crl, issuer: issuer}, nil
+}
+
+// AddExtension 按 NID 向 CRL 追加任意 X.509 扩展。
+//
+// nid 为扩展 NID；value 采用 OpenSSL X509V3_EXT_conf 配置语法，如
+// "critical,onlyuser:TRUE"（issuingDistributionPoint）、
+// "URI:http://example.com/crl"（freshestCRL 的 CRLDistributionPoints 形式）。
+// 扩展上下文中的 issuer 取自本构建器的签发者证书，因此依赖签发者信息的值
+// 同样可用。
+//
+// ⚠️ 签发者证书必须在本构建器 Sign 之前保持未关闭——扩展上下文需要在
+// 添加扩展的瞬间读取签发者信息。
+//
+// 须在 Sign 之前调用；失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// AddExtension appends an arbitrary X.509 extension to the CRL by nid.
+//
+// nid is the extension NID and value uses the OpenSSL X509V3_EXT_conf
+// configuration syntax, for example "critical,onlyuser:TRUE" for
+// issuingDistributionPoint. The issuer of the extension context is taken from
+// this builder's issuer certificate, so values reading issuer information work
+// as well.
+//
+// ⚠️ The issuer certificate must stay open until this builder signs — the
+// extension context reads issuer information at the moment the extension is
+// added.
+//
+// It must be invoked before Sign. On failure it returns an error wrapping an
+// OpError describing the operation.
+func (b *CRLBuilder) AddExtension(nid int, value string) error {
+	if b == nil || b.crl == nil {
+		return errBuilderClosed()
+	}
+	if b.issuer == nil || b.issuer.cert == nil {
+		return fmt.Errorf("x509: CRL builder: nil issuer certificate")
+	}
+	return b.crl.AddExtension(nid, value, b.issuer.cert)
+}
+
+// AddExtensionByName 按名字向 CRL 追加任意 X.509 扩展。
+//
+// name 可为扩展短名（"issuingDistributionPoint"、"freshestCRL"）、长名或点分
+// OID（"2.5.29.28"），内部经 OBJ_txt2nid 解析，无需事先知道 NID 数值；
+// name 为空或无法识别时返回 "x509: unknown extension name %q"。
+// value 语法与 AddExtension 完全一致；须在 Sign 之前调用。
+//
+// 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+//
+// AddExtensionByName appends an arbitrary X.509 extension to the CRL, addressed
+// by name.
+//
+// name may be an extension short name ("issuingDistributionPoint",
+// "freshestCRL"), a long name, or a dotted OID ("2.5.29.28"); it is resolved
+// through OBJ_txt2nid so callers need not know the numeric NID. An empty or
+// unrecognized name returns "x509: unknown extension name %q". The value
+// syntax is identical to AddExtension, and it must be invoked before Sign.
+//
+// On failure, it returns an error wrapping an OpError describing the operation.
+func (b *CRLBuilder) AddExtensionByName(name, value string) error {
+	if b == nil || b.crl == nil {
+		return errBuilderClosed()
+	}
+	if b.issuer == nil || b.issuer.cert == nil {
+		return fmt.Errorf("x509: CRL builder: nil issuer certificate")
+	}
+	return b.crl.AddExtensionByName(name, value, b.issuer.cert)
 }
 
 // errBuilderClosed 为构建器已签发或已释放时返回的错误。
