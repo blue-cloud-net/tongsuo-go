@@ -22,50 +22,7 @@
 
 ---
 
-## [0.4.2] - TBD
-
-### 新增功能
-
-- `x509`：CRL 构建器新增通用扩展入口——`(*CRLBuilder).AddExtension(nid int,
-  value string)` 与 `(*CRLBuilder).AddExtensionByName(name, value string)`。
-  value 采用 OpenSSL `X509V3_EXT_conf` 配置语法，因此现在可以为 CRL 写入
-  `issuingDistributionPoint`（RFC 5280 §5.2.5）、`freshestCRL`
-  （RFC 5280 §5.2.6）等扩展——此前 CRL 侧只能写 `crlNumber` 与
-  `authorityKeyIdentifier`，铜锁 `openssl ca -crlexts` 在本库中没有等价能力。
-  同时 `(*CRL).Extensions()` 补齐了 `OID` 字段，与证书侧保持一致。
-
-### Bug 修复
-
-- `x509`：修复 `AddExtension` / `AddExtensionByName` / `ReplaceExtension`
-  对 `certificatePolicies`（OID `2.5.29.32`，NID `89`）一律报
-  `X509 V3 routines::no config database`（`0x11000088`）、且在 CSR 路径上
-  直接使整个进程 `SIGSEGV` 崩溃的问题。根因是扩展上下文构造时**未注入配置库**，
-  而 OpenSSL 的 `r2i` 类扩展（如 `certificatePolicies`）要求上下文中有配置库；
-  CSR 路径上上下文更是整个为 `NULL`，被 `r2i` 解析器直接解引用。现改为在上下文中
-  注入配置库并接入正确的 subject / issuer / 请求对象，因此依赖 subject 信息的
-  扩展值（`subjectAltName` 的 `email:copy`）在证书与 CSR 上均可正常使用。
-  `certificatePolicies` 带 CPS / userNotice 限定符的 `@section` 形式仍**不支持**
-  ——本库不读取配置文件。
-
----
-
-## [0.4.1] - 2026-10-16
-
-### Bug 修复
-
-- `x509`：修复在 Tongsuo 8.4 上多次调用 CSR 扩展接口（`AddSubjectAltName` /
-  `AddKeyUsage` / `AddExtendedKeyUsage` / `AddBasicConstraints` /
-  `AddExtensionByName`）时只保留**第一次**添加的扩展、其余被静默丢弃的问题。
-  根因是铜锁两个版本的 `X509_REQ_add_extensions` 合并语义不同：8.4 每次调用
-  **追加一个新属性**，而 `X509_REQ_get_extensions` 只取**第一个**属性；8.5 则把新
-  扩展与已有扩展合并。现改为在 Go 侧暂存扩展（`Extensions()` 立即可见），并在
-  `Sign` / `MarshalDER` / `CopyExtensionTo` 之前以**单次**原生调用提交，因此结果
-  不再依赖铜锁版本。导出的 CSR DER 中 `extensionRequest` 属性恒为一条且包含全部
-  扩展，可被 `openssl req` 正常读取。
-
----
-
-## [0.4.0] - 2026-10-16
+## [0.4.0] - TBD
 
 ### 新增功能
 
@@ -75,6 +32,10 @@
   `OBJ_txt2nid` 解析，因此无需导出数字 NID 常量）与
   `AddExtensions(exts ...Extension)`（批量）。
   `value` 采用 OpenSSL `X509V3_EXT_conf` 配置语法。
+  扩展上下文已注入配置库并接入正确的 subject / issuer / 请求对象，因此
+  `certificatePolicies` 等 `r2i` 类扩展在证书与 CSR 上均可正常使用——此前会报
+  `X509 V3 routines::no config database`，CSR 路径上更是直接 `SIGSEGV` 崩溃；
+  依赖 subject 信息的扩展值（`subjectAltName` 的 `email:copy`）同样可用。
 - `x509`：扩展查询与编辑——`HasExtension(name)`（只读）、`RemoveExtension(name)`
   与 `ReplaceExtension(name, value)`。`ReplaceExtension` 保持扩展在证书中的
   原有位置，且与 BouncyCastle 的 `X509ExtensionsGenerator.ReplaceExtension`
@@ -82,8 +43,38 @@
   重复添加已存在的 NID 返回 `x509: extension already present (nid N)`；
   可重复 OID（`subjectAltName` / `issuerAltName` / `subjectDirectoryAttributes` /
   `certificateIssuer`）例外，新值会被**合并**进同一条目（保留位置与 critical 标记）。
+- `x509`：CRL 构建器新增同类通用扩展入口——`(*CRLBuilder).AddExtension(nid int,
+  value string)` 与 `(*CRLBuilder).AddExtensionByName(name, value string)`。
+  value 采用 OpenSSL `X509V3_EXT_conf` 配置语法，因此现在可以为 CRL 写入
+  `issuingDistributionPoint`（RFC 5280 §5.2.5）、`freshestCRL`
+  （RFC 5280 §5.2.6）等扩展——此前 CRL 侧只能写 `crlNumber` 与
+  `authorityKeyIdentifier`，铜锁 `openssl ca -crlexts` 在本库中没有等价能力。
+  同时 `(*CRL).Extensions()` 补齐了 `OID` 字段，与证书侧保持一致。
+- `x509`：新增类型化的证书策略入口——`(*Certificate).AddCertificatePolicies` /
+  `(*CertificateRequest).AddCertificatePolicies` /
+  `(*CRLBuilder).AddCertificatePolicies` 与对应的读接口
+  `(*Certificate).CertificatePolicies` / `(*CertificateRequest).CertificatePolicies` /
+  `(*CRL).CertificatePolicies`，配套 `CertificatePolicy`（策略 OID + CPS URL 列表 +
+  userNotice）与 `UserNotice`（机构名 / 通知编号 / 通知文本）两个类型。
+  证书策略的 **CPS（`id-qt-cps`）与 userNotice（`id-qt-unotice`）限定符无法写入**
+  OpenSSL 的扩展配置串（它只认配置文件的 `@section` 形式，而本库不读配置文件）；
+  新入口不经过该解析器，由库内**纯 Go** 的 DER 编解码器直接构造与解析，因此能表达
+  限定符，也能在一条扩展里写入多条策略（`@section` 语法只能产出一条，后写的
+  `policyIdentifier` 覆盖先写的）。
+  编码上：CPS 按 RFC 5280 用 IA5String；`organization` / `explicitText` 用 UTF8String
+  （铜锁 openssl 配置路径用 VisibleString，对非 ASCII 内容会产出**不合规**的 DER，
+  本库的 UTF8String 产出合规 DER 且铜锁能正常读回）。读侧同时接受 UTF8String /
+  VisibleString / IA5String / BMPString 四种 DisplayText 分支，因此由 `openssl`
+  生成的证书也能读回。
+  ⚠️ `certificatePolicies` 并非 RFC 5280 §5.2 定义的 CRL 扩展，CRL 侧入口仅用于与
+  `openssl ca -crlexts` 的配置产物对齐，校验方通常会忽略该扩展。
 - `x509`：CSR 侧对称补全——`(*CertificateRequest).AddExtensionByName`、
   `AddKeyUsage`、`AddExtendedKeyUsage` 与 `AddBasicConstraints`。
+  扩展在 Go 侧暂存（`Extensions()` 立即可见），并在 `Sign` / `MarshalDER` /
+  `CopyExtensionTo` 之前以**单次**原生调用提交，因此反复调用这些接口不会丢扩展，
+  与铜锁版本无关（8.4 每次调用追加一个新 `extensionRequest` 属性，而
+  `X509_REQ_get_extensions` 只取第一个；8.5 则与已有扩展合并）。导出的 CSR DER 中
+  `extensionRequest` 属性恒为一条且包含全部扩展，可被 `openssl req` 正常读取。
 - `x509`：`(*Certificate).SerialHex()`（序列号大写十六进制，供超出 `int64`
   范围的序列号使用，对齐 `openssl x509 -serial`）、`SubjectHash()` /
   `IssuerHash()`（`X509_NAME_hash`，对齐 `-subject_hash` / `-issuer_hash`）
@@ -597,9 +588,7 @@
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.2...HEAD
-[0.4.2]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.1...v0.4.2
-[0.4.1]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...v0.4.1
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...HEAD
 [0.4.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.2...v0.2.0
