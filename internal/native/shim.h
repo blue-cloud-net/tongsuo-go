@@ -5,6 +5,7 @@
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <openssl/crypto.h>
+#include <openssl/conf.h>
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
@@ -107,6 +108,19 @@ char *X_X509_NAME_oneline(const X509_NAME *n);             /* "/CN=.." 文本，
 int X_X509V3_EXT_conf_nid_ctx(X509 *target, X509 *subject, X509 *issuer,
                               int nid, const char *value);
 
+/*
+ * 只构造扩展、不追加到任何容器；调用方负责 X509_EXTENSION_free。
+ *
+ * subject / issuer / req 决定扩展解析时可用的上下文：
+ *   - subject：扩展需要读取 subject 信息时（如 subjectAltName 的 "email:copy"）；
+ *   - issuer：扩展需要读取签发者信息时（如 authorityKeyIdentifier 的 "keyid"）；
+ *   - req：CSR 场景下的 subject 来源。
+ * 三者均可为 NULL 表示该维度无上下文。
+ */
+X509_EXTENSION *X_X509V3_EXT_conf_nid_ctx_new(X509 *subject, X509 *issuer,
+                                               X509_REQ *req, int nid,
+                                               const char *value);
+
 /* 同上，但 target 为 X509_CRL（CRL 的 AKID 扩展）。 */
 int X_X509V3_EXT_conf_nid_ctx_crl(X509_CRL *target, X509 *issuer,
                                    int nid, const char *value);
@@ -124,6 +138,22 @@ int X_X509V3_EXT_conf_nid_ctx_crl(X509_CRL *target, X509 *issuer,
  * 成功返回 1；解析、编码或替换失败返回 0 并保留原有错误队列。
  */
 int X_X509V3_EXT_conf_nid_merge(X509 *x, int nid, const char *value);
+
+/*
+ * X_X509_EXTENSION_create_by_NID_der：按 NID 与已编码的 DER 值构造扩展。
+ *
+ * OpenSSL 的扩展配置语法（X509V3_EXT_conf_nid）覆盖不了全部扩展类型——
+ * certificatePolicies 的 CPS / userNotice 限定符就只认配置文件的 "@section"
+ * 形式。本包装把调用方给好的 DER 直接装进扩展值，绕过配置语法。
+ *
+ * der 必须是扩展**值**的 DER 编码（不含外层 OCTET STRING 的 tag / length），
+ * 由调用方保证其结构合法；OpenSSL 不校验扩展值内容。
+ *
+ * 返回的扩展由调用方负责 X509_EXTENSION_free。
+ */
+X509_EXTENSION *X_X509_EXTENSION_create_by_NID_der(int nid, int crit,
+                                                   const unsigned char *der,
+                                                   int len);
 
 /* SAN（GENERAL_NAMES 栈） */
 void *X_X509_get_san(const X509 *x);                       /* GENERAL_NAMES* 或 NULL */

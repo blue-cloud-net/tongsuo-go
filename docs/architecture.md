@@ -275,6 +275,8 @@ tongsuo-go/
 │   ├── name.go                # Name / NameEntry
 │   ├── csr.go                 # CertificateRequest
 │   ├── crl.go                 # CRL / RevokedEntry / CRLBuilder / RevocationCheck
+│   ├── certpol.go             # CertificatePolicy / UserNotice / AddCertificatePolicies
+│   ├── certpol_der.go         # certificatePolicies 的 DER 编解码（纯 Go，cgo-free）
 │   ├── ocsp.go                # Request / Response / CreateOCSPRequest / ParseOCSPResponse
 │   ├── issue.go               # IssueCertificateFromRequest / IssueOptions
 │   ├── store.go               # Store / VerifyError / ChainVerify

@@ -3,7 +3,7 @@
 > **用途**：本文件是本仓库**唯一的版本归属来源**——某个能力落在哪个 `0.x` 版本，以本文件 §2 为准。
 >
 > **口径**：
-> 1. **只写未做的事**。`0.4.0`（2026-10-16 发布）及其之前已发布的能力不在本文范围内，
+> 1. **只写未做的事**。`0.4.0`（2026-10-23 发布）及其之前已发布的能力不在本文范围内，
 >    其符号清单见 [api-reference.md](api-reference.md)，其变更记录见 [CHANGELOG.md](../CHANGELOG.md)；
 > 2. 本文件**不重复**能力级判定与优先级。缺口编号与「本库现状」列见
 >    [cli-comparison.md](cli-comparison.md)（对铜锁 CLI）、[official-sdk-comparison.md](official-sdk-comparison.md)（对官方 SDK）、
@@ -12,7 +12,7 @@
 >    若该行标注的版本与本文件 §2 冲突，以本文件为准并回改 api-reference；
 > 4. 「需新增 cgo 绑定」是实施前置条件，统一列在 §3，§2 各表以「前置」列引用。
 >
-> **基线**：`0.4.0`（2026-10-16 发布）——16 个顶级包形态已定格，见 [architecture.md](architecture.md) §2 / §3。
+> **基线**：`0.4.0`（2026-10-23 发布）——16 个顶级包形态已定格，见 [architecture.md](architecture.md) §2 / §3。
 
 ---
 
@@ -168,6 +168,10 @@ provider `EVP_MAC_*`，与旧版 HMAC legacy 路径需双向验证一致）。
 **`0.4.0` 未新增 C 接口**：本版只修正既有 `X509_sk_X509_EXTENSION_push` / `X509_sk_X509_push`
 的返回值语义（OpenSSL 3 的 `sk_TYPE_push` 返回压入后的**栈长度**，原实现按 0/1 布尔判断），
 未引入新的绑定。
+
+**已在 `0.4.0` 落地的相关绑定**：`X_X509_EXTENSION_create_by_NID_der`（按调用方给出的
+DER 值构造扩展，绕开 OpenSSL 的扩展配置语法）、`X509_CRL_add_ext`（向 CRL 追加扩展）、
+`OBJ_nid2oid`（NID → 点分 OID）——均服务于 `x509` 的类型化 certificatePolicies 入口。
 
 ---
 

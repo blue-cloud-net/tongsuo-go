@@ -332,11 +332,24 @@ func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
 //
 // value 采用 OpenSSL X509V3_EXT_conf 配置语法。Sign 之后 CSR 即不可变，再次调用返回错误。
 //
+// raw 扩展（如 certificatePolicies / OID 2.5.29.32）同样可用，内联形式为逗号
+// 分隔的策略 OID（如 "1.2.3.4"）；带 CPS / userNotice 限定符的 "@section" 形式
+// **不支持**——本库不读取配置文件，传入 "@polsect" 会被 OpenSSL 拒绝。需要限定符
+// 请改用 AddCertificatePolicies（它不经过 OpenSSL 的扩展配置解析）。
+//
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
 // AddExtension appends a single extension identified by nid (for example a subjectAltName extension) to the CSR. It must be called before Sign.
 //
 // The value uses the OpenSSL X509V3_EXT_conf configuration syntax. Once the CSR is signed it becomes immutable and further calls return an error.
+//
+// raw extensions (such as certificatePolicies / OID 2.5.29.32) work as well; the
+// inline form is a comma-separated list of policy OIDs (for example "1.2.3.4").
+// The "@section" form carrying CPS / userNotice qualifiers is **not
+// supported** — the library does not read configuration files, so passing
+// "@polsect" is rejected by OpenSSL. Use AddCertificatePolicies for
+// qualifiers (it does not go through OpenSSL's extension configuration
+// parser).
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) AddExtension(nid int, value string) error {
@@ -410,18 +423,16 @@ func (r *CertificateRequest) AddBasicConstraints(isCA bool) error {
 
 // AddSubjectAltName 为 CSR 添加 SAN 扩展（如 "DNS:example.com"）。
 //
-// ⚠️ subjectAltName 属于可重复 OID：OpenSSL 的 X509_REQ_add_extensions 会整体
-// 替换扩展栈，因此 CSR 侧请在单次 AddExtensions 调用中用逗号分隔多个值，
-// 而不要分多次调用本方法。
+// ⚠️ subjectAltName 属于可重复 OID：可多次调用本方法追加多个值，也可在单次
+// AddExtensions 调用中用逗号分隔；两种写法最终效果一致。
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
 // AddSubjectAltName appends a subjectAltName extension to the CSR (for example "DNS:example.com").
 //
-// ⚠️ subjectAltName is a repeatable OID: OpenSSL's X509_REQ_add_extensions
-// replaces the whole extension stack, so on the CSR side pass several values
-// comma-separated in one AddExtensions call rather than calling this method
-// repeatedly.
+// ⚠️ subjectAltName is a repeatable OID: this method may be called repeatedly to
+// append more values, or several values may be passed comma-separated in one
+// AddExtensions call — both forms end up with the same result.
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) AddSubjectAltName(value string) error {

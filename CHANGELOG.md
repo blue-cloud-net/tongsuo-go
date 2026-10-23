@@ -24,7 +24,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-## [0.4.0] - 2026-10-16
+## [0.4.0] - 2026-10-23
 
 ### Added
 
@@ -34,6 +34,12 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   dotted OID, resolved through `OBJ_txt2nid` so no numeric NID constants have
   to be exported) and `AddExtensions(exts ...Extension)` (batch).
   `value` uses the OpenSSL `X509V3_EXT_conf` configuration syntax.
+  The extension context carries a configuration database plus the correct
+  subject / issuer / request objects, so `r2i`-style extensions such as
+  `certificatePolicies` work on both certificates and CSRs — previously that
+  failed with `X509 V3 routines::no config database` and crashed the process
+  (`SIGSEGV`) on the CSR path. Extensions that read subject information
+  (`subjectAltName` with `email:copy`) work as well.
 - `x509`: extension inspection and editing on `*Certificate` —
   `HasExtension(name)` (read-only), `RemoveExtension(name)` and
   `ReplaceExtension(name, value)`. `ReplaceExtension` keeps the extension in
@@ -45,8 +51,52 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   (`subjectAltName` / `issuerAltName` / `subjectDirectoryAttributes` /
   `certificateIssuer`) whose new values are **merged** into the existing entry
   (keeping its position and critical flag).
+- `x509`: the same generic extension entry points on the CRL builder —
+  `(*CRLBuilder).AddExtension(nid int, value string)` and
+  `(*CRLBuilder).AddExtensionByName(name, value string)`. They accept the
+  OpenSSL `X509V3_EXT_conf` value syntax, so a CRL can carry extensions such
+  as `issuingDistributionPoint` (RFC 5280 §5.2.5) and `freshestCRL`
+  (RFC 5280 §5.2.6) — previously only `crlNumber` and
+  `authorityKeyIdentifier` could be written, which left the Tongsuo
+  `openssl ca -crlexts` option without an equivalent in this library.
+  `(*CRL).Extensions()` now also fills in the `OID` field, matching the
+  certificate side.
+- `x509`: a typed entry point for certificate policies —
+  `(*Certificate).AddCertificatePolicies` /
+  `(*CertificateRequest).AddCertificatePolicies` /
+  `(*CRLBuilder).AddCertificatePolicies` plus the matching read side
+  `(*Certificate).CertificatePolicies` /
+  `(*CertificateRequest).CertificatePolicies` /
+  `(*CRL).CertificatePolicies`, together with the `CertificatePolicy` (policy
+  OID, list of CPS URLs, user notice) and `UserNotice` (organization, notice
+  numbers, notice text) types. The **CPS (`id-qt-cps`) and userNotice
+  (`id-qt-unotice`) qualifiers** cannot be written through OpenSSL's extension
+  configuration string, which only accepts the "@section" form of a
+  configuration file (this library does not read configuration files); the new
+  entry points build and parse the extension value with a **pure Go** DER
+  encoder/decoder instead, so qualifiers can be expressed and several policies
+  can be carried by one extension (the "@section" syntax can only produce a
+  single entry, the later `policyIdentifier` overwriting the earlier one).
+  The CPS qualifier uses IA5String as required by RFC 5280, while
+  `organization` and `explicitText` use UTF8String (the Tongsuo openssl
+  configuration path uses VisibleString, which produces **non-conformant** DER
+  for non-ASCII content; this library's UTF8String produces conformant DER that
+  Tongsuo reads back correctly). The read side accepts all four DisplayText
+  alternatives — UTF8String, VisibleString, IA5String and BMPString — so
+  certificates produced by `openssl` can be read back too.
+  ⚠️ `certificatePolicies` is not a CRL extension defined by RFC 5280 §5.2;
+  the CRL-side entry point exists only to align with the output of
+  `openssl ca -crlexts`, and verifiers normally ignore the extension.
 - `x509`: CSR-side symmetry — `(*CertificateRequest).AddExtensionByName`,
   `AddKeyUsage`, `AddExtendedKeyUsage` and `AddBasicConstraints`.
+  Extensions are staged on the Go side — visible immediately through
+  `Extensions()` — and committed with a **single** native call before `Sign` /
+  `MarshalDER` / `CopyExtensionTo`, so calling these helpers repeatedly keeps
+  every extension regardless of the Tongsuo version (8.4 appends a fresh
+  `extensionRequest` attribute per call while `X509_REQ_get_extensions` only
+  reads the first one; 8.5 merges the new extensions into the existing ones).
+  The exported CSR DER always carries a single `extensionRequest` attribute
+  holding every extension and stays readable by `openssl req`.
 - `x509`: `(*Certificate).SerialHex()` (uppercase hex serial, for values beyond
   the `int64` range; matches `openssl x509 -serial`),
   `SubjectHash()` / `IssuerHash()` (`X509_NAME_hash`, matching

@@ -559,6 +559,12 @@ func (c *Certificate) AddAuthorityKeyID(issuer *Certificate) error {
 // SAN() 与 VerifyHostname() 全部失效；其余 OID 返回
 // "x509: extension already present (nid N)"，需覆盖请改用 ReplaceExtension。
 //
+// raw 扩展（如 certificatePolicies / OID 2.5.29.32）同样可用，但其值语法由扩展
+// 自身定义：内联形式为逗号分隔的策略 OID（如 "1.2.3.4"、"ia5org,1.2.3.4,1.5.6.7.8"）；
+// 带 CPS / userNotice 限定符的 "@section" 形式**不支持**——本库不读取配置文件，
+// 传入 "@polsect" 会被 OpenSSL 拒绝。需要限定符请改用
+// AddCertificatePolicies（它不经过 OpenSSL 的扩展配置解析）。
+//
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
 // AddExtension adds an arbitrary X.509 extension identified by nid (for example
@@ -567,10 +573,8 @@ func (c *Certificate) AddAuthorityKeyID(issuer *Certificate) error {
 // value uses the OpenSSL X509V3_EXT_conf configuration syntax (for example
 // "DNS:example.com" or "critical,CA:TRUE"); the accepted values depend on the
 // extension type, see `openssl x509 -ext` and the OpenSSL v3 extension
-// configuration documentation.
-//
-// It must be called before Sign. Once the certificate is signed it becomes
-// immutable and further calls return an error.
+// configuration documentation. It must be called before Sign. Once the
+// certificate is signed it becomes immutable and further calls return an error.
 //
 // When an extension with the same NID is already present, repeatable OIDs
 // (subjectAltName / issuerAltName / subjectDirectoryAttributes /
@@ -580,6 +584,15 @@ func (c *Certificate) AddAuthorityKeyID(issuer *Certificate) error {
 // VerifyHostname(). Every other OID returns
 // "x509: extension already present (nid N)"; use ReplaceExtension to
 // overwrite instead.
+//
+// raw extensions (such as certificatePolicies / OID 2.5.29.32) work as well, but
+// their value syntax is defined by the extension itself: the inline form is a
+// comma-separated list of policy OIDs (for example "1.2.3.4" or
+// "ia5org,1.2.3.4,1.5.6.7.8"). The "@section" form carrying CPS / userNotice
+// qualifiers is **not supported** — the library does not read configuration
+// files, so passing "@polsect" is rejected by OpenSSL. Use
+// AddCertificatePolicies for qualifiers (it does not go through OpenSSL's
+// extension configuration parser).
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (c *Certificate) AddExtension(nid int, value string) error {

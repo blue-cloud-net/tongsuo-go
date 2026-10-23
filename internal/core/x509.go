@@ -484,15 +484,7 @@ func (c *Certificate) AddBasicConstraints(isCA bool) error {
 	if isCA {
 		val = "critical,CA:TRUE"
 	}
-	ext := native.X509V3_EXT_conf_nid(native.NidBasicConstraints, val)
-	if ext == nil {
-		return NewOpError("x509: X509V3_EXT_conf_nid(basicConstraints)", native.PopError())
-	}
-	defer native.X509_EXTENSION_free(ext)
-	if !native.X509_add_ext(c.handle.Ptr(), ext) {
-		return NewOpError("x509: X509_add_ext", native.PopError())
-	}
-	return nil
+	return c.addExtCtx(c, nil, native.NidBasicConstraints, val)
 }
 
 // Sign 使用签名私钥对证书签名。
@@ -1338,6 +1330,49 @@ func (c *Certificate) AddExtensionByName(name, value string) error {
 	return c.AddExtension(nid, value)
 }
 
+// AddExtensionDER 向证书追加一个由调用方给出 DER 值的扩展。
+//
+// der 是扩展**值**的完整 DER 编码（不含外层 OCTET STRING 的 tag / length），
+// 其结构合法性由调用方保证——OpenSSL 不校验扩展值内容。critical 为真时扩展
+// 标记为 critical。
+//
+// 该入口用于 OpenSSL 扩展配置语法覆盖不到的类型（如 certificatePolicies 的
+// CPS / userNotice 限定符只认配置文件的 "@section" 形式）。同 NID 扩展已存在
+// 时返回 "x509: extension already present (nid N)"。
+//
+// AddExtensionDER appends an extension whose DER value is supplied by the caller.
+//
+// der is the complete DER encoding of the extension value (without the
+// enclosing OCTET STRING tag and length); its structural validity is the
+// caller's responsibility, as OpenSSL does not validate extension content.
+// The extension is marked critical when critical is true.
+//
+// This entry point serves extension types the OpenSSL configuration syntax
+// cannot express (for example the CPS / userNotice qualifiers of
+// certificatePolicies, which are only reachable through the "@section" form
+// of a configuration file). When an extension with the same NID is already
+// present it returns "x509: extension already present (nid N)".
+func (c *Certificate) AddExtensionDER(nid int, critical bool, der []byte) error {
+	if err := c.ensureMutable("add extension"); err != nil {
+		return err
+	}
+	if len(der) == 0 {
+		return fmt.Errorf("x509: empty extension value")
+	}
+	if c.extLoc(nid) >= 0 {
+		return fmt.Errorf("x509: extension already present (nid %d)", nid)
+	}
+	ext := native.X509_EXTENSION_create_by_NID_der(nid, critical, der)
+	if ext == nil {
+		return NewOpError("x509: X509_EXTENSION_create_by_NID", native.PopError())
+	}
+	defer native.X509_EXTENSION_free(ext)
+	if !native.X509_add_ext(c.handle.Ptr(), ext) {
+		return NewOpError("x509: X509_add_ext", native.PopError())
+	}
+	return nil
+}
+
 // extNidByName 解析扩展短名 / 长名 / 点分 OID 为 NID，未知返回错误。
 //
 // extNidByName resolves an extension short name, long name, or dotted OID
@@ -1351,6 +1386,22 @@ func extNidByName(name string) (int, error) {
 		return native.NidUndef, fmt.Errorf("x509: unknown extension name %q", name)
 	}
 	return nid, nil
+}
+
+// ExtNidByName 解析扩展短名 / 长名 / 点分 OID 为 NID，未知返回错误。
+//
+// 供 API 层把 RFC 固定的扩展 OID（如 certificatePolicies 的 "2.5.29.32"）
+// 解析成 NID——API 层不直接依赖绑定层，因此 NID 的解析统一收口在此。
+//
+// ExtNidByName resolves an extension short name, long name, or dotted OID to
+// its NID, reporting an error for unknown names.
+//
+// It lets the API layer turn a fixed RFC extension OID (for example
+// "2.5.29.32" for certificatePolicies) into a NID; the API layer does not
+// depend on the binding layer directly, so NID resolution is funnelled
+// through this helper.
+func ExtNidByName(name string) (int, error) {
+	return extNidByName(name)
 }
 
 // extDupsAllowedNid 列出允许重复出现的扩展 NID（OpenSSL 语义：追加第二个同 NID 条目）。
@@ -1450,6 +1501,11 @@ func (c *Certificate) RemoveExtension(name string) error {
 //
 // 语义与 BouncyCastle X509ExtensionsGenerator.ReplaceExtension 一致（不存在时报错而非创建）；按 OpenSSL X509V3_EXT_conf_nid 语法解析 value；已签名或已关闭证书返回错误。
 //
+// raw 扩展（如 certificatePolicies / OID 2.5.29.32）同样可用，内联形式为逗号
+// 分隔的策略 OID（如 "1.2.3.4"）；带 CPS / userNotice 限定符的 "@section" 形式
+// **不支持**——本库不读取配置文件，传入 "@polsect" 会被 OpenSSL 拒绝。需要限定符
+// 请改用 AddExtensionDER（由调用方给出 DER 值）。
+//
 // ReplaceExtension overwrites the extension identified by name while keeping
 // its original position in the certificate.
 //
@@ -1457,6 +1513,13 @@ func (c *Certificate) RemoveExtension(name string) error {
 // which fails when the extension is absent instead of creating it. value uses
 // the OpenSSL X509V3_EXT_conf syntax. Calls on a signed or closed certificate
 // fail.
+//
+// raw extensions (such as certificatePolicies / OID 2.5.29.32) work as well; the
+// inline form is a comma-separated list of policy OIDs (for example "1.2.3.4").
+// The "@section" form carrying CPS / userNotice qualifiers is **not
+// supported** — the library does not read configuration files, so passing
+// "@polsect" is rejected by OpenSSL. Use AddExtensionDER for qualifiers (the
+// caller supplies the DER value).
 func (c *Certificate) ReplaceExtension(name, value string) error {
 	if err := c.ensureMutable("replace extension"); err != nil {
 		return err
@@ -1469,7 +1532,9 @@ func (c *Certificate) ReplaceExtension(name, value string) error {
 	if loc < 0 {
 		return fmt.Errorf("x509: extension not present (nid %d)", nid)
 	}
-	ext := native.X509V3_EXT_conf_nid(nid, value)
+	// 以本证书作为 subject 上下文：依赖 subject 信息的扩展值
+	// （如 subjectAltName 的 "email:copy"）在替换时同样可用。
+	ext := native.X509V3_EXT_conf_nid_ctx_new(c.handle.Ptr(), nil, nil, nid, value)
 	if ext == nil {
 		return NewOpError("x509: X509V3_EXT_conf_nid", native.PopError())
 	}
@@ -1718,6 +1783,26 @@ type CertificateRequest struct {
 	// 只有 NewCertificateRequest 创建的对象为 false；解析路径（PEM/DER）
 	// 产出的对象底层本就带签名，一律置为 true。
 	signed bool
+	// pendingExts 暂存尚未提交到底层 X509_REQ 的扩展（已按 Nid/Value 校验）。
+	// 见 flushExtensions：铜锁 8.4 与 8.5 的 X509_REQ_add_extensions 合并语义
+	// 不同，分多次调用会丢扩展，故统一以**单次**原生调用提交。
+	pendingExts []stagedExtension
+}
+
+// stagedExtension 是暂存的一个 CSR 扩展。
+//
+// der 非 nil 时表示该扩展由调用方直接给出 DER 值（不走 OpenSSL 的扩展配置
+// 语法），提交时按 der 原样构造；der 为 nil 时按 ext.Value 的配置串构造。
+//
+// stagedExtension is one staged CSR extension.
+//
+// A non-nil der means the extension value was supplied by the caller as DER
+// (bypassing the OpenSSL extension configuration syntax) and is committed
+// verbatim; a nil der means it is built from the configuration string in
+// ext.Value.
+type stagedExtension struct {
+	ext Extension // 读取视图（Nid / Field / OID / Critical / Data）
+	der []byte    // 非 nil 时按 DER 直接构造
 }
 
 // ensureMutable 在修改 CSR 字段或扩展前检查句柄是否仍可变。
@@ -1893,17 +1978,22 @@ func (r *CertificateRequest) ChallengePassword() string {
 	return native.X509_REQ_get_challenge_password(r.handle.Ptr())
 }
 
-// AddExtensions 向 CSR 批量追加多个扩展。
+// AddExtensions 向 CSR 追加多个扩展。
 //
-// 须在 Sign 之前调用；nil 或空 exts 切片为 no-op，返回 nil；每个扩展由 Nid 与 Value（X509V3_EXT_conf 串）构造；任一底层 OpenSSL 调用失败均以 OpError 包装；部分失败时已创建的扩展会在错误返回前全部释放。
+// 须在 Sign 之前调用；nil 或空 exts 切片为 no-op，返回 nil；每个扩展由 Nid 与 Value（X509V3_EXT_conf 串）构造，任一构造失败即整批放弃（不会部分写入）。本方法只校验并暂存，扩展在 Sign / MarshalDER / CopyExtensionTo 前由 flushExtensions 以单次原生调用提交——因为铜锁 8.4 与 8.5 的 X509_REQ_add_extensions 合并语义不同（8.4 每次调用追加一个新属性而读取只认第一个，8.5 会与已有扩展合并），分多次提交会在 8.4 上丢失先添加的扩展。错误均以 OpError 包装。
 //
 // AddExtensions appends a batch of extensions to the CSR.
 //
 // Must be invoked before Sign. A nil or empty exts slice is a no-op and
 // returns nil. Each extension is built from its Nid and Value (the
-// X509V3_EXT_conf string). Errors from any of the underlying OpenSSL
-// calls are wrapped as OpError. If the call fails partway through, every
-// extension created so far is released before the error is returned.
+// X509V3_EXT_conf string); if any of them fails to build, the whole batch is
+// abandoned (nothing is partially applied). This method only validates and
+// stages the extensions — flushExtensions commits them with a **single**
+// native call before Sign / MarshalDER / CopyExtensionTo, because
+// X509_REQ_add_extensions merges differently across Tongsuo versions (8.4
+// appends a fresh attribute per call while readers only see the first, 8.5
+// merges with the existing extensions), so committing incrementally would
+// drop the earlier extensions on 8.4. Errors are wrapped as OpError.
 func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
 	if len(exts) == 0 {
 		return nil
@@ -1911,20 +2001,109 @@ func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
 	if err := r.ensureMutable("add extensions"); err != nil {
 		return err
 	}
+	// 逐个构造以校验配置串合法性并填充读取视图；原生对象随即释放——
+	// 真正提交时（flushExtensions）会按 Nid/Value 重新构造。
+	staged := make([]Extension, 0, len(exts))
+	for _, e := range exts {
+		// 以本 CSR 作为 subject 来源：依赖 subject 信息的扩展值
+		// （如 subjectAltName 的 "email:copy"）在 CSR 上同样可用。
+		ext := native.X509V3_EXT_conf_nid_req(r.handle.Ptr(), e.Nid, e.Value)
+		if ext == nil {
+			return NewOpError("x509: X509V3_EXT_conf_nid", native.PopError())
+		}
+		obj := native.X509_EXTENSION_get_object(ext)
+		nid := native.OBJ_obj2nid(obj)
+		e.Field = native.OBJ_nid2sn(nid)
+		e.OID = native.OBJ_obj2txt(obj, 1)
+		e.Critical = native.X509_EXTENSION_get_critical(ext) != 0
+		e.Data = native.ASN1_STRING_data_bytes(native.X509_EXTENSION_get_data(ext))
+		native.X509_EXTENSION_free(ext)
+		staged = append(staged, e)
+	}
+	for _, e := range staged {
+		r.pendingExts = append(r.pendingExts, stagedExtension{ext: e})
+	}
+	return nil
+}
+
+// AddExtensionDER 向 CSR 追加一个由调用方给出 DER 值的扩展。
+//
+// der 是扩展**值**的完整 DER 编码（不含外层 OCTET STRING 的 tag / length），
+// 其结构合法性由调用方保证——OpenSSL 不校验扩展值内容。critical 为真时扩展
+// 标记为 critical。
+//
+// 与 AddExtension 不同，本方法不受 OpenSSL 扩展配置语法的限制，因此可以承载
+// certificatePolicies 的 CPS / userNotice 限定符这类只有配置文件形式才能表达
+// 的结构。扩展在 Sign / MarshalDER / CopyExtensionTo 之前以**单次**原生调用
+// 提交（见 flushExtensions）。
+//
+// AddExtensionDER appends an extension whose DER value is supplied by the caller.
+//
+// der is the complete DER encoding of the extension value (without the
+// enclosing OCTET STRING tag and length); its structural validity is the
+// caller's responsibility, as OpenSSL does not validate extension content.
+// The extension is marked critical when critical is true.
+//
+// Unlike AddExtension, this method is not bound by the OpenSSL extension
+// configuration syntax, so it can carry structures that are only expressible
+// through a configuration file, such as the CPS / userNotice qualifiers of
+// certificatePolicies. The extension is committed with a **single** native
+// call before Sign / MarshalDER / CopyExtensionTo (see flushExtensions).
+func (r *CertificateRequest) AddExtensionDER(nid int, critical bool, der []byte) error {
+	if err := r.ensureMutable("add extension"); err != nil {
+		return err
+	}
+	if len(der) == 0 {
+		return fmt.Errorf("x509: empty extension value")
+	}
+	ext := Extension{
+		Nid:      nid,
+		Field:    native.OBJ_nid2sn(nid),
+		OID:      native.OBJ_nid2oid(nid),
+		Critical: critical,
+		Data:     der,
+	}
+	r.pendingExts = append(r.pendingExts, stagedExtension{ext: ext, der: der})
+	return nil
+}
+
+// flushExtensions 把暂存的扩展一次性提交到底层 X509_REQ，并清空暂存区。
+//
+// 无暂存时为 no-op。须在 Sign / MarshalDER / CopyExtensionTo 之前调用：
+// 这些操作都会读取 CSR 的 extensionRequest 属性，而在铜锁 8.4 上多次调用
+// X509_REQ_add_extensions 会追加多个属性而读取只认第一个，必须**只调一次**。
+// 底层 OpenSSL 错误以 OpError 包装；失败时暂存区保持不变（可重试）。
+//
+// flushExtensions commits the staged extensions to the underlying X509_REQ
+// with a single native call and clears the staging area.
+//
+// It is a no-op when nothing is staged and must be invoked before Sign /
+// MarshalDER / CopyExtensionTo, all of which read the CSR's extensionRequest
+// attribute. Errors are wrapped as OpError; on failure the staging area is
+// left intact so the call can be retried.
+func (r *CertificateRequest) flushExtensions() error {
+	if len(r.pendingExts) == 0 {
+		return nil
+	}
 	sk := native.X509_sk_X509_EXTENSION_new_null()
 	if sk == nil {
 		return NewOpError("x509: sk_X509_EXTENSION_new_null", native.PopError())
 	}
 	defer native.X509_sk_X509_EXTENSION_free(sk)
 	// 扩展压栈后不能立即释放：X509_REQ_add_extensions 在编码时会读取栈中元素。
-	created := make([]unsafe.Pointer, 0, len(exts))
+	created := make([]unsafe.Pointer, 0, len(r.pendingExts))
 	freeAll := func() {
 		for _, x := range created {
 			native.X509_EXTENSION_free(x)
 		}
 	}
-	for _, e := range exts {
-		ext := native.X509V3_EXT_conf_nid(e.Nid, e.Value)
+	for _, se := range r.pendingExts {
+		var ext unsafe.Pointer
+		if se.der != nil {
+			ext = native.X509_EXTENSION_create_by_NID_der(se.ext.Nid, se.ext.Critical, se.der)
+		} else {
+			ext = native.X509V3_EXT_conf_nid_req(r.handle.Ptr(), se.ext.Nid, se.ext.Value)
+		}
 		if ext == nil {
 			freeAll()
 			return NewOpError("x509: X509V3_EXT_conf_nid", native.PopError())
@@ -1940,6 +2119,7 @@ func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
 		return NewOpError("x509: X509_REQ_add_extensions", native.PopError())
 	}
 	freeAll()
+	r.pendingExts = nil
 	return nil
 }
 
@@ -2047,7 +2227,7 @@ func (r *CertificateRequest) Extensions() []Extension {
 	}
 	defer native.X509_sk_X509_EXTENSION_pop_free(sk)
 	count := native.X509_sk_X509_EXTENSION_num(sk)
-	out := make([]Extension, 0, count)
+	out := make([]Extension, 0, count+len(r.pendingExts))
 	for i := 0; i < count; i++ {
 		e := native.X509_sk_X509_EXTENSION_value(sk, i)
 		if e == nil {
@@ -2062,6 +2242,10 @@ func (r *CertificateRequest) Extensions() []Extension {
 			Critical: native.X509_EXTENSION_get_critical(e) != 0,
 			Data:     native.ASN1_STRING_data_bytes(native.X509_EXTENSION_get_data(e)),
 		})
+	}
+	// 已暂存但尚未提交的扩展同样对调用方可见（AddExtension* 后、Sign 前）。
+	for _, se := range r.pendingExts {
+		out = append(out, se.ext)
 	}
 	return out
 }
@@ -2095,6 +2279,9 @@ func (r *CertificateRequest) CopyExtensionTo(target *Certificate, filter func(ni
 	}
 	if filter == nil {
 		return 0, fmt.Errorf("x509: nil extension filter")
+	}
+	if err := r.flushExtensions(); err != nil {
+		return 0, err
 	}
 	sk := native.X509_REQ_get_extensions(r.handle.Ptr())
 	if sk == nil {
@@ -2131,6 +2318,9 @@ func (r *CertificateRequest) CopyExtensionTo(target *Certificate, filter func(ni
 func (r *CertificateRequest) MarshalDER() ([]byte, error) {
 	if r == nil || r.handle == nil || r.handle.IsClosed() {
 		return nil, fmt.Errorf("x509: request closed")
+	}
+	if err := r.flushExtensions(); err != nil {
+		return nil, err
 	}
 	der, ok := native.I2d_X509_REQ(r.handle.Ptr())
 	if !ok {
@@ -2177,6 +2367,9 @@ func (r *CertificateRequest) SetPublicKey(k *PKey) error {
 // "x509: request already signed".
 func (r *CertificateRequest) Sign(priv *PKey, md *Digest) error {
 	if err := r.ensureMutable("sign"); err != nil {
+		return err
+	}
+	if err := r.flushExtensions(); err != nil {
 		return err
 	}
 	if priv == nil || priv.handle == nil || priv.handle.IsClosed() {
@@ -3085,6 +3278,96 @@ func (c *CRL) AddAuthorityKeyID(issuer *Certificate) error {
 	return nil
 }
 
+// AddExtension 向 CRL 追加通用扩展。
+//
+// nid 为扩展 NID；value 为 X509V3_EXT_conf 配置串（如 "critical,onlyuser:TRUE"）；
+// issuer 为 CRL 的签发者证书，作为扩展上下文的 issuer 传入——依赖签发者信息的扩展值
+// 需要它。须在 MarshalPEM / MarshalDER 之前调用；底层 OpenSSL 错误以 OpError 包装。
+//
+// AddExtension appends a generic extension to the CRL.
+//
+// nid is the extension NID and value is the X509V3_EXT_conf configuration
+// string (for example "critical,onlyuser:TRUE"). issuer is the CRL's
+// issuer certificate, passed as the issuer of the extension context because
+// extension values reading issuer information need it. Must be invoked before
+// MarshalPEM / MarshalDER. Errors from the underlying OpenSSL call are
+// wrapped as OpError.
+func (c *CRL) AddExtension(nid int, value string, issuer *Certificate) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: CRL closed")
+	}
+	if issuer == nil || issuer.handle == nil || issuer.handle.IsClosed() {
+		return fmt.Errorf("x509: invalid issuer certificate")
+	}
+	if !native.X509V3_EXT_conf_nid_ctx_crl(c.handle.Ptr(), issuer.handle.Ptr(),
+		nid, value) {
+		return NewOpError("x509: X509V3_EXT_conf_nid (CRL)", native.PopError())
+	}
+	return nil
+}
+
+// AddExtensionByName 按名字或 OID 向 CRL 追加通用扩展。
+//
+// name 可为扩展短名、长名或点分 OID，内部经 OBJ_txt2nid 解析；解析失败返回
+// "x509: unknown extension name %q"；其余语义与 AddExtension 相同。
+//
+// AddExtensionByName appends a generic extension to the CRL, addressed by name.
+//
+// name may be an extension short name, long name, or dotted OID; it is
+// resolved through OBJ_txt2nid. An unknown name returns
+// "x509: unknown extension name %q". Otherwise the semantics match AddExtension.
+func (c *CRL) AddExtensionByName(name, value string, issuer *Certificate) error {
+	nid, err := extNidByName(name)
+	if err != nil {
+		return err
+	}
+	return c.AddExtension(nid, value, issuer)
+}
+
+// AddExtensionDER 向 CRL 追加一个由调用方给出 DER 值的扩展。
+//
+// der 是扩展**值**的完整 DER 编码（不含外层 OCTET STRING 的 tag / length），
+// 其结构合法性由调用方保证——OpenSSL 不校验扩展值内容。critical 为真时扩展
+// 标记为 critical。同 NID 扩展已存在时返回
+// "x509: extension already present (nid N)"。
+//
+// 与 AddExtension 不同，本方法不需要签发者证书：扩展值已由调用方完整给出，
+// 不依赖任何上下文。
+//
+// AddExtensionDER appends an extension whose DER value is supplied by the caller.
+//
+// der is the complete DER encoding of the extension value (without the
+// enclosing OCTET STRING tag and length); its structural validity is the
+// caller's responsibility, as OpenSSL does not validate extension content.
+// The extension is marked critical when critical is true. When an extension
+// with the same NID is already present it returns
+// "x509: extension already present (nid N)".
+//
+// Unlike AddExtension, this method needs no issuer certificate: the
+// extension value is supplied in full and depends on no context.
+func (c *CRL) AddExtensionDER(nid int, critical bool, der []byte) error {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("x509: CRL closed")
+	}
+	if len(der) == 0 {
+		return fmt.Errorf("x509: empty extension value")
+	}
+	for _, e := range c.Extensions() {
+		if e.Nid == nid {
+			return fmt.Errorf("x509: extension already present (nid %d)", nid)
+		}
+	}
+	ext := native.X509_EXTENSION_create_by_NID_der(nid, critical, der)
+	if ext == nil {
+		return NewOpError("x509: X509_EXTENSION_create_by_NID", native.PopError())
+	}
+	defer native.X509_EXTENSION_free(ext)
+	if !native.X509_CRL_add_ext(c.handle.Ptr(), ext) {
+		return NewOpError("x509: X509_CRL_add_ext", native.PopError())
+	}
+	return nil
+}
+
 // Issuer 返回 CRL 的签发者名字。
 //
 // 返回的 *Name 包装了底层 X509_CRL 借用的内部 X509_NAME 指针；调用方不得对其调用 Close，指针在 CRL 生命周期内有效。
@@ -3277,12 +3560,12 @@ func (c *CRL) Number() int64 {
 
 // Extensions 按出现顺序返回 CRL 的全部扩展。
 //
-// 对 nil 或已关闭的 CRL 返回 nil；每条包含扩展 NID、短名、critical 标志及 DER 字节。
+// 对 nil 或已关闭的 CRL 返回 nil；每条包含扩展 NID、短名、点分 OID、critical 标志及 DER 字节。
 //
 // Extensions returns every extension of the CRL in their original order.
 //
 // The result is nil for a nil or closed CRL. Each entry contains the
-// extension NID, short name, critical flag and DER bytes.
+// extension NID, short name, dotted OID, critical flag and DER bytes.
 func (c *CRL) Extensions() []Extension {
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return nil
@@ -3294,10 +3577,12 @@ func (c *CRL) Extensions() []Extension {
 		if e == nil {
 			continue
 		}
-		nid := native.OBJ_obj2nid(native.X509_EXTENSION_get_object(e))
+		obj := native.X509_EXTENSION_get_object(e)
+		nid := native.OBJ_obj2nid(obj)
 		out = append(out, Extension{
 			Nid:      nid,
 			Field:    native.OBJ_nid2sn(nid),
+			OID:      native.OBJ_obj2txt(obj, 1),
 			Critical: native.X509_EXTENSION_get_critical(e) != 0,
 			Data:     native.ASN1_STRING_data_bytes(native.X509_EXTENSION_get_data(e)),
 		})

@@ -8,7 +8,7 @@
 > 3. 每项格式为「完整签名 — 中文一句话」；未导出（小写）符号不列；
 > 4. 某些 `internal/core` 类型会**出现在公开 API 签名中**（如 `*core.PKey`），下文用 ⚠️ 标出。
 >
-> **范围**：**6 个包**。生成基线：`0.4.0`（2026-10-16 发布）。
+> **范围**：**6 个包**。生成基线：`0.4.0`（2026-10-23 发布）。
 
 ---
 
@@ -154,6 +154,8 @@ internal/testutil ← 仅被 *_test.go 使用
 - `func (c *Certificate) AddBasicConstraints(isCA bool) error` / `AddExtension(nid int, value string) error` / `AddSubjectAltName(value string) error` / `AddKeyUsage(value string) error` / `AddExtendedKeyUsage(value string) error` / `AddSubjectKeyID() error` / `AddAuthorityKeyID(issuer *Certificate) error` — 扩展
 - `func (c *Certificate) AddExtensionByName(name, value string) error` / `AddExtensions(exts ...Extension) error` — 通用扩展入口（`extNidByName` 走 `OBJ_txt2nid`）
 - `func (c *Certificate) HasExtension(name string) bool` / `RemoveExtension(name string) error` / `ReplaceExtension(name, value string) error` — 扩展查询 / 删除 / 覆盖（`Replace` 保原位置）
+- `func (c *Certificate) AddExtensionDER(nid int, critical bool, der []byte) error` — 追加由调用方给出 DER 值的扩展（绕过 OpenSSL 扩展配置语法；同 NID 已存在则报错）
+- `func ExtNidByName(name string) (int, error)` — 把扩展短名 / 长名 / 点分 OID 解析为 NID（供 API 层使用，NID 解析统一收口在此）
 - `extDupsAllowedNid` / `extDupsAllowed(nid int) bool` — 可重复 OID 白名单（运行时 `OBJ_txt2nid` 解析，不导出 NID 常量）
 - `func (c *Certificate) SerialHex() string` / `SubjectHash() uint32` / `IssuerHash() uint32` — 序列号十六进制与名字 hash
 - `func (c *Certificate) CheckEmail(email string) error` — 邮箱校验（`X509_check_email`）
@@ -177,6 +179,8 @@ internal/testutil ← 仅被 *_test.go 使用
 - `func (r *CertificateRequest) SetChallengePassword(pwd string) error` / `ChallengePassword() string` — challengePassword
 - `func (r *CertificateRequest) AddExtensions(exts ...Extension) error` / `AddExtension(nid int, value string) error` / `AddSubjectAltName(value string) error` / `Extensions() []Extension` — 扩展
 - `func (r *CertificateRequest) AddExtensionByName(name, value string) error` / `AddKeyUsage(value string) error` / `AddExtendedKeyUsage(value string) error` / `AddBasicConstraints(isCA bool) error` — 通用入口与便利方法
+- `func (r *CertificateRequest) AddExtensionDER(nid int, critical bool, der []byte) error` — 追加由调用方给出 DER 值的扩展（CSR 侧暂存，提交时仍走**单次** `X509_REQ_add_extensions`）
+- `type stagedExtension struct { ext Extension; der []byte }` — CSR 暂存扩展（`der` 非 nil 时按 DER 直接构造，否则按 `ext.Value` 配置串构造）
 - `func (r *CertificateRequest) CopyExtensionTo(target *Certificate, filter func(nid int, field string, critical bool) bool) (int, error)` — 按 filter 把 CSR 扩展复制到证书（供 `IssueCertificateFromRequest` 使用；走 `X509_EXTENSION_dup`，不在 Go 侧反解 DER）
 - `func (r *CertificateRequest) PublicKey() (*PKey, error)` — 提取公钥
 - `func (r *CertificateRequest) Signature() []byte` / `SignatureAlgorithm() string` / `SignatureAlgorithmOID() string` — 签名信息
@@ -191,6 +195,7 @@ internal/testutil ← 仅被 *_test.go 使用
 - `func LoadCRLPEM(pem []byte) (*CRL, error)` / `LoadCRLDER(der []byte) (*CRL, error)` — 加载
 - `func (c *CRL) MarshalPEM() ([]byte, error)` / `MarshalDER() ([]byte, error)` — 导出
 - `func (c *CRL) AddAuthorityKeyID(issuer *Certificate) error` — 附加 AKID
+- `func (c *CRL) AddExtensionDER(nid int, critical bool, der []byte) error` — 追加由调用方给出 DER 值的扩展（无需签发者证书；同 NID 已存在则报错）
 - `func (c *CRL) Issuer() *Name` / `Version() int` / `LastUpdate() time.Time` / `NextUpdate() time.Time` / `RevokedEntries() []RevokedEntry` / `Number() int64` / `Extensions() []Extension` — 读取
 - `func (c *CRL) Signature() []byte` / `SignatureAlgorithm() string` / `SignatureAlgorithmOID() string` / `AuthorityKeyID() []byte` — 签名信息
 - `func (c *CRL) Verify(pub *PKey) error` / `Close() error` — 验签与释放
@@ -333,13 +338,20 @@ internal/testutil ← 仅被 *_test.go 使用
 
 ### 2.11 `binding_x509.go` — 证书 / CSR / CRL / Store（最大绑定面）
 
-- **对象与名字**：`OBJ_nid2sn` `OBJ_obj2nid` `OBJ_txt2nid` `OBJ_obj2txt` `OBJ_to_string`；`X509_NAME_new` `free` `add_entry_by_txt` `get_entry_count` `get_entry` `get_text_by_txt` `get_text_by_NID` `oneline` `cmp`；`X509_NAME_ENTRY_nid` `_value`
+- **对象与名字**：`OBJ_nid2sn` `OBJ_obj2nid` `OBJ_txt2nid` `OBJ_obj2txt` `OBJ_nid2oid` `OBJ_to_string`；`X509_NAME_new` `free` `add_entry_by_txt` `get_entry_count` `get_entry` `get_text_by_txt` `get_text_by_NID` `oneline` `cmp`；`X509_NAME_ENTRY_nid` `_value`
 - **证书主体**：`X509_new` `free` `dup`、`X509_set_version` `set_serial_int` `get_serial_int`、`X509_set_issuer_name` `set_subject_name` `get_issuer_name` `get_subject_name`、`X509_set_pubkey` `get_pubkey`、`X509_set_not_before` `set_not_after` `get_not_before` `get_not_after`、`X509_get_version`、`X509_get_serial_hex`（大写十六进制，对齐 `-serial`）、`X509_subject_name_hash` `X509_issuer_name_hash`、`X509_check_email`
 - **签名与编码**：`X509_sign` `X509_verify` `X509_sign_ctx`、`X509_digest`、`I2d_X509` `D2i_X509`、`X_PEM_read_bio_X509` `X_PEM_write_bio_X509`、`X509_get_signature_info`
-- **扩展**：`X509V3_EXT_conf_nid` `_ctx` `_crl` `_ctx_crl`、`X509V3_EXT_conf_nid_merge`（拼接同 NID 的 SEQUENCE，供可重复 OID 合并）、`X509_add_ext` `X509_add_ext_loc` `X509_add_ext_dup` `X509_delete_ext`、`X509_EXTENSION_free/get_object/get_critical/get_data/get_nid`、`X509_get_ext_count` `X509_get_ext`、`X509_sk_X509_EXTENSION_*`、`ASN1_STRING_data_bytes`、`ASN1_INTEGER_free` `ASN1_INTEGER_get`
+- **扩展**：`X509V3_EXT_conf_nid` `_req` `_ctx` `_ctx_crl`、`X509V3_EXT_conf_nid_ctx_new`（只构造不追加）、`X509V3_EXT_conf_nid_merge`（拼接同 NID 的 SEQUENCE，供可重复 OID 合并）、`X509_add_ext` `X509_add_ext_loc` `X509_add_ext_dup` `X509_delete_ext`、`X509_EXTENSION_free/get_object/get_critical/get_data/get_nid`、`X509_EXTENSION_create_by_NID_der`（按已编码 DER 值构造扩展，绕过 OpenSSL 扩展配置语法）、`X509_CRL_add_ext`（向 CRL 追加扩展）、`X509_get_ext_count` `X509_get_ext`、`X509_sk_X509_EXTENSION_*`、`ASN1_STRING_data_bytes`、`ASN1_INTEGER_free` `ASN1_INTEGER_get`
 
   > ⚠️ `X509_sk_X509_EXTENSION_push` / `X509_sk_X509_push`：OpenSSL 3 的 `sk_TYPE_push`
   > 返回压入后的**栈长度**而非 0/1 布尔，Go 侧必须判 `> 0`。
+
+  > ⚠️ 扩展上下文（`X509V3_CTX`）必须同时具备**配置库**与**上下文对象**：
+  > `r2i` 类扩展（`certificatePolicies` 等）要求 `ctx->db` 非空，否则报
+  > `X509V3_R_NO_CONFIG_DATABASE`（`0x11000088`）；`ctx->subject_cert` /
+  > `subject_req` / `issuer_cert` 会被扩展解析器直接解引用（如
+  > `subjectAltName` 的 `email:copy`），缺失即段错误。本库的
+  > `X_X509V3_EXT_conf_nid_ctx_new` 负责统一注入两者。
 - **扩展语义读取**：`X509_get_san` `X509_get_key_usage` `X509_get_eku` `X509_get_basic_constraints`、`X509_get0_subject_key_id` `X509_get0_authority_key_id`、`X509_GENERAL_NAMES_{free,num,value}` `X509_GENERAL_NAME_{type,to_string}`、`X509_EXTENDED_KEY_USAGE_{free,num,value}`、`X509_BASIC_CONSTRAINTS_{free,ca,pathlen}`、`X509_ASN1_BIT_STRING_free` `ASN1_BIT_STRING_get_bit`
 - **CSR**：`X509_REQ_new` `free` `set_pubkey` `get_pubkey` `set_subject_name` `get_subject_name` `sign` `sign_ctx` `verify`、`X509_REQ_add_extensions` `get_extensions`、`X509_REQ_set/get_challenge_password`、`I2d_X509_REQ` `D2i_X509_REQ` `I2d_X509_REQ_INFO`、`X509_REQ_get0_signature` `_get_signature_info`、`X_PEM_read_bio_X509_REQ` `X_PEM_write_bio_X509_REQ`
 - **Store 与链验证**：`X509_STORE_new` `free` `add_cert` `add_crl` `set_flags` `get0_param`、`X509_VERIFY_PARAM_set_time`、`X509_STORE_CTX_new` `free` `init` `set0_untrusted` `get_error` `get_error_depth` `get_current_cert` `get0_chain`、`X509_verify_cert` `X509_verify_cert_error_string`、`X509_sk_X509_*`

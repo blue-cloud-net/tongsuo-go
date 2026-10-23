@@ -560,3 +560,86 @@ func TestCSRExtensionHelpers(t *testing.T) {
 		t.Fatal("AddExtensionByName on loaded CSR should fail")
 	}
 }
+
+// TestCSRExtensionsSurviveDERRoundTrip 验证多次 AddExtension* 调用累积的扩展
+// 全部进入 extensionRequest 属性，并在 DER 往返后仍完整可读。
+//
+// 回归用例：铜锁 8.4 的 X509_REQ_add_extensions 每次调用都会**追加一个新属性**，
+// 而 X509_REQ_get_extensions / 重新解析只认**第一个**属性——于是分多次调用只会
+// 保留最先添加的那一条（8.5 改为合并后无此问题）。本库改为 Go 侧暂存、单次提交，
+// 该用例在两个版本上都必须通过，且它同时保证导出的 CSR 能被 openssl 正确读取。
+//
+// TestCSRExtensionsSurviveDERRoundTrip verifies that extensions accumulated over
+// several AddExtension* calls all end up in the extensionRequest attribute and
+// stay readable after a DER round trip.
+//
+// Regression case: on Tongsuo 8.4 X509_REQ_add_extensions appends a fresh
+// attribute per call while X509_REQ_get_extensions and re-parsing only see the
+// first one, so incremental calls kept just the earliest extension (8.5 merges
+// instead and was unaffected). The library now stages extensions in Go and
+// commits them with a single call, so this test must pass on both versions —
+// and it also guarantees the exported CSR stays readable by openssl.
+func TestCSRExtensionsSurviveDERRoundTrip(t *testing.T) {
+	priv, err := asym.GenerateSM2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := NewEmptyCertificateRequest()
+	if err := req.SetSubject(NewName().Add("CN", "csr-roundtrip.example.com")); err != nil {
+		t.Fatal(err)
+	}
+	if err := req.SetPublicKey(priv.Public()); err != nil {
+		t.Fatal(err)
+	}
+	// 刻意分多次调用（而非一次 AddExtensions）——这正是原先丢失扩展的路径。
+	if err := req.AddSubjectAltName("DNS:csr-roundtrip.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := req.AddKeyUsage("critical,digitalSignature,keyEncipherment"); err != nil {
+		t.Fatal(err)
+	}
+	if err := req.AddExtendedKeyUsage("serverAuth"); err != nil {
+		t.Fatal(err)
+	}
+	if err := req.AddBasicConstraints(false); err != nil {
+		t.Fatal(err)
+	}
+	if err := req.AddExtensionByName("nsComment", "UTF8:csr"); err != nil {
+		t.Fatal(err)
+	}
+
+	// 签名前即可读到全部 5 条（暂存区对调用方可见）。
+	want := []string{"subjectAltName", "keyUsage", "extendedKeyUsage", "basicConstraints", "nsComment"}
+	assertAll := func(stage string, exts []Extension) {
+		t.Helper()
+		got := map[string]bool{}
+		for _, e := range exts {
+			got[e.Field] = true
+		}
+		for _, name := range want {
+			if !got[name] {
+				t.Errorf("%s: missing extension %q, got %v", stage, name, exts)
+			}
+		}
+	}
+	assertAll("before Sign", req.Extensions())
+
+	if err := req.Sign(priv); err != nil {
+		t.Fatal(err)
+	}
+	assertAll("after Sign", req.Extensions())
+
+	der, err := req.MarshalDER()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reparsed, err := LoadCertificateRequestDER(der)
+	if err != nil {
+		t.Fatalf("reparse: %v", err)
+	}
+	assertAll("after DER round trip", reparsed.Extensions())
+	if len(reparsed.Extensions()) != len(want) {
+		t.Errorf("after DER round trip: got %d extensions, want %d: %v",
+			len(reparsed.Extensions()), len(want), reparsed.Extensions())
+	}
+}

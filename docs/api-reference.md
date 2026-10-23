@@ -9,7 +9,7 @@
 > 4. 类型给出导出字段；未导出字段以「（内部字段）」表示其存在；
 > 5. 本文描述的是**重构后的目标形态**：`crypto/` 整目录与 `key/` 已被 `digest` / `mac` / `sym` / `asym` / `ecdh` / `kdf` / `rand` / `keystore` 取代；`csr` / `crl` / `ocsp` **未拆**，全部留在 `x509`。
 >
-> **范围**：**16 个包**。生成基线：`0.4.0`（2026-10-16 发布）。
+> **范围**：**16 个包**。生成基线：`0.4.0`（2026-10-23 发布）。
 > **版本归属**：本文件不负责版本分配，哪个 🧭 符号落在哪个版本见 [roadmap.md](roadmap.md) §2。
 >
 > **状态标记**：
@@ -609,6 +609,8 @@
 
 - ♻️ `type Certificate struct { …（内部字段） }` — X.509 证书
 - ♻️ `type Extension struct { Nid int; Field string; OID string; Critical bool; Value string; Data []byte }` — 单个 X.509 扩展（`Value` 为构建用的 `X509V3_EXT_conf` 配置串，`Data` 为读取到的 DER 值）
+- ✨ `type CertificatePolicy struct { OID string; CPSURIs []string; UserNotice *UserNotice }` — certificatePolicies 扩展中的一条策略（`OID` 为策略标识符；`CPSURIs` 为 id-qt-cps 限定符的策略声明 URL 列表；`UserNotice` 为 id-qt-unotice 限定符）
+- ✨ `type UserNotice struct { Organization string; NoticeNumbers []int; ExplicitText string }` — certificatePolicies 的 userNotice 限定符（RFC 5280 §4.2.1.4）
 - ♻️ `type Name struct { …（内部字段） }` — 证书 subject / issuer 名字
 - ♻️ `type NameEntry struct { Nid int; Field string; Value string }` — 名字中的单个 RDN 条目
 
@@ -694,6 +696,25 @@
   > 会把新值**合并**进同一条目（OpenSSL 不接受两个同 NID 条目——那会让 `SAN()` 与
   > `VerifyHostname()` 全部失效）；其余 OID 返回 `x509: extension already present (nid N)`，
   > 需覆盖请改用 `ReplaceExtension`。
+
+**证书策略扩展（certificatePolicies，OID `2.5.29.32`）**
+
+> 证书策略的 **CPS / userNotice 限定符**无法用 OpenSSL 的扩展配置串表达——那个语法
+> 只认配置文件的 `@section` 形式（本库不读配置文件）。本组 API 不经过 OpenSSL 的
+> 扩展配置解析，由库内纯 Go 的 DER 编解码器直接构造/解析扩展值。
+
+- ✨ `func (c *Certificate) AddCertificatePolicies(policies []CertificatePolicy, critical bool) error` — 写入 certificatePolicies 扩展（列表不可为空、OID 不可重复；须在 `Sign` 之前）
+- ✨ `func (r *CertificateRequest) AddCertificatePolicies(policies []CertificatePolicy, critical bool) error` — CSR 侧对称入口（须在 `Sign` 之前）
+- ✨ `func (b *CRLBuilder) AddCertificatePolicies(policies []CertificatePolicy, critical bool) error` — CRL 侧入口（`certificatePolicies` 非 RFC 5280 §5.2 定义的 CRL 扩展，仅为对齐 `openssl ca -crlexts` 产物）
+- ✨ `func (c *Certificate) CertificatePolicies() ([]CertificatePolicy, error)` — 读回策略列表（无该扩展时返回 `(nil, nil)`）
+- ✨ `func (r *CertificateRequest) CertificatePolicies() ([]CertificatePolicy, error)` — CSR 侧读回
+- ✨ `func (c *CRL) CertificatePolicies() ([]CertificatePolicy, error)` — CRL 侧读回
+
+  > **编码差异**：CPS 限定符按 RFC 5280 用 IA5String；`organization` / `explicitText`
+  > 用 UTF8String（RFC 5280 的 DisplayText CHOICE 允许）。铜锁 openssl 的配置文件路径
+  > 用 VisibleString，对非 ASCII 内容会产出**不合规**的 DER；本库的 UTF8String 产出合规
+  > DER，且铜锁能正常读回。读侧四种 DisplayText 分支（UTF8String / VisibleString /
+  > IA5String / BMPString）均接受，因此由 openssl 生成的证书也能读回。
 - ♻️ `func (c *Certificate) Sign(signer asym.PrivateKey) error` — 用签发者私钥签名（**单向终态**：成功后所有 `Set*` / `Add*` / 再次 `Sign` 均返回 `x509: certificate already signed`）
 - ♻️ `func CreateCertificate(subject, issuer *Name, serial int64, notBefore, notAfter time.Time, pub asym.PublicKey, signer asym.PrivateKey) (*Certificate, error)` — 一步创建并签发
 - 🆕 `func CreateSelfSigned(subject *Name, serial int64, notBefore, notAfter time.Time, pub asym.PublicKey, signer asym.PrivateKey) (*Certificate, error)` — 一行生成自签证书（等价 `req -x509`；内部自动设 issuer = subject 并补 SKID/AKID）
@@ -750,6 +771,8 @@
 - 🆕 `func NewCRLBuilder(issuer *Certificate) (*CRLBuilder, error)` — 创建构建器（自动取 issuer、补 AKID）
 - 🆕 `func (b *CRLBuilder) SetNumber(n int64) error` / `SetThisUpdate(t time.Time) error` / `SetNextUpdate(t time.Time) error` — 设置元数据
 - 🆕 `func (b *CRLBuilder) Revoke(cert *Certificate, at time.Time, reason RevocationReason) error` — 追加一条吊销记录
+- ✨ `func (b *CRLBuilder) AddExtension(nid int, value string) error` — 追加任意 CRL 扩展（按 NID，`value` 为 OpenSSL `X509V3_EXT_conf` 配置串；issuer 取自构建器）
+- ✨ `func (b *CRLBuilder) AddExtensionByName(name, value string) error` — 追加任意 CRL 扩展（按短名 / 长名 / 点分 OID）
 - 🆕 `func (b *CRLBuilder) Sign(signer asym.PrivateKey) (*CRL, error)` — 签发并返回可导出的 CRL
 - 🆕 `func (b *CRLBuilder) Close() error` — 释放尚未签发的句柄（幂等；已签发后为 no-op，因句柄已转移给 `*CRL`）
 - ♻️ `func RevocationCheck(cert *Certificate, crls []*CRL) error` — 在给定 CRL 集合中检查吊销状态
