@@ -2,8 +2,6 @@ package core
 
 import (
 	"testing"
-
-	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
 
 // TestAlgNamesFamilies 验证七个算法族的枚举都能返回非空列表，
@@ -15,15 +13,15 @@ import (
 func TestAlgNamesFamilies(t *testing.T) {
 	tests := []struct {
 		name  string
-		kind  int
+		kind  AlgKind
 		musts []string
 	}{
-		{"digest", native.AlgKindMD, []string{"SM3", "SHA2-256"}},
-		{"cipher", native.AlgKindCipher, []string{"SM4-CBC", "SM4-GCM", "AES-128-CBC", "ChaCha20"}},
-		{"mac", native.AlgKindMAC, []string{"CMAC", "GMAC", "HMAC", "KMAC-128", "POLY1305"}},
-		{"kdf", native.AlgKindKDF, []string{"HKDF", "PBKDF2", "SCRYPT", "SSKDF", "TLS13-KDF", "TLS1-PRF", "KBKDF", "X942KDF-ASN1", "X963KDF", "HMAC-DRBG-KDF"}},
-		{"signature", native.AlgKindSignature, []string{"RSA", "ECDSA"}},
-		{"keyexch", native.AlgKindKeyExch, []string{"ECDH"}},
+		{"digest", AlgKindMD, []string{"SM3", "SHA2-256"}},
+		{"cipher", AlgKindCipher, []string{"SM4-CBC", "SM4-GCM", "AES-128-CBC", "ChaCha20"}},
+		{"mac", AlgKindMAC, []string{"CMAC", "GMAC", "HMAC", "KMAC-128", "POLY1305"}},
+		{"kdf", AlgKindKDF, []string{"HKDF", "PBKDF2", "SCRYPT", "SSKDF", "TLS13-KDF", "TLS1-PRF", "KBKDF", "X942KDF-ASN1", "X963KDF", "HMAC-DRBG-KDF"}},
+		{"signature", AlgKindSignature, []string{"RSA", "ECDSA"}},
+		{"keyexch", AlgKindKeyExch, []string{"ECDH"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

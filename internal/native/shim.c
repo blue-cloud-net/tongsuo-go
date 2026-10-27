@@ -37,9 +37,31 @@ EVP_PKEY *X_EVP_PKEY_Q_keygen_x448(void)
     return EVP_PKEY_Q_keygen(NULL, NULL, "X448");
 }
 
+/*
+ * x_no_pass_cb：不提供口令的 PEM 回调。
+ * 传 NULL 回调会让 OpenSSL 退回默认 UI 回调并向终端（/dev/tty）索要口令，
+ * 对库调用而言会阻塞在没有终端的进程里。这里显式返回 0，让加密 PEM 解析
+ * 直接失败并把错误交给调用方（调用方应改用带口令的入口）。
+ *
+ * x_no_pass_cb is a PEM callback that never supplies a pass phrase.
+ * Passing a NULL callback makes OpenSSL fall back to the default UI
+ * callback, which asks the terminal (/dev/tty) for a pass phrase and
+ * blocks in processes without one. Returning 0 makes encrypted PEM
+ * parsing fail cleanly so the caller can use the pass phrase aware
+ * entry instead.
+ */
+static int x_no_pass_cb(char *buf, int size, int rwflag, void *u)
+{
+    (void)buf;
+    (void)size;
+    (void)rwflag;
+    (void)u;
+    return 0;
+}
+
 EVP_PKEY *X_PEM_read_bio_PrivateKey(BIO *bp)
 {
-    return PEM_read_bio_PrivateKey(bp, NULL, NULL, NULL);
+    return PEM_read_bio_PrivateKey(bp, NULL, x_no_pass_cb, NULL);
 }
 
 int X_PEM_write_bio_PrivateKey(BIO *bp, EVP_PKEY *x)

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
-	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
 
 // ProviderInfo 描述一个活跃的 provider。
@@ -31,7 +30,7 @@ type ProviderInfo struct {
 //
 // algNames returns the canonical names of one algorithm family, de-duplicated
 // and sorted. The content depends on the currently loaded providers.
-func algNames(kind int) []string {
+func algNames(kind core.AlgKind) []string {
 	raw := core.AlgNames(kind)
 	seen := make(map[string]struct{}, len(raw))
 	out := make([]string, 0, len(raw))
@@ -57,7 +56,7 @@ func algNames(kind int) []string {
 // providers, matching `tongsuo list -digest-algorithms`. The returned list
 // is de-duplicated and sorted lexicographically.
 func Digests() []string {
-	return algNames(native.AlgKindMD)
+	return algNames(core.AlgKindMD)
 }
 
 // Ciphers 返回当前 provider 提供的对称加密算法名。
@@ -67,7 +66,7 @@ func Digests() []string {
 // current providers, matching `tongsuo list -cipher-algorithms`. The
 // returned list is de-duplicated and sorted lexicographically.
 func Ciphers() []string {
-	return algNames(native.AlgKindCipher)
+	return algNames(core.AlgKindCipher)
 }
 
 // MACs 返回当前 provider 提供的消息认证码算法名。
@@ -77,7 +76,7 @@ func Ciphers() []string {
 // matching `tongsuo list -mac-algorithms`. The returned list is
 // de-duplicated and sorted lexicographically.
 func MACs() []string {
-	return algNames(native.AlgKindMAC)
+	return algNames(core.AlgKindMAC)
 }
 
 // KDFs 返回当前 provider 提供的密钥派生算法名。
@@ -87,7 +86,7 @@ func MACs() []string {
 // providers, matching `tongsuo list -kdf-algorithms`. The returned list is
 // de-duplicated and sorted lexicographically.
 func KDFs() []string {
-	return algNames(native.AlgKindKDF)
+	return algNames(core.AlgKindKDF)
 }
 
 // Signatures 返回当前 provider 提供的签名算法名。
@@ -97,7 +96,7 @@ func KDFs() []string {
 // providers, matching `tongsuo list -signature-algorithms`. The returned
 // list is de-duplicated and sorted lexicographically.
 func Signatures() []string {
-	return algNames(native.AlgKindSignature)
+	return algNames(core.AlgKindSignature)
 }
 
 // KeyExchanges 返回当前 provider 提供的密钥交换算法名。
@@ -107,7 +106,7 @@ func Signatures() []string {
 // current providers, matching `tongsuo list -key-exchange-algorithms`. The
 // returned list is de-duplicated and sorted lexicographically.
 func KeyExchanges() []string {
-	return algNames(native.AlgKindKeyExch)
+	return algNames(core.AlgKindKeyExch)
 }
 
 // KEMs 返回当前 provider 提供的密钥封装机制算法名。
@@ -117,7 +116,7 @@ func KeyExchanges() []string {
 // the current providers, matching `tongsuo list -kem-algorithms`. The
 // returned list is de-duplicated and sorted lexicographically.
 func KEMs() []string {
-	return algNames(native.AlgKindKEM)
+	return algNames(core.AlgKindKEM)
 }
 
 // TLSGroups 返回当前构建实现的 TLS 组名。

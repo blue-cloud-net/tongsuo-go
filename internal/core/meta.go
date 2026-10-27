@@ -4,14 +4,54 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
 
+// AlgKind 标识算法族，用于枚举 provider 提供的算法名。
+//
+// AlgKind identifies an algorithm family when enumerating the names
+// provided by the loaded providers.
+type AlgKind int
+
+// 支持的算法族。
+//
+// The supported algorithm families.
+const (
+	// AlgKindMD 标识消息摘要算法。
+	//
+	// AlgKindMD identifies message-digest algorithms.
+	AlgKindMD AlgKind = AlgKind(native.AlgKindMD)
+	// AlgKindCipher 标识对称加密算法。
+	//
+	// AlgKindCipher identifies symmetric ciphers.
+	AlgKindCipher AlgKind = AlgKind(native.AlgKindCipher)
+	// AlgKindMAC 标识消息认证码算法。
+	//
+	// AlgKindMAC identifies message authentication codes.
+	AlgKindMAC AlgKind = AlgKind(native.AlgKindMAC)
+	// AlgKindKDF 标识密钥派生算法。
+	//
+	// AlgKindKDF identifies key-derivation functions.
+	AlgKindKDF AlgKind = AlgKind(native.AlgKindKDF)
+	// AlgKindSignature 标识签名算法。
+	//
+	// AlgKindSignature identifies signature algorithms.
+	AlgKindSignature AlgKind = AlgKind(native.AlgKindSignature)
+	// AlgKindKeyExch 标识密钥交换算法。
+	//
+	// AlgKindKeyExch identifies key-exchange algorithms.
+	AlgKindKeyExch AlgKind = AlgKind(native.AlgKindKeyExch)
+	// AlgKindKEM 标识密钥封装机制。
+	//
+	// AlgKindKEM identifies key-encapsulation mechanisms.
+	AlgKindKEM AlgKind = AlgKind(native.AlgKindKEM)
+)
+
 // AlgNames 枚举当前已加载 provider 提供的算法规范名。
-// kind 取 native.AlgKind* 常量；返回的列表未去重，顺序由 provider 决定。
+// kind 取 AlgKind* 常量；返回的列表未去重，顺序由 provider 决定。
 //
 // AlgNames enumerates the canonical names of the algorithms provided by the
-// currently loaded providers. kind is one of the native.AlgKind* constants.
-// The returned list is not de-duplicated and its order follows the provider.
-func AlgNames(kind int) []string {
-	return native.AlgNames(kind)
+// currently loaded providers. kind is one of the AlgKind* constants. The
+// returned list is not de-duplicated and its order follows the provider.
+func AlgNames(kind AlgKind) []string {
+	return native.AlgNames(int(kind))
 }
 
 // ProviderInfo 描述一个活跃 provider。
