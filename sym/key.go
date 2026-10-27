@@ -22,6 +22,10 @@ const (
 	//
 	// AlgAES128 identifies AES-128 (128-bit / 16-byte key).
 	AlgAES128 Algorithm = "AES-128"
+	// AlgAES192 标识 AES-192（192 位 / 24 字节密钥）。
+	//
+	// AlgAES192 identifies AES-192 (192-bit / 24-byte key).
+	AlgAES192 Algorithm = "AES-192"
 	// AlgAES256 标识 AES-256（256 位 / 32 字节密钥）。
 	//
 	// AlgAES256 identifies AES-256 (256-bit / 32-byte key).
@@ -90,14 +94,14 @@ type SymmetricKey interface {
 	Marshal() ([]byte, error)
 }
 
-// AESKey 表示 AES 对称密钥（AES-128 或 AES-256）。
+// AESKey 表示 AES 对称密钥（AES-128 / AES-192 / AES-256）。
 //
-// 通过 NewAESKey 构造并校验长度（16 或 32 字节），亦可由 GenerateSymmetricKey
+// 通过 NewAESKey 构造并校验长度（16 / 24 / 32 字节），亦可由 GenerateSymmetricKey
 // 生成随机密钥。底层不持有原生句柄，无需 Close。
 //
-// AESKey represents an AES symmetric key (AES-128 or AES-256).
+// AESKey represents an AES symmetric key (AES-128 / AES-192 / AES-256).
 //
-// Construct one via NewAESKey, which validates the length (16 or 32
+// Construct one via NewAESKey, which validates the length (16, 24 or 32
 // bytes), or obtain a fresh random key from GenerateSymmetricKey. It
 // owns no native handle and needs no Close.
 type AESKey struct {
@@ -106,29 +110,33 @@ type AESKey struct {
 }
 
 // NewAESKey 用给定的原始字节构造 AES 密钥。
-// raw 长度必须为 16（AES-128）或 32（AES-256），否则返回错误。
+// raw 长度必须为 16（AES-128）、24（AES-192）或 32（AES-256），否则返回错误。
 // 构造时会拷贝 raw，调用方后续修改 raw 不影响密钥。
 //
 // NewAESKey wraps raw as an AES key.
-// raw must be 16 (AES-128) or 32 (AES-256) bytes long, otherwise an error
-// is returned. The input is copied, so later mutation of raw does not
-// affect the key.
+// raw must be 16 (AES-128), 24 (AES-192) or 32 (AES-256) bytes long,
+// otherwise an error is returned. The input is copied, so later mutation
+// of raw does not affect the key.
 func NewAESKey(raw []byte) (*AESKey, error) {
 	var alg Algorithm
 	switch len(raw) {
 	case AES128KeySize:
 		alg = AlgAES128
+	case AES192KeySize:
+		alg = AlgAES192
 	case AES256KeySize:
 		alg = AlgAES256
 	default:
-		return nil, fmt.Errorf("sym: invalid AES key size %d, want %d or %d", len(raw), AES128KeySize, AES256KeySize)
+		return nil, fmt.Errorf("sym: invalid AES key size %d, want %d, %d or %d",
+			len(raw), AES128KeySize, AES192KeySize, AES256KeySize)
 	}
 	return &AESKey{alg: alg, raw: append([]byte(nil), raw...)}, nil
 }
 
-// Algorithm 返回 AES 密钥算法（AlgAES128 或 AlgAES256）。
+// Algorithm 返回 AES 密钥算法（AlgAES128 / AlgAES192 / AlgAES256）。
 //
-// Algorithm returns the AES key algorithm (AlgAES128 or AlgAES256).
+// Algorithm returns the AES key algorithm (AlgAES128 / AlgAES192 /
+// AlgAES256).
 func (k *AESKey) Algorithm() Algorithm {
 	if k == nil {
 		return ""
@@ -263,19 +271,21 @@ func (k *SM4Key) Marshal() ([]byte, error) {
 }
 
 // GenerateSymmetricKey 生成指定算法的随机对称密钥。
-// alg 支持 AlgAES128、AlgAES256 与 AlgSM4；其它算法返回包装了
+// alg 支持 AlgAES128、AlgAES192、AlgAES256 与 AlgSM4；其它算法返回包装了
 // ErrUnknownAlgorithm 的错误。密钥材料来自铜锁 CSPRNG（rand.Bytes）。
 //
 // GenerateSymmetricKey generates a fresh random symmetric key for the
 // given algorithm.
-// alg must be one of AlgAES128, AlgAES256 or AlgSM4; any other value
-// returns an error wrapping ErrUnknownAlgorithm. The key material
+// alg must be one of AlgAES128, AlgAES192, AlgAES256 or AlgSM4; any other
+// value returns an error wrapping ErrUnknownAlgorithm. The key material
 // comes from the Tongsuo CSPRNG (rand.Bytes).
 func GenerateSymmetricKey(alg Algorithm) (SymmetricKey, error) {
 	var size int
 	switch alg {
 	case AlgAES128, AlgSM4:
 		size = SM4KeySize
+	case AlgAES192:
+		size = AES192KeySize
 	case AlgAES256:
 		size = AES256KeySize
 	default:
@@ -286,7 +296,7 @@ func GenerateSymmetricKey(alg Algorithm) (SymmetricKey, error) {
 		return nil, err
 	}
 	switch alg {
-	case AlgAES128, AlgAES256:
+	case AlgAES128, AlgAES192, AlgAES256:
 		return NewAESKey(raw)
 	default:
 		return NewSM4Key(raw)

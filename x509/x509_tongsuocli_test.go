@@ -94,15 +94,17 @@ func TestCLISubjectIssuer(t *testing.T) {
 
 	// 用 -nameopt RFC2253 固定名称输出：默认 nameopt 随铜锁 / OpenSSL 版本变化
 	// （8.4.0 / OpenSSL 3.0 为 "O = CLI Org, CN = cli.example.com"，
-	// 8.5.0 / OpenSSL 3.5 为 "CN=cli.example.com, O=CLI Org"），RFC2253 则稳定
-	// 为「前向 RDN 顺序 + 无空格」。
+	// 8.5.0 / OpenSSL 3.5 为 "O=CLI Org, CN=cli.example.com"），RFC2253 则稳定：
+	// 它按 RFC 4514 把 DER 里的 RDNSequence **反向**输出（最具体在前）。
+	// 本库按调用顺序追加（CN 先写、O 后写），故 DER 为 [CN, O]，
+	// RFC2253 输出为 "O=CLI Org,CN=cli.example.com"。
 	out := testutil.MustRunOpenSSL(t, "x509", "-in", certFile, "-noout",
 		"-nameopt", "RFC2253", "-subject", "-issuer", "-serial")
 	s := string(out)
-	if !strings.Contains(s, "subject=CN=cli.example.com,O=CLI Org") {
+	if !strings.Contains(s, "subject=O=CLI Org,CN=cli.example.com") {
 		t.Fatalf("openssl subject mismatch: %s", s)
 	}
-	if !strings.Contains(s, "issuer=CN=cli.example.com,O=CLI Org") {
+	if !strings.Contains(s, "issuer=O=CLI Org,CN=cli.example.com") {
 		t.Fatalf("openssl issuer mismatch: %s", s)
 	}
 	if !strings.Contains(s, "serial=2A") { // 42 = 0x2A

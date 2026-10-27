@@ -29,18 +29,21 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 - 🔐 **SM2 非对称算法**（GB/T 32918，`asym`）：密钥生成、PEM 序列化、加密/解密（ASN.1 DER，内含 C1C3C2）、
   SM2withSM3 签名/验签、自定义 userId
 - 🔑 **SM3 哈希算法**（GB/T 32905-2016，`digest`）：`hash.Hash` 接口 + 定长 `SumSM3` + 按名 `Sum("SM3", d)`
-- 🔒 **SM4 对称加密**（GB/T 32907，`sym`）：ECB / CBC / CTR / OFB / CFB / GCM（AEAD）
-- 🧮 **HMAC 消息认证码**（`mac`）：HMAC-SM3 / MD5 / SHA1 / SHA256 / SHA512
+- 🔒 **SM4 对称加密**（GB/T 32907，`sym`）：ECB / CBC / CTR / OFB / CFB / GCM（AEAD），以及 SM4-CCM 与 SM4-XTS
+- 🧮 **消息认证码**（`mac`）：14 种 `EVP_MAC` 算法 —— HMAC-SM3 / MD5 / SHA1 / SHA224 / SHA256 / SHA384 / SHA512、CMAC、GMAC、KMAC-128/256、SipHash、Poly1305、EIA3
 - 🔗 **更多哈希**（`digest`）：MD5、SHA1、SHA224、SHA256、SHA384、SHA512（`hash.Hash` + `Sum`）
-- 🔄 **AES 对称加密**（`sym`）：ECB / CBC / CTR / GCM（`cipher.Block` + `cipher.AEAD`）
-- 🧬 **密钥派生**（`kdf`）：HKDF / PBKDF2 / Argon2ID，含按名分发 `Derive`
+- 🔄 **AES 对称加密**（`sym`）：128 / 192 / 256 位的 ECB / CBC / CTR / GCM（`cipher.Block` + `cipher.AEAD`）
+- 🌊 **流密码**（`sym`）：ChaCha20、ChaCha20-Poly1305
+- 🧬 **密钥派生**（`kdf`）：10 种 KDF —— HKDF / PBKDF2 / scrypt / SSKDF / TLS1-PRF / TLS13-KDF / KBKDF / X942KDF / X963KDF / HMAC-DRBG-KDF，均含类型化入口与按名分发 `Derive`
+- 🧰 **CLI 式形态入口**：`meta` 提供 `Source`（bytes / reader / 文件 / stdin）、`Sink`（含 raw / hex / base64 编码）、`Format`（PEM / DER）与 `Passphrase`（`pass:` / `env:` / `file:` / `fd:` / `stdin:`）；各原语包提供 `SumSource` / `SumTo` / `EncryptSource` / `DeriveTo` / `MarshalPrivateKeyTo` / `LoadCertificateSource` 等一行式入口
+- 🗂️ **算法与 provider 枚举**（`meta`）：`Digests` / `Ciphers` / `MACs` / `KDFs` / `Signatures` / `KeyExchanges` / `KEMs` / `TLSGroups` / `Providers` / `SeedingSource`
 - 📝 **Ed25519 / Ed448 签名算法**（RFC 8032，`asym`）：纯 EdDSA（无预哈希），32B / 57B 原始种子与公钥字节可与 Go 标准库、WireGuard 互操作；通过 `X509_sign_ctx` 路径支持证书 / CSR / CRL 签发
 - 🤝 **X25519 / X448 ECDH 密钥交换**（RFC 7748，`ecdh`）：32 / 56 字节共享密钥派生，可与 Go `crypto/ecdh`、WireGuard 互操作
 - 🤝 **曲线 ECDH**（`ecdh`）：NIST P-256 / P-384 / P-521（X9.63）、OKP 曲线 X25519 / X448（RFC 7748）与 secp256k1；PEM（PKCS#8 / SPKI）往返与共享密钥派生，语义对齐 Go 标准库 `crypto/ecdh`
 - 🎲 **安全随机数**（`rand`）：基于铜锁 `RAND_bytes`
 - 🗄️ **密钥存储与轮转**（`keystore`）：密钥元数据、内存 / 自定义 Store、版本轮转与历史
 - 📜 **X.509 证书管理**（`x509`）：证书 / CSR / CRL / OCSP 解析与签发、一行自签证书（`CreateSelfSigned`）、分步签发 CRL（`CRLBuilder`）、CA 签发证书（SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448）、按 NID 或名字添加任意 X.509 v3 扩展（`AddExtension` / `AddExtensionByName` / `AddExtensions`）、按 CSR 签发（`IssueCertificateFromRequest`）、主机名 / IP / 邮箱校验（`VerifyHostname` / `CheckEmail`）、subject / issuer 名字 hash（`SubjectHash` / `IssuerHash`）与链验证（可用 `Store.SetTime` 指定验证时刻）
-- 🌐 **TLS / NTLS 传输层**（`tls`）：客户端 / 服务端封装，支持国密 NTLS 双证书（签名证书 + 加密证书）
+- 🌐 **TLS / NTLS 传输层**（`tls`）：客户端 / 服务端封装，支持国密 NTLS 双证书（签名证书 + 加密证书）；`tls.NewListener` 返回 Accept 内即完成握手的 `net.Listener`
 - 📦 **容器与格式**：PKCS#7（`pkcs/pkcs7`）、PKCS#12（`pkcs/pkcs12`）、JWK（`jwk`）、ASN.1 DER 查看（`asn1`）、.NET 风格 RSA XML（`xml/rsa`）
 - 🧪 **标准向量测试**：每个算法包覆盖国标标准向量、往返、边界与错误路径，并与 openssl CLI 双向交叉验证
 

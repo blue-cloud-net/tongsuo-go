@@ -68,3 +68,174 @@ func PBKDF2(mdName string, password, salt []byte, iter, keyLen int) ([]byte, err
 func Argon2IDAvailable() bool {
 	return native.EVP_KDF_Available("ARGON2ID")
 }
+
+// KDFParams 是泛化 KDF 派生的参数包（核心层形态）。
+// 各算法只取用其中一部分字段；未取用的字段被忽略。字段语义与 provider 的
+// OSSL_PARAM 一一对应，由 Derive 转换为绑定层结构。
+//
+// KDFParams carries the parameters of a generic KDF derivation at the
+// core layer. Each algorithm consumes a subset of the fields; the rest
+// are ignored. The fields map one-to-one onto the provider OSSL_PARAM
+// names and Derive converts them to the binding-layer struct.
+type KDFParams struct {
+	// Digest 是摘要算法名（多数 KDF 使用）。
+	//
+	// Digest is the message-digest name (used by most KDFs).
+	Digest string
+	// Mode 是模式字符串（HKDF / TLS13-KDF：EXTRACT_ONLY / EXPAND_ONLY；
+	// KBKDF：COUNTER / FEEDBACK）。
+	//
+	// Mode is the mode string (HKDF / TLS13-KDF: EXTRACT_ONLY /
+	// EXPAND_ONLY; KBKDF: COUNTER / FEEDBACK).
+	Mode string
+	// CEKAlg 是目标 CEK 算法名（X942KDF-ASN1）。
+	//
+	// CEKAlg names the target content-encryption key algorithm
+	// (X942KDF-ASN1).
+	CEKAlg string
+	// MAC 是底层 MAC 实现名（KBKDF）。
+	//
+	// MAC names the underlying MAC implementation (KBKDF).
+	MAC string
+	// Key 是密钥材料（HKDF / TLS13-KDF / KBKDF / SSKDF / X942KDF / X963KDF）。
+	//
+	// Key is the keying material.
+	Key []byte
+	// Secret 是共享秘密 Z（SSKDF / TLS1-PRF / X942KDF / X963KDF 与 Key 同源）。
+	//
+	// Secret is the shared secret Z (SSKDF / TLS1-PRF / X942KDF /
+	// X963KDF; it shares its source with Key).
+	Secret []byte
+	// Salt 是盐（HKDF / PBKDF2 / SCRYPT / SSKDF；KBKDF 下作为 label）。
+	//
+	// Salt is the salt (HKDF / PBKDF2 / SCRYPT / SSKDF; used as the
+	// label by KBKDF).
+	Salt []byte
+	// Info 是上下文字节。
+	//
+	// Info is the context bytes.
+	Info []byte
+	// Pass 是口令（PBKDF2 / SCRYPT）。
+	//
+	// Pass is the password (PBKDF2 / SCRYPT).
+	Pass []byte
+	// Seed 是种子（TLS1-PRF）。
+	//
+	// Seed is the seed (TLS1-PRF).
+	Seed []byte
+	// Label / Prefix / Data 是 TLS13-KDF 的标签、前缀与 transcript 摘要。
+	//
+	// Label / Prefix / Data are the TLS13-KDF label, prefix and
+	// transcript digest.
+	Label  []byte
+	Prefix []byte
+	Data   []byte
+	// UKM 是用户密钥材料（X942KDF-ASN1）。
+	//
+	// UKM is the user keying material (X942KDF-ASN1).
+	UKM []byte
+	// Entropy / Nonce 是 HMAC-DRBG-KDF 的熵输入与 nonce。
+	//
+	// Entropy / Nonce are the HMAC-DRBG-KDF entropy input and nonce.
+	Entropy []byte
+	Nonce   []byte
+	// Iter 是 PBKDF2 的迭代次数。
+	//
+	// Iter is the PBKDF2 iteration count.
+	Iter uint64
+	// N / R / P / MaxMem 是 scrypt 成本参数；KBKDF 复用 R。
+	//
+	// N / R / P / MaxMem are the scrypt cost parameters; KBKDF reuses R.
+	N      uint64
+	R      uint64
+	P      uint64
+	MaxMem uint64
+	// UseL / UseSeparator 选择 KBKDF 变体。
+	//
+	// UseL / UseSeparator select the KBKDF variant.
+	UseL         bool
+	UseSeparator bool
+	// UseKeyBits 表示 X942KDF 用密钥比特长度替代 supp-pubinfo。
+	//
+	// UseKeyBits replaces supp-pubinfo with the key length in bits for
+	// X942KDF.
+	UseKeyBits bool
+}
+
+// Derive 按 provider 侧算法名执行一次性 KDF 派生。
+// alg 为 provider 规范名（如 "HKDF"、"PBKDF2"、"SCRYPT"、"SSKDF"、"TLS1-PRF"、
+// "TLS13-KDF"、"KBKDF"、"X942KDF-ASN1"、"X963KDF"、"HMAC-DRBG-KDF"）。
+// p 为参数包（可为 nil，表示全部取默认）；out 缓冲区长度即期望的派生长度。
+// 失败时返回包装了 OpError 的错误。
+//
+// Derive performs a one-shot KDF derivation by provider-side algorithm
+// name. alg is a provider canonical name (for example "HKDF", "PBKDF2",
+// "SCRYPT", "SSKDF", "TLS1-PRF", "TLS13-KDF", "KBKDF", "X942KDF-ASN1",
+// "X963KDF" or "HMAC-DRBG-KDF"). p carries the parameters and may be nil
+// (meaning "use the defaults"); the length of out is the requested output
+// length. On failure it returns an error wrapping an OpError.
+func Derive(alg string, p *KDFParams, out []byte) error {
+	if alg == "" {
+		return fmt.Errorf("kdf: empty algorithm name")
+	}
+	if len(out) == 0 {
+		return fmt.Errorf("kdf: invalid output length %d", len(out))
+	}
+	var np *native.KDFParams
+	if p != nil {
+		np = &native.KDFParams{
+			Digest:       p.Digest,
+			Mode:         p.Mode,
+			CEKAlg:       p.CEKAlg,
+			MAC:          p.MAC,
+			Key:          p.Key,
+			Secret:       p.Secret,
+			Salt:         p.Salt,
+			Info:         p.Info,
+			Pass:         p.Pass,
+			Seed:         p.Seed,
+			Label:        p.Label,
+			Entropy:      p.Entropy,
+			Nonce:        p.Nonce,
+			UKM:          p.UKM,
+			Prefix:       p.Prefix,
+			Data:         p.Data,
+			Iter:         p.Iter,
+			N:            p.N,
+			R:            p.R,
+			P:            p.P,
+			MaxMem:       p.MaxMem,
+			UseL:         p.UseL,
+			UseSeparator: p.UseSeparator,
+			UseKeyBits:   p.UseKeyBits,
+		}
+	}
+	if !native.EVP_KDF_Derive(alg, np, out) {
+		return NewOpError("kdf: "+alg, native.PopError())
+	}
+	return nil
+}
+
+// KDFAvailable 报告当前构建的 provider 是否提供指定 KDF 算法。
+// 与编译期的 kdf.Names() 清单互补：清单是「本库实现了哪些」，本函数是
+// 「本机铜锁真能跑哪些」。例如 Tongsuo 8.4.0 没有 HMAC-DRBG-KDF。
+//
+// KDFAvailable reports whether the current build's providers offer the
+// named KDF algorithm. It complements the compile-time kdf.Names() list:
+// the list says what this library implements, this function says what the
+// installed Tongsuo can actually run. Tongsuo 8.4.0, for example, has no
+// HMAC-DRBG-KDF.
+func KDFAvailable(alg string) bool {
+	if alg == "" {
+		return false
+	}
+	return native.EVP_KDF_Available(alg)
+}
+
+// KBKDFCounterWidthSupported 报告当前构建的 KBKDF 是否接受 r（计数器宽度）参数。
+// OpenSSL 3.2+ 才有该参数；Tongsuo 8.4.0 下 R 会被忽略（固定 32 位）。
+//
+// KBKDFCounterWidthSupported reports whether the current build's KBKDF
+// accepts the r (counter width) parameter. Only OpenSSL 3.2+ has it; on
+// Tongsuo 8.4.0 R is ignored and the counter width stays at 32 bits.
+func KBKDFCounterWidthSupported() bool { return native.EVP_KDF_KBKDFRSupported() }

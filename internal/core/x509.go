@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"time"
+	"unicode/utf8"
 	"unsafe"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
@@ -60,9 +61,20 @@ func NewName() (*Name, error) {
 // understood by X509_NAME_add_entry_by_txt. The call returns an error
 // when the Name has been closed via Close, or when the underlying
 // OpenSSL call fails (wrapped as OpError).
+//
+// value is interpreted as UTF-8 and encoded into the field's ASN.1 type, so
+// non-ASCII characters are preserved verbatim. A value that is not valid
+// UTF-8 is rejected before the native call with
+// "x509: name: value is not valid UTF-8", and a value the field's ASN.1
+// charset cannot represent (for example a non-ASCII countryName or
+// emailAddress, which are PrintableString / IA5String) fails in the
+// underlying call.
 func (n *Name) AddEntry(field, value string) error {
 	if n == nil || n.handle == nil || n.handle.IsClosed() {
 		return fmt.Errorf("x509: name closed")
+	}
+	if !utf8.ValidString(value) {
+		return fmt.Errorf("x509: name: value is not valid UTF-8")
 	}
 	if !native.X509_NAME_add_entry_by_txt(n.handle.Ptr(), field, value) {
 		return NewOpError("x509: X509_NAME_add_entry_by_txt", native.PopError())
@@ -1956,9 +1968,17 @@ func (r *CertificateRequest) SubjectName() *Name {
 // Must be invoked before Sign. Returns an error when the CSR has been
 // closed via Close, or when the underlying OpenSSL call fails (wrapped
 // as OpError).
+//
+// pwd is interpreted as UTF-8 (matching MBSTRING_UTF8) and stored verbatim, so
+// non-ASCII passwords survive the round trip. A value that is not valid UTF-8
+// is rejected before the native call. Embedded NUL bytes still truncate the
+// password because the value is passed to OpenSSL as a C string.
 func (r *CertificateRequest) SetChallengePassword(pwd string) error {
 	if r == nil || r.handle == nil || r.handle.IsClosed() {
 		return fmt.Errorf("x509: request closed")
+	}
+	if !utf8.ValidString(pwd) {
+		return fmt.Errorf("x509: challenge password is not valid UTF-8")
 	}
 	if !native.X509_REQ_set_challenge_password(r.handle.Ptr(), pwd) {
 		return NewOpError("x509: X509_REQ_set_challenge_password", native.PopError())

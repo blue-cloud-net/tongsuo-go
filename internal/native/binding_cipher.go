@@ -99,6 +99,72 @@ func EVP_aes_256_gcm() unsafe.Pointer {
 	return unsafe.Pointer(C.EVP_aes_256_gcm())
 }
 
+// EVP_aes_192_ecb 返回 AES-192-ECB 分组算法描述符。
+// EVP_aes_192_ecb returns the AES-192-ECB cipher descriptor (static singleton).
+func EVP_aes_192_ecb() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_aes_192_ecb())
+}
+
+// EVP_aes_192_cbc 返回 AES-192-CBC 分组算法描述符。
+// EVP_aes_192_cbc returns the AES-192-CBC cipher descriptor (static singleton).
+func EVP_aes_192_cbc() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_aes_192_cbc())
+}
+
+// EVP_aes_192_ctr 返回 AES-192-CTR 分组算法描述符（流模式）。
+// EVP_aes_192_ctr returns the AES-192-CTR cipher descriptor (stream mode, static singleton).
+func EVP_aes_192_ctr() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_aes_192_ctr())
+}
+
+// EVP_aes_192_gcm 返回 AES-192-GCM 认证加密算法描述符（AEAD）。
+// EVP_aes_192_gcm returns the AES-192-GCM AEAD cipher descriptor (static singleton).
+func EVP_aes_192_gcm() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_aes_192_gcm())
+}
+
+// EVP_sm4_ccm 返回 SM4-CCM 认证加密算法描述符（AEAD，12 字节 nonce）。
+// EVP_sm4_ccm returns the SM4-CCM AEAD cipher descriptor (12-byte nonce).
+func EVP_sm4_ccm() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_sm4_ccm())
+}
+
+// EVP_chacha20 返回 ChaCha20 流密码算法描述符（32 字节密钥、16 字节 counter）。
+// EVP_chacha20 returns the ChaCha20 stream cipher descriptor (32-byte key, 16-byte counter).
+func EVP_chacha20() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_chacha20())
+}
+
+// EVP_chacha20_poly1305 返回 ChaCha20-Poly1305 认证加密算法描述符（AEAD）。
+// EVP_chacha20_poly1305 returns the ChaCha20-Poly1305 AEAD cipher descriptor.
+func EVP_chacha20_poly1305() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_chacha20_poly1305())
+}
+
+// EVP_CIPHER_Fetch 按 provider 算法名取分组算法描述符（如 "SM4-XTS"）。
+// 取不到时返回 nil（错误已入队列）。
+// 返回的描述符由调用方负责用 EVP_CIPHER_Free 释放。
+//
+// EVP_CIPHER_Fetch fetches a cipher descriptor by provider algorithm name
+// (for example "SM4-XTS"). It returns nil when the algorithm is unavailable
+// (the error is queued). The caller must release the descriptor with
+// EVP_CIPHER_Free.
+func EVP_CIPHER_Fetch(name string) unsafe.Pointer {
+	cname, free := cstr(name)
+	defer free()
+	return unsafe.Pointer(C.EVP_CIPHER_fetch(nil, cname, nil))
+}
+
+// EVP_CIPHER_Free 释放 fetch 得到的分组算法描述符。
+//
+// EVP_CIPHER_Free releases a fetched cipher descriptor.
+func EVP_CIPHER_Free(c unsafe.Pointer) {
+	if c == nil {
+		return
+	}
+	C.EVP_CIPHER_free((*C.EVP_CIPHER)(c))
+}
+
 // EVP_CIPHER_CTX_ctrl 的 GCM 控制类型常量（对应 EVP_CTRL_AEAD_*）。
 //
 // CtrlGCMSetIVLen / CtrlGCMGetTag / CtrlGCMSetTag are the EVP_CTRL_AEAD_*
@@ -107,6 +173,10 @@ const (
 	CtrlGCMSetIVLen = 0x9  // 设置 IV/Nonce 长度
 	CtrlGCMGetTag   = 0x10 // 加密后获取认证标签
 	CtrlGCMSetTag   = 0x11 // 解密前设置认证标签
+	// CtrlCCMSetL 设置 CCM 明文总长度（EVP_CTRL_CCM_SET_L）。
+	//
+	// CtrlCCMSetL sets the total plaintext length of a CCM operation.
+	CtrlCCMSetL = 0x14
 )
 
 // EVP_CIPHER_CTX_ctrl 控制加密上下文（GCM tag 读写、IV 长度设置等）。
@@ -252,6 +322,29 @@ func cipherUpdate(ctx unsafe.Pointer, out, in []byte, outl *int, enc bool) bool 
 		*outl = int(l)
 	}
 	return ok
+}
+
+// EVP_CipherSetLength 告知 CCM 上下文待处理数据的总长度。
+// 对应「out == nil && in == nil 且 inl 非零」的 EVP_EncryptUpdate /
+// EVP_DecryptUpdate 调用——provider 用这种形式表达「设置总长度」，
+// 而不是 legacy 的 EVP_CTRL_CCM_SET_L。
+// 成功返回 true，失败返回 false（错误已入队列）。
+//
+// EVP_CipherSetLength tells a CCM context the total length of the data to
+// process. It corresponds to an EVP_EncryptUpdate / EVP_DecryptUpdate
+// call with out == nil && in == nil and a non-zero inl, the form the
+// provider uses to express "set the total length" (rather than the
+// legacy EVP_CTRL_CCM_SET_L). It returns true on success and false on
+// failure (the error is queued).
+func EVP_CipherSetLength(ctx unsafe.Pointer, n int, enc bool) bool {
+	var l C.int
+	if ctx == nil {
+		return false
+	}
+	if enc {
+		return C.EVP_EncryptUpdate((*C.EVP_CIPHER_CTX)(ctx), nil, &l, nil, C.int(n)) == 1
+	}
+	return C.EVP_DecryptUpdate((*C.EVP_CIPHER_CTX)(ctx), nil, &l, nil, C.int(n)) == 1
 }
 
 // EVP_EncryptFinal_ex 结束加密，输出剩余块（含填充），长度通过 outl 返回。

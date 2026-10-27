@@ -177,7 +177,10 @@ func TestArgon2IDUnsupported(t *testing.T) {
 
 // TestNames 验证 Names 稳定且完整。
 func TestNames(t *testing.T) {
-	want := []string{"HKDF", "PBKDF2"}
+	want := []string{
+		"HKDF", "PBKDF2", "SCRYPT", "SSKDF", "TLS1-PRF",
+		"TLS13-KDF", "KBKDF", "X942KDF", "X963KDF", "HMAC-DRBG-KDF",
+	}
 	got := Names()
 	if len(got) != len(want) {
 		t.Fatalf("Names() = %v, want %v", got, want)
@@ -258,7 +261,7 @@ func TestDeriveCaseInsensitive(t *testing.T) {
 
 // TestDeriveUnknownAlgorithm 验证 Derive 拒绝未知算法名。
 func TestDeriveUnknownAlgorithm(t *testing.T) {
-	_, err := Derive("SCRYPT", &Options{Digest: HashSHA256, Secret: []byte("k"), Length: 16})
+	_, err := Derive("NOSUCHKDF", &Options{Digest: HashSHA256, Secret: []byte("k"), Length: 16})
 	if !errors.Is(err, ErrUnknownAlgorithm) {
 		t.Errorf("err = %v, want ErrUnknownAlgorithm", err)
 	}

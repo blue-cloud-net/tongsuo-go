@@ -209,32 +209,55 @@ func X509_NAME_free(n unsafe.Pointer) {
 // X509_NAME_add_entry_by_txt 添加名字条目（field 如 "CN"、"C"、"O"）。
 // X509_NAME_add_entry_by_txt appends an RDN entry to n using the short-name
 // field tag (e.g. "CN", "C", "O") and the given value. The string type is
-// MBSTRING_ASC (0x1001).
+// MBSTRING_UTF8 (0x1000), matching `openssl req -utf8`: the value is decoded
+// as UTF-8 (a Go string always is) and re-encoded into the field's ASN.1 type,
+// so non-ASCII characters are stored verbatim. Passing MBSTRING_ASC instead
+// would read every byte as a Latin-1 character and double-encode the value
+// ("海峰" would be stored as 12 bytes instead of 6). Values that are not valid
+// UTF-8, or that do not fit the field's ASN.1 charset / length limits (e.g.
+// "C", "emailAddress"), make the underlying call fail.
+//
+// loc is -1, so entries are appended: the DER RDNSequence follows the order of
+// the calls (most-general-first when the caller writes C → O → CN), which is
+// what `openssl req -subj "/C=…/O=…/CN=…"` and crypto/x509's
+// pkix.Name.ToRDNSequence produce. Passing loc = 0 instead inserts at the head
+// and silently reverses the written order.
 func X509_NAME_add_entry_by_txt(n unsafe.Pointer, field, value string) bool {
 	cField := C.CString(field)
 	defer C.free(unsafe.Pointer(cField))
-	// MBSTRING_ASC = 0x1001（MBSTRING_FLAG|1）。
+	// MBSTRING_UTF8 = 0x1000（MBSTRING_FLAG）；loc = -1 表示追加到末尾。
 	b := []byte(value)
 	if len(b) == 0 {
 		return C.X509_NAME_add_entry_by_txt((*C.X509_NAME)(n), cField,
-			C.int(0x1001), nil, 0, 0, 0) == 1
+			C.MBSTRING_UTF8, nil, 0, -1, 0) == 1
 	}
 	return C.X509_NAME_add_entry_by_txt((*C.X509_NAME)(n), cField,
-		C.int(0x1001), (*C.uchar)(unsafe.Pointer(&b[0])), C.int(len(b)), 0, 0) == 1
+		C.MBSTRING_UTF8, (*C.uchar)(unsafe.Pointer(&b[0])), C.int(len(b)), -1, 0) == 1
 }
 
 // X509_NAME_get_text_by_NID 按 NID 读取名字文本。
 // X509_NAME_get_text_by_NID reads the text of the first entry with the given
-// NID into a 256-byte stack buffer (truncated for longer values). Returns ""
-// when no matching entry exists.
+// NID. The entry is decoded through ASN1_STRING_to_UTF8 (see
+// X509_NAME_ENTRY_value), so the result is not limited by a fixed-size stack
+// buffer and long or non-ASCII values come back intact. Returns "" when no
+// matching entry exists.
+//
+// Implemented by iterating the entries instead of calling the C
+// X509_NAME_get_text_by_NID, which copies at most 255 bytes into the caller's
+// buffer and would cut a multi-byte character in half.
 func X509_NAME_get_text_by_NID(n unsafe.Pointer, nid int) string {
-	var buf [256]C.char
-	nlen := C.X509_NAME_get_text_by_NID((*C.X509_NAME)(n), C.int(nid),
-		&buf[0], C.int(len(buf)))
-	if nlen < 0 {
+	count := X509_NAME_get_entry_count(n)
+	for i := 0; i < count; i++ {
+		e := X509_NAME_get_entry(n, i)
+		if e == nil || X509_NAME_ENTRY_nid(e) != nid {
+			continue
+		}
+		if v, ok := X509_NAME_ENTRY_value(e); ok {
+			return v
+		}
 		return ""
 	}
-	return C.GoString(&buf[0])
+	return ""
 }
 
 // X509_new 创建新的证书对象。

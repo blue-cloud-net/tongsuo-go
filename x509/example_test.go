@@ -143,7 +143,7 @@ func ExampleNewCertificateRequest() {
 		panic(err)
 	}
 	fmt.Println(csr.SubjectName().String())
-	// Output: /O=Example Org/CN=example.com
+	// Output: /CN=example.com/O=Example Org
 }
 
 // ExampleCreateSelfSigned 演示一步生成自签证书（等价 `openssl req -x509`）。

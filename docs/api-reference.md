@@ -9,18 +9,19 @@
 > 4. 类型给出导出字段；未导出字段以「（内部字段）」表示其存在；
 > 5. 本文描述的是**重构后的目标形态**：`crypto/` 整目录与 `key/` 已被 `digest` / `mac` / `sym` / `asym` / `ecdh` / `kdf` / `rand` / `keystore` 取代；`csr` / `crl` / `ocsp` **未拆**，全部留在 `x509`。
 >
-> **范围**：**16 个包**。生成基线：`0.4.0`（2026-10-23 发布）。
+> **范围**：**16 个包**。生成基线：`0.5.0`（2026-10-27 发布）。
 > **版本归属**：本文件不负责版本分配，哪个 🧭 符号落在哪个版本见 [roadmap.md](roadmap.md) §2。
 >
 > **状态标记**：
-> - ✅ **已有** — 已发布可用（`0.4.0` 及之前）；
+> - ✅ **已有** — 已发布可用（`0.5.0` 及之前）；
 > - 🚧 **变更中** — 目标版本另标，尚不可用；
 > - 🧭 **规划中** — 仅表达**目标 API 形态**，尚不可用；**目标版本以 [roadmap.md](roadmap.md) §2 为准**，
 >   下表的版本列仅为速查，若与该文冲突以 roadmap 为准。
 >
-> 符号行前缀：`🆕` `0.3.0` 新增 / `✨` `0.4.0` 新增 / `♻️` 迁移自其他包（附原名） / `🧭` 规划中。
-> `0.4.0` 的**行为变更**（非新增符号）写在对应行内，如 `Certificate.Sign` / `CertificateRequest.Sign`
-> 收紧为单向终态。
+> 符号行前缀：`🆕` 新增（`0.3.0` 与 `0.5.0` 沿用；所在小节标题已注明版本） / `✨` `0.4.0` 新增 /
+> `♻️` 迁移自其他包（附原名） / `🧭` 规划中。
+> `0.4.0` 与 `0.5.0` 的**行为变更**（非新增符号）写在对应行内，如 `Certificate.Sign` /
+> `CertificateRequest.Sign` 收紧为单向终态。
 
 ---
 
@@ -96,23 +97,72 @@
 - 🆕 `func ErrorCode(err error) (uint64, bool)` — 从任意 `error` 提取铜锁错误码（识别 `core.OpError` 及 `fmt.Errorf("%w")` 包装链）
 - 🆕 `func ParseErrorCode(s string) (uint64, error)` — 解析十六进制 / 十进制错误码字符串（对应 `tongsuo errstr <code>`）
 
-**规划中**
+**函数（算法枚举，`0.5.0` 起）**
 
-> 对应 `docs/cli-comparison.md` §6.A 的 25（`list`，P1）与 23（`info` 的 provider / seeds 部分）。
+> 前置绑定均已就位：`EVP_{MD,CIPHER,MAC,KDF,SIGNATURE,KEYEXCH,KEM}_do_all_provided`
+> 加 fetch 过滤、`OSSL_PROVIDER_*`、`OPENSSL_info(OPENSSL_INFO_SEED_SOURCE)`、
+> `SSL_get1_groups` / `SSL_group_to_name`。所有列表**去重并按字典序**返回，
+> 内容取决于当前已加载的 provider。
 
-| 符号 | 说明 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
-|---|---|---|---|
-| 🧭 `func Digests() []string` | 可用摘要算法名（等价 `list -digest-algorithms`） | `0.5.0` | `EVP_MD_do_all_provided` |
-| 🧭 `func Ciphers() []string` | 可用对称算法名（等价 `list -cipher-algorithms`） | `0.5.0` | `EVP_CIPHER_do_all_provided` |
-| 🧭 `func MACs() []string` | 可用 MAC 算法名（等价 `list -mac-algorithms`） | `0.5.0` | `EVP_MAC_do_all_provided` |
-| 🧭 `func KDFs() []string` | 可用 KDF 算法名（等价 `list -kdf-algorithms`） | `0.5.0` | `EVP_KDF_do_all_provided` |
-| 🧭 `func Signatures() []string` | 可用签名算法名（等价 `list -signature-algorithms`） | `0.5.0` | `EVP_SIGNATURE_do_all_provided` |
-| 🧭 `func KeyExchanges() []string` | 可用密钥交换算法名（等价 `list -key-exchange-algorithms`） | `0.5.0` | `EVP_KEYEXCH_do_all_provided` |
-| 🧭 `func KEMs() []string` | 可用 KEM 算法名（等价 `list -kem-algorithms`） | `0.5.0` | `EVP_KEM_do_all_provided` |
-| 🧭 `func TLSGroups() []string` | 可用 TLS 组（等价 `list -tls-groups`） | `0.5.0` | `SSL_get1_groups` / `SSL_group_to_name` |
-| 🧭 `func Providers() []ProviderInfo` | 活跃 provider 名称 / 版本 / 状态（等价 `list -providers`） | `0.5.0` | `OSSL_PROVIDER_*` |
-| 🧭 `type ProviderInfo struct { Name string; Version string; Status string }` | provider 描述 | `0.5.0` | — |
-| 🧭 `func SeedingSource() string` | 随机种子来源（`version -a` 的 `Seeding source` 行） | `0.5.0` | `OPENSSL_info(OPENSSL_INFO_SEED_SOURCE)` |
+- 🆕 `func Digests() []string` — 可用摘要算法名（等价 `list -digest-algorithms`）
+- 🆕 `func Ciphers() []string` — 可用对称算法名（等价 `list -cipher-algorithms`）
+- 🆕 `func MACs() []string` — 可用 MAC 算法名（等价 `list -mac-algorithms`）
+- 🆕 `func KDFs() []string` — 可用 KDF 算法名（等价 `list -kdf-algorithms`）
+- 🆕 `func Signatures() []string` — 可用签名算法名（等价 `list -signature-algorithms`）
+- 🆕 `func KeyExchanges() []string` — 可用密钥交换算法名（等价
+  `list -key-exchange-algorithms`）
+- 🆕 `func KEMs() []string` — 可用 KEM 算法名（等价 `list -kem-algorithms`）
+- 🆕 `func TLSGroups() []string` — 可用 TLS 组（等价 `list -tls-groups`）
+- 🆕 `func Providers() []ProviderInfo` — 活跃 provider 名称 / 版本 / 状态（等价
+  `list -providers`）
+- 🆕 `type ProviderInfo struct { Name string; Version string; Status string }` —
+  provider 描述
+- 🆕 `func SeedingSource() string` — 随机种子来源（`version -a` 的
+  `Seeding source` 行）；构建不支持时返回空串
+
+**类型与函数（形态词汇，`0.5.0` 起）**
+
+> 这四个维度是「CLI 式调用」的词汇表：入口取 `Source`、出口取 `Sink`，
+> 编码与格式由 `Encoding` / `Format` 描述，口令由 `Passphrase` 抽象。
+> 各原语包（`digest` / `mac` / `sym` / `kdf` / `asym` / `x509`）的形态入口
+> 以本节的类型为参数。
+
+- 🆕 `type Source struct{…}` — 输入源：bytes / `io.Reader` / 文件 / stdin；
+  `nil` 接收者等价于标准输入
+  - 🆕 `func NewBytesSource(data []byte) *Source` — 构造时复制 data
+  - 🆕 `func NewReaderSource(r io.Reader) *Source` — **一次性**，二次 `Open` 返回
+    `ErrSourceConsumed`
+  - 🆕 `func NewFileSource(path string) (*Source, error)` — 每次 `Open` 重新打开；
+    `path == "-"` 表示 stdin
+  - 🆕 `func StdinSource() *Source` — 一次性标准输入
+  - 🆕 `func (s *Source) Open() (io.ReadCloser, error)` / 🆕
+    `func (s *Source) ReadAll() ([]byte, error)` / 🆕 `func (s *Source) Path() string`
+- 🆕 `var ErrSourceConsumed` — 一次性源被重复打开
+- 🆕 `type Sink struct{…}` — 输出端：bytes / `io.Writer` / 文件 / stdout；
+  `nil` 接收者等价于标准输出
+  - 🆕 `func NewBytesSink() *Sink` / 🆕 `func NewWriterSink(w io.Writer) *Sink` /
+    🆕 `func NewFileSink(path string) (*Sink, error)` / 🆕 `func StdoutSink() *Sink`
+  - 🆕 `func (s *Sink) SetEncoding(enc Encoding) error` — 只能在首次写入前设置
+  - 🆕 `func (s *Sink) Write(p []byte) (int, error)` — 实现 `io.Writer`
+  - 🆕 `func (s *Sink) Bytes() []byte` / 🆕 `func (s *Sink) Close() error`（幂等）/
+    🆕 `func (s *Sink) Encoding() Encoding` / 🆕 `func (s *Sink) Path() string`
+- 🆕 `type Encoding int` 与常量 `EncodingRaw` / `EncodingHex` / `EncodingBase64` —
+  输出编码（hex 忽略输入空白，base64 忽略 CRLF，流式写出与一次性等价）
+- 🆕 `func ParseEncoding(s string) (Encoding, error)` / 🆕
+  `func Encode(data []byte, enc Encoding) ([]byte, error)` / 🆕
+  `func Decode(data []byte, enc Encoding) ([]byte, error)`
+- 🆕 `func Hex(data []byte) string` / 🆕 `func Base64(data []byte) string` /
+  🆕 `func Dump(data []byte) string` — `xxd` 风格十六进制转储
+- 🆕 `type Format int` 与常量 `FormatPEM` / `FormatDER`；🆕
+  `func ParseFormat(s string) (Format, error)` / 🆕
+  `func (f Format) String() string`
+- 🆕 `type Passphrase struct{…}` — 口令来源抽象：
+  `pass:<明文>` / `env:<变量名>` / `file:<路径>` / `fd:<n>` / `stdin:`；
+  构造时立即读取（file / fd / stdin 会剥掉行尾换行）
+  - 🆕 `func NewPassphrase(spec string) (*Passphrase, error)` /
+    🆕 `func (p *Passphrase) Bytes() []byte` / 🆕 `func (p *Passphrase) IsEmpty() bool`
+  - 🆕 `func (p *Passphrase) String() string` — **脱敏**（`pass:***`）
+
 
 ---
 
@@ -154,6 +204,16 @@
 
 > 安全提示：MD5 与 SHA-1 已不适用于数字签名，仅用于兼容既有格式与完整性校验。
 
+**函数｜形态入口（`0.5.0` 新增，配合 `meta.Source` / `meta.Sink`）**
+
+- 🆕 `func SumSource(name string, src *meta.Source) ([]byte, error)` — 读 `Source`
+  全流计算摘要（`src` 为 `nil` 等价 stdin）
+- 🆕 `func SumFile(name, path string) ([]byte, error)` — 文件便捷入口（`"-"` 读 stdin）
+- 🆕 `func SumTo(name string, src *meta.Source, sink *meta.Sink) error` — 结果按
+  `sink` 的编码写出（`nil` 等价 stdout）
+- 🆕 `func SumReaderTo(name string, r io.Reader, sink *meta.Sink) error` — 直接持
+  有 `io.Reader` 时的等价入口
+
 **规划中（`0.6.0`）**
 
 | 符号 | 说明 | 前置（需新增 `internal/native` 绑定） |
@@ -182,7 +242,7 @@
 
 **类型**
 
-- 🆕 `type Options struct { Cipher string; IV []byte; AAD []byte; Custom []byte; OutputLen int }` — 算法参数（覆盖 CLI 的 `-macopt cipher: / hexiv: / custom: / size:`）；置 nil 表示用默认值
+- 🆕 `type Options struct { Cipher string; IV []byte; AAD []byte; Custom []byte; OutputLen int; Digest string }` — 算法参数（覆盖 CLI 的 `-macopt cipher: / hexiv: / aad: / custom: / size: / digest:`）；置 nil 表示用默认值
 
 **函数｜按算法名分发（新增）**
 
@@ -201,21 +261,22 @@
 - ♻️ `func NewHMACSHA384(key []byte) hash.Hash` / ♻️ `func SumHMACSHA384(key, data []byte) []byte` — 原 `hmac.NewSHA384` / `hmac.SumSHA384`
 - ♻️ `func NewHMACSHA512(key []byte) hash.Hash` / 🆕 `func SumHMACSHA512(key, data []byte) []byte` — 原 `hmac.NewSHA512`
 
-> 实现说明：本版仍走 legacy `HMAC_CTX_*` 路径（`internal/native/binding_hmac.go`），未绑定 `EVP_MAC_*`；因此 `New(name, …)` 的 `name` 在本版只接受 `HMAC-*` 系列。
+> 实现说明：`0.5.0` 起全部入口走 provider `EVP_MAC_*` 路径（`internal/native/binding_mac.go` + `internal/core/mac.go`）。`New(name, …)` 接受 14 种算法：`HMAC-SM3` / `HMAC-SHA1` / `HMAC-SHA224` / `HMAC-SHA256` / `HMAC-SHA384` / `HMAC-SHA512` / `HMAC-MD5` / `CMAC` / `GMAC` / `KMAC-128` / `KMAC-256` / `SIPHASH` / `POLY1305` / `EIA3`。
 
-**规划中（`0.5.0`）**
+**函数｜家族类型化入口（`0.5.0` 新增）**
 
-> 前置：`internal/native` 需新增 `EVP_MAC_fetch / new / init / update / final` 绑定（本版 `mac` 的 HMAC 走 legacy `HMAC_CTX_*` 路径，新增绑定不影响其行为）。
+- 🆕 `func CMAC(cipherName string, key, data []byte) ([]byte, error)` — `cipherName` 取 `SM4` / `AES-128` / `AES-192` / `AES-256`（内部补 `-CBC`）
+- 🆕 `func GMAC(cipherName string, key, iv, aad, data []byte) ([]byte, error)` — 内部补 `-GCM`
+- 🆕 `func KMAC128(key, data, custom []byte, outLen int) ([]byte, error)` / 🆕 `func KMAC256(key, data, custom []byte, outLen int) ([]byte, error)` — 输出长度参与域分隔
+- 🆕 `func SipHash(key, data []byte) ([]byte, error)` — 返回 16 字节（64 位标签的 provider 版本）
+- 🆕 `func Poly1305(key, data []byte) ([]byte, error)`
+- 🆕 `func EIA3(key, count, data []byte) ([]byte, error)` — 铜锁独有
 
-| 符号 | 说明 |
-|---|---|
-| 🧭 `func CMAC(cipherName string, key, data []byte) ([]byte, error)` | 便捷入口（`cipherName` 取 SM4 / AES-128/192/256） |
-| 🧭 `func GMAC(cipherName string, key, iv, aad, data []byte) ([]byte, error)` | 便捷入口 |
-| 🧭 `func KMAC128(key, data, custom []byte, outLen int) ([]byte, error)` | 便捷入口 |
-| 🧭 `func KMAC256(key, data, custom []byte, outLen int) ([]byte, error)` | 便捷入口 |
-| 🧭 `func SipHash(key, data []byte) ([]byte, error)` | 便捷入口 |
-| 🧭 `func Poly1305(key, data []byte) ([]byte, error)` | 便捷入口 |
-| 🧭 `func EIA3(key, count, data []byte) ([]byte, error)` | 便捷入口（铜锁独有） |
+**函数｜形态入口（`0.5.0` 新增，配合 `meta.Source` / `meta.Sink`）**
+
+- 🆕 `func SumSource(name string, key []byte, src *meta.Source, opts *Options) ([]byte, error)`
+- 🆕 `func SumFile(name string, key []byte, path string, opts *Options) ([]byte, error)` — `"-"` 读 stdin
+- 🆕 `func SumTo(name string, key []byte, src *meta.Source, sink *meta.Sink, opts *Options) error`
 
 **破坏性变更**
 
@@ -234,7 +295,8 @@
 
 - ♻️ `type Hash string` — 摘要算法标识（原 `key.Hash`）
 - ♻️ `HashMD5` `HashSHA1` `HashSHA224` `HashSHA256` `HashSHA384` `HashSHA512` `HashSM3` — 取值（原 `key.Hash*`）
-- 🆕 `type Options struct { Digest Hash; Secret, Salt, Info, Password []byte; Iterations int; Length int; TimeCost, Memory, Threads uint32 }` — 按名分发的参数包
+- 🆕 `HashMD5SHA1` — 组合摘要，仅用于 `TLS1PRF`（TLS 1.0/1.1 PRF 的默认选择）
+- 🆕 `type Options struct { … }` — 按名分发的参数包。除原有的 `Digest` / `Secret` / `Salt` / `Info` / `Password` / `Iterations` / `Length` / `TimeCost` / `Memory` / `Threads` 外，`0.5.0` 新增：`Mode string`（HKDF、TLS13-KDF 取 `EXTRACT_ONLY` / `EXPAND_ONLY`；KBKDF 取 `COUNTER` / `FEEDBACK`）、`Label` / `Prefix` / `Data []byte`（TLS13-KDF）、`Seed []byte`（TLS1-PRF）、`UKM []byte` 与 `CEKAlg string`（X942KDF）、`MAC string`（KBKDF）、`Entropy` / `Nonce []byte`（HMAC-DRBG-KDF）、`N` / `R` / `P` / `MaxMem uint64`（scrypt，`R` 亦用作 KBKDF 计数器宽度）、`UseL` / `UseSeparator`（KBKDF）、`UseKeyBits`（X942KDF）
 
 **函数**
 
@@ -246,15 +308,39 @@
 - 🆕 `func Names() []string` — 返回本版已支持的 KDF 算法名
 - 🆕 `func Derive(name string, opts *Options) ([]byte, error)` — 按名分发派生（对应 `tongsuo kdf HKDF -kdfopt …`）
 
-**规划中（`0.5.0`～`0.6.0`）**
+**函数｜类型化入口（`0.5.0` 新增）**
 
-> 完整范围与版本拆分见 [roadmap.md](roadmap.md) §2.1 / §2.2。
+| 符号 | 算法 / 标准 |
+|---|---|
+| 🆕 `func Scrypt(password, salt []byte, n, r, p uint32, maxMem, keyLen int) ([]byte, error)` | scrypt（RFC 7914） |
+| 🆕 `func SSKDF(md Hash, secret, salt, info []byte, length int) ([]byte, error)` | 单步 KDF（SP 800-56C / X9.63 家族） |
+| 🆕 `func TLS1PRF(md Hash, secret, seed []byte, length int) ([]byte, error)` | TLS 1.0/1.1 PRF（RFC 2246） |
+| 🆕 `func TLS13KDFExtract(md Hash, secret, salt []byte) ([]byte, error)` | TLS 1.3 HKDF-Extract（RFC 8446 §7.1） |
+| 🆕 `func TLS13KDFExpand(md Hash, secret []byte, label string, context []byte, length int) ([]byte, error)` | TLS 1.3 HKDF-Expand-Label |
+| 🆕 `func X963KDF(md Hash, secret, info []byte, length int) ([]byte, error)` | ANSI X9.63 KDF |
+| 🆕 `func X942KDF(md Hash, secret, ukm []byte, cekAlg string, useKeyBits bool, length int) ([]byte, error)` | ANSI X9.42 KDF（RFC 2631） |
+| 🆕 `type KBKDFOptions struct { Digest Hash; MAC string; Mode string; Secret, Label, Context []byte; R int; UseL, UseSeparator bool }` 与 🆕 `func KBKDF(opts *KBKDFOptions, length int) ([]byte, error)` | SP 800-108 KBKDF |
+| 🆕 `func HMACDRBG(md Hash, entropy, nonce []byte, length int) ([]byte, error)` | SP 800-90A HMAC-DRBG |
+
+**函数｜形态入口（`0.5.0` 新增）**
+
+- 🆕 `func DeriveTo(name string, opts *Options, sink *meta.Sink) error` — 派生结果按 `sink` 编码写出
+
+**函数｜运行时能力探测（`0.5.0` 新增）**
+
+- 🆕 `func Available(name string) bool` — 本机铜锁的 provider 是否真的提供该算法（
+  `Names()` 是编译期清单，本函数是运行时事实）。典型差异：Tongsuo 8.4.0 没有
+  `HMAC-DRBG-KDF`
+- 🆕 `func KBKDFCounterWidthSupported() bool` — 本构建的 KBKDF 是否接受 `R`
+  （计数器宽度）参数；仅 OpenSSL 3.2+ 支持，Tongsuo 8.4.0 下 `R` 被忽略（固定 32 位）
+
+**规划中（后续版本）**
+
+> 完整范围与版本拆分见 [roadmap.md](roadmap.md) §2.1。
 
 | 符号 | 前置（需新增 `internal/native` 绑定） |
 |---|---|
-| 🧭 `scrypt`（`Derive("SCRYPT", …)` + 类型化入口） | `EVP_KDF_fetch("SCRYPT")`（现有 shim 仅 HKDF/PBKDF2） |
-| 🧭 `SSKDF`、`TLS1-PRF`、`TLS13-KDF`、`KBKDF`、`HMAC-DRBG-KDF` | 同上 |
-| 🧭 `X942KDF` / `X963KDF`、`KRB5KDF`、`PKCS12KDF`、`SSHKDF` | 同上 |
+| 🧭 `KRB5KDF`、`PKCS12KDF`、`SSHKDF` | 同类 `EVP_KDF_fetch`，无需新 shim，仅补参数映射与向量 |
 
 **破坏性变更**
 
@@ -348,14 +434,45 @@
 
 > 安全提示：ECB 无扩散语义，不建议用于多块数据；CTR/OFB/CFB 为流式模式，**同一密钥下 nonce/IV 必须唯一**。`*Block` 实现并发安全（内部使用 `EVP_CIPHER_CTX_copy` 模板副本）。
 
+**函数｜`0.5.0` 新增算法（AES-192 / SM4-CCM / SM4-XTS / ChaCha20）**
+
+- 🆕 `AES192KeySize = 24`、`SM4XTSKeySize = 32`、`ChaCha20KeySize = 32`、`ChaCha20IVSize = 16`、`SM4CCMNonceSize = 12`
+- 🆕 `type Algorithm string` 新增 `AlgAES192 = "AES-192"`；`NewAESKey` / `GenerateSymmetricKey` 接受 24 字节
+- 🆕 `func NewAEAD(name string, key []byte) (cipher.AEAD, error)` / 🆕
+  `func EncryptAEAD(name string, key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, err error)` / 🆕
+  `func DecryptAEAD(name string, key, nonce, ciphertext, tag, aad []byte) ([]byte, error)` — 按名覆盖
+  GCM / CCM / ChaCha20-Poly1305
+- 🆕 `func NewSM4CCM(key []byte) (cipher.AEAD, error)` / 🆕
+  `func EncryptSM4CCM(key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, err error)` / 🆕
+  `func DecryptSM4CCM(key, nonce, ciphertext, tag, aad []byte) ([]byte, error)` — 12 字节 nonce、16 字节 tag
+- 🆕 `func EncryptSM4XTS(key, data []byte) ([]byte, error)` / 🆕
+  `func DecryptSM4XTS(key, data []byte) ([]byte, error)` — 32 字节双子密钥；允许 CTS（数据 ≥ 16 字节）
+- 🆕 `func EncryptChaCha20(key, iv, data []byte) ([]byte, error)` / 🆕
+  `func DecryptChaCha20(key, iv, data []byte) ([]byte, error)`
+- 🆕 `func NewChaCha20Poly1305(key []byte) (cipher.AEAD, error)` / 🆕
+  `func EncryptChaCha20Poly1305(key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, err error)` / 🆕
+  `func DecryptChaCha20Poly1305(key, nonce, ciphertext, tag, aad []byte) ([]byte, error)`
+
+**函数｜形态入口（`0.5.0` 新增，配合 `meta.Source` / `meta.Sink`）**
+
+- 🆕 `func EncryptSource(name string, key, iv []byte, src *meta.Source, sink *meta.Sink) error` — 流式加密
+- 🆕 `func DecryptSource(name string, key, iv []byte, src *meta.Source, sink *meta.Sink) error` — 流式解密
+  - 仅接受 ECB / CBC（PKCS#7 填充）与 CTR / OFB / CFB / ChaCha20（无填充）；
+    AEAD 与 XTS 需一次性持有全部数据，返回 `ErrUnsupported`
+  - 解密时坏填充返回错误（不放宽校验），此时 `sink` 中可能已有部分明文
+
+**函数｜运行时能力探测（`0.5.0` 新增）**
+
+- 🆕 `func Available(name string) bool` — 本机铜锁是否真的提供该「算法-模式」名
+  （`Names()` 是编译期清单，本函数是运行时事实）。典型差异：Tongsuo 8.4.0
+  没有 SM4-XTS（走 `EVP_CIPHER_fetch`），此时 `EncryptSM4XTS` 返回
+  「unavailable in this build」
+
 **规划中**
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
-| 🧭 `AES192KeySize = 24` 与 AES-192 全模式 | `0.5.0` | `EVP_aes_192_{ecb,cbc,ctr,gcm}` |
 | 🧭 AES-OFB / CFB / CCM / XTS / OCB / SIV / GCM-SIV / WRAP / CBC-CTS | `0.6.0` | `EVP_aes_*_{ofb,cfb,ccm,xts,ocb,…}` |
-| 🧭 SM4-CCM / SM4-XTS | `0.5.0` | `EVP_sm4_ccm` / `EVP_sm4_xts` |
-| 🧭 ChaCha20 / ChaCha20-Poly1305 | `0.5.0` | `EVP_chacha20` / `EVP_chacha20_poly1305` |
 | 🧭 ZUC-128-EEA3 | `0.6.0` | `EVP_zuc` |
 
 **破坏性变更**
@@ -454,6 +571,15 @@
 - ➕ `func Close(k Key) error` — 释放密钥持有的底层原生句柄（幂等；`k` 为 nil 或未持句柄时返回 nil）。之前本包**完全没有释放入口**，释放只能靠 finalizer 兜底，违反 AGENTS.md §4.4；缺口记录见 `docs/issues/2026-09-24/P1006`
   - ⚠️ **别名陷阱**：`priv.Public()` 返回的公钥**共享同一底层句柄**（不做 Dup），对二者之一 `Close` 即释放该共享句柄、另一个随之失效；需要「销毁别名不影响原件」时请经 `internal/keyaccess` 取句柄后自行 `EVP_PKEY_dup`（`ecdh` 即如此），而不要依赖 `Public()`
   - 取包级函数而非接口方法的理由：三个接口刻意保持最小，把 `Close` 做成接口方法会让「可关闭」成为公开契约并需在 14 个具体类型上各补实现；包级函数返回值只有 `error`、**不暴露句柄**，导出面最小
+
+**函数｜形态入口（`0.5.0` 新增，配合 `meta.Source` / `meta.Sink` / `meta.Passphrase`）**
+
+- 🆕 `func LoadPrivateKeySource(src *meta.Source, passphrase *meta.Passphrase) (PrivateKey, error)`
+  — 从 `Source` 读 PEM；`passphrase` 为 nil 或空时按未加密私钥解析，否则按口令解密
+- 🆕 `func LoadPublicKeySource(src *meta.Source) (PublicKey, error)` — 从 `Source` 读 SPKI PEM
+- 🆕 `func MarshalPrivateKeyTo(priv PrivateKey, sink *meta.Sink, passphrase *meta.Passphrase) error`
+  — 未加密 → PKCS#8 PEM；带口令 → 加密 PEM，结果按 `sink` 编码写出
+- 🆕 `func MarshalPublicKeyTo(pub PublicKey, sink *meta.Sink) error` — SPKI PEM 写出
 
 **规划中**
 
@@ -611,7 +737,7 @@
 - ♻️ `type Extension struct { Nid int; Field string; OID string; Critical bool; Value string; Data []byte }` — 单个 X.509 扩展（`Value` 为构建用的 `X509V3_EXT_conf` 配置串，`Data` 为读取到的 DER 值）
 - ✨ `type CertificatePolicy struct { OID string; CPSURIs []string; UserNotice *UserNotice }` — certificatePolicies 扩展中的一条策略（`OID` 为策略标识符；`CPSURIs` 为 id-qt-cps 限定符的策略声明 URL 列表；`UserNotice` 为 id-qt-unotice 限定符）
 - ✨ `type UserNotice struct { Organization string; NoticeNumbers []int; ExplicitText string }` — certificatePolicies 的 userNotice 限定符（RFC 5280 §4.2.1.4）
-- ♻️ `type Name struct { …（内部字段） }` — 证书 subject / issuer 名字
+- ♻️ `type Name struct { …（内部字段） }` — 证书 subject / issuer 名字（RDN 值按 **UTF-8** 写入，非 ASCII 字符原样保存为 `UTF8String`；非法 UTF-8 报错；`Add` 按**调用顺序追加**，DER 顺序 = 书写顺序，与 `openssl -subj` 一致；`Entries()` / `Get()` 不再受 256 字节缓冲限制）
 - ♻️ `type NameEntry struct { Nid int; Field string; Value string }` — 名字中的单个 RDN 条目
 
 **类型｜CSR / CRL / OCSP**
@@ -737,7 +863,7 @@
 - ♻️ `func (r *CertificateRequest) SetSubject(n *Name) error` / `SetPublicKey(pub asym.PublicKey) error` / `Sign(priv asym.PrivateKey) error` / `Verify() error` — 构建与自校验
 - ♻️ `func (r *CertificateRequest) MarshalPEM() ([]byte, error)` / `MarshalDER() ([]byte, error)` — 导出
 - ♻️ `func (r *CertificateRequest) SubjectName() *Name` / `SubjectEntries() []NameEntry` / `SubjectText() string` — subject 读取
-- ♻️ `func (r *CertificateRequest) SetChallengePassword(pwd string) error` / `ChallengePassword() string` — challengePassword 属性
+- ♻️ `func (r *CertificateRequest) SetChallengePassword(pwd string) error` / `ChallengePassword() string` — challengePassword 属性（`pwd` 按 **UTF-8** 写入；内含 `\x00` 仍按 C 字符串截断）
 - ♻️ `func (r *CertificateRequest) AddExtensions(exts ...Extension) error` / `AddExtension(nid int, value string) error` / `AddSubjectAltName(value string) error` / `Extensions() []Extension` — 扩展
 - ✨ `func (r *CertificateRequest) AddExtensionByName(name, value string) error` — 任意扩展（按短名 / 长名 / 点分 OID）
 - ✨ `func (r *CertificateRequest) AddKeyUsage(value string) error` / `AddExtendedKeyUsage(value string) error` / `AddBasicConstraints(isCA bool) error` — 与 `Certificate` 对称的便利方法
@@ -795,6 +921,14 @@
 - ♻️ `func ChainVerify(cert *Certificate, roots *Store, intermediates []*Certificate) ([]*Certificate, error)` — 验证链并返回完整链（索引 0 为叶证书）；失败返回 `*VerifyError`
 
 > 安全提示：`RevocationCheck` 不阻止链上其他校验；若需在链验证阶段强制 CRL 检查，用 `Store.SetCRLCheck*`。OCSP 只做「请求构造 + 响应解析与验签」，**不含 HTTP 传输**（调用方自行发送）。CertID 匹配采用自适应摘要（sha1 → sha256 → sm3）。
+
+**函数｜形态入口（`0.5.0` 新增，配合 `meta.Source` / `meta.Sink` / `meta.Format`）**
+
+- 🆕 `func MarshalFormat(c *Certificate, format meta.Format) ([]byte, error)` — 按 `FormatPEM` / `FormatDER` 序列化
+- 🆕 `func LoadCertificateSource(src *meta.Source) (*Certificate, error)` — 自动识别 PEM / DER
+  （内容首个非空白字节为 `-----BEGIN` 即按 PEM，前导空白会被剔除）
+- 🆕 `func MarshalCertificateTo(c *Certificate, sink *meta.Sink, format meta.Format) error`
+- 🆕 `func MarshalCSRTo(r *CertificateRequest, sink *meta.Sink, format meta.Format) error`
 
 **规划中**
 
@@ -863,9 +997,21 @@
 - ♻️ `func CipherSuites(version uint16) []CipherSuiteInfo` — 枚举指定协议版本下铜锁支持的套件
 - 🆕 `func CipherSuiteByName(name string) (CipherSuiteInfo, error)` — 名称/ID → 套件信息（对应 `ciphers -convert` / `-stdname`）。名称**大小写不敏感**且只匹配枚举报告的**主名**（不含 OpenSSL 旧式别名）；ID 为 16 位 wire ID 的文本形式，接受十进制（`4865`）或 `0x` 前缀十六进制（`0x1301`）；空串/未命中返回错误
 
-**规划中（传输深度归 `1.0.0`；`NewListener` 归 `0.5.0`）**
+**服务端监听器（`0.5.0` 新增）**
 
-> 前置：均需在 `internal/native` 新增 `internal/native` 绑定（见 [roadmap.md](roadmap.md) §3），`NewListener` 除外（Go 侧实现）。
+- 🆕 `type Listener struct{…}` — 实现 `net.Listener`，`Accept` 内完成 TLS / NTLS 握手
+  - 🆕 `func NewListener(config *Config, ln net.Listener) (*Listener, error)` — 等价
+    `crypto/tls.Listen`；构建时即校验服务端凭证（TLS 需 `Cert` + `Key`，NTLS 需
+    `SignCert` / `SignKey` / `EncCert` / `EncKey`），失败返回错误且**不关闭** `ln`
+  - 🆕 `func (l *Listener) Accept() (net.Conn, error)` — 返回的连接**已握手**，
+    可直接读写；握手失败关闭底层连接并返回分类错误（不返回半握手连接）
+  - 🆕 `func (l *Listener) Close() error` — 幂等且并发安全；关闭后 `Accept` 返回
+    底层 `net.ErrClosed`
+  - 🆕 `func (l *Listener) Addr() net.Addr` — 委托底层监听器（`Close` 后仍可用）
+
+**规划中（传输深度归 `1.0.0`）**
+
+> 前置：均需在 `internal/native` 新增绑定（见 [roadmap.md](roadmap.md) §3）。
 
 | 符号 | 说明 | 版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|---|
@@ -873,7 +1019,6 @@
 | 🧭 会话复用 / 票据 | `Config.SessionCache`、`Conn.SessionState()` | `1.0.0` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
 | 🧭 `Config.ClientAuth` + `Config.ClientCAs` | 客户端证书认证（服务端） | `1.0.0` | `SSL_CTX_set_client_CA_list` / `SSL_CTX_set_verify` 回调 |
 | 🧭 `Config.GetCertificate func(*ClientHelloInfo)` | 服务端 SNI 多证书（对应 `-sign_cert2` / `-enc_cert2`） | `1.0.0` | `SSL_CTX_set_tlsext_servername_callback` |
-| 🧭 `func NewListener(config *Config, ln net.Listener) net.Listener` | `net.Listener` 包装 | `0.5.0` | 无（Go 侧实现） |
 
 **破坏性变更**
 

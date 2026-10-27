@@ -33,9 +33,26 @@ func typedSum(name string, key, data []byte) []byte {
 	panic("typedSum: unknown name " + name)
 }
 
+// hmacNames 返回 Names() 中的 HMAC 系列算法名（仅这些有等价的类型化助手）。
+//
+// hmacNames returns the HMAC family names of Names(); only these have an
+// equivalent typed helper.
+func hmacNames() []string {
+	out := make([]string, 0, len(Names()))
+	for _, name := range Names() {
+		if strings.HasPrefix(name, "HMAC-") {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 // TestNames 验证 Names 返回稳定且完整的算法列表。
 func TestNames(t *testing.T) {
-	want := []string{"HMAC-SM3", "HMAC-MD5", "HMAC-SHA1", "HMAC-SHA224", "HMAC-SHA256", "HMAC-SHA384", "HMAC-SHA512"}
+	want := []string{
+		"HMAC-SM3", "HMAC-MD5", "HMAC-SHA1", "HMAC-SHA224", "HMAC-SHA256", "HMAC-SHA384", "HMAC-SHA512",
+		"CMAC", "GMAC", "KMAC-128", "KMAC-256", "SIPHASH", "POLY1305", "EIA3",
+	}
 	got := Names()
 	if len(got) != len(want) {
 		t.Fatalf("Names() = %v, want %v", got, want)
@@ -98,7 +115,7 @@ func TestNameCaseInsensitive(t *testing.T) {
 func TestSumByNameMatchesTyped(t *testing.T) {
 	key := []byte("the quick brown fox")
 	data := []byte("jumps over the lazy dog")
-	for _, name := range Names() {
+	for _, name := range hmacNames() {
 		t.Run(name, func(t *testing.T) {
 			got, err := Sum(name, key, data, nil)
 			if err != nil {
@@ -114,22 +131,42 @@ func TestSumByNameMatchesTyped(t *testing.T) {
 
 // TestNewReturnsMatchingTagSize 验证按名 New 返回的 hash.Hash 报告正确标签长度。
 func TestNewReturnsMatchingTagSize(t *testing.T) {
-	wantSizes := map[string]int{
-		"HMAC-SM3": 32, "HMAC-MD5": 16, "HMAC-SHA1": 20, "HMAC-SHA224": 28,
-		"HMAC-SHA256": 32, "HMAC-SHA384": 48, "HMAC-SHA512": 64,
+	key16 := bytes.Repeat([]byte{0x0b}, 16)
+	key32 := bytes.Repeat([]byte{0x0b}, 32)
+	tests := []struct {
+		name string
+		key  []byte
+		opts *Options
+		size int
+	}{
+		{"HMAC-SM3", []byte("k"), nil, 32},
+		{"HMAC-MD5", []byte("k"), nil, 16},
+		{"HMAC-SHA1", []byte("k"), nil, 20},
+		{"HMAC-SHA224", []byte("k"), nil, 28},
+		{"HMAC-SHA256", []byte("k"), nil, 32},
+		{"HMAC-SHA384", []byte("k"), nil, 48},
+		{"HMAC-SHA512", []byte("k"), nil, 64},
+		{"CMAC", key16, &Options{Cipher: "SM4"}, 16},
+		{"GMAC", key16, &Options{Cipher: "AES-128", IV: bytes.Repeat([]byte{1}, 12)}, 16},
+		{"KMAC-128", key32, &Options{OutputLen: 32}, 32},
+		{"KMAC-256", key32, &Options{OutputLen: 64}, 64},
+		{"SIPHASH", key16, nil, 16},
+		{"POLY1305", key32, nil, 16},
+		{"EIA3", key16, &Options{IV: bytes.Repeat([]byte{2}, 5)}, 4},
 	}
-	for _, name := range Names() {
-		t.Run(name, func(t *testing.T) {
-			h, err := New(name, []byte("k"), nil)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, err := New(tt.name, tt.key, tt.opts)
 			if err != nil {
-				t.Fatalf("New(%q) error: %v", name, err)
+				t.Fatalf("New(%q) error: %v", tt.name, err)
 			}
-			if h.Size() != wantSizes[name] {
-				t.Errorf("New(%q).Size() = %d, want %d", name, h.Size(), wantSizes[name])
+			defer closeHash(h)
+			if h.Size() != tt.size {
+				t.Errorf("New(%q).Size() = %d, want %d", tt.name, h.Size(), tt.size)
 			}
 			tag := h.Sum(nil)
-			if len(tag) != wantSizes[name] {
-				t.Errorf("Sum %s tag len = %d, want %d", name, len(tag), wantSizes[name])
+			if len(tag) != tt.size {
+				t.Errorf("Sum %s tag len = %d, want %d", tt.name, len(tag), tt.size)
 			}
 		})
 	}
@@ -139,7 +176,7 @@ func TestNewReturnsMatchingTagSize(t *testing.T) {
 func TestStreamMatchesSum(t *testing.T) {
 	key := []byte("stream-key")
 	data := bytes.Repeat([]byte("X"), 200) // 跨多个 HMAC 分组
-	for _, name := range Names() {
+	for _, name := range hmacNames() {
 		t.Run(name, func(t *testing.T) {
 			want := SumHMACSM3(key, data) // 占位作重检查 Sum 流程
 			if name == "HMAC-SM3" {
@@ -171,7 +208,7 @@ func TestStreamMatchesSum(t *testing.T) {
 // TestResetAll 验证 Reset 后可复用 hash.Hash 实例。
 func TestResetAll(t *testing.T) {
 	key := []byte("reset-key")
-	for _, name := range Names() {
+	for _, name := range hmacNames() {
 		t.Run(name, func(t *testing.T) {
 			h, err := New(name, key, nil)
 			if err != nil {
@@ -196,7 +233,7 @@ func TestResetAll(t *testing.T) {
 // TestSumDoesNotMutateStateAll 验证 Sum 调用后仍可继续 Write。
 func TestSumDoesNotMutateStateAll(t *testing.T) {
 	key := []byte("append-key")
-	for _, name := range Names() {
+	for _, name := range hmacNames() {
 		t.Run(name, func(t *testing.T) {
 			h, err := New(name, key, nil)
 			if err != nil {
@@ -222,7 +259,7 @@ func TestSumDoesNotMutateStateAll(t *testing.T) {
 func TestSumReaderMatchesSum(t *testing.T) {
 	key := []byte("reader-key")
 	data := []byte("feed me through an io.Reader, please")
-	for _, name := range Names() {
+	for _, name := range hmacNames() {
 		t.Run(name, func(t *testing.T) {
 			got, err := SumReader(name, key, bytes.NewReader(data), nil)
 			if err != nil {

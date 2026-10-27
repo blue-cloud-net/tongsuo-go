@@ -70,6 +70,14 @@ func ExampleNames() {
 	// Output:
 	// HKDF
 	// PBKDF2
+	// SCRYPT
+	// SSKDF
+	// TLS1-PRF
+	// TLS13-KDF
+	// KBKDF
+	// X942KDF
+	// X963KDF
+	// HMAC-DRBG-KDF
 }
 
 // ExampleArgon2IDAvailable 演示探测当前构建是否带 Argon2ID provider。

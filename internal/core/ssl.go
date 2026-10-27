@@ -396,7 +396,15 @@ type SSLConn struct {
 	fd int
 
 	deadline atomic.Int64 // 0 = 无 deadline；其它值 = unix nano
-	stopped  atomic.Bool  // true = 已停止：不得再发起新的 SSL 调用
+
+	// mu 串行化「准入窗口」：begin 在 mu 下检查 stopped 后再 inflight.Add，Close
+	// 在 mu 下置 stopped 后再 inflight.Wait。这样任何 Add 都排在 Wait 之前，满足
+	// sync.WaitGroup「计数器为 0 时不得与 Wait 并发」的契约（否则 Add/Wait 之间
+	// 存在数据竞争，-race 会在 Read/Write 与 Close 之间报错）。
+	//
+	// stopped 为 true 表示已停止：不得再发起新的 SSL 调用。由 mu 保护。
+	mu      sync.Mutex
+	stopped bool
 
 	// inflight 统计执行中的 SSL 调用（Connect / Accept / Read / Write）。Close
 	// 等其归零后才 SSL_free 并关闭 fd，避免「调用中释放句柄 / 关闭 fd」。
@@ -473,7 +481,9 @@ func (s *SSLConn) Stop() {
 	if s == nil {
 		return
 	}
-	s.stopped.Store(true)
+	s.mu.Lock()
+	s.stopped = true
+	s.mu.Unlock()
 	if s.fd >= 0 {
 		_ = ShutdownFD(s.fd)
 	}
@@ -481,20 +491,26 @@ func (s *SSLConn) Stop() {
 
 // begin 登记一次 SSL 调用；返回 false 表示连接已停止或句柄已释放，调用方必须放弃。
 //
-// 顺序很关键：**先 Add 再检查 stopped**，这样 Close 的 inflight.Wait 一定能看到本次
-// 调用；否则会出现「Wait 已返回、本调用才开始 SSL 调用」的竞态。
+// 顺序很关键：**检查 stopped 与 inflight.Add 必须在 s.mu 内完成**，且 Close 也在
+// s.mu 内置 stopped、随后才 inflight.Wait。这样「Add 之后才发现已停止」的情形不会
+// 出现（Add/Wait 被互斥分开），从而既保证 Close 的 Wait 能看到本次调用，又满足
+// sync.WaitGroup「计数器为 0 时的 Add 必须早于 Wait」的契约——之前在锁外先 Add
+// 再查 stopped，会与 Wait 并发访问计数器（-race 报 TLS Read 与 Close 竞争）。
 //
 // begin registers one SSL call; a false result means the connection is stopped or
 // the handle has been released and the caller must bail out.
 //
-// The order matters: Add first, check stopped second, so Close's inflight.Wait
-// always observes this call.
+// The stopped check and inflight.Add must both happen under s.mu, and Close sets
+// stopped under the same mutex before calling inflight.Wait. That mutual exclusion
+// keeps every Add ordered before Wait (the contract sync.WaitGroup requires when
+// the counter is zero) while still guaranteeing that Close observes this call.
 func (s *SSLConn) begin() bool {
-	s.inflight.Add(1)
-	if s.stopped.Load() || s.handle == nil || s.handle.IsClosed() {
-		s.inflight.Done()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopped || s.handle == nil || s.handle.IsClosed() {
 		return false
 	}
+	s.inflight.Add(1)
 	return true
 }
 
@@ -754,9 +770,11 @@ func (s *SSLConn) Close() error {
 	if s == nil {
 		return nil
 	}
-	// 先停再用等待归零：Wait 返回后新来的调用会在 begin 里看到 stopped 而放弃，
-	// 因此此后不可能再有 SSL 调用触碰句柄或 fd。
-	s.stopped.Store(true)
+	// 先在 mu 内停止准入，再等归零：stopped 与 begin 的 Add 由同一把锁串行化，
+	// 因此 Wait 之后不可能再出现新的 Add，也没有调用能再触碰句柄或 fd。
+	s.mu.Lock()
+	s.stopped = true
+	s.mu.Unlock()
 	s.inflight.Wait()
 	// 幂等：closed 时只补关 fd；避免二次 Close 时 SSL_shutdown(NULL) 崩溃。
 	if s.handle == nil || s.handle.IsClosed() {

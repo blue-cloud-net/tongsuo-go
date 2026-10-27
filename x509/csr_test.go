@@ -2,6 +2,7 @@ package x509
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -399,5 +400,95 @@ func TestCertificateToRequest(t *testing.T) {
 	var nilCert *Certificate
 	if _, err := nilCert.ToCertificateRequest(priv); err == nil {
 		t.Error("nil certificate should fail")
+	}
+}
+
+// TestCSRNonASCII 验证 CJK subject / challengePassword / 扩展值在 CSR 签名与 PEM 往返后保真。
+func TestCSRNonASCII(t *testing.T) {
+	priv, err := asym.GenerateSM2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	subject := NewName().Add("CN", "海峰").Add("O", "示例公司")
+
+	req := NewEmptyCertificateRequest()
+	if err := req.SetSubject(subject); err != nil {
+		t.Fatal(err)
+	}
+	if err := req.SetPublicKey(priv.Public()); err != nil {
+		t.Fatal(err)
+	}
+	if err := req.SetChallengePassword("口令-abc"); err != nil {
+		t.Fatalf("SetChallengePassword: %v", err)
+	}
+	if err := req.AddExtensionByName("nsComment", "UTF8:中文注释"); err != nil {
+		t.Fatalf("AddExtensionByName(nsComment): %v", err)
+	}
+	if err := req.Sign(priv); err != nil {
+		t.Fatal(err)
+	}
+
+	pemBytes, err := req.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCertificateRequestPEM(pemBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// subject 逐条保真
+	want := subject.Entries()
+	got := loaded.SubjectEntries()
+	if len(got) != len(want) {
+		t.Fatalf("loaded CSR subject entries = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i].Field != want[i].Field || got[i].Value != want[i].Value {
+			t.Fatalf("CSR subject[%d] = {%s=%q}, want {%s=%q}",
+				i, got[i].Field, got[i].Value, want[i].Field, want[i].Value)
+		}
+	}
+
+	// challengePassword 不再被双重编码
+	if v := loaded.ChallengePassword(); v != "口令-abc" {
+		t.Fatalf("ChallengePassword = %q (% x), want 口令-abc", v, v)
+	}
+
+	// nsComment 扩展以原始 UTF-8 字节承载
+	var nsComment []byte
+	for _, e := range loaded.Extensions() {
+		if e.Field == "nsComment" {
+			nsComment = e.Data
+		}
+	}
+	if !bytes.Contains(nsComment, []byte("中文注释")) {
+		t.Fatalf("nsComment Data = % x，未包含原始 UTF-8 字节 % x", nsComment, []byte("中文注释"))
+	}
+
+	if err := loaded.Verify(); err != nil {
+		t.Fatalf("loaded CSR verify: %v", err)
+	}
+}
+
+// TestCSRChallengePasswordInvalidUTF8 验证非法 UTF-8 口令在调用原生接口前被拒绝。
+func TestCSRChallengePasswordInvalidUTF8(t *testing.T) {
+	priv, err := asym.GenerateSM2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := NewEmptyCertificateRequest()
+	if err := req.SetSubject(NewName().Add("CN", "csr.example.com")); err != nil {
+		t.Fatal(err)
+	}
+	if err := req.SetPublicKey(priv.Public()); err != nil {
+		t.Fatal(err)
+	}
+	err = req.SetChallengePassword("\xff\xfe")
+	if err == nil {
+		t.Fatal("SetChallengePassword with invalid UTF-8 should fail")
+	}
+	if !strings.Contains(err.Error(), "UTF-8") {
+		t.Fatalf("error = %v, want it to mention UTF-8", err)
 	}
 }

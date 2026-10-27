@@ -24,6 +24,154 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
+## [0.5.0] - 2026-10-27
+
+### Added
+
+- `meta`: new form vocabulary plus enumeration APIs mirroring the Tongsuo CLI
+  command shapes (`list` / `dgst` / `enc`):
+  - enumeration: `Digests` / `Ciphers` / `MACs` / `KDFs` / `Signatures` /
+    `KeyExchanges` / `KEMs` / `TLSGroups` / `Providers` / `SeedingSource`,
+    de-duplicated and sorted;
+  - I/O: `Source` (bytes / reader / file / stdin) and `Sink`
+    (bytes / writer / file / stdout, with raw / hex / base64 encoding);
+  - helpers: `Encoding` / `ParseEncoding` / `Encode` / `Decode` / `Hex` /
+    `Base64` / `Dump`, `Format` (PEM / DER) and `Passphrase`
+    (`pass:` / `env:` / `file:` / `fd:` / `stdin:`, redacted by `String()`).
+- `mac`: expanded from HMAC only to 14 `EVP_MAC` algorithms (the HMAC-SHA2
+  family, HMAC-SM3, CMAC, GMAC, KMAC-128 / KMAC-256, SipHash, Poly1305, EIA3
+  and more), with by-name `New` / `Sum` / `SumReader`, typed entries `CMAC` /
+  `GMAC` / `KMAC128` / `KMAC256` / `SipHash` / `Poly1305` / `EIA3` and 14
+  `NewHMAC*` / `SumHMAC*` helpers.
+- `sym`: added AES-192 in every mode (ECB / CBC / CTR / GCM) plus SM4-CCM,
+  SM4-XTS, ChaCha20 and ChaCha20-Poly1305; added the by-name AEAD entries
+  `NewAEAD` / `EncryptAEAD` / `DecryptAEAD`; `AESKey` / `NewAESKey` /
+  `GenerateSymmetricKey` accept 24-byte (AES-192) keys.
+- `kdf`: expanded from HKDF / PBKDF2 to 10 algorithms — added SCRYPT, SSKDF,
+  TLS1-PRF, TLS13-KDF, KBKDF, X942KDF, X963KDF and HMAC-DRBG-KDF; typed entries
+  are `Scrypt` / `SSKDF` / `TLS1PRF` / `TLS13KDFExtract` / `TLS13KDFExpand` /
+  `KBKDF` (with `KBKDFOptions`) / `X942KDF` / `X963KDF` / `HMACDRBG`; the
+  by-name `Derive` `Options` gained mode, label and cost fields; added
+  `HashMD5SHA1` (the default TLS1-PRF digest).
+- CLI-style form entries in the primitive packages (together with `meta`'s
+  `Source` / `Sink`):
+  - `digest`: `SumSource` / `SumFile` / `SumTo` / `SumReaderTo`;
+  - `mac`: `SumSource` / `SumFile` / `SumTo`;
+  - `sym`: `EncryptSource` / `DecryptSource` (streaming; ECB / CBC use
+    PKCS#7, CTR / OFB / CFB / ChaCha20 need no padding; the AEAD modes and XTS
+    return `ErrUnsupported`);
+  - `kdf`: `DeriveTo`;
+  - `asym`: `LoadPrivateKeySource` / `LoadPublicKeySource` /
+    `MarshalPrivateKeyTo` / `MarshalPublicKeyTo`;
+  - `x509`: `MarshalFormat` / `LoadCertificateSource` (auto-detects PEM vs
+    DER) / `MarshalCertificateTo` / `MarshalCSRTo`.
+- `tls`: added `NewListener(config, ln)` (the equivalent of
+  `crypto/tls.Listen`): the handshake completes inside Accept and a failure
+  closes the connection; `Close` is idempotent and concurrency-safe; the
+  TLS / NTLS server credentials are validated at construction time.
+- `internal/native`: added the full `EVP_MAC` family binding, the generic
+  `EVP_KDF_derive`, algorithm and provider enumeration
+  (`EVP_*_do_all_provided` plus a fetch filter), seed source and TLS group
+  enumeration, the `EVP_CIPHER_fetch` path (SM4-XTS), AES-192 and ChaCha20
+  descriptors and `EVP_CipherSetLength` (the CCM length parameter).
+- `internal/core`: added `MAC` / `MACCtx`, `KDFParams` with a generic
+  `Derive`, `AlgKind` and the algorithm enumerations, `NewCCMCtx` and
+  `Cipher.Close`.
+- Runtime capability probes: `kdf.Available(name)` and `sym.Available(name)`
+  report whether the **installed** Tongsuo really offers an algorithm (the
+  `Names()` lists are compile-time), and `kdf.KBKDFCounterWidthSupported()`
+  reports whether KBKDF accepts the `R` parameter. They exist to bridge the gap
+  with the CI-pinned Tongsuo 8.4.0.
+
+### Fixed
+
+- `mac`: `Sum` / `Reset` no longer panic on failure. `hash.Hash.Sum` has no
+  error return and the previous implementation called `panic(err)`, which both
+  violated the "the library never panics" rule and crashed outright on builds
+  where `EVP_MAC_CTX_dup` is unavailable (typically GMAC on Tongsuo 8.4.0,
+  which reports `not able to copy ctx`). Construction now probes the dup
+  capability and, when the context cannot be copied, buffers the input and
+  recomputes on `Sum`; the cause is exposed through the concrete type's
+  `Err()`, and the one-shot entries (`Sum` / `SumReader`) check it after
+  calling `Sum`.
+- `internal/native`: adapted to the compile-time and runtime differences of
+  Tongsuo 8.4.0 (the CI pin, OpenSSL 3.0.3 base): the KBKDF `r` parameter
+  (`OSSL_KDF_PARAM_KBKDF_R`) and the HMAC-DRBG-KDF `entropy` / `nonce`
+  parameters are absent from the older headers and are now `#ifdef`-guarded;
+  when `SSL_CTX_get0_implemented_groups` is missing, `X_SSL_group_names`
+  returns an empty list, and two compile-time probes were added
+  (`X_SSL_groups_supported` / `X_EVP_KDF_kbkdf_r_supported`). Accordingly
+  `meta.TLSGroups()` returns an empty slice on older builds, and
+  `kdf.Available` / `sym.Available` separate "implemented by this library"
+  from "runnable on this machine".
+- `internal/native`: reading a PEM private key no longer asks the terminal for
+  a pass phrase. `PEM_read_bio_PrivateKey` used to pass a `NULL` callback, so
+  OpenSSL fell back to its default UI callback and read `/dev/tty`, blocking
+  any process without a terminal. It now passes a "never supply a pass phrase"
+  callback, so an encrypted PEM fed to `LoadPrivateKeyPEM` fails immediately
+  with an error (use `LoadEncryptedPrivateKeyPEM` instead).
+- `meta`: no longer imports `internal/native` directly (it uses
+  `core.AlgKind`), restoring the one-way layering API layer →
+  `internal/core` → `internal/native`.
+- `internal/native`: scrypt's `maxmem` and X942KDF's `use-keybits` are only
+  forwarded when set explicitly, so a Go zero value (`0` / `false`) no longer
+  overrides the provider defaults — the latter default to enabled and
+  overriding it made X942KDF disagree with the RFC 2631 vectors.
+- `internal/core` / `tls`: fixed a data race caused by `SSLConn` misusing
+
+  `sync.WaitGroup` (`go test -race ./tls/` reproduces it reliably in
+  `TestReadReturnsAfterCancel`, `tls.Conn.Close` vs. `core.SSLConn.Read`).
+  `begin` used to call `inflight.Add` outside the mutex and only then check
+  `stopped`, so it could touch the counter concurrently with
+  `Close`'s `inflight.Wait` right after a `Done` dropped the counter to zero —
+  violating the `sync.WaitGroup` contract that an `Add` starting from zero must
+  not race with `Wait`. The stopped check and `Add` now both happen under
+  `s.mu`, and `Close` / `Stop` set `stopped` under the same mutex before
+  calling `Wait`, so `Add` is strictly ordered before `Wait`. As a consequence
+  `stopped` is a plain `bool` guarded by `mu` instead of an `atomic.Bool`.
+- `x509`: non-ASCII RDN values are no longer double-encoded. `Name.Add` /
+  `Name.TryAdd` (and therefore certificates, CSRs, CRLs and TLS / NTLS peer
+  names built from them) now pass `MBSTRING_UTF8` to
+  `X509_NAME_add_entry_by_txt` instead of `MBSTRING_ASC`, so a Go `string` is
+  decoded as UTF-8 the way the caller wrote it: `CN=海峰` is stored as 6 bytes
+  instead of the 12-byte mojibake `CN=æµ·å³°`. This matches `openssl req -utf8`.
+- `x509`: `CertificateRequest.SetChallengePassword` also switched to
+  `MBSTRING_UTF8`, so non-ASCII challenge passwords survive the CSR round trip
+  instead of being re-encoded byte by byte as Latin-1.
+- `x509`: `Name.Get` / `Name.Text` and every reader built on them no longer
+  truncate values at 255 bytes. The lookup walks the RDN entries and decodes
+  each one with `ASN1_STRING_to_UTF8` instead of copying into a fixed 256-byte
+  stack buffer, which used to cut long CJK values in the middle of a character.
+
+### Changed
+
+- `x509`: values that are not valid UTF-8 are now rejected up front.
+  `Name.Add` / `Name.TryAdd` and `SetChallengePassword` return
+  `x509: name: value is not valid UTF-8` / `x509: challenge password is not
+  valid UTF-8` instead of handing the bytes to OpenSSL. Values the field's
+  ASN.1 charset cannot represent (non-ASCII `C` / `emailAddress`) and empty
+  values (most fields have `minsize=1`) are still rejected by OpenSSL.
+
+### BREAKING
+
+- `x509`: `Name.Add` / `Name.TryAdd` now really append. The binding passed
+  `loc = 0` to `X509_NAME_add_entry_by_txt`, which inserts at the **head**, so
+  the DER `RDNSequence` came out as the reverse of the call order —
+  `NewName().Add("C", …).Add("O", …).Add("CN", …)` produced `CN, O, C`.
+  Entries now follow the call order (most-general-first), matching
+  `openssl req -subj "/C=…/O=…/CN=…"`, `crypto/x509`'s
+  `pkix.Name.ToRDNSequence` and RFC 4514; for the same written order the
+  subject DER is now byte-identical to the CLI (locked by
+  `TestCLISubjectDERParity`).
+
+  Migration: multi-RDN subjects / issuers change their DER bytes, so
+  signatures change and `SubjectHash` / `IssuerHash` (and any name comparison
+  against externally built DNs) may no longer match. To keep the old bytes,
+  reverse the `Add` calls or import the existing DER instead of rebuilding
+  the name.
+
+---
+
 ## [0.4.0] - 2026-10-23
 
 ### Added
@@ -723,7 +871,8 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.2...v0.2.0

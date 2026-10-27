@@ -26,6 +26,19 @@ func digestFor(name string) string {
 	return strings.TrimPrefix(name, prefix)
 }
 
+// hmacNameList 返回 mac.Names() 中的 HMAC 系列算法名。
+//
+// hmacNameList returns the HMAC family names of mac.Names().
+func hmacNameList() []string {
+	out := make([]string, 0, len(mac.Names()))
+	for _, name := range mac.Names() {
+		if strings.HasPrefix(name, "HMAC-") {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 // TestHMACAgainstCLI 对每种 HMAC-* 用铜锁 CLI 逐字节比对。
 func TestHMACAgainstCLI(t *testing.T) {
 	testutil.SkipIfNoOpenSSL(t)
@@ -33,7 +46,7 @@ func TestHMACAgainstCLI(t *testing.T) {
 	key, _ := hex.DecodeString("0001020304050607")
 	data := []byte("abc")
 
-	for _, name := range mac.Names() {
+	for _, name := range hmacNameList() {
 		t.Run(name, func(t *testing.T) {
 			// 构造 CLI 调用：tongsuo mac -digest <digest> -macopt hexkey:<key> HMAC
 			keyHex := hex.EncodeToString(key)
@@ -64,7 +77,7 @@ func TestHMACByNameAgainstCLI(t *testing.T) {
 	key, _ := hex.DecodeString("0001020304050607")
 	data := []byte("abc")
 
-	for _, name := range mac.Names() {
+	for _, name := range hmacNameList() {
 		t.Run(name, func(t *testing.T) {
 			digest := digestFor(name)
 			keyHex := hex.EncodeToString(key)

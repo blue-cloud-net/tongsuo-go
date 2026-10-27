@@ -45,8 +45,37 @@ func TestAESKeyBasic(t *testing.T) {
 
 // TestAESKeyInvalidSize 验证 AES 密钥长度校验。
 func TestAESKeyInvalidSize(t *testing.T) {
-	if _, err := NewAESKey(make([]byte, 24)); err == nil {
-		t.Error("want error for invalid AES key size 24")
+	for _, size := range []int{0, 15, 20, 31, 33} {
+		if _, err := NewAESKey(make([]byte, size)); err == nil {
+			t.Errorf("want error for invalid AES key size %d", size)
+		}
+	}
+}
+
+// TestAESKey192 验证 AES-192 密钥构造（24 字节）。
+//
+// TestAESKey192 verifies AES-192 key construction (24 bytes).
+func TestAESKey192(t *testing.T) {
+	raw := bytes.Repeat([]byte{0x24}, AES192KeySize)
+	k, err := NewAESKey(raw)
+	if err != nil {
+		t.Fatalf("NewAESKey(AES-192): %v", err)
+	}
+	if k.Algorithm() != AlgAES192 {
+		t.Errorf("Algorithm() = %q, want %q", k.Algorithm(), AlgAES192)
+	}
+	if k.Size() != AES192KeySize {
+		t.Errorf("Size() = %d, want %d", k.Size(), AES192KeySize)
+	}
+
+	// GenerateSymmetricKey 也必须支持 AES-192。
+	gen, err := GenerateSymmetricKey(AlgAES192)
+	if err != nil {
+		t.Fatalf("GenerateSymmetricKey(AES-192): %v", err)
+	}
+	if gen.Algorithm() != AlgAES192 || gen.Size() != AES192KeySize {
+		t.Errorf("generated key = %q/%d, want %q/%d",
+			gen.Algorithm(), gen.Size(), AlgAES192, AES192KeySize)
 	}
 }
 
@@ -326,8 +355,11 @@ func TestNewGCM(t *testing.T) {
 func TestNames(t *testing.T) {
 	want := []string{
 		"AES-128-CBC", "AES-128-CTR", "AES-128-ECB", "AES-128-GCM",
+		"AES-192-CBC", "AES-192-CTR", "AES-192-ECB", "AES-192-GCM",
 		"AES-256-CBC", "AES-256-CTR", "AES-256-ECB", "AES-256-GCM",
-		"SM4-CBC", "SM4-CTR", "SM4-ECB", "SM4-OFB", "SM4-CFB", "SM4-GCM",
+		"SM4-CBC", "SM4-CCM", "SM4-CFB", "SM4-CTR", "SM4-ECB", "SM4-GCM",
+		"SM4-OFB", "SM4-XTS",
+		"ChaCha20", "ChaCha20-Poly1305",
 	}
 	got := Names()
 	if len(got) != len(want) {

@@ -43,6 +43,38 @@ func newCipher(c unsafe.Pointer) *Cipher {
 	}
 }
 
+// newCipherOwned 包装由 EVP_CIPHER_fetch 得到的算法描述符指针。
+// 该描述符由本对象拥有，Close 时释放；铜锁静态构造器返回的描述符不应走本函数。
+//
+// newCipherOwned wraps a cipher descriptor obtained through
+// EVP_CIPHER_fetch. The descriptor is owned by the returned *Cipher and
+// released on Close; descriptors returned by the static Tongsuo
+// constructors must NOT be wrapped with this function.
+func newCipherOwned(c unsafe.Pointer) *Cipher {
+	if c == nil {
+		return nil
+	}
+	return &Cipher{
+		handle:    NewHandle(c, true, native.EVP_CIPHER_Free),
+		blockSize: native.EVP_CIPHER_get_block_size(c),
+		keySize:   native.EVP_CIPHER_get_key_length(c),
+		ivSize:    native.EVP_CIPHER_get_iv_length(c),
+	}
+}
+
+// Close 释放由 fetch 得到的算法描述符。
+// 对静态构造器返回的描述符（非 owned）为 no-op。调用幂等。
+//
+// Close releases a fetched cipher descriptor. It is a no-op for
+// descriptors returned by the static constructors (which are not owned).
+// The call is idempotent.
+func (c *Cipher) Close() error {
+	if c == nil {
+		return nil
+	}
+	return c.handle.Close()
+}
+
 // SM4ECB 返回 SM4-ECB 分组算法描述符（16 字节分组、16 字节密钥、无 IV，IVSize == 0）。
 // ECB 不推荐用于一般场景：相同明文分组会产生相同密文分组。
 //
@@ -155,6 +187,74 @@ func AES256CTR() *Cipher { return newCipher(native.EVP_aes_256_ctr()) }
 // unique per (key, message) pair; reuse breaks both confidentiality
 // and authenticity.
 func AES256GCM() *Cipher { return newCipher(native.EVP_aes_256_gcm()) }
+
+// AES192ECB 返回 AES-192-ECB 分组算法描述符（16 字节分组、24 字节密钥、无 IV，IVSize == 0）。
+// ECB 不推荐用于一般场景：相同明文分组会产生相同密文分组。
+//
+// AES192ECB returns AES-192 in ECB mode. 16-byte blocks, 24-byte key, no
+// IV (IVSize == 0). ECB is NOT recommended for general use because
+// identical plaintext blocks yield identical ciphertext.
+func AES192ECB() *Cipher { return newCipher(native.EVP_aes_192_ecb()) }
+
+// AES192CBC 返回 AES-192-CBC 分组算法描述符（16 字节分组、24 字节密钥、16 字节 IV）。
+// CBC 要求每次加密使用随机不可预测的 IV，同一密钥下严禁复用 IV。
+//
+// AES192CBC returns AES-192 in CBC mode. 16-byte blocks, 24-byte key,
+// 16-byte IV. CBC requires a random unpredictable IV per encryption;
+// never reuse an IV with the same key.
+func AES192CBC() *Cipher { return newCipher(native.EVP_aes_192_cbc()) }
+
+// AES192CTR 返回 AES-192-CTR 流模式算法描述符（24 字节密钥、16 字节 IV/counter）。
+// IV/counter 必须在每个 (key, message) 对中唯一；复用会破坏机密性。
+//
+// AES192CTR returns AES-192 in CTR mode (treated as a stream mode).
+// 24-byte key, 16-byte IV (counter). The IV/counter MUST be unique
+// per (key, message) pair; reuse breaks confidentiality.
+func AES192CTR() *Cipher { return newCipher(native.EVP_aes_192_ctr()) }
+
+// AES192GCM 返回 AES-192-GCM 认证加密算法描述符（AEAD，24 字节密钥、可变长度 nonce，推荐 12 字节）。
+// nonce 必须在每个 (key, message) 对中唯一；复用会同时破坏机密性与真实性。
+//
+// AES192GCM returns AES-192 in GCM (AEAD) mode. 24-byte key,
+// variable-length nonce (12 bytes recommended). The nonce MUST be
+// unique per (key, message) pair; reuse breaks both confidentiality
+// and authenticity.
+func AES192GCM() *Cipher { return newCipher(native.EVP_aes_192_gcm()) }
+
+// SM4CCM 返回 SM4-CCM 认证加密算法描述符（AEAD，16 字节密钥、12 字节 nonce）。
+// nonce 必须在每个 (key, message) 对中唯一；复用会同时破坏机密性与真实性。
+//
+// SM4CCM returns the SM4 cipher in CCM (AEAD) mode. 16-byte key,
+// 12-byte nonce. The nonce MUST be unique per (key, message) pair;
+// reuse breaks both confidentiality and authenticity.
+func SM4CCM() *Cipher { return newCipher(native.EVP_sm4_ccm()) }
+
+// SM4XTS 返回 SM4-XTS 分组算法描述符（16 字节分组、32 字节密钥 = 两个 16 字节分量密钥）。
+// XTS 不使用 IV；密文长度必须是 16 字节的整数倍且不少于 16 字节。
+// 同一分量密钥对严禁加密两条长度相同的数据（会泄漏明文异或）。
+//
+// SM4XTS returns the SM4 cipher in XTS mode. 16-byte blocks, 32-byte key
+// (two 16-byte component keys), no IV. The ciphertext length must be a
+// multiple of 16 bytes and at least 16 bytes. Never encrypt two messages
+// of the same length under the same component key (that leaks the XOR of
+// the plaintexts).
+func SM4XTS() *Cipher { return newCipherOwned(native.EVP_CIPHER_Fetch("SM4-XTS")) }
+
+// ChaCha20 返回 ChaCha20 流密码算法描述符（32 字节密钥、16 字节 counter/IV）。
+// counter 必须在每个 (key, message) 对中唯一；复用会破坏机密性。
+//
+// ChaCha20 returns the ChaCha20 stream cipher descriptor. 32-byte key,
+// 16-byte counter/IV. The counter MUST be unique per (key, message) pair;
+// reuse breaks confidentiality.
+func ChaCha20() *Cipher { return newCipher(native.EVP_chacha20()) }
+
+// ChaCha20Poly1305 返回 ChaCha20-Poly1305 认证加密算法描述符（AEAD，32 字节密钥、12 字节 nonce）。
+// nonce 必须在每个 (key, message) 对中唯一；复用会同时破坏机密性与真实性。
+//
+// ChaCha20Poly1305 returns the ChaCha20-Poly1305 AEAD cipher descriptor.
+// 32-byte key, 12-byte nonce. The nonce MUST be unique per (key, message)
+// pair; reuse breaks both confidentiality and authenticity.
+func ChaCha20Poly1305() *Cipher { return newCipher(native.EVP_chacha20_poly1305()) }
 
 // BlockSize 返回分组长度（字节），例如 SM4/AES 为 16。
 //
@@ -474,6 +574,120 @@ func NewGcmCtx(c *Cipher, key, nonce []byte, enc bool) (*CipherCtx, error) {
 		return nil, NewOpError("cipher: EVP_CipherInit_ex(iv)", native.PopError())
 	}
 	return &CipherCtx{handle: h, cipher: c, enc: enc, pad: false}, nil
+}
+
+// NewCCMCtx 以 CCM 模式创建加/解密上下文。
+//
+// 序列（与铜锁 CCM provider 一致）：
+//  1. EVP_CipherInit_ex(ctx, cipher, nil, nil, nil, enc)  只设置算法
+//  2. EVP_CIPHER_CTX_ctrl(ctx, SET_IVLEN, len(nonce), nil) 设置 nonce 长度
+//  3. EVP_CIPHER_CTX_ctrl(ctx, SET_TAG, tagLen, nil)      设置标签长度（CCM 的 M
+//     参数在设置密钥时被固化，因此必须先于密钥设置）
+//  4. EVP_CipherInit_ex(ctx, nil, nil, key, nonce, enc)    设置密钥与 nonce
+//  5. EVP_EncryptUpdate/DecryptUpdate(ctx, nil, &len, nil, plaintextLen)
+//     设置明文总长度（provider 用 out==NULL && in==NULL 的 update 表达「设总长」，
+//     而不是 legacy 的 EVP_CTRL_CCM_SET_L）
+//
+// CCM 必须在加密前给出明文总长度（它被编码进 nonce 的长度域），因此本构造器
+// 要求 plaintextLen 已知且 >= 0。解密侧应在 SetTag 之后再调用 SetAad /
+// DecryptAll。tagLen 必须为 4..16 的偶数（推荐 TagSize=16）。
+//
+// enc == true 选加密，false 选解密。key 长度必须为 Cipher.KeySize；
+// nonce 长度必须为 7..13 字节（铜锁 CCM provider 的取值范围）。
+// 不应用 PKCS#7 填充（pad 被强制为 false）。返回的 *CipherCtx 拥有底层
+// EVP_CIPHER_CTX，调用方必须调用 Close。
+//
+// NewCCMCtx creates a CCM cipher context.
+//
+// The sequence matches the Tongsuo CCM provider:
+//
+//  1. EVP_CipherInit_ex(ctx, cipher, nil, key, nil, enc) sets the
+//     algorithm and key (no IV yet).
+//  2. EVP_CIPHER_CTX_ctrl(ctx, SET_IVLEN, len(nonce), nil) sets the
+//     nonce length.
+//  3. EVP_CIPHER_CTX_ctrl(ctx, SET_TAG, tagLen, nil) sets the tag length
+//     (CCM encodes M into the nonce length field, so it has to be fixed
+//     before the nonce is set).
+//  4. EVP_CipherInit_ex(ctx, nil, nil, nil, nonce, enc) sets the nonce.
+//  5. EVP_EncryptUpdate/DecryptUpdate(ctx, nil, &len, nil, plaintextLen)
+//     sets the total plaintext length (the provider expresses "set total
+//     length" through an update with out == NULL && in == NULL rather
+//     than the legacy EVP_CTRL_CCM_SET_L).
+//
+// CCM encodes the plaintext length into the nonce length field, so the
+// total plaintext length MUST be known before encryption; plaintextLen
+// must therefore be known and >= 0. On the decrypt path SetTag should be
+// called before SetAad / DecryptAll. tagLen must be an even number in
+// 4..16 (TagSize = 16 is recommended).
+//
+// enc == true selects encryption, false selects decryption. key MUST have
+// length Cipher.KeySize; nonce MUST be 7 to 13 bytes long (the range
+// accepted by the Tongsuo CCM provider). PKCS#7 padding is not applied
+// (pad is forced to false). The returned *CipherCtx owns the underlying
+// EVP_CIPHER_CTX and the caller MUST invoke Close.
+func NewCCMCtx(c *Cipher, key, nonce []byte, plaintextLen, tagLen int, enc bool) (*CipherCtx, error) {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return nil, fmt.Errorf("cipher: invalid cipher")
+	}
+	if len(key) != c.keySize {
+		return nil, fmt.Errorf("cipher: key length %d, want %d", len(key), c.keySize)
+	}
+	if len(nonce) < 7 || len(nonce) > 13 {
+		return nil, fmt.Errorf("cipher: invalid CCM nonce length %d, want 7..13", len(nonce))
+	}
+	if plaintextLen < 0 {
+		return nil, fmt.Errorf("cipher: invalid CCM plaintext length %d", plaintextLen)
+	}
+	if tagLen < 4 || tagLen > 16 || tagLen%2 != 0 {
+		return nil, fmt.Errorf("cipher: invalid CCM tag length %d, want an even value in 4..16", tagLen)
+	}
+	ctx := native.EVP_CIPHER_CTX_new()
+	if ctx == nil {
+		return nil, NewOpError("cipher: EVP_CIPHER_CTX_new", native.PopError())
+	}
+	h := NewHandle(ctx, true, native.EVP_CIPHER_CTX_free)
+	encv := native.Decrypt
+	if enc {
+		encv = native.Encrypt
+	}
+	// 第一步：只设置算法（key 与 iv 留到 tag 长度确定之后再设）。
+	if !native.EVP_CipherInit_ex(ctx, c.handle.Ptr(), nil, nil, nil, encv) {
+		_ = h.Close()
+		return nil, NewOpError("cipher: EVP_CipherInit_ex(cipher)", native.PopError())
+	}
+	// 第二步：设置 nonce 长度。
+	if !native.EVP_CIPHER_CTX_ctrl(ctx, native.CtrlGCMSetIVLen, len(nonce), nil) {
+		_ = h.Close()
+		return nil, NewOpError("cipher: EVP_CIPHER_CTX_ctrl(SET_IVLEN)", native.PopError())
+	}
+	// 第三步：设置标签长度（CCM 的 M 参数）。M 在 C 侧于设置密钥时被固化进
+	// CCM128 上下文，因此必须在设置密钥之前给出。
+	if !native.EVP_CIPHER_CTX_ctrl(ctx, native.CtrlGCMSetTag, tagLen, nil) {
+		_ = h.Close()
+		return nil, NewOpError("cipher: EVP_CIPHER_CTX_ctrl(SET_TAG length)", native.PopError())
+	}
+	// 第四步：设置密钥与 nonce。
+	if !native.EVP_CipherInit_ex(ctx, nil, nil, key, nonce, encv) {
+		_ = h.Close()
+		return nil, NewOpError("cipher: EVP_CipherInit_ex(key,iv)", native.PopError())
+	}
+	// 第五步：设置明文总长度（out == nil && in == nil 的 update）。
+	if err := setCCMLength(ctx, plaintextLen, enc); err != nil {
+		_ = h.Close()
+		return nil, err
+	}
+	return &CipherCtx{handle: h, cipher: c, enc: enc, pad: false}, nil
+}
+
+// setCCMLength 通过「空输出 + 空输入」的 update 告知 CCM 总长度。
+//
+// setCCMLength tells CCM the total length through an update with an empty
+// output and empty input.
+func setCCMLength(ctx unsafe.Pointer, n int, enc bool) error {
+	if !native.EVP_CipherSetLength(ctx, n, enc) {
+		return NewOpError("cipher: CCM set total length", native.PopError())
+	}
+	return nil
 }
 
 // SetIVLength 设置 GCM IV/Nonce 长度（创建上下文前调整）。

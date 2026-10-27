@@ -242,3 +242,47 @@ func TestIssueCertificateFromRequestErrors(t *testing.T) {
 		t.Error("zero-value validity should fail")
 	}
 }
+
+// TestIssueFromCSRNonASCII 验证 CJK subject 的 CSR 经 CA 签发后主题与颁发者逐条保真。
+func TestIssueFromCSRNonASCII(t *testing.T) {
+	ca, caPriv := issueTestCA(t, "铜锁签发 CA")
+
+	priv, err := asym.GenerateSM2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	subject := NewName().Add("CN", "海峰").Add("O", "示例公司")
+	req, err := NewCertificateRequest(subject, priv.Public(), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	cert, err := IssueCertificateFromRequest(req, ca, caPriv, &IssueOptions{
+		Serial:    9,
+		NotBefore: now.Add(-time.Hour),
+		NotAfter:  now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("IssueCertificateFromRequest: %v", err)
+	}
+	defer cert.Close()
+
+	// 证书 subject 来自 CSR，逐条保真
+	want := subject.Entries()
+	got := cert.SubjectEntries()
+	if len(got) != len(want) {
+		t.Fatalf("issued subject entries = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i].Field != want[i].Field || got[i].Value != want[i].Value {
+			t.Fatalf("issued subject[%d] = {%s=%q}, want {%s=%q}",
+				i, got[i].Field, got[i].Value, want[i].Field, want[i].Value)
+		}
+	}
+
+	// 颁发者取自 CA subject（CN 含 CJK）
+	if v := cert.IssuerEntries(); len(v) == 0 || v[0].Value != "铜锁签发 CA" {
+		t.Fatalf("issued issuer = %+v, want CN=铜锁签发 CA", v)
+	}
+}

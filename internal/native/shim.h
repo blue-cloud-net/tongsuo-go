@@ -302,6 +302,151 @@ int X_EVP_KDF_PBKDF2(const char *digest,
 int X_EVP_KDF_available(const char *algorithm);
 
 /*
+ * KDF 泛化派生（EVP_KDF_fetch + EVP_KDF_derive）。
+ * 各算法的 OSSL_PARAM 集合差异很大，参数统一经 X_KDF_PARAMS 结构体传入，
+ * 由本函数按 alg 分支组装 OSSL_PARAM 数组——规避 cgo 对 OSSL_PARAM 数组
+ * 与变长结构体的限制。
+ *
+ * 字段语义（按算法取用，未取用的字段被忽略）：
+ *   digest     摘要算法名（HKDF/PBKDF2/SSKDF/TLS1-PRF/TLS13-KDF/KBKDF/
+ *              X942KDF/X963KDF/HMAC-DRBG-KDF 使用）
+ *   mode       模式字符串（KBKDF："counter"/"feedback"；HKDF/TLS13-KDF：
+ *              "EXTRACT_AND_EXPAND"）
+ *   cekalg     目标 CEK 算法名（X942KDF-ASN1 必填，如 "AES-128-CBC"）
+ *   key        密钥材料（HKDF/SSKDF/X942KDF/X963KDF/KBKDF 的 Ki）
+ *   secret     共享秘密 Z（TLS1-PRF/TLS13-KDF/X942KDF/X963KDF/SSKDF）
+ *   salt       盐（HKDF/PBKDF2/SCRYPT/SSKDF/TLS13-KDF/KBKDF 的 label）
+ *   info       上下文字节（HKDF/SSKDF/X963KDF/KBKDF 的 context）
+ *   pass       口令（PBKDF2/SCRYPT）
+ *   seed       种子（TLS1-PRF）
+ *   label      标签（TLS13-KDF）
+ *   entropy    熵（HMAC-DRBG-KDF）
+ *   nonce      nonce（HMAC-DRBG-KDF）
+ *   ukm        用户密钥材料（X942KDF-ASN1）
+ *   iter       迭代次数（PBKDF2）
+ *   n/r/p      scrypt 成本参数（SCRYPT）
+ *   maxmem     scrypt 内存上限字节数（SCRYPT）
+ *   use_l      KBKDF 是否在末尾追加 key 比特长度
+ *   use_separator  KBKDF 是否使用 separator 变体
+ *   use_keybits    X942KDF 是否以 key 比特长度替代 supp-pubinfo
+ *
+ * 返回 1 表示成功，0 表示失败（错误已入队列，经 ERR_get_error 读取）。
+ */
+typedef struct {
+    const char *digest;
+    const char *mode;
+    const char *cekalg;
+    const char *mac;
+    const unsigned char *key;
+    size_t keylen;
+    const unsigned char *secret;
+    size_t secretlen;
+    const unsigned char *salt;
+    size_t saltlen;
+    const unsigned char *info;
+    size_t infolen;
+    const unsigned char *pass;
+    size_t passlen;
+    const unsigned char *seed;
+    size_t seedlen;
+    const unsigned char *label;
+    size_t labellen;
+    const unsigned char *entropy;
+    size_t entropylen;
+    const unsigned char *nonce;
+    size_t noncelen;
+    const unsigned char *ukm;
+    size_t ukmlen;
+    const unsigned char *prefix;
+    size_t prefixlen;
+    const unsigned char *data;
+    size_t datalen;
+    uint64_t iter;
+    uint64_t n;
+    uint64_t r;
+    uint64_t p;
+    uint64_t maxmem;
+    int use_l;
+    int use_separator;
+    int use_keybits;
+} X_KDF_PARAMS;
+
+int X_EVP_KDF_derive(const char *alg, const X_KDF_PARAMS *params,
+                      unsigned char *out, size_t out_len);
+
+/*
+ * EVP_MAC（provider MAC 家族）参数设置。
+ * OSSL_PARAM 数组在 C 侧构造，规避 cgo 对 OSSL_PARAM 结构体数组的限制。
+ *
+ * mask 为 X_MAC_OPT_* 的按位或，指定本次要设置哪些参数：
+ *   X_MAC_OPT_CIPHER  cipher  参数名（CMAC/GMAC 必填，如 "SM4"、"AES-128-GCM"）
+ *   X_MAC_OPT_IV      iv      参数名（GMAC / EIA3）
+ *   X_MAC_OPT_CUSTOM  custom  参数名（KMAC 的 customization 串）
+ *   X_MAC_OPT_SIZE    size    参数名（KMAC / SipHash 的输出长度）
+ *   X_MAC_OPT_DIGEST  digest  参数名（HMAC 的底层摘要）
+ *
+ * 返回 1 表示成功，0 表示失败（错误已入队列）。
+ */
+#define X_MAC_OPT_CIPHER 0x01
+#define X_MAC_OPT_IV     0x02
+#define X_MAC_OPT_CUSTOM 0x04
+#define X_MAC_OPT_SIZE   0x08
+#define X_MAC_OPT_DIGEST 0x10
+
+int X_EVP_MAC_CTX_set_params(EVP_MAC_CTX *ctx, int mask,
+                             const char *cipher, const char *digest,
+                             const unsigned char *iv, size_t iv_len,
+                             const unsigned char *custom, size_t custom_len,
+                             size_t size);
+
+/*
+ * 算法枚举（EVP_*_do_all_provided）。
+ * 返回以 '\n' 分隔的 OPENSSL_malloc 字符串（每个元素是算法的规范名），
+ * 调用方必须用 X_OPENSSL_free 释放；无元素时返回 NULL。
+ * kind 取 X_ALG_KIND_* 常量。
+ */
+#define X_ALG_KIND_MD        0
+#define X_ALG_KIND_CIPHER    1
+#define X_ALG_KIND_MAC       2
+#define X_ALG_KIND_KDF       3
+#define X_ALG_KIND_SIGNATURE 4
+#define X_ALG_KIND_KEYEXCH   5
+#define X_ALG_KIND_KEM       6
+
+char *X_EVP_alg_names(int kind);
+
+/*
+ * 活跃 provider 列表。
+ * 每行一条，形如 "<name>\t<version>\t<status>"，以 '\n' 分隔；
+ * 同样是 OPENSSL_malloc 字符串，调用方必须用 X_OPENSSL_free 释放。
+ */
+char *X_OSSL_provider_list(void);
+
+/* 随机种子来源（OPENSSL_info(OPENSSL_INFO_SEED_SOURCE)），无需释放。 */
+const char *X_OPENSSL_seed_source(void);
+
+/*
+ * 已实现的 TLS 组名列表（以 '\n' 分隔的 OPENSSL_malloc 字符串，调用方必须用
+ * X_OPENSSL_free 释放）。与 `openssl list -tls-groups` 同源：
+ * SSL_CTX_get0_implemented_groups。
+ */
+char *X_SSL_group_names(void);
+
+/*
+ * X_SSL_groups_supported：本构建是否支持枚举 TLS 组（SSL_CTX_get0_implemented_groups）。
+ * X_SSL_groups_supported reports whether this build can enumerate TLS groups
+ * (SSL_CTX_get0_implemented_groups).
+ */
+int X_SSL_groups_supported(void);
+
+/*
+ * X_EVP_KDF_kbkdf_r_supported：本构建的 KBKDF 是否接受 r（计数器宽度）参数。
+ * X_EVP_KDF_kbkdf_r_supported reports whether this build's KBKDF accepts the
+ * r (counter width) parameter.
+ */
+int X_EVP_KDF_kbkdf_r_supported(void);
+
+/*
  * X_SSL_set_tlsext_host_name 包装 SSL_set_tlsext_host_name 宏（cgo 不能直接
  * 调宏），在 ClientHello 中设置 SNI 扩展。
  *

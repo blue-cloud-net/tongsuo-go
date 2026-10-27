@@ -356,3 +356,219 @@ func sm4CryptZero(key, iv, data []byte, enc bool, mode string) ([]byte, error) {
 	}
 	return ctx.DecryptAll(data)
 }
+
+// SM4-CCM / SM4-XTS 的实现。
+//
+// SM4-CCM 是 AEAD：nonce 取 7..13 字节（推荐 12），标签长度固定 TagSize；
+// CCM 把明文总长度编码进 nonce 的长度域，因此加解密前必须先知道明文长度，
+// 这也是它无法做成流式 cipher.AEAD 之外的形态的原因。
+//
+// SM4-XTS 是分组模式（非 AEAD）：密钥为 32 字节（两个 16 字节分量密钥），
+// tweak 为 16 字节，无填充，长度必须是 16 的整数倍且不少于 16 字节。
+
+// sm4CCM 实现基于 SM4-CCM 的 cipher.AEAD（密文格式 ciphertext || tag）。
+//
+// sm4CCM implements cipher.AEAD on top of SM4-CCM via Tongsuo.
+type sm4CCM struct {
+	key []byte
+}
+
+// NewSM4CCM 返回基于 SM4-CCM 的 cipher.AEAD。
+// key 必须为 SM4KeySize（16 字节）；nonce 必须为 7..13 字节（推荐
+// SM4CCMNonceSize）；Seal/Open 输出格式为 ciphertext || tag。
+//
+// 安全：AEAD 实例保留对 key 切片的引用（每次 Seal/Open 都复用）；
+// **调用方有责任在使用完毕后清零 key 切片**。nonce 不得重用。
+//
+// NewSM4CCM returns a cipher.AEAD implementation backed by SM4-CCM.
+// key must be SM4KeySize (16 bytes); the nonce must be 7 to 13 bytes
+// (SM4CCMNonceSize is recommended); the Seal/Open layout is
+// ciphertext || tag.
+//
+// Security: the AEAD instance retains a reference to the key slice
+// (reused on every Seal/Open call); callers MUST zero the key slice when
+// done. The nonce MUST NOT be reused.
+func NewSM4CCM(key []byte) (cipher.AEAD, error) {
+	if len(key) != SM4KeySize {
+		return nil, fmt.Errorf("sym: invalid SM4 key size %d, want %d", len(key), SM4KeySize)
+	}
+	return &sm4CCM{key: key}, nil
+}
+
+// NonceSize 返回推荐 Nonce 长度（12）；CCM 实际允许 7..13。
+//
+// NonceSize returns the recommended nonce length (12); CCM actually
+// accepts 7 to 13 bytes.
+func (g *sm4CCM) NonceSize() int { return SM4CCMNonceSize }
+
+// Overhead 返回认证标签长度（16）。
+//
+// Overhead returns the authentication tag length (16).
+func (g *sm4CCM) Overhead() int { return TagSize }
+
+// Seal 加密并追加认证标签到 dst（ciphertext || tag）。
+//
+// Seal implements cipher.AEAD.Seal.
+func (g *sm4CCM) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
+	ct, tag, err := EncryptSM4CCM(g.key, nonce, plaintext, additionalData)
+	if err != nil {
+		panic(err)
+	}
+	dst = append(dst, ct...)
+	dst = append(dst, tag...)
+	return dst
+}
+
+// Open 解密并校验认证标签。
+//
+// Open implements cipher.AEAD.Open.
+func (g *sm4CCM) Open(dst, nonce, ciphertext, additionalData []byte) ([]byte, error) {
+	if len(ciphertext) < TagSize {
+		return nil, fmt.Errorf("sym: SM4-CCM ciphertext too short")
+	}
+	tag := ciphertext[len(ciphertext)-TagSize:]
+	ct := ciphertext[:len(ciphertext)-TagSize]
+	pt, err := DecryptSM4CCM(g.key, nonce, ct, tag, additionalData)
+	if err != nil {
+		return nil, err
+	}
+	return append(dst, pt...), nil
+}
+
+// EncryptSM4CCM 使用 SM4-CCM 认证加密，返回密文与标签。
+// nonce 必须为 7..13 字节；aad 可为空。
+//
+// 安全：同一 (key, nonce) 对严禁重复使用。
+//
+// EncryptSM4CCM encrypts and authenticates with SM4-CCM and returns the
+// ciphertext and tag. The nonce must be 7 to 13 bytes; aad may be empty.
+//
+// Security: a (key, nonce) pair MUST NOT be reused.
+func EncryptSM4CCM(key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, err error) {
+	if len(key) != SM4KeySize {
+		return nil, nil, fmt.Errorf("sym: invalid SM4 key size %d, want %d", len(key), SM4KeySize)
+	}
+	if len(nonce) < 7 || len(nonce) > 13 {
+		return nil, nil, fmt.Errorf("sym: invalid CCM nonce size %d, want 7..13", len(nonce))
+	}
+	ctx, err := core.NewCCMCtx(core.SM4CCM(), key, nonce, len(plaintext), TagSize, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer ctx.Close()
+	if len(aad) > 0 {
+		if err := ctx.SetAad(aad); err != nil {
+			return nil, nil, err
+		}
+	}
+	ct, err := ctx.EncryptAll(plaintext)
+	if err != nil {
+		return nil, nil, err
+	}
+	tag = make([]byte, TagSize)
+	if err := ctx.GetTag(tag); err != nil {
+		return nil, nil, err
+	}
+	return ct, tag, nil
+}
+
+// DecryptSM4CCM 使用 SM4-CCM 认证解密。tag 或 aad 错误时返回错误；
+// 调用方须将任意非 nil 错误视为认证失败并丢弃返回的明文。
+//
+// DecryptSM4CCM verifies and decrypts SM4-CCM ciphertext. A tag or AAD
+// mismatch yields an error; callers MUST treat any non-nil error as an
+// authentication failure and discard the returned plaintext.
+func DecryptSM4CCM(key, nonce, ciphertext, tag, aad []byte) ([]byte, error) {
+	if len(key) != SM4KeySize {
+		return nil, fmt.Errorf("sym: invalid SM4 key size %d, want %d", len(key), SM4KeySize)
+	}
+	if len(nonce) < 7 || len(nonce) > 13 {
+		return nil, fmt.Errorf("sym: invalid CCM nonce size %d, want 7..13", len(nonce))
+	}
+	if len(tag) != TagSize {
+		return nil, fmt.Errorf("sym: invalid tag size %d, want %d", len(tag), TagSize)
+	}
+	ctx, err := core.NewCCMCtx(core.SM4CCM(), key, nonce, len(ciphertext), len(tag), false)
+	if err != nil {
+		return nil, err
+	}
+	defer ctx.Close()
+	if err := ctx.SetTag(tag); err != nil {
+		return nil, err
+	}
+	if len(aad) > 0 {
+		if err := ctx.SetAad(aad); err != nil {
+			return nil, err
+		}
+	}
+	return ctx.DecryptAll(ciphertext)
+}
+
+// EncryptSM4XTS 使用 SM4-XTS 加密。
+//
+// key 必须为 SM4XTSKeySize（32 字节，两个 16 字节分量密钥）；tweak 必须为
+// BlockSize（16 字节）；data 长度必须是 16 的整数倍且不少于 16 字节。
+// XTS 无填充、无认证。
+//
+// 安全：同一分量密钥对下**严禁**加密两条长度相同的数据（会泄漏明文异或）；
+// tweak 应随数据块位置变化（通常是数据单元序号）。
+//
+// EncryptSM4XTS encrypts with SM4-XTS.
+//
+// key must be SM4XTSKeySize (32 bytes, two 16-byte component keys);
+// tweak must be BlockSize (16 bytes); data must be at least 16 bytes and
+// a multiple of 16. XTS applies no padding and provides no
+// authentication.
+//
+// Security: never encrypt two messages of the same length under the same
+// component key (that leaks the XOR of the plaintexts); the tweak should
+// vary with the data-unit position (typically the data-unit index).
+func EncryptSM4XTS(key, tweak, data []byte) ([]byte, error) {
+	return sm4XTS(key, tweak, data, true)
+}
+
+// DecryptSM4XTS 使用 SM4-XTS 解密，参数要求与 EncryptSM4XTS 相同。
+//
+// DecryptSM4XTS decrypts with SM4-XTS; the parameter rules match
+// EncryptSM4XTS.
+func DecryptSM4XTS(key, tweak, data []byte) ([]byte, error) {
+	return sm4XTS(key, tweak, data, false)
+}
+
+// sm4XTS 是 SM4-XTS 的实现主体。
+//
+// XTS 允许末块不足 16 字节（密文窃取，ciphertext stealing），因此只要求
+// 数据长度 >= 16 字节，不要求是 16 的整数倍。
+//
+// sm4XTS is the shared implementation of SM4-XTS.
+//
+// XTS allows a final partial block (ciphertext stealing), so the data only
+// has to be at least 16 bytes long; it need not be a multiple of 16.
+func sm4XTS(key, tweak, data []byte, enc bool) ([]byte, error) {
+	if len(key) != SM4XTSKeySize {
+		return nil, fmt.Errorf("sym: invalid SM4-XTS key size %d, want %d", len(key), SM4XTSKeySize)
+	}
+	if len(tweak) != BlockSize {
+		return nil, fmt.Errorf("sym: invalid SM4-XTS tweak size %d, want %d", len(tweak), BlockSize)
+	}
+	if len(data) < BlockSize {
+		return nil, fmt.Errorf("sym: invalid SM4-XTS data size %d, want at least %d", len(data), BlockSize)
+	}
+	c := core.SM4XTS()
+	if c == nil {
+		return nil, fmt.Errorf("sym: SM4-XTS is unavailable in this build")
+	}
+	defer c.Close()
+	ctx, err := core.NewCipherCtx(c, key, tweak, enc)
+	if err != nil {
+		return nil, err
+	}
+	defer ctx.Close()
+	if err := ctx.SetPadding(false); err != nil {
+		return nil, err
+	}
+	if enc {
+		return ctx.EncryptAll(data)
+	}
+	return ctx.DecryptAll(data)
+}
