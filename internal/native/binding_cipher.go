@@ -324,6 +324,29 @@ func cipherUpdate(ctx unsafe.Pointer, out, in []byte, outl *int, enc bool) bool 
 	return ok
 }
 
+// EVP_CipherSetLength 告知 CCM 上下文待处理数据的总长度。
+// 对应「out == nil && in == nil 且 inl 非零」的 EVP_EncryptUpdate /
+// EVP_DecryptUpdate 调用——provider 用这种形式表达「设置总长度」，
+// 而不是 legacy 的 EVP_CTRL_CCM_SET_L。
+// 成功返回 true，失败返回 false（错误已入队列）。
+//
+// EVP_CipherSetLength tells a CCM context the total length of the data to
+// process. It corresponds to an EVP_EncryptUpdate / EVP_DecryptUpdate
+// call with out == nil && in == nil and a non-zero inl, the form the
+// provider uses to express "set the total length" (rather than the
+// legacy EVP_CTRL_CCM_SET_L). It returns true on success and false on
+// failure (the error is queued).
+func EVP_CipherSetLength(ctx unsafe.Pointer, n int, enc bool) bool {
+	var l C.int
+	if ctx == nil {
+		return false
+	}
+	if enc {
+		return C.EVP_EncryptUpdate((*C.EVP_CIPHER_CTX)(ctx), nil, &l, nil, C.int(n)) == 1
+	}
+	return C.EVP_DecryptUpdate((*C.EVP_CIPHER_CTX)(ctx), nil, &l, nil, C.int(n)) == 1
+}
+
 // EVP_EncryptFinal_ex 结束加密，输出剩余块（含填充），长度通过 outl 返回。
 // EVP_EncryptFinal_ex flushes the encryption pipeline, writing the final
 // block (including PKCS#7 padding when enabled) into out. The number of

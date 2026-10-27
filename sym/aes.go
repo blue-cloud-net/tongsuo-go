@@ -7,7 +7,7 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
-// aesCipher 选择 Tongsuo 描述符（AES-128 / AES-256 × ECB / CBC / CTR / GCM）。
+// aesCipher 选择 Tongsuo 描述符（AES-128 / AES-192 / AES-256 × ECB / CBC / CTR / GCM）。
 //
 // aesCipher selects the Tongsuo descriptor for the given key size and
 // mode ("ecb" / "cbc" / "ctr" / "gcm").
@@ -25,6 +25,17 @@ func aesCipher(key []byte, mode string) (*core.Cipher, error) {
 		case "gcm":
 			c = core.AES128GCM()
 		}
+	case AES192KeySize:
+		switch mode {
+		case "ecb":
+			c = core.AES192ECB()
+		case "cbc":
+			c = core.AES192CBC()
+		case "ctr":
+			c = core.AES192CTR()
+		case "gcm":
+			c = core.AES192GCM()
+		}
 	case AES256KeySize:
 		switch mode {
 		case "ecb":
@@ -37,7 +48,8 @@ func aesCipher(key []byte, mode string) (*core.Cipher, error) {
 			c = core.AES256GCM()
 		}
 	default:
-		return nil, fmt.Errorf("sym: invalid AES key size %d, want %d or %d", len(key), AES128KeySize, AES256KeySize)
+		return nil, fmt.Errorf("sym: invalid AES key size %d, want %d, %d or %d",
+			len(key), AES128KeySize, AES192KeySize, AES256KeySize)
 	}
 	if c == nil {
 		return nil, fmt.Errorf("sym: AES unsupported mode %q", mode)
@@ -66,13 +78,13 @@ func aesCryptAll(key, iv, data []byte, enc bool, mode string) ([]byte, error) {
 }
 
 // NewAESCipher 返回 AES 分组密码（cipher.Block，无填充）。
-// key 必须为 AES128KeySize 或 AES256KeySize。
+// key 必须为 AES128KeySize / AES192KeySize / AES256KeySize。
 // 同一 Block 实例可被多个 goroutine 并发复用（底层 EVP_CIPHER_CTX_copy
 // 模板副本，与 stdlib cipher.Block 一致）。
 //
 // NewAESCipher returns an AES cipher.Block (no padding).
-// key must be AES128KeySize or AES256KeySize. The same Block is safe
-// for concurrent use by multiple goroutines.
+// key must be AES128KeySize, AES192KeySize or AES256KeySize. The same
+// Block is safe for concurrent use by multiple goroutines.
 func NewAESCipher(key []byte) (cipher.Block, error) {
 	c, err := aesCipher(key, "ecb")
 	if err != nil {
@@ -169,7 +181,7 @@ type aesGCM struct {
 }
 
 // NewAESGCM 返回基于 AES-GCM 的 cipher.AEAD。
-// key 必须为 AES128KeySize 或 AES256KeySize；其它长度返回错误。
+// key 必须为 AES128KeySize / AES192KeySize / AES256KeySize；其它长度返回错误。
 // Seal/Open 输出格式为 ciphertext || tag（标签追加在密文末尾）。
 // nonce 不得重用（同 EncryptGCM 安全说明）。
 //
@@ -177,17 +189,20 @@ type aesGCM struct {
 // **调用方有责任在使用完毕后清零 key 切片**。
 //
 // NewAESGCM returns a cipher.AEAD implementation backed by AES-GCM.
-// key must be AES128KeySize or AES256KeySize; any other length returns
-// an error. The Seal/Open output layout is ciphertext || tag.
+// key must be AES128KeySize, AES192KeySize or AES256KeySize; any other
+// length returns an error. The Seal/Open output layout is ciphertext ||
+// tag.
 //
 // Security: the AEAD instance retains a reference to the key slice
 // (reused on every Seal/Open call); callers MUST zero the key slice
 // when done.
 func NewAESGCM(key []byte) (cipher.AEAD, error) {
-	if len(key) != AES128KeySize && len(key) != AES256KeySize {
-		return nil, fmt.Errorf("sym: invalid AES key size %d, want %d or %d", len(key), AES128KeySize, AES256KeySize)
+	switch len(key) {
+	case AES128KeySize, AES192KeySize, AES256KeySize:
+		return &aesGCM{key: key}, nil
 	}
-	return &aesGCM{key: key}, nil
+	return nil, fmt.Errorf("sym: invalid AES key size %d, want %d, %d or %d",
+		len(key), AES128KeySize, AES192KeySize, AES256KeySize)
 }
 
 // NonceSize 返回 Nonce 长度（12）。

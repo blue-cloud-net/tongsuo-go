@@ -326,8 +326,11 @@ func TestNewGCM(t *testing.T) {
 func TestNames(t *testing.T) {
 	want := []string{
 		"AES-128-CBC", "AES-128-CTR", "AES-128-ECB", "AES-128-GCM",
+		"AES-192-CBC", "AES-192-CTR", "AES-192-ECB", "AES-192-GCM",
 		"AES-256-CBC", "AES-256-CTR", "AES-256-ECB", "AES-256-GCM",
-		"SM4-CBC", "SM4-CTR", "SM4-ECB", "SM4-OFB", "SM4-CFB", "SM4-GCM",
+		"SM4-CBC", "SM4-CCM", "SM4-CFB", "SM4-CTR", "SM4-ECB", "SM4-GCM",
+		"SM4-OFB", "SM4-XTS",
+		"ChaCha20", "ChaCha20-Poly1305",
 	}
 	got := Names()
 	if len(got) != len(want) {

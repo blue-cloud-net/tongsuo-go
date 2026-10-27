@@ -579,13 +579,18 @@ func NewGcmCtx(c *Cipher, key, nonce []byte, enc bool) (*CipherCtx, error) {
 // NewCCMCtx 以 CCM 模式创建加/解密上下文。
 //
 // 序列（与铜锁 CCM provider 一致）：
-//  1. EVP_CipherInit_ex(ctx, cipher, nil, key, nil, enc)  设置算法与密钥
+//  1. EVP_CipherInit_ex(ctx, cipher, nil, nil, nil, enc)  只设置算法
 //  2. EVP_CIPHER_CTX_ctrl(ctx, SET_IVLEN, len(nonce), nil) 设置 nonce 长度
-//  3. EVP_CIPHER_CTX_ctrl(ctx, SET_L, plaintextLen, nil)  设置明文总长度
-//  4. EVP_CipherInit_ex(ctx, nil, nil, nil, nonce, enc)    设置 nonce
+//  3. EVP_CIPHER_CTX_ctrl(ctx, SET_TAG, tagLen, nil)      设置标签长度（CCM 的 M
+//     参数在设置密钥时被固化，因此必须先于密钥设置）
+//  4. EVP_CipherInit_ex(ctx, nil, nil, key, nonce, enc)    设置密钥与 nonce
+//  5. EVP_EncryptUpdate/DecryptUpdate(ctx, nil, &len, nil, plaintextLen)
+//     设置明文总长度（provider 用 out==NULL && in==NULL 的 update 表达「设总长」，
+//     而不是 legacy 的 EVP_CTRL_CCM_SET_L）
 //
 // CCM 必须在加密前给出明文总长度（它被编码进 nonce 的长度域），因此本构造器
-// 要求 plaintextLen 已知且 >= 0。
+// 要求 plaintextLen 已知且 >= 0。解密侧应在 SetTag 之后再调用 SetAad /
+// DecryptAll。tagLen 必须为 4..16 的偶数（推荐 TagSize=16）。
 //
 // enc == true 选加密，false 选解密。key 长度必须为 Cipher.KeySize；
 // nonce 长度必须为 7..13 字节（铜锁 CCM provider 的取值范围）。
@@ -600,20 +605,27 @@ func NewGcmCtx(c *Cipher, key, nonce []byte, enc bool) (*CipherCtx, error) {
 //     algorithm and key (no IV yet).
 //  2. EVP_CIPHER_CTX_ctrl(ctx, SET_IVLEN, len(nonce), nil) sets the
 //     nonce length.
-//  3. EVP_CIPHER_CTX_ctrl(ctx, SET_L, plaintextLen, nil) sets the total
-//     plaintext length.
+//  3. EVP_CIPHER_CTX_ctrl(ctx, SET_TAG, tagLen, nil) sets the tag length
+//     (CCM encodes M into the nonce length field, so it has to be fixed
+//     before the nonce is set).
 //  4. EVP_CipherInit_ex(ctx, nil, nil, nil, nonce, enc) sets the nonce.
+//  5. EVP_EncryptUpdate/DecryptUpdate(ctx, nil, &len, nil, plaintextLen)
+//     sets the total plaintext length (the provider expresses "set total
+//     length" through an update with out == NULL && in == NULL rather
+//     than the legacy EVP_CTRL_CCM_SET_L).
 //
 // CCM encodes the plaintext length into the nonce length field, so the
 // total plaintext length MUST be known before encryption; plaintextLen
-// must therefore be known and >= 0.
+// must therefore be known and >= 0. On the decrypt path SetTag should be
+// called before SetAad / DecryptAll. tagLen must be an even number in
+// 4..16 (TagSize = 16 is recommended).
 //
 // enc == true selects encryption, false selects decryption. key MUST have
 // length Cipher.KeySize; nonce MUST be 7 to 13 bytes long (the range
 // accepted by the Tongsuo CCM provider). PKCS#7 padding is not applied
 // (pad is forced to false). The returned *CipherCtx owns the underlying
 // EVP_CIPHER_CTX and the caller MUST invoke Close.
-func NewCCMCtx(c *Cipher, key, nonce []byte, plaintextLen int, enc bool) (*CipherCtx, error) {
+func NewCCMCtx(c *Cipher, key, nonce []byte, plaintextLen, tagLen int, enc bool) (*CipherCtx, error) {
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return nil, fmt.Errorf("cipher: invalid cipher")
 	}
@@ -626,6 +638,9 @@ func NewCCMCtx(c *Cipher, key, nonce []byte, plaintextLen int, enc bool) (*Ciphe
 	if plaintextLen < 0 {
 		return nil, fmt.Errorf("cipher: invalid CCM plaintext length %d", plaintextLen)
 	}
+	if tagLen < 4 || tagLen > 16 || tagLen%2 != 0 {
+		return nil, fmt.Errorf("cipher: invalid CCM tag length %d, want an even value in 4..16", tagLen)
+	}
 	ctx := native.EVP_CIPHER_CTX_new()
 	if ctx == nil {
 		return nil, NewOpError("cipher: EVP_CIPHER_CTX_new", native.PopError())
@@ -635,27 +650,44 @@ func NewCCMCtx(c *Cipher, key, nonce []byte, plaintextLen int, enc bool) (*Ciphe
 	if enc {
 		encv = native.Encrypt
 	}
-	// 第一步：设置算法与密钥。
-	if !native.EVP_CipherInit_ex(ctx, c.handle.Ptr(), nil, key, nil, encv) {
+	// 第一步：只设置算法（key 与 iv 留到 tag 长度确定之后再设）。
+	if !native.EVP_CipherInit_ex(ctx, c.handle.Ptr(), nil, nil, nil, encv) {
 		_ = h.Close()
-		return nil, NewOpError("cipher: EVP_CipherInit_ex(cipher,key)", native.PopError())
+		return nil, NewOpError("cipher: EVP_CipherInit_ex(cipher)", native.PopError())
 	}
 	// 第二步：设置 nonce 长度。
 	if !native.EVP_CIPHER_CTX_ctrl(ctx, native.CtrlGCMSetIVLen, len(nonce), nil) {
 		_ = h.Close()
 		return nil, NewOpError("cipher: EVP_CIPHER_CTX_ctrl(SET_IVLEN)", native.PopError())
 	}
-	// 第三步：设置明文总长度。
-	if !native.EVP_CIPHER_CTX_ctrl(ctx, native.CtrlCCMSetL, plaintextLen, nil) {
+	// 第三步：设置标签长度（CCM 的 M 参数）。M 在 C 侧于设置密钥时被固化进
+	// CCM128 上下文，因此必须在设置密钥之前给出。
+	if !native.EVP_CIPHER_CTX_ctrl(ctx, native.CtrlGCMSetTag, tagLen, nil) {
 		_ = h.Close()
-		return nil, NewOpError("cipher: EVP_CIPHER_CTX_ctrl(SET_L)", native.PopError())
+		return nil, NewOpError("cipher: EVP_CIPHER_CTX_ctrl(SET_TAG length)", native.PopError())
 	}
-	// 第四步：仅设置 nonce。
-	if !native.EVP_CipherInit_ex(ctx, nil, nil, nil, nonce, encv) {
+	// 第四步：设置密钥与 nonce。
+	if !native.EVP_CipherInit_ex(ctx, nil, nil, key, nonce, encv) {
 		_ = h.Close()
-		return nil, NewOpError("cipher: EVP_CipherInit_ex(iv)", native.PopError())
+		return nil, NewOpError("cipher: EVP_CipherInit_ex(key,iv)", native.PopError())
+	}
+	// 第五步：设置明文总长度（out == nil && in == nil 的 update）。
+	if err := setCCMLength(ctx, plaintextLen, enc); err != nil {
+		_ = h.Close()
+		return nil, err
 	}
 	return &CipherCtx{handle: h, cipher: c, enc: enc, pad: false}, nil
+}
+
+// setCCMLength 通过「空输出 + 空输入」的 update 告知 CCM 总长度。
+//
+// setCCMLength tells CCM the total length through an update with an empty
+// output and empty input.
+func setCCMLength(ctx unsafe.Pointer, n int, enc bool) error {
+	if !native.EVP_CipherSetLength(ctx, n, enc) {
+		return NewOpError("cipher: CCM set total length", native.PopError())
+	}
+	return nil
 }
 
 // SetIVLength 设置 GCM IV/Nonce 长度（创建上下文前调整）。
