@@ -68,3 +68,28 @@ func PBKDF2(mdName string, password, salt []byte, iter, keyLen int) ([]byte, err
 func Argon2IDAvailable() bool {
 	return native.EVP_KDF_Available("ARGON2ID")
 }
+
+// Derive 按 provider 侧算法名执行一次性 KDF 派生。
+// alg 为 provider 规范名（如 "HKDF"、"PBKDF2"、"SCRYPT"、"SSKDF"、"TLS1-PRF"、
+// "TLS13-KDF"、"KBKDF"、"X942KDF-ASN1"、"X963KDF"、"HMAC-DRBG-KDF"）。
+// p 为参数包（可为 nil，表示全部取默认）；out 缓冲区长度即期望的派生长度。
+// 失败时返回包装了 OpError 的错误。
+//
+// Derive performs a one-shot KDF derivation by provider-side algorithm
+// name. alg is a provider canonical name (for example "HKDF", "PBKDF2",
+// "SCRYPT", "SSKDF", "TLS1-PRF", "TLS13-KDF", "KBKDF", "X942KDF-ASN1",
+// "X963KDF" or "HMAC-DRBG-KDF"). p carries the parameters and may be nil
+// (meaning "use the defaults"); the length of out is the requested output
+// length. On failure it returns an error wrapping an OpError.
+func Derive(alg string, p *native.KDFParams, out []byte) error {
+	if alg == "" {
+		return fmt.Errorf("kdf: empty algorithm name")
+	}
+	if len(out) == 0 {
+		return fmt.Errorf("kdf: invalid output length %d", len(out))
+	}
+	if !native.EVP_KDF_Derive(alg, p, out) {
+		return NewOpError("kdf: "+alg, native.PopError())
+	}
+	return nil
+}
