@@ -24,7 +24,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-## [0.4.1] - TBD
+## [0.5.0] - TBD
 
 ### Fixed
 
@@ -39,6 +39,46 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   `s.mu`, and `Close` / `Stop` set `stopped` under the same mutex before
   calling `Wait`, so `Add` is strictly ordered before `Wait`. As a consequence
   `stopped` is a plain `bool` guarded by `mu` instead of an `atomic.Bool`.
+- `x509`: non-ASCII RDN values are no longer double-encoded. `Name.Add` /
+  `Name.TryAdd` (and therefore certificates, CSRs, CRLs and TLS / NTLS peer
+  names built from them) now pass `MBSTRING_UTF8` to
+  `X509_NAME_add_entry_by_txt` instead of `MBSTRING_ASC`, so a Go `string` is
+  decoded as UTF-8 the way the caller wrote it: `CN=海峰` is stored as 6 bytes
+  instead of the 12-byte mojibake `CN=æµ·å³°`. This matches `openssl req -utf8`.
+- `x509`: `CertificateRequest.SetChallengePassword` also switched to
+  `MBSTRING_UTF8`, so non-ASCII challenge passwords survive the CSR round trip
+  instead of being re-encoded byte by byte as Latin-1.
+- `x509`: `Name.Get` / `Name.Text` and every reader built on them no longer
+  truncate values at 255 bytes. The lookup walks the RDN entries and decodes
+  each one with `ASN1_STRING_to_UTF8` instead of copying into a fixed 256-byte
+  stack buffer, which used to cut long CJK values in the middle of a character.
+
+### Changed
+
+- `x509`: values that are not valid UTF-8 are now rejected up front.
+  `Name.Add` / `Name.TryAdd` and `SetChallengePassword` return
+  `x509: name: value is not valid UTF-8` / `x509: challenge password is not
+  valid UTF-8` instead of handing the bytes to OpenSSL. Values the field's
+  ASN.1 charset cannot represent (non-ASCII `C` / `emailAddress`) and empty
+  values (most fields have `minsize=1`) are still rejected by OpenSSL.
+
+### BREAKING
+
+- `x509`: `Name.Add` / `Name.TryAdd` now really append. The binding passed
+  `loc = 0` to `X509_NAME_add_entry_by_txt`, which inserts at the **head**, so
+  the DER `RDNSequence` came out as the reverse of the call order —
+  `NewName().Add("C", …).Add("O", …).Add("CN", …)` produced `CN, O, C`.
+  Entries now follow the call order (most-general-first), matching
+  `openssl req -subj "/C=…/O=…/CN=…"`, `crypto/x509`'s
+  `pkix.Name.ToRDNSequence` and RFC 4514; for the same written order the
+  subject DER is now byte-identical to the CLI (locked by
+  `TestCLISubjectDERParity`).
+
+  Migration: multi-RDN subjects / issuers change their DER bytes, so
+  signatures change and `SubjectHash` / `IssuerHash` (and any name comparison
+  against externally built DNs) may no longer match. To keep the old bytes,
+  reverse the `Add` calls or import the existing DER instead of rebuilding
+  the name.
 
 ---
 
@@ -741,7 +781,8 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.2...v0.2.0

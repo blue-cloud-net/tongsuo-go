@@ -22,7 +22,7 @@
 
 ---
 
-## [0.4.1] - TBD
+## [0.5.0] - TBD
 
 ### Bug 修复
 
@@ -35,6 +35,39 @@
   `Add`」，`Close` / `Stop` 也在同一把锁内置 `stopped` 之后才 `Wait`，二者严格
   互斥（Add 一定先于 Wait）。`stopped` 随之由 `atomic.Bool` 降为由 `mu` 保护的
   普通 `bool`。
+- `x509`：非 ASCII 的 RDN 值不再被双重编码。`Name.Add` / `Name.TryAdd`（以及
+  由其构建的证书、CSR、CRL 与 TLS / NTLS 对端名字）改为向
+  `X509_NAME_add_entry_by_txt` 传 `MBSTRING_UTF8` 而不是 `MBSTRING_ASC`，
+  因此 Go `string` 会按调用方写入的 UTF-8 语义解码：`CN=海峰` 存为 6 字节，
+  而不是 12 字节的乱码 `CN=æµ·å³°`。与 `openssl req -utf8` 行为一致。
+- `x509`：`CertificateRequest.SetChallengePassword` 同步改为
+  `MBSTRING_UTF8`，非 ASCII 挑战口令经 CSR 往返后不再被按 Latin-1 逐字节重编码。
+- `x509`：`Name.Get` / `Name.Text` 及基于它们的读取入口不再在 255 字节处截断。
+  查找改为遍历 RDN 条目并用 `ASN1_STRING_to_UTF8` 解码，替代原先固定 256 字节
+  栈缓冲的写法——后者会把较长的 CJK 值截断在多字节字符中间。
+
+### 行为变化与重构
+
+- `x509`：非法 UTF-8 的值改为提前拒绝。`Name.Add` / `Name.TryAdd` 与
+  `SetChallengePassword` 返回 `x509: name: value is not valid UTF-8` /
+  `x509: challenge password is not valid UTF-8`，不再把字节交给 OpenSSL。
+  字段 ASN.1 字符集承载不了的值（非 ASCII 的 `C` / `emailAddress`）与空值
+  （多数字段 `minsize=1`）仍由 OpenSSL 报错，行为未变。
+
+### BREAKING / 已知限制
+
+- `x509`：`Name.Add` / `Name.TryAdd` 现在真的按「追加」写入。此前绑定层向
+  `X509_NAME_add_entry_by_txt` 传 `loc = 0`，即**前插**，导致 DER 的
+  `RDNSequence` 与调用顺序相反——`NewName().Add("C", …).Add("O", …).Add("CN", …)`
+  产出 `CN, O, C`。现在条目顺序与调用顺序一致（最一般在前），与
+  `openssl req -subj "/C=…/O=…/CN=…"`、`crypto/x509` 的
+  `pkix.Name.ToRDNSequence` 及 RFC 4514 一致；同一书写顺序产出的 subject DER
+  已与铜锁 CLI 逐字节相同（由 `TestCLISubjectDERParity` 锁定）。
+
+  迁移：多 RDN 的 subject / issuer 的 DER 字节会变，签名随之改变，
+  `SubjectHash` / `IssuerHash` 以及与外部构造的 DN 做名字比对可能不再匹配。
+  如需保留旧字节，请把 `Add` 的调用顺序倒过来写，或直接导入既有 DER 而不是
+  重建名字。
 
 ---
 
@@ -604,7 +637,8 @@
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.1.2...v0.2.0
