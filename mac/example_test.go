@@ -98,4 +98,11 @@ func ExampleNames() {
 	// HMAC-SHA256
 	// HMAC-SHA384
 	// HMAC-SHA512
+	// CMAC
+	// GMAC
+	// KMAC-128
+	// KMAC-256
+	// SIPHASH
+	// POLY1305
+	// EIA3
 }

@@ -281,6 +281,18 @@ func (c *MACCtx) Size() int {
 	return c.size
 }
 
+// BlockSize 返回上下文的内部分组字节长度。
+// provider 未报告分组长度时返回 0。
+//
+// BlockSize returns the internal block size in bytes of the context. It
+// is 0 when the provider does not report one.
+func (c *MACCtx) BlockSize() int {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return 0
+	}
+	return native.EVP_MAC_CTX_BlockSize(c.handle.Ptr())
+}
+
 // Close 释放底层句柄。幂等。
 //
 // Close releases the underlying handle. The call is idempotent.

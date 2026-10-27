@@ -164,3 +164,15 @@ func EVP_MAC_CTX_Size(ctx unsafe.Pointer) int {
 	}
 	return int(C.EVP_MAC_CTX_get_mac_size((*C.EVP_MAC_CTX)(ctx)))
 }
+
+// EVP_MAC_CTX_BlockSize 返回上下文的内部分组长度（字节）。
+// provider 未报告分组长度时返回 0。
+//
+// EVP_MAC_CTX_BlockSize returns the internal block size in bytes of the
+// context, or 0 when the provider does not report one.
+func EVP_MAC_CTX_BlockSize(ctx unsafe.Pointer) int {
+	if ctx == nil {
+		return 0
+	}
+	return int(C.EVP_MAC_CTX_get_block_size((*C.EVP_MAC_CTX)(ctx)))
+}
