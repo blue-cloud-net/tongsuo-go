@@ -46,6 +46,8 @@ func NewName() *Name {
 //
 // Add appends a relative distinguished name attribute and returns the same Name for chaining. field accepts short names such as "CN", "C", "O", "OU", "L", "ST", "serialNumber", and "emailAddress".
 //
+// Entries are appended in call order, so the DER RDNSequence follows the order of the Add calls: write C → O → CN to get the conventional most-general-first order, exactly as `openssl req -subj "/C=…/O=…/CN=…"` does.
+//
 // ⚠️ This method panics on PROGRAMMING errors (invalid field name,
 // overlong value). For untrusted user input use TryAdd instead; for
 // hard-coded builder chains (NewName().Add("CN", "...")) this branch

@@ -305,3 +305,89 @@ func TestStoreSetFlags(t *testing.T) {
 		t.Fatalf("SetFlags(0x4) failed: %v", err)
 	}
 }
+
+// TestChainVerifyNonASCIINames 验证 CJK CA / leaf 名字在签发、链验证与 DN 复制中保真。
+func TestChainVerifyNonASCIINames(t *testing.T) {
+	caPriv, err := asym.GenerateSM2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafPriv, err := asym.GenerateSM2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+
+	caSubject := NewName().Add("CN", "铜锁测试根").Add("O", "示例公司")
+	caCert := NewCertificate()
+	t.Cleanup(func() { _ = caCert.Close() })
+	if err := caCert.SetVersion(2); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetSerial(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetIssuer(caSubject); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetSubject(caSubject); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetValidity(now.Add(-time.Hour), now.Add(2*365*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetPublicKey(caPriv.Public()); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.AddBasicConstraints(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.Sign(caPriv); err != nil {
+		t.Fatal(err)
+	}
+
+	leafSubject := NewName().Add("CN", "海峰").Add("O", "示例公司")
+	leafCert, err := CreateCertificate(leafSubject, caCert.SubjectName(), 2,
+		now.Add(-time.Hour), now.Add(365*24*time.Hour), leafPriv.Public(), caPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 链验证不受名字编码影响
+	roots := NewStore()
+	if err := roots.AddCert(caCert); err != nil {
+		t.Fatal(err)
+	}
+	chain, err := ChainVerify(leafCert, roots, nil)
+	if err != nil {
+		t.Fatalf("CJK 名字链验证失败：%v", err)
+	}
+	if len(chain) != 2 {
+		t.Fatalf("chain length = %d, want 2", len(chain))
+	}
+
+	// leaf 的 issuer 与 CA 的 subject 逐条相等（DN 复制不失真）
+	issuer := leafCert.IssuerEntries()
+	subject := caCert.SubjectEntries()
+	if len(issuer) != len(subject) {
+		t.Fatalf("issuer entries = %d, CA subject entries = %d", len(issuer), len(subject))
+	}
+	for i := range subject {
+		if issuer[i].Field != subject[i].Field || issuer[i].Value != subject[i].Value {
+			t.Fatalf("issuer[%d] = {%s=%q}, want {%s=%q}",
+				i, issuer[i].Field, issuer[i].Value, subject[i].Field, subject[i].Value)
+		}
+	}
+
+	// leaf 的 subject 与写入值逐条相等
+	wantLeaf := leafSubject.Entries()
+	gotLeaf := leafCert.SubjectEntries()
+	if len(gotLeaf) != len(wantLeaf) {
+		t.Fatalf("leaf subject entries = %d, want %d", len(gotLeaf), len(wantLeaf))
+	}
+	for i := range wantLeaf {
+		if gotLeaf[i].Value != wantLeaf[i].Value {
+			t.Fatalf("leaf subject[%d] = %q, want %q", i, gotLeaf[i].Value, wantLeaf[i].Value)
+		}
+	}
+}

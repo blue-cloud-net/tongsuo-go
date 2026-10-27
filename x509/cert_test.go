@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blue-cloud-net/tongsuo-go/asn1"
 	"github.com/blue-cloud-net/tongsuo-go/asym"
 )
 
@@ -612,5 +613,96 @@ func TestSelfSigned(t *testing.T) {
 	ok, err = leafCert.SelfSigned()
 	if err != nil || ok {
 		t.Fatalf("CA-issued cert SelfSigned = (%v, %v), want (false, nil)", ok, err)
+	}
+}
+
+// TestCertificateNonASCIISubjectRoundTrip 验证 CJK subject 的 DER 编码为 UTF8String、无双重编码，
+// 且签发 → DER → PEM 读回后条目内容与顺序均保真。
+func TestCertificateNonASCIISubjectRoundTrip(t *testing.T) {
+	priv, err := asym.GenerateSM2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+
+	// Add 按调用顺序追加 RDN；这里以写入后的 Entries() 作为基准，
+	// 校验「签发 → DER → 读回」不改变内容与顺序。
+	subject := NewName().Add("CN", "海峰").Add("O", "示例公司").Add("C", "CN")
+	want := subject.Entries()
+	if len(want) != 3 {
+		t.Fatalf("subject entries = %d, want 3", len(want))
+	}
+
+	cert, err := CreateCertificate(subject, subject, 7,
+		now.Add(-time.Hour), now.Add(365*24*time.Hour), priv.Public(), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := cert.MarshalDER()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1) DER 必须直接携带 UTF8String 编码的 CN=海峰：0C 06 E6 B5 B7 E5 B3 B0
+	utf8CN := append([]byte{0x0c, 0x06}, []byte("海峰")...)
+	if !bytes.Contains(der, utf8CN) {
+		t.Fatalf("DER 中找不到 UTF8String 编码的 CN=海峰（期望 % x）", utf8CN)
+	}
+
+	// 2) 不得出现「每个 UTF-8 字节当成 Latin-1 再编码」的双重编码串
+	doubleEncoded := []byte{0xc3, 0xa6, 0xc2, 0xb5, 0xc2, 0xb7,
+		0xc3, 0xa5, 0xc2, 0xb3, 0xc2, 0xb0}
+	if bytes.Contains(der, doubleEncoded) {
+		t.Fatalf("DER 含双重编码字节串（MBSTRING_ASC 回归）：% x", doubleEncoded)
+	}
+
+	// 3) 用纯 Go DER 解析独立复核：CN 是 UTF8String，全树无 BMPString
+	root, err := asn1.Parse(der)
+	if err != nil {
+		t.Fatalf("asn1.Parse: %v", err)
+	}
+	var foundUTF8, foundBMP bool
+	stack := []*asn1.Node{root}
+	for len(stack) > 0 {
+		n := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if n.Class == asn1.ClassUniversal {
+			switch n.Number {
+			case asn1.TagUTF8String:
+				if string(n.Value) == "海峰" {
+					foundUTF8 = true
+				}
+			case 30: // BMPString
+				foundBMP = true
+			}
+		}
+		stack = append(stack, n.Children...)
+	}
+	if !foundUTF8 {
+		t.Fatal("DER 树中没有 UTF8String 类型的 CN=海峰")
+	}
+	if foundBMP {
+		t.Fatal("DER 树中出现 BMPString（0x1E），期望 UTF8String")
+	}
+
+	// 4) PEM 往返：条目内容与顺序保真
+	pemBytes, err := cert.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCertificatePEM(pemBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loaded.Close()
+	got := loaded.SubjectEntries()
+	if len(got) != len(want) {
+		t.Fatalf("loaded subject entries = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i].Field != want[i].Field || got[i].Value != want[i].Value {
+			t.Fatalf("entry[%d] = {%s=%q}, want {%s=%q}",
+				i, got[i].Field, got[i].Value, want[i].Field, want[i].Value)
+		}
 	}
 }

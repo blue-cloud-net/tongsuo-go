@@ -99,12 +99,17 @@ func serveHandshakeAsync(t *testing.T, ln net.Listener, srv *Server) {
 // testServerConfig 生成 SM2 自签服务器证书配置。
 func testServerConfig(t *testing.T) *Config {
 	t.Helper()
+	return testServerConfigWithSubject(t, x509.NewName().Add("CN", "server.tongsuo-go.dev"))
+}
+
+// testServerConfigWithSubject 生成 SM2 自签服务器证书配置，主题由调用方指定。
+func testServerConfigWithSubject(t *testing.T, subject *x509.Name) *Config {
+	t.Helper()
 	priv, err := asym.GenerateSM2()
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	subject := x509.NewName().Add("CN", "server.tongsuo-go.dev")
 	cert := x509.NewCertificate()
 	if err := cert.SetVersion(2); err != nil {
 		t.Fatal(err)
@@ -135,6 +140,12 @@ func testServerConfig(t *testing.T) *Config {
 
 // testNTLSConfig 生成 NTLS 双证书配置（签名证书 + 加密证书）。
 func testNTLSConfig(t *testing.T) *Config {
+	t.Helper()
+	return testNTLSConfigWithCN(t, "sign.tongsuo-go.dev", "enc.tongsuo-go.dev")
+}
+
+// testNTLSConfigWithCN 生成 NTLS 双证书配置，签名/加密证书 CN 由调用方指定。
+func testNTLSConfigWithCN(t *testing.T, signCN, encCN string) *Config {
 	t.Helper()
 	signPriv, err := asym.GenerateSM2()
 	if err != nil {
@@ -176,10 +187,118 @@ func testNTLSConfig(t *testing.T) *Config {
 	}
 	return &Config{
 		NTLS:     true,
-		SignCert: build("sign.tongsuo-go.dev", signPriv),
+		SignCert: build(signCN, signPriv),
 		SignKey:  signPriv,
-		EncCert:  build("enc.tongsuo-go.dev", encPriv),
+		EncCert:  build(encCN, encPriv),
 		EncKey:   encPriv,
+	}
+}
+
+// subjectMap 把名字条目转成 字段短名 → 值 的映射（不关心 RDN 顺序）。
+func subjectMap(entries []x509.NameEntry) map[string]string {
+	m := make(map[string]string, len(entries))
+	for _, e := range entries {
+		m[e.Field] = e.Value
+	}
+	return m
+}
+
+// TestLoopbackNonASCIISubject 验证 CJK subject 经 TLS 线缆到达对端后逐字符保真。
+func TestLoopbackNonASCIISubject(t *testing.T) {
+	cfg := testServerConfigWithSubject(t,
+		x509.NewName().Add("CN", "海峰").Add("O", "示例公司"))
+	server, err := NewServer(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	serveHandshakeAsync(t, ln, server)
+
+	conn, err := Dial("tcp", ln.Addr().String(), &Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	c, ok := conn.(*Conn)
+	if !ok {
+		t.Fatal("Dial did not return *tls.Conn")
+	}
+	certs, err := c.PeerCertificates()
+	if err != nil {
+		t.Fatalf("PeerCertificates: %v", err)
+	}
+	if len(certs) == 0 {
+		t.Fatal("peer presented no certificate")
+	}
+	defer func() {
+		for _, cc := range certs {
+			_ = cc.Close()
+		}
+	}()
+
+	got := subjectMap(certs[0].SubjectEntries())
+	if got["CN"] != "海峰" || got["O"] != "示例公司" {
+		t.Fatalf("peer subject = %+v, want CN=海峰 / O=示例公司", certs[0].SubjectEntries())
+	}
+}
+
+// TestNTLSLoopbackNonASCII 验证 NTLS 签名 / 加密证书的 CJK subject 经线缆后保真。
+func TestNTLSLoopbackNonASCII(t *testing.T) {
+	cfg := testNTLSConfigWithCN(t, "签名证书-海峰", "加密证书-示例公司")
+	server, err := NewServer(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	serveHandshakeAsync(t, ln, server)
+
+	conn, err := Dial("tcp", ln.Addr().String(), &Config{NTLS: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	c, ok := conn.(*Conn)
+	if !ok {
+		t.Fatal("Dial did not return *tls.Conn")
+	}
+
+	signCerts, err := c.PeerCertificates()
+	if err != nil {
+		t.Fatalf("PeerCertificates: %v", err)
+	}
+	encCerts, err := c.PeerEncCertificates()
+	if err != nil {
+		t.Fatalf("PeerEncCertificates: %v", err)
+	}
+	if len(signCerts) == 0 || len(encCerts) == 0 {
+		t.Fatalf("NTLS peer certs: sign=%d enc=%d, want both non-empty",
+			len(signCerts), len(encCerts))
+	}
+	defer func() {
+		for _, cc := range append(append([]*x509.Certificate{}, signCerts...), encCerts...) {
+			_ = cc.Close()
+		}
+	}()
+
+	if got := subjectMap(signCerts[0].SubjectEntries()); got["CN"] != "签名证书-海峰" {
+		t.Fatalf("NTLS sign subject = %+v, want CN=签名证书-海峰", signCerts[0].SubjectEntries())
+	}
+	if got := subjectMap(encCerts[0].SubjectEntries()); got["CN"] != "加密证书-示例公司" {
+		t.Fatalf("NTLS enc subject = %+v, want CN=加密证书-示例公司", encCerts[0].SubjectEntries())
 	}
 }
 

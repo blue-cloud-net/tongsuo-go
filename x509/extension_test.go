@@ -1,6 +1,7 @@
 package x509
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 	"time"
@@ -641,5 +642,99 @@ func TestCSRExtensionsSurviveDERRoundTrip(t *testing.T) {
 	if len(reparsed.Extensions()) != len(want) {
 		t.Errorf("after DER round trip: got %d extensions, want %d: %v",
 			len(reparsed.Extensions()), len(want), reparsed.Extensions())
+	}
+}
+
+// TestExtensionNonASCII 验证扩展值中的 CJK 文本在签发与 PEM 往返后保真（无双重编码）。
+func TestExtensionNonASCII(t *testing.T) {
+	priv, err := asym.GenerateSM2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	subject := NewName().Add("CN", "海峰").Add("O", "示例公司")
+
+	cert := NewCertificate()
+	t.Cleanup(func() { _ = cert.Close() })
+	if err := cert.SetVersion(2); err != nil {
+		t.Fatal(err)
+	}
+	if err := cert.SetSerial(9100); err != nil {
+		t.Fatal(err)
+	}
+	if err := cert.SetIssuer(subject); err != nil {
+		t.Fatal(err)
+	}
+	if err := cert.SetSubject(subject); err != nil {
+		t.Fatal(err)
+	}
+	if err := cert.SetValidity(now.Add(-time.Hour), now.Add(24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := cert.SetPublicKey(priv.Public()); err != nil {
+		t.Fatal(err)
+	}
+	if err := cert.AddExtensionByName("nsComment", "UTF8:中文注释"); err != nil {
+		t.Fatalf("AddExtensionByName(nsComment): %v", err)
+	}
+	if err := cert.AddCertificatePolicies([]CertificatePolicy{{
+		OID:        "1.2.3.4",
+		UserNotice: &UserNotice{Organization: "示例公司", ExplicitText: "中文告示"},
+	}}, false); err != nil {
+		t.Fatalf("AddCertificatePolicies: %v", err)
+	}
+	if err := cert.Sign(priv); err != nil {
+		t.Fatal(err)
+	}
+
+	pemBytes, err := cert.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCertificatePEM(pemBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loaded.Close()
+
+	// nsComment 以原始 UTF-8 字节承载
+	var nsComment []byte
+	for _, e := range loaded.Extensions() {
+		if e.Field == "nsComment" {
+			nsComment = e.Data
+		}
+	}
+	if !bytes.Contains(nsComment, []byte("中文注释")) {
+		t.Fatalf("nsComment Data = % x，未包含原始 UTF-8 字节 % x", nsComment, []byte("中文注释"))
+	}
+
+	// certificatePolicies 的 userNotice 文本保真
+	policies, err := loaded.CertificatePolicies()
+	if err != nil {
+		t.Fatalf("CertificatePolicies: %v", err)
+	}
+	if len(policies) != 1 {
+		t.Fatalf("policies = %d, want 1", len(policies))
+	}
+	if policies[0].OID != "1.2.3.4" {
+		t.Fatalf("policy OID = %q, want 1.2.3.4", policies[0].OID)
+	}
+	if policies[0].UserNotice == nil {
+		t.Fatal("policy UserNotice = nil, want non-nil")
+	}
+	if got := policies[0].UserNotice.Organization; got != "示例公司" {
+		t.Fatalf("UserNotice.Organization = %q, want 示例公司", got)
+	}
+	if got := policies[0].UserNotice.ExplicitText; got != "中文告示" {
+		t.Fatalf("UserNotice.ExplicitText = %q, want 中文告示", got)
+	}
+
+	// 与扩展共存的 CJK subject 同样保真（顺序另由证书往返用例断言）
+	subjectEntries := map[string]string{}
+	for _, e := range loaded.SubjectEntries() {
+		subjectEntries[e.Field] = e.Value
+	}
+	if len(subjectEntries) != 2 || subjectEntries["CN"] != "海峰" || subjectEntries["O"] != "示例公司" {
+		t.Fatalf("loaded subject = %+v, want CN=海峰 / O=示例公司", loaded.SubjectEntries())
 	}
 }

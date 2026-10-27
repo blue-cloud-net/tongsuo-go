@@ -381,3 +381,106 @@ func TestCRLEd25519(t *testing.T) {
 		t.Fatalf("CRL signature len = %d, want 64", len(loaded.Signature()))
 	}
 }
+
+// TestCRLNonASCIIIssuer 验证 CJK 颁发者名在 CRL 签发、DER 往返与验签后保真。
+func TestCRLNonASCIIIssuer(t *testing.T) {
+	caPriv, err := asym.GenerateSM2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	caSubject := NewName().Add("CN", "铜锁测试根").Add("O", "示例公司")
+
+	caCert := NewCertificate()
+	t.Cleanup(func() { _ = caCert.Close() })
+	if err := caCert.SetVersion(2); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetSerial(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetIssuer(caSubject); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetSubject(caSubject); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetValidity(now.Add(-time.Hour), now.Add(2*365*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.SetPublicKey(caPriv.Public()); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.AddBasicConstraints(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.AddSubjectKeyID(); err != nil {
+		t.Fatal(err)
+	}
+	if err := caCert.Sign(caPriv); err != nil {
+		t.Fatal(err)
+	}
+
+	leafPriv, err := asym.GenerateSM2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := CreateCertificate(NewName().Add("CN", "海峰"), caCert.SubjectName(), 8,
+		now.Add(-time.Hour), now.Add(time.Hour), leafPriv.Public(), caPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer leaf.Close()
+
+	b, err := NewCRLBuilder(caCert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	if err := b.SetNumber(7); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.SetThisUpdate(now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.SetNextUpdate(now.Add(24 * time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Revoke(leaf, now.Add(-30*time.Minute), ReasonKeyCompromise); err != nil {
+		t.Fatal(err)
+	}
+	crl, err := b.Sign(caPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer crl.Close()
+
+	der, err := crl.MarshalDER()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadCRLDER(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loaded.Close()
+
+	// 颁发者名逐条保真
+	want := caCert.SubjectEntries()
+	got := loaded.IssuerEntries()
+	if len(got) != len(want) {
+		t.Fatalf("CRL issuer entries = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i].Field != want[i].Field || got[i].Value != want[i].Value {
+			t.Fatalf("CRL issuer[%d] = {%s=%q}, want {%s=%q}",
+				i, got[i].Field, got[i].Value, want[i].Field, want[i].Value)
+		}
+	}
+	if n := len(loaded.RevokedEntries()); n != 1 {
+		t.Fatalf("revoked entries = %d, want 1", n)
+	}
+	if err := loaded.Verify(caCert); err != nil {
+		t.Fatalf("CRL verify with CJK issuer failed: %v", err)
+	}
+}

@@ -629,8 +629,10 @@ void *X_X509_REQ_get_extensions(X509_REQ *r)
 
 int X_X509_REQ_set_challenge_password(X509_REQ *r, const char *pwd)
 {
+    /* MBSTRING_UTF8：pwd 来自 Go string（UTF-8），用 MBSTRING_ASC 会把每个
+     * 字节当成 Latin-1 字符再编码一次，非 ASCII 口令变成 mojibake。 */
     return X509_REQ_add1_attr_by_NID(r, NID_pkcs9_challengePassword,
-                                     MBSTRING_ASC,
+                                     MBSTRING_UTF8,
                                      (const unsigned char *)pwd, -1);
 }
 
