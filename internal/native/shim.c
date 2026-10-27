@@ -1518,6 +1518,9 @@ const char *X_OPENSSL_seed_source(void)
 
 /*
  * X_SSL_group_names：列出本机构建的 TLS 组名。
+ * 与 `openssl list -tls-groups` 同口径：探测 ctx 限定 min=max=TLS1.3
+ * （本机构建未启用 TLS 1.3 时退化为 TLS 1.2），并按 group_id 去重
+ * （对应 CLI 的 all=0）。
  */
 char *X_SSL_group_names(void)
 {
@@ -1533,7 +1536,24 @@ char *X_SSL_group_names(void)
     ctx = SSL_CTX_new(TLS_method());
     if (ctx == NULL)
         goto err;
-    if (!SSL_CTX_get0_implemented_groups(ctx, 1, groups))
+#ifdef TLS1_3_VERSION
+    if (!SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION)
+            || !SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION)) {
+        /* 本机构建未启用 TLS 1.3，退化为 TLS 1.2。 */
+        SSL_CTX_free(ctx);
+        ctx = SSL_CTX_new(TLS_method());
+        if (ctx == NULL)
+            goto err;
+        if (!SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION)
+                || !SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION))
+            goto err;
+    }
+#else
+    if (!SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION)
+            || !SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION))
+        goto err;
+#endif
+    if (!SSL_CTX_get0_implemented_groups(ctx, 0, groups))
         goto err;
     num = sk_OPENSSL_CSTRING_num(groups);
     for (i = 0; i < num; i++) {
