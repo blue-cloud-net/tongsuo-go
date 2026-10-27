@@ -130,6 +130,11 @@ API 层（16 个顶级包：meta / digest / mac / sym / asym / ecdh / kdf / rand
 - `crypto/` 整目录与 `key/` 已在 `0.3.0` 的包结构重构中**取消**；当前 16 包形态与依赖方向见 `docs/architecture.md` §2 / §3
 - API 层内部依赖：算法原语包只依赖 `internal/core`；`ecdh → asym`；`x509 → asym`；
   `tls` / `jwk` / `pkcs12` → `x509` + `asym`（单向，无环）
+- **唯一例外（`0.5.0` 起）**：`digest` / `mac` / `sym` / `kdf` / `asym` / `x509`
+  → `meta`。`meta` 是形态词汇的**叶子包**（只依赖 `internal/core`），提供
+  `Source` / `Sink` / `Encoding` / `Format` / `Passphrase` 供各包的形态入口复用。
+  该边单向、无环；**不得反向**（`meta` 不得 import 任何原语包），**也不得**让
+  `meta` 直接 import `internal/native`（这一点在 `0.5.0` 已修正一次）
 
 ### 3.2 完整目录地图（到文件级）
 
@@ -155,18 +160,24 @@ tongsuo-go/
 并尽量提供 `{file}_tongsuocli_test.go`（CLI 对拍）。
 
 ```
-meta/               # 元信息：版本 / 构建信息 / 错误码 / 算法枚举（只查询，无句柄）
+meta/               # 元信息 + 形态词汇：版本 / 构建信息 / 错误码 / 算法枚举 / 输入输出
 ├── version.go      # Version / VersionString / VersionNum / TongsuoVersionNum
 ├── build.go        # BuildInfo / ReadBuildInfo
 ├── error.go        # ErrorString / ErrorCode / ParseErrorCode
-└── list.go         # （规划中）Digests / Ciphers / MACs / KDFs / Providers …
+├── list.go         # Digests / Ciphers / MACs / KDFs / Signatures / KeyExchanges / KEMs / TLSGroups / Providers
+├── source.go       # Source（bytes / reader / file / stdin）
+├── sink.go         # Sink（bytes / writer / file / stdout，含编码）
+├── encoding.go     # Encoding（raw / hex / base64）/ Encode / Decode / Dump
+├── format.go       # Format（PEM / DER）
+└── passphrase.go   # Passphrase（pass: / env: / file: / fd: / stdin:）
 
-digest/             # 摘要（合并原 crypto/{sm3,md5,sha1,sha256,sha512}）
-mac/                # 消息认证码（原 crypto/hmac；CMAC/GMAC/KMAC… 规划中）
-kdf/                # 密钥派生（原 crypto/kdf + key 的 KDF）
+digest/             # 摘要（合并原 crypto/{sm3,md5,sha1,sha256,sha512}）；forms.go = SumSource / SumTo
+mac/                # 消息认证码（原 crypto/hmac；14 种 EVP_MAC：HMAC / CMAC / GMAC / KMAC / SipHash / Poly1305 / EIA3）
+kdf/                # 密钥派生（原 crypto/kdf + key 的 KDF；10 种，见 algorithms.go）
 rand/               # 安全随机数（原 crypto/rand）
 sym/                # 对称加密 + 对称密钥对象（原 crypto/{aes,sm4} + key 对称部分）
-asym/               # 非对称密钥 / 签名验签 / 加解密 / KEM
+                    #   + AES-192 全模式 / SM4-CCM / SM4-XTS / ChaCha20(-Poly1305) / forms.go 流式入口
+asym/               # 非对称密钥 / 签名验签 / 加解密 / KEM；forms.go = Load*Source / Marshal*To
                     #   原 crypto/{sm2,rsa,ecdsa,ed25519,ed448} + crypto/{x25519,x448} 生成 + key 非对称部分
 ecdh/               # 密钥协商（原 crypto/ecdh + crypto/{x25519,x448} 协商）
 keystore/           # 密钥元数据、存储与轮转（原 key 的 Handle / Store / Rotate）
@@ -178,12 +189,14 @@ x509/               # 证书 + CSR + CRL + OCSP + 链验证（单包；原 x509 
 ├── crl.go          # CRL / RevokedEntry / CRLBuilder / RevocationCheck
 ├── ocsp.go         # Request / Response / CreateOCSPRequest / ParseOCSPResponse
 ├── store.go        # Store / VerifyError / ChainVerify
+├── forms.go        # MarshalFormat / LoadCertificateSource / MarshalCertificateTo / MarshalCSRTo
 └── helpers.go      # convertEntries / convertExtensions（内部辅助）
 
 tls/                # TLS / NTLS 传输层
 ├── tls.go          # Dial / DialContext / Server / Conn
 ├── chain.go        # 证书链构建
 ├── suites.go       # 套件枚举与命名
+├── listener.go     # Listener / NewListener（Accept 内完成握手）
 └── errors.go       # 错误分类
 
 asn1/               # DER viewer（纯 Go，cgo-free）
@@ -205,8 +218,10 @@ internal/native/               # 绑定层：cgo + shim
 ├── binding_digest.go          # EVP_MD / EVP_Digest* 系列
 ├── binding_cipher.go          # EVP_CIPHER / EVP_CIPHER_CTX 系列
 ├── binding_pkey.go            # EVP_PKEY / EVP_PKEY_CTX 系列（SM2 / RSA / EC）
-├── binding_hmac.go            # EVP_MAC / HMAC 系列
-├── binding_kdf.go             # EVP_KDF（HKDF / PBKDF2 / Argon2ID）
+├── binding_hmac.go            # HMAC_CTX 系列（legacy 路径，0.5.0 起公开包不再使用）
+├── binding_mac.go             # EVP_MAC 全家族（fetch / ctx / init / update / final / set_params）
+├── binding_kdf.go             # EVP_KDF（10 种算法，泛化 X_EVP_KDF_derive）
+├── binding_meta.go            # 算法 / provider 枚举、seed 来源、TLS 组
 ├── binding_rand.go            # RAND_bytes 系列
 ├── binding_bio.go             # BIO 系列
 ├── binding_ssl.go             # SSL_CTX / SSL / TLS 会话

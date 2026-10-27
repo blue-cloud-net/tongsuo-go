@@ -31,18 +31,21 @@ interfaces and a CLI-style by-name entry point; see the
 - 🔐 **SM2 asymmetric algorithm** (GB/T 32918, `asym`): key generation, PEM serialization, encrypt/decrypt (ASN.1 DER, C1C3C2 internal order),
   SM2withSM3 sign/verify, customizable userId
 - 🔑 **SM3 hash algorithm** (GB/T 32905-2016, `digest`): `hash.Hash` interface + fixed-size `SumSM3` + by-name `Sum("SM3", d)`
-- 🔒 **SM4 symmetric cipher** (GB/T 32907, `sym`): ECB / CBC / CTR / OFB / CFB / GCM (AEAD)
-- 🧮 **HMAC message authentication codes** (`mac`): HMAC-SM3 / MD5 / SHA1 / SHA256 / SHA512
+- 🔒 **SM4 symmetric cipher** (GB/T 32907, `sym`): ECB / CBC / CTR / OFB / CFB / GCM (AEAD), plus SM4-CCM and SM4-XTS
+- 🧮 **Message authentication codes** (`mac`): 14 `EVP_MAC` algorithms — HMAC-SM3 / MD5 / SHA1 / SHA224 / SHA256 / SHA384 / SHA512, CMAC, GMAC, KMAC-128/256, SipHash, Poly1305, EIA3
 - 🔗 **More hashes** (`digest`): MD5, SHA1, SHA224, SHA256, SHA384, SHA512 (`hash.Hash` + `Sum`)
-- 🔄 **AES symmetric cipher** (`sym`): ECB / CBC / CTR / GCM (`cipher.Block` + `cipher.AEAD`)
-- 🧬 **Key derivation** (`kdf`): HKDF / PBKDF2 / Argon2ID, including the by-name `Derive`
+- 🔄 **AES symmetric cipher** (`sym`): 128 / 192 / 256-bit ECB / CBC / CTR / GCM (`cipher.Block` + `cipher.AEAD`)
+- 🌊 **Stream ciphers** (`sym`): ChaCha20, ChaCha20-Poly1305
+- 🧬 **Key derivation** (`kdf`): 10 KDFs — HKDF / PBKDF2 / scrypt / SSKDF / TLS1-PRF / TLS13-KDF / KBKDF / X942KDF / X963KDF / HMAC-DRBG-KDF, each with a typed entry plus the by-name `Derive`
+- 🧰 **CLI-style form entries**: `meta` provides `Source` (bytes / reader / file / stdin), `Sink` (with raw / hex / base64 encoding), `Format` (PEM / DER) and `Passphrase` (`pass:` / `env:` / `file:` / `fd:` / `stdin:`); the primitive packages add one-liners such as `SumSource` / `SumTo` / `EncryptSource` / `DeriveTo` / `MarshalPrivateKeyTo` / `LoadCertificateSource`
+- 🗂️ **Algorithm and provider enumeration** (`meta`): `Digests` / `Ciphers` / `MACs` / `KDFs` / `Signatures` / `KeyExchanges` / `KEMs` / `TLSGroups` / `Providers` / `SeedingSource`
 - 📝 **Ed25519 / Ed448 signatures** (RFC 8032, `asym`): pure EdDSA (no pre-hashing), raw 32B / 57B seed and public-key bytes interoperable with Go standard library, WireGuard; X.509 certificate / CSR / CRL signing via the `X509_sign_ctx` path
 - 🤝 **X25519 / X448 ECDH key agreement** (RFC 7748, `ecdh`): 32 / 56-byte shared secret, interoperable with Go `crypto/ecdh` and WireGuard
 - 🤝 **Curve-based ECDH** (`ecdh`): NIST P-256 / P-384 / P-521 (X9.63), the OKP curves X25519 / X448 (RFC 7748) and secp256k1; PEM (PKCS#8 / SPKI) round-trip and shared-secret derivation matching Go's standard `crypto/ecdh` semantics
 - 🎲 **Cryptographically secure random** (`rand`): based on Tongsuo `RAND_bytes`
 - 🗄️ **Key storage and rotation** (`keystore`): key metadata, in-memory / custom stores, version rotation and history
 - 📜 **X.509 certificate management** (`x509`): parse and issue certificates / CSR / CRL / OCSP, one-line self-signed certificates (`CreateSelfSigned`), step-by-step CRL issuance (`CRLBuilder`), CA-signed certificates (SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448), arbitrary X.509 v3 extensions by NID or name (`AddExtension` / `AddExtensionByName` / `AddExtensions`), CSR-driven issuance (`IssueCertificateFromRequest`), hostname / IP / e-mail verification (`VerifyHostname` / `CheckEmail`), subject / issuer name hashes (`SubjectHash` / `IssuerHash`) and chain verification with an optional pinned verification instant (`Store.SetTime`)
-- 🌐 **TLS / NTLS transport** (`tls`): client / server wrappers, supporting Tongsuo NTLS dual certificates (signing certificate + encryption certificate)
+- 🌐 **TLS / NTLS transport** (`tls`): client / server wrappers, supporting Tongsuo NTLS dual certificates (signing certificate + encryption certificate); `tls.NewListener` returns a `net.Listener` whose Accept completes the handshake
 - 📦 **Containers and formats**: PKCS#7 (`pkcs/pkcs7`), PKCS#12 (`pkcs/pkcs12`), JWK (`jwk`), ASN.1 DER viewer (`asn1`), .NET-style RSA XML (`xml/rsa`)
 - 🧪 **Standard-vector tests**: every algorithm package covers national-standard vectors, round-trips, edge cases and error paths, with bidirectional cross-validation against the openssl CLI
 

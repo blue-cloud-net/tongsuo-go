@@ -47,6 +47,10 @@ API 层（16 个顶级包：meta / digest / mac / sym / asym / ecdh / kdf / rand
 - 依赖方向**单向向下**，各层边界清晰，便于测试与替换
 - API 层内部：`ecdh → asym`（加载 `asym` 密钥对象）、`x509 → asym`（公钥/私钥接口）、
   `tls/jwk/pkcs12 → x509` + `asym`；算法原语包只依赖 `internal/core`，不互相依赖
+- **唯一例外（`0.5.0` 起）**：`digest` / `mac` / `sym` / `kdf` / `asym` / `x509`
+  → `meta`。`meta` 是**形态词汇的叶子包**（只依赖 `internal/core`），提供
+  `Source` / `Sink` / `Encoding` / `Format` / `Passphrase`，供各原语包的「CLI 式
+  形态入口」复用；该依赖**单向、无环**，不构成跨层调用
 
 ```mermaid
 graph TD
@@ -240,23 +244,37 @@ tongsuo-go/
 ├── CHANGELOG.md  CHANGELOG.zh.md
 ├── AGENTS.md
 │
-├── meta/                      # 【元信息】版本 / 构建信息 / 错误码 / 算法枚举
+├── meta/                      # 【元信息 + 形态词汇】版本 / 构建信息 / 错误码 / 枚举 / 输入输出
 │   ├── version.go             # Version / VersionString / VersionNum / TongsuoVersionNum
 │   ├── build.go               # BuildInfo / ReadBuildInfo
 │   ├── error.go               # ErrorString / ErrorCode / ParseErrorCode
-│   └── list.go                # （规划中）Digests / Ciphers / MACs / KDFs / Providers …
+│   ├── list.go                # Digests / Ciphers / MACs / KDFs / Signatures / KeyExchanges
+│   │                          #   / KEMs / TLSGroups / Providers / SeedingSource
+│   ├── source.go              # Source（bytes / reader / file / stdin）
+│   ├── sink.go                # Sink（bytes / writer / file / stdout，含编码）
+│   ├── encoding.go            # Encoding（raw / hex / base64）/ Encode / Decode / Dump
+│   ├── format.go              # Format（PEM / DER）
+│   └── passphrase.go          # Passphrase（pass: / env: / file: / fd: / stdin:）
 ├── digest/                    # 【原语】摘要
 │   ├── digest.go              # 按名分发：Names / New / Sum / SumReader / Size / BlockSize
-│   └── typed.go               # 类型化：NewSM3 / SumSM3 / NewSHA256 / SumSHA256 …
+│   ├── hashes.go              # 类型化：NewSM3 / SumSM3 / NewSHA256 / SumSHA256 …
+│   └── forms.go               # 形态入口：SumSource / SumFile / SumTo / SumReaderTo
 ├── mac/                       # 【原语】消息认证码
-│   └── mac.go                 # 按名分发 + HMAC 类型化入口（CMAC/GMAC/KMAC… 规划中）
+│   ├── mac.go                 # 按名分发（EVP_MAC 14 种）：Names / New / Sum / SumReader
+│   ├── families.go            # 类型化：CMAC / GMAC / KMAC128 / KMAC256 / SipHash / Poly1305 / EIA3
+│   ├── hmac.go                # NewHMAC* / SumHMAC* 便捷函数
+│   └── forms.go               # 形态入口：SumSource / SumFile / SumTo
 ├── kdf/                       # 【原语】密钥派生
-│   └── kdf.go                 # Hash 常量 / HKDF / PBKDF2 / Argon2ID / Derive
+│   ├── kdf.go                 # Hash 常量 / HKDF / PBKDF2 / Argon2ID / Names / Derive / Options
+│   ├── algorithms.go          # 类型化：Scrypt / SSKDF / TLS1PRF / TLS13KDF* / X942KDF …
+│   └── forms.go               # 形态入口：DeriveTo
 ├── rand/                      # 【原语】安全随机数
 │   └── rand.go                # Read / Bytes / Reader
 ├── sym/                       # 【原语】对称加密 + 对称密钥对象
-│   ├── sym.go                 # 按名分发：Names / NewCipher / NewGCM / Encrypt / Decrypt
-│   ├── aes.go  sm4.go         # 类型化入口：EncryptAESCBC / EncryptSM4ECB …
+│   ├── sym.go                 # 按名分发：Names / NewCipher / NewGCM / NewAEAD / Encrypt / Decrypt
+│   ├── aes.go  sm4.go         # 类型化入口：EncryptAESCBC / EncryptSM4ECB / SM4-CCM / SM4-XTS …
+│   ├── chacha20.go            # ChaCha20 / ChaCha20-Poly1305
+│   ├── forms.go               # 形态入口：EncryptSource / DecryptSource（流式）
 │   └── key.go                 # SymmetricKey / AESKey / SM4Key / GenerateSymmetricKey
 ├── asym/                      # 【密钥】非对称密钥、签名验签、加解密、KEM
 │   ├── asym.go                # Algorithm / Key / PrivateKey / PublicKey 接口
@@ -264,7 +282,8 @@ tongsuo-go/
 │   ├── parse.go               # LoadPrivateKeyPEM / LoadPublicKeyPEM / ParsePEM
 │   ├── sign.go  encrypt.go    # Sign / Verify / Encrypt / Decrypt + 算法特定入口
 │   ├── register.go            # CorePKey() 契约（供 internal/keyaccess 反查）
-│   └── params.go              # KeyParams
+│   ├── params.go              # KeyParams
+│   └── forms.go               # 形态入口：LoadPrivateKeySource / MarshalPrivateKeyTo …
 ├── ecdh/                      # 【密钥】密钥协商
 │   └── ecdh.go                # Curve / LoadPrivateKey / LoadPublicKey / SharedSecret
 ├── keystore/                  # 【密钥】元数据、存储与轮转
@@ -280,9 +299,11 @@ tongsuo-go/
 │   ├── ocsp.go                # Request / Response / CreateOCSPRequest / ParseOCSPResponse
 │   ├── issue.go               # IssueCertificateFromRequest / IssueOptions
 │   ├── store.go               # Store / VerifyError / ChainVerify
+│   ├── forms.go               # 形态入口：MarshalFormat / LoadCertificateSource / MarshalCSRTo
 │   └── helpers.go             # convertEntries / convertExtensions
 ├── tls/                       # 【传输】TLS / NTLS
 │   ├── tls.go  chain.go  suites.go  errors.go
+│   └── listener.go            # Listener / NewListener（Accept 内握手的 net.Listener）
 ├── asn1/                      # 【格式】DER viewer（纯 Go，cgo-free）
 ├── jwk/                       # 【格式】JWK ↔ PEM / JSON
 ├── pkcs/                      # 【容器】
@@ -301,7 +322,9 @@ tongsuo-go/
 │   │   ├── binding_cipher.go  # EVP_CIPHER / EVP_CIPHER_CTX 系列
 │   │   ├── binding_pkey.go    # EVP_PKEY / EVP_PKEY_CTX 系列（SM2 / RSA / EC）
 │   │   ├── binding_hmac.go    # HMAC_CTX 系列
-│   │   ├── binding_kdf.go     # EVP_KDF（HKDF / PBKDF2）
+│   │   ├── binding_mac.go     # EVP_MAC 全家族（fetch / ctx / init / update / final / set_params）
+│   │   ├── binding_kdf.go     # EVP_KDF（10 种算法，泛化 X_EVP_KDF_derive）
+│   │   ├── binding_meta.go    # 算法 / provider 枚举、seed 来源、TLS 组
 │   │   ├── binding_rand.go    # RAND_bytes
 │   │   ├── binding_bio.go     # BIO 系列
 │   │   ├── binding_ssl.go     # SSL_CTX / SSL / TLS 会话
@@ -313,6 +336,7 @@ tongsuo-go/
 │   ├── core/                  # 【核心层】句柄包装 + 生命周期 + 错误 + 协议编排
 │   │   ├── handle.go  error.go  doc.go  version.go
 │   │   ├── digest.go  cipher.go  hmac.go  kdf.go
+│   │   ├── mac.go  meta.go
 │   │   ├── pkey.go  pkey_id.go  pkcs.go  ocsp.go
 │   │   ├── x509.go  ssl.go  rand.go  zero.go
 │   │   └── waitfd_linux.go  waitfd_darwin.go
@@ -338,7 +362,12 @@ tongsuo-go/
 > `internal/certaccess`（证书，断言 + DER 往返）供 `tls` / `pkcs7` / `pkcs12` 与 `x509`
 > 包内的 `ocsp` 使用。
 > 依赖方向单向：算法原语包只依赖 `internal/core`；`ecdh → asym`；`x509 → asym`；
-> `tls` / `jwk` / `pkcs12` → `x509` + `asym`。原 `key/` 的统合职责已拆分：
+> `tls` / `jwk` / `pkcs12` → `x509` + `asym`。
+> `0.5.0` 起新增一条**叶子边**：`digest` / `mac` / `sym` / `kdf` / `asym` / `x509`
+> → `meta`（`meta` 只依赖 `internal/core`，提供 `Source` / `Sink` / `Encoding` /
+> `Format` / `Passphrase` 形态词汇）。该边单向、无环，不得反向（`meta` 不得
+> import 任何原语包），也不得经 `meta` 间接触达 `internal/native`。
+> 原 `key/` 的统合职责已拆分：
 > 非对称抽象 → `asym`、对称抽象 → `sym`、元数据与轮转 → `keystore`、KDF → `kdf`。
 
 ---

@@ -40,6 +40,13 @@
 
 ### 2.1 `0.5.0` — 形态地基与高频算法补齐
 
+> **实施状态（2026-10-27）**：本节全部条目已在 `dev` 分支实现并通过门禁
+> （`gofmt` / `go vet` / `go build` / `go test` / `go test -tags tongsuocli` /
+> `go test -race ./tls/`），**待发 tag**。发 tag 前需按
+> [release-guide.md](release-guide.md) 用 CI 同款铜锁 8.4.0 复跑。符号清单见
+> [api-reference.md](api-reference.md)，变更记录见
+> [CHANGELOG](../CHANGELOG.md) 的 `[0.5.0]` 段；未纳入本版的相邻项已留在 §2.2。
+>
 > 本版目标是让本库**用起来像 CLI 一样直接**：调用方给出「算法名 + 输入源 + 输出编码」即可拿到结果。
 
 | 领域 | 内容 | 对应缺口 | 前置（§3） |
