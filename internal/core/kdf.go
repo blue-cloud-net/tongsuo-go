@@ -215,3 +215,27 @@ func Derive(alg string, p *KDFParams, out []byte) error {
 	}
 	return nil
 }
+
+// KDFAvailable 报告当前构建的 provider 是否提供指定 KDF 算法。
+// 与编译期的 kdf.Names() 清单互补：清单是「本库实现了哪些」，本函数是
+// 「本机铜锁真能跑哪些」。例如 Tongsuo 8.4.0 没有 HMAC-DRBG-KDF。
+//
+// KDFAvailable reports whether the current build's providers offer the
+// named KDF algorithm. It complements the compile-time kdf.Names() list:
+// the list says what this library implements, this function says what the
+// installed Tongsuo can actually run. Tongsuo 8.4.0, for example, has no
+// HMAC-DRBG-KDF.
+func KDFAvailable(alg string) bool {
+	if alg == "" {
+		return false
+	}
+	return native.EVP_KDF_Available(alg)
+}
+
+// KBKDFCounterWidthSupported 报告当前构建的 KBKDF 是否接受 r（计数器宽度）参数。
+// OpenSSL 3.2+ 才有该参数；Tongsuo 8.4.0 下 R 会被忽略（固定 32 位）。
+//
+// KBKDFCounterWidthSupported reports whether the current build's KBKDF
+// accepts the r (counter width) parameter. Only OpenSSL 3.2+ has it; on
+// Tongsuo 8.4.0 R is ignored and the counter width stays at 32 bits.
+func KBKDFCounterWidthSupported() bool { return native.EVP_KDF_KBKDFRSupported() }

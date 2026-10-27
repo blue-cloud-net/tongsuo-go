@@ -197,6 +197,16 @@ func TestX942KDFVector(t *testing.T) {
 // TestKBKDFVector verifies the SP 800-108 KBKDF (HMAC counter mode)
 // against the COUNT=0 vector in evpkdf_kbkdf_counter.txt.
 func TestKBKDFVector(t *testing.T) {
+	// 向量的 r=8 需要 OSSL_KDF_PARAM_KBKDF_R（OpenSSL 3.2+）；
+	// Tongsuo 8.4.0 的 KBKDF 没有该参数，计数器宽度固定为 32 位，
+	// 该向量在那类构建上不适用。
+	//
+	// The vector needs r=8, i.e. OSSL_KDF_PARAM_KBKDF_R (OpenSSL 3.2+).
+	// Tongsuo 8.4.0's KBKDF lacks the parameter and pins the counter width
+	// to 32 bits, so this vector does not apply there.
+	if !kdf.KBKDFCounterWidthSupported() {
+		t.Skip("this build's KBKDF lacks the r (counter width) parameter (< OpenSSL 3.2)")
+	}
 	key := requireHex(t, "00a39bd547fb88b2d98727cf64c195c61e1cad6c")
 	info := requireHex(t, "98132c1ffaf59ae5cbc0a3133d84c551bb97e0c75ecaddfc30056f6876f59803"+
 		"009bffc7d75c4ed46f40b8f80426750d15bc1ddb14ac5dcb69a68242")
@@ -223,6 +233,9 @@ func TestKBKDFVector(t *testing.T) {
 // TestHMACDRBGVector verifies the HMAC-DRBG KDF against the first vector
 // in evpkdf_hmac_drbg.txt.
 func TestHMACDRBGVector(t *testing.T) {
+	if !kdf.Available("HMAC-DRBG-KDF") {
+		t.Skip("this build's providers do not include HMAC-DRBG-KDF (Tongsuo 8.4.0)")
+	}
 	entropy := requireHex(t, "411602cb19a6ccc34494d79d98ef1e7ed5af25f7")
 	nonce := requireHex(t, "8151325dcdbae9e0ff95f9f9658432dbedfdb209")
 	want := requireHex(t, "7bdb6b0ff756e1bb5d53583ef979082f9ad5bd5b")

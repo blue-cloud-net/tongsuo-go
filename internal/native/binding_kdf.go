@@ -289,3 +289,11 @@ func boolToInt(b bool) int {
 	}
 	return 0
 }
+
+// EVP_KDF_KBKDFRSupported 报告本构建的 KBKDF 是否接受 r（计数器宽度）参数。
+// 该参数名 OSSL_KDF_PARAM_KBKDF_R 仅存在于 OpenSSL 3.2+。
+//
+// EVP_KDF_KBKDFRSupported reports whether this build's KBKDF accepts the
+// r (counter width) parameter. The parameter name
+// OSSL_KDF_PARAM_KBKDF_R only exists in OpenSSL 3.2+.
+func EVP_KDF_KBKDFRSupported() bool { return C.X_EVP_KDF_kbkdf_r_supported() == 1 }

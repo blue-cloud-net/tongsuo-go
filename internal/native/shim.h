@@ -433,6 +433,20 @@ const char *X_OPENSSL_seed_source(void);
 char *X_SSL_group_names(void);
 
 /*
+ * X_SSL_groups_supported：本构建是否支持枚举 TLS 组（SSL_CTX_get0_implemented_groups）。
+ * X_SSL_groups_supported reports whether this build can enumerate TLS groups
+ * (SSL_CTX_get0_implemented_groups).
+ */
+int X_SSL_groups_supported(void);
+
+/*
+ * X_EVP_KDF_kbkdf_r_supported：本构建的 KBKDF 是否接受 r（计数器宽度）参数。
+ * X_EVP_KDF_kbkdf_r_supported reports whether this build's KBKDF accepts the
+ * r (counter width) parameter.
+ */
+int X_EVP_KDF_kbkdf_r_supported(void);
+
+/*
  * X_SSL_set_tlsext_host_name 包装 SSL_set_tlsext_host_name 宏（cgo 不能直接
  * 调宏），在 ClientHello 中设置 SNI 扩展。
  *

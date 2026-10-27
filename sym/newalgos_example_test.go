@@ -32,32 +32,6 @@ func ExampleEncryptSM4CCM() {
 	// Output: true 16
 }
 
-// ExampleEncryptSM4XTS 演示 SM4-XTS 的加解密（GB/T 17964-2021 向量）。
-//
-// ExampleEncryptSM4XTS demonstrates SM4-XTS encryption and decryption
-// with the GB/T 17964-2021 test vector.
-func ExampleEncryptSM4XTS() {
-	key, _ := hex.DecodeString("FFFEFDFCFBFAF9F8F7F6F5F4F3F2F1F0" +
-		"BFBEBDBCBBBAB9B8B7B6B5B4B3B2B1B0")
-	tweak, _ := hex.DecodeString("9A785634120000000000000000000000")
-	pt, _ := hex.DecodeString("000102030405060708090A0B0C0D0E0F10")
-
-	ct, err := sym.EncryptSM4XTS(key, tweak, pt)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(strings.ToUpper(hex.EncodeToString(ct)))
-
-	back, err := sym.DecryptSM4XTS(key, tweak, ct)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(bytes.Equal(back, pt))
-	// Output:
-	// 9E52443A35410CA0BA5637B94C0766F469
-	// true
-}
-
 // ExampleEncryptChaCha20 演示 ChaCha20 流密码（RFC 7539 §A.1 向量）。
 //
 // ExampleEncryptChaCha20 demonstrates the ChaCha20 stream cipher with the

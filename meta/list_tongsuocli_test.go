@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 	"github.com/blue-cloud-net/tongsuo-go/internal/testutil"
 	"github.com/blue-cloud-net/tongsuo-go/meta"
 )
@@ -122,6 +123,12 @@ func TestAlgorithmEnumerationAgainstCLI(t *testing.T) {
 // library also appears in `openssl list -tls-groups`.
 func TestTLSGroupsAgainstCLI(t *testing.T) {
 	testutil.SkipIfNoOpenSSL(t)
+	// Tongsuo 8.4.0 的 `list` 子命令没有 -tls-groups 选项，本库也不枚举。
+	// Tongsuo 8.4.0's `list` has no -tls-groups option and this library
+	// does not enumerate groups either.
+	if !core.TLSGroupsSupported() {
+		t.Skip("this build has no TLS group enumeration (list -tls-groups, OpenSSL < 3.2)")
+	}
 
 	out, err := testutil.RunOpenSSL([]string{"list", "-tls-groups"}, nil)
 	if err != nil {

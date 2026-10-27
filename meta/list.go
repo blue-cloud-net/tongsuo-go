@@ -121,10 +121,16 @@ func KEMs() []string {
 
 // TLSGroups 返回当前构建实现的 TLS 组名。
 // 对应 `tongsuo list -tls-groups`；返回的列表已去重并按字典序排列。
+// 枚举依赖 `SSL_CTX_get0_implemented_groups`（OpenSSL 3.2+）：Tongsuo 8.4.0
+// 及更早构建没有该接口，此时返回空切片（不是错误），调用方可据此判定
+// 「本构建不支持枚举」。
 //
 // TLSGroups returns the TLS group names implemented by the current build,
 // matching `tongsuo list -tls-groups`. The returned list is
-// de-duplicated and sorted lexicographically.
+// de-duplicated and sorted lexicographically. Enumeration relies on
+// SSL_CTX_get0_implemented_groups (OpenSSL 3.2+); Tongsuo 8.4.0 and older
+// builds lack it and get an empty slice (not an error), which callers can
+// read as "this build cannot enumerate groups".
 func TLSGroups() []string {
 	raw := core.TLSGroups()
 	seen := make(map[string]struct{}, len(raw))

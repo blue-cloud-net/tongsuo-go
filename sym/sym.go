@@ -411,3 +411,44 @@ func DecryptGCM(name string, key, nonce, ciphertext, tag, aad []byte) ([]byte, e
 	}
 	return nil, fmt.Errorf("sym: %q: %w", name, ErrUnsupported)
 }
+
+// Available 报告当前铜锁构建是否真的提供该「算法-模式」名。
+// 与 Names() 的关系：Names() 是**编译期**清单（本库支持哪些），Available 是
+// **运行时**事实（本机铜锁的 provider 能跑哪些）。典型差异：Tongsuo 8.4.0
+// （OpenSSL 3.0.3 底座）没有 SM4-XTS（走 EVP_CIPHER_fetch），此时
+// EncryptSM4XTS 返回「unavailable in this build」。
+// name 大小写不敏感；未知名称返回 false。
+//
+// Available reports whether the installed Tongsuo build actually offers
+// the named algorithm-mode. Names() is the compile-time list (what this
+// library supports) whereas Available is the runtime fact (what the local
+// providers can run). They differ in one typical case: Tongsuo 8.4.0
+// (OpenSSL 3.0.3 base) has no SM4-XTS (it is fetched via
+// EVP_CIPHER_fetch), and EncryptSM4XTS then reports "unavailable in this
+// build". Matching is case-insensitive; unknown names return false.
+func Available(name string) bool {
+	a, _, err := lookup(name)
+	if err != nil {
+		return false
+	}
+	switch a.name {
+	case "SM4-XTS":
+		c := core.SM4XTS()
+		if c == nil {
+			return false
+		}
+		_ = c.Close()
+		return true
+	case "SM4-CCM":
+		return core.SM4CCM() != nil
+	case "ChaCha20":
+		return core.ChaCha20() != nil
+	case "ChaCha20-Poly1305":
+		return core.ChaCha20Poly1305() != nil
+	}
+	if strings.HasPrefix(strings.ToUpper(a.name), "AES") {
+		c, err := aesCipher(make([]byte, a.size), strings.ToLower(a.mode))
+		return err == nil && c != nil
+	}
+	return sm4Cipher(strings.ToLower(a.mode)) != nil
+}

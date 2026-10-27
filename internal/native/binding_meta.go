@@ -137,3 +137,13 @@ func TLSGroupNames() []string {
 	defer C.X_OPENSSL_free(unsafe.Pointer(raw))
 	return strings.Split(C.GoString(raw), "\n")
 }
+
+// SSLGroupsSupported 报告本构建是否支持枚举 TLS 组。
+// SSL_CTX_get0_implemented_groups 仅存在于 OpenSSL 3.2+；Tongsuo 8.4.0
+// （OpenSSL 3.0.3 底座）不支持，此时 TLSGroupNames 返回空列表。
+//
+// SSLGroupsSupported reports whether this build can enumerate TLS groups.
+// SSL_CTX_get0_implemented_groups only exists in OpenSSL 3.2+; Tongsuo
+// 8.4.0 (OpenSSL 3.0.3 base) does not support it and TLSGroupNames
+// returns an empty list.
+func SSLGroupsSupported() bool { return C.X_SSL_groups_supported() == 1 }

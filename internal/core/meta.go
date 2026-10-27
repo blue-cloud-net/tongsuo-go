@@ -104,3 +104,11 @@ func SeedingSource() string {
 func TLSGroups() []string {
 	return native.TLSGroupNames()
 }
+
+// TLSGroupsSupported 报告当前构建是否支持枚举 TLS 组。
+// 不支持时 TLSGroups 返回空列表（Tongsuo 8.4.0 / OpenSSL < 3.2）。
+//
+// TLSGroupsSupported reports whether the current build can enumerate TLS
+// groups. When it cannot, TLSGroups returns an empty list (Tongsuo 8.4.0
+// / OpenSSL < 3.2).
+func TLSGroupsSupported() bool { return native.SSLGroupsSupported() }

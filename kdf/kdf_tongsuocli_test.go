@@ -265,38 +265,35 @@ func TestKDFFamiliesAgainstCLI(t *testing.T) {
 			name: "KBKDF",
 			lib: func(t *testing.T) []byte {
 				t.Helper()
-				out, err := kdf.KBKDF(&kdf.KBKDFOptions{
+				opts := &kdf.KBKDFOptions{
 					Digest:  kdf.HashSHA1,
 					MAC:     "HMAC",
 					Mode:    "COUNTER",
 					Secret:  mustCLIHex(t, "00a39bd547fb88b2d98727cf64c195c61e1cad6c"),
 					Context: mustCLIHex(t, "98132c1ffaf59ae5cbc0a3133d84c551bb97e0c75ecaddfc30056f6876f59803009bffc7d75c4ed46f40b8f80426750d15bc1ddb14ac5dcb69a68242"),
-					R:       8,
-				}, 16)
+				}
+				// r（计数器宽度）仅 OpenSSL 3.2+ 支持；旧构建两边都不传，
+				// 均取 provider 默认 32 位，对拍仍成立。
+				// r is OpenSSL 3.2+ only; older builds leave it out on both
+				// sides and both use the provider default of 32 bits.
+				if kdf.KBKDFCounterWidthSupported() {
+					opts.R = 8
+				}
+				out, err := kdf.KBKDF(opts, 16)
 				if err != nil {
 					t.Fatalf("KBKDF: %v", err)
 				}
 				return out
 			},
-			args: []string{
-				"kdf", "-keylen", "16",
-				"-kdfopt", "mode:COUNTER",
-				"-kdfopt", "mac:HMAC",
-				"-kdfopt", "digest:SHA1",
-				"-kdfopt", "hexkey:00a39bd547fb88b2d98727cf64c195c61e1cad6c",
-				"-kdfopt", "hexinfo:98132c1ffaf59ae5cbc0a3133d84c551bb97e0c75ecaddfc30056f6876f59803009bffc7d75c4ed46f40b8f80426750d15bc1ddb14ac5dcb69a68242",
-				"-kdfopt", "r:8",
-				// CLI / provider 的 use-l 与 use-separator 默认值均为 1，
-				// 而本库的 false 显式传 0，因此对拍时必须显式给出。
-				"-kdfopt", "use-l:0",
-				"-kdfopt", "use-separator:0",
-				"KBKDF",
-			},
+			args: kbkdfCLIArgs(),
 		},
 		{
 			name: "HMAC-DRBG-KDF",
 			lib: func(t *testing.T) []byte {
 				t.Helper()
+				if !kdf.Available("HMAC-DRBG-KDF") {
+					t.Skip("this build's providers do not include HMAC-DRBG-KDF (Tongsuo 8.4.0)")
+				}
 				out, err := kdf.HMACDRBG(kdf.HashSHA1,
 					mustCLIHex(t, "411602cb19a6ccc34494d79d98ef1e7ed5af25f7"),
 					mustCLIHex(t, "8151325dcdbae9e0ff95f9f9658432dbedfdb209"), 20)
@@ -341,4 +338,32 @@ func mustCLIHex(t *testing.T, s string) []byte {
 		t.Fatalf("decode hex %q: %v", s, err)
 	}
 	return b
+}
+
+// kbkdfCLIArgs 构造 KBKDF 的 CLI 参数，按本构建是否支持 r 参数决定是否下传。
+// CLI / provider 的 use-l 与 use-separator 默认值均为 1，而本库的 false
+// 显式传 0，因此对拍时必须显式给出 use-l:0 / use-separator:0。
+//
+// kbkdfCLIArgs builds the KBKDF CLI arguments, forwarding r only when this
+// build supports it. The CLI / provider default use-l and use-separator to
+// 1 whereas this library forwards an explicit 0, so both must be passed
+// explicitly for the outputs to match.
+func kbkdfCLIArgs() []string {
+	args := []string{
+		"kdf", "-keylen", "16",
+		"-kdfopt", "mode:COUNTER",
+		"-kdfopt", "mac:HMAC",
+		"-kdfopt", "digest:SHA1",
+		"-kdfopt", "hexkey:00a39bd547fb88b2d98727cf64c195c61e1cad6c",
+		"-kdfopt", "hexinfo:98132c1ffaf59ae5cbc0a3133d84c551bb97e0c75ecaddfc30056f6876f59803009bffc7d75c4ed46f40b8f80426750d15bc1ddb14ac5dcb69a68242",
+	}
+	if kdf.KBKDFCounterWidthSupported() {
+		args = append(args, "-kdfopt", "r:8")
+	}
+	args = append(args,
+		"-kdfopt", "use-l:0",
+		"-kdfopt", "use-separator:0",
+		"KBKDF",
+	)
+	return args
 }

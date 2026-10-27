@@ -93,8 +93,19 @@ go test -fuzz FuzzRoundTrip ./sym
 | 按名分发 | `Sum("HMAC-SM3", k, d)` 与定长入口一致；非 `HMAC-*` 名返回 `ErrUnknownAlgorithm` |
 | 篡改检测 | 修改消息或密钥任一字节，摘要不同 |
 
-**CLI 对比测试**：`openssl mac -macopt hexkey:… HMAC-SM3`（CLI 侧走 provider，本库
-本版走 legacy `HMAC_CTX_*`）逐字节比对，用于确认两条路径一致。
+**CLI 对比测试**：`openssl mac -macopt hexkey:… HMAC-SM3` 逐字节比对；`0.5.0` 起本库也走 provider `EVP_MAC_*` 路径，因此**所有算法都要求逐字节一致**（
+不再只是长度断言）。
+
+**`0.5.0` 新增的 MAC 家族（`mac/families_test.go` / `mac/families_tongsuocli_test.go`）**
+
+| 测试用例 | 描述 |
+|---------|------|
+| CMAC 标准向量 | NIST SP 800-38B 的 AES-128/192/256 与 GB/T 32907 的 SM4 向量；`cipherName` 不写模式时内部补 `-CBC` |
+| GMAC 标准向量 | NIST GCM 附件 B 的 tag 向量；IV / AAD 一致性 |
+| KMAC-128/256 | SP 800-185 向量；输出长度参与域分隔（取错长度会得到不同结果） |
+| SipHash / Poly1305 / EIA3 | 各自标准向量；SipHash 断言长度（16 字节）与 CLI 逐字节一致 |
+| 按名 vs 类型化 | `Sum("CMAC", k, d, &Options{Cipher: "AES-128"})` 与 `CMAC("AES-128", k, d)` 一致 |
+| 必需参数缺失 | CMAC 缺 `Cipher`、GMAC 缺 `IV` 等返回 `ErrInvalidOptions` |
 
 ---
 
@@ -128,6 +139,18 @@ go test -fuzz FuzzRoundTrip ./sym
 
 **CLI 对比测试**：调用 `openssl enc -sm4-cbc/-sm4-ecb/-sm4-ctr/-sm4-gcm`、
 `-aes-128-cbc/-aes-256-gcm` 对随机密钥 / IV / 明文逐字节比对，每种模式独立用例。
+
+**`0.5.0` 新增算法（`sym/newalgos_test.go` / `sym/newalgos_tongsuocli_test.go`）**
+
+| 测试用例 | 描述 |
+|---------|------|
+| AES-192 全模式 | ECB / CBC / CTR / GCM 往返 + 与 CLI `-aes-192-*` 逐字节一致；`NewAESKey` / `GenerateSymmetricKey` 接受 24 字节 |
+| SM4-CCM | 12 字节 nonce、16 字节 tag；标准向量与 tag 篡改检测；明文长度需在 `NewCCMCtx` 之前给定 |
+| SM4-XTS | 32 字节双子密钥；允许 CTS（数据 ≥ 16 字节），15 字节拒绝；与 CLI `-sm4-xts` 对拍 |
+| ChaCha20 / Poly1305 | RFC 8439 §2.4.2 向量 + 往返；AEAD 的 AAD / tag 用例同 GCM |
+| 流式 vs 一次性 | `EncryptSource` / `DecryptSource` 与 `Encrypt` / `Decrypt` 逐字节一致（含跨 64 KiB 分块、空输入） |
+| 流式拒绝 AEAD | `EncryptSource("SM4-GCM", …)` 等返回 `ErrUnsupported` |
+| 流式坏填充 | 破坏最后一密文块→ `DecryptSource` 必须返回错误（不放宽校验） |
 
 ---
 
@@ -181,6 +204,17 @@ go test -fuzz FuzzRoundTrip ./sym
 > （`-ntls` 只切换 method，未设置 `SSL_CTX_enable_ntls` 会导致状态机
 > `state_machine:internal error`，报错于 `ssl/statem/statem.c` 版本检查处）。
 
+**`tls.Listener`（`0.5.0`，`tls/listener_test.go`）**
+
+| 测试用例 | 描述 |
+|---------|------|
+| Accept 即握手 | 客户端 `Dial`（开 RootCAs + ServerName）→ 服务端 `Accept` 返回的连接**不调 `Handshake`** 即可读写 |
+| NTLS 回环 | 双证书配置下 `Listener` 同样完成握手，`Version()` 非空 |
+| 握手失败关闭连接 | 裸 TCP 发垃圾字节 → `Accept` 返回错误且**不返回连接** |
+| Close 幂等 | 4 个 goroutine 并发 `Close` 均返回 nil；之后 `Accept` 返回错误；`Addr` 仍可用 |
+| 凭证校验 | `nil` 监听器、空 `Config`、NTLS 缺加密证书均在构造时报错，且**不关闭** `ln` |
+| 并发安全 | 涉及并发生命周期，改 `tls` 时必须加跑 `go test -race ./tls/` |
+
 ---
 
 ## 7. 密钥派生与随机数测试（`kdf` / `rand`）
@@ -194,6 +228,27 @@ go test -fuzz FuzzRoundTrip ./sym
 
 **CLI 对比测试**：`openssl kdf -kdfopt digest:SM3 -kdfopt hexkey:… HKDF`、
 `-kdfopt pass:… -kdfopt salt:… PBKDF2`。
+
+**`0.5.0` 新增的 8 种 KDF（`kdf/algorithms_test.go` / `kdf/kdf_tongsuocli_test.go`）**
+
+| 算法 | 标准向量来源（铜锁 `test/recipes/30-test_evp_data/`） |
+|------|------|
+| SCRYPT | `evpkdf_scrypt.txt`（draft-josefsson-id-scrypt-kdf-03） |
+| SSKDF | `evpkdf_ss.txt` |
+| TLS1-PRF | `evpkdf_tls11_prf.txt`（master secret 向量） |
+| TLS13-KDF | `evpkdf_tls13_kdf.txt`（EXTRACT_ONLY + EXPAND_ONLY 两步串联） |
+| X963KDF | `evpkdf_x963.txt` |
+| X942KDF | `evpkdf_x942.txt`（RFC 2631 示例） |
+| KBKDF | `evpkdf_kbkdf_counter.txt`（HMAC 计数器模式 COUNT=0） |
+| HMAC-DRBG-KDF | `evpkdf_hmac_drbg.txt` |
+
+另需覆盖：参数校验（缺 `Digest` / `Secret` / `CEKAlg` / `MAC` / `Entropy` /
+`Mode` 各自报错）、确定性（同输入两次结果相同）、类型化入口与 `Derive` 等价。
+
+> ⚠️ **provider 默认值与 CLI 差异**（已写入用例注释，勿当 bug 改）：
+> KBKDF 的 `use-l` / `use-separator` 在 provider 侧默认为 1，本库 `false` 显式传 0，
+> 对拍时须显式传 `-kdfopt use-l:0 -kdfopt use-separator:0`；X942KDF 反之，
+> `use-keybits` 默认即为 1，本库 `false` 表示**不下传**。
 
 > ⚠️ **HKDF known bug**：Tongsuo 8.4 的 HKDF 与 CLI 输出存在不一致（见
 > `kdf_tongsuocli_test.go` 现有降级断言与说明）；迁移后沿用该策略，**不得**
@@ -320,3 +375,53 @@ go test -fuzz FuzzRoundTrip ./sym
 > ⚠️ **不要把 CLI 默认行为当基准**：`openssl req -subj` 不带 `-utf8` 时用
 > `MBSTRING_ASC`，与本库修复后的行为**不同**。ASCII 值的 DER 两者一致（既有
 > 逐字节对拍仍成立），含非 ASCII 时必须加 `-utf8` 对拍，或断言语义而非字节。
+
+---
+
+## 13. 形态入口测试（`meta` / 各原语包，`0.5.0`）
+
+「形态入口」指各原语包里 `*Source` / `*Sink` 形态的入口（`SumSource` /
+`EncryptSource` / `DeriveTo` / `Marshal*To` / `Load*Source` / `MarshalFormat`）。
+它们不是新算法，**测试重点是「与既有一次性入口等价」+「形态语义正确」**。
+
+### 13.1 `meta` 自身
+
+| 文件 | 覆盖点 |
+|------|--------|
+| `meta/list_test.go` | 七个算法族非空且必含规范名、去重、字典序、稳定性 |
+| `meta/list_tongsuocli_test.go` | **包含关系断言**：本库报告的名字必须出现在 `openssl list` 输出中（大小写不敏感），并校验必含清单；不做逐条相等（CLI 会列出别名与历史名） |
+| `meta/encoding_test.go` | raw / hex / base64 往返；hex 忽略空白、base64 忽略 CRLF；`Dump` 的 `xxd` 排版 |
+| `meta/source_test.go` | bytes / reader / file / stdin 形态；一次性源二次 `Open` 返回 `ErrSourceConsumed`；`NewBytesSource` 构造时复制 |
+| `meta/sink_test.go` | 编码只能在首次写入前设置；hex 分块写出与一次性等价（base64 走 `base64.NewEncoder`，天然流式）；`Close` 幂等 |
+| `meta/passphrase_test.go` | `pass:` / `env:` / `file:` / `fd:` / `stdin:` 五种来源；file / fd / stdin 剥行尾换行；`String()` 必须脱敏（**不得**出现明文口令） |
+| `meta/format_test.go` | `ParseFormat` 大小写不敏感、未知名报错、`String()` 往返 |
+
+### 13.2 各原语包的形态入口
+
+| 包 / 文件 | 覆盖点 |
+|-----------|--------|
+| `digest/forms_test.go` | 三种 `Source` 与 `Sum` 结果一致；`SumTo` 的 raw / hex 编码；`SumReaderTo` 等价；未知名报错 |
+| `mac/forms_test.go` | `SumSource` / `SumFile` 与 `Sum` 一致；`SumTo` 编码；CMAC 缺 `Cipher` 返回 `ErrInvalidOptions` |
+| `sym/forms_test.go` | **流式与一次性逐字节对拍**（8 种模式 × 跨 64 KiB 分块）；空输入走 PKCS#7；AEAD / XTS 返回 `ErrUnsupported`；密钥长度错误 `ErrInvalidKeyLength`；破坏密文末块后解密必须报错 |
+| `kdf/forms_test.go` | `DeriveTo` 的 raw / hex 编码；参数校验错误透传 |
+| `asym/forms_test.go` | `LoadPrivateKeySource` 明文 / 加密两条路径；**无口令加载加密 PEM 必须报错**；`MarshalPrivateKeyTo` 明文 / 加密写出均可读回；`nil` 入参报错 |
+| `x509/forms_test.go` | `MarshalFormat` 与 `MarshalPEM` / `MarshalDER` 一致；`LoadCertificateSource` 自动识别 PEM / DER（含前导空白）；`MarshalCertificateTo` hex 编码；`MarshalCSRTo` 双向 |
+
+### 13.3 两个必须守住的语义
+
+1. **`Sink` 不自动 `Close`**：入口函数只 `Write`，收尾（尤其是 file sink 的 flush
+   与 base64 encoder 的尾巴）由调用方负责。测试里每个用例都显式 `sink.Close()`
+   之后再读 `sink.Bytes()`，这本身就是该契约的回归用例。
+2. **库内不得向终端索要口令**：`X_PEM_read_bio_PrivateKey` 传入的回调永远返回 0，
+   因此 `LoadPrivateKeySource(encrypted, nil)` 立即失败。**不要**为了让某个用例
+   「跑通」而恢复 `NULL` 回调——那会让任何无终端进程（CI、systemd 服务）在
+   `LoadPrivateKeyPEM` 上永久阻塞。
+
+### 13.4 CLI 对拍
+
+形态入口本身不做 CLI 对拍（它们不含算法逻辑），对拍落在底层算法测试里：
+
+- `digest/*_tongsuocli_test.go`：`openssl dgst -sm3 -hex`
+- `mac/*_tongsuocli_test.go`：`openssl mac -macopt …`
+- `sym/*_tongsuocli_test.go`：`openssl enc -<alg>`
+- `kdf/kdf_tongsuocli_test.go`：`openssl kdf -kdfopt … <ALG>`

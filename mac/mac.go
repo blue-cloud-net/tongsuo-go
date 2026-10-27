@@ -254,8 +254,8 @@ func (a algo) coreOptions(opts *Options) (*core.MACOptions, error) {
 //
 // New returns a streaming hash.Hash for the named algorithm. Unknown
 // names return ErrUnknownAlgorithm; a missing mandatory parameter
-// returns ErrInvalidOptions. It panics only if the underlying Tongsuo
-// initialisation fails, which does not occur in normal use.
+// returns ErrInvalidOptions. Failures surface as errors: the returned
+// hash.Hash exposes Err() for the (error-less) Sum path.
 func New(name string, key []byte, opts *Options) (hash.Hash, error) {
 	a, err := lookup(name)
 	if err != nil {
@@ -278,7 +278,17 @@ func New(name string, key []byte, opts *Options) (hash.Hash, error) {
 	if n := ctx.BlockSize(); n > 0 {
 		block = n
 	}
-	return &macHash{ctx: ctx, size: ctx.Size(), block: block}, nil
+	h := &macHash{ctx: ctx, size: ctx.Size(), block: block}
+	// 探测 EVP_MAC_CTX_dup：MACCtx.Sum 内部走 Dup，失败则本构建不可复制。
+	// 失败时上下文保持不变，可安全继续使用。
+	//
+	// Probe EVP_MAC_CTX_dup: MACCtx.Sum duplicates the context, so a
+	// failure means this build cannot copy it. The context is unchanged
+	// on failure and stays usable.
+	if _, err := ctx.Sum(); err != nil {
+		h.replay = true
+	}
+	return h, nil
 }
 
 // Sum 按算法名一次性计算 MAC 标签。
@@ -296,7 +306,11 @@ func Sum(name string, key, data []byte, opts *Options) ([]byte, error) {
 	if _, err := h.Write(data); err != nil {
 		return nil, fmt.Errorf("mac: %s: write: %w", name, err)
 	}
-	return h.Sum(nil), nil
+	tag := h.Sum(nil)
+	if err := sumErr(h); err != nil {
+		return nil, fmt.Errorf("mac: %s: %w", name, err)
+	}
+	return tag, nil
 }
 
 // SumReader 按算法名从 r 流式计算 MAC 标签直至 EOF。
@@ -315,7 +329,25 @@ func SumReader(name string, key []byte, r io.Reader, opts *Options) ([]byte, err
 	if _, err := io.Copy(h, r); err != nil {
 		return nil, fmt.Errorf("mac: %s: read: %w", name, err)
 	}
-	return h.Sum(nil), nil
+	tag := h.Sum(nil)
+	if err := sumErr(h); err != nil {
+		return nil, fmt.Errorf("mac: %s: %w", name, err)
+	}
+	return tag, nil
+}
+
+// sumErr 取出 hash.Hash 背后的 MAC 失败原因（仅 *macHash 提供）。
+// hash.Hash.Sum 无错误返回位，因此一次性入口在 Sum 之后必须回查一次，
+// 否则失败会被静默吞掉。
+//
+// sumErr extracts the MAC failure behind a hash.Hash (only *macHash
+// exposes it). hash.Hash.Sum has no error return, so the one-shot entries
+// must check back after calling it or a failure would be swallowed.
+func sumErr(h hash.Hash) error {
+	if mh, ok := h.(*macHash); ok {
+		return mh.Err()
+	}
+	return nil
 }
 
 // closeHash 释放 hash.Hash 底层的 MAC 上下文（若实现了关闭接口）。
@@ -329,13 +361,41 @@ func closeHash(h hash.Hash) {
 }
 
 // macHash 实现标准 hash.Hash 接口的 MAC 包装。
+// 部分构建（典型如 Tongsuo 8.4.0 的 GMAC）不支持 EVP_MAC_CTX_dup，
+// 此时无法在「不破坏状态」的前提下取标签；本类型会在构造时探测该能力，
+// 不可复制时改为缓冲写入数据并在 Sum 时重算（内存开销仅限这类构建）。
 //
-// macHash implements hash.Hash backed by Tongsuo's EVP_MAC_* API.
+// macHash implements hash.Hash backed by Tongsuo's EVP_MAC_* API. Some
+// builds (notably GMAC on Tongsuo 8.4.0) do not support
+// EVP_MAC_CTX_dup, so the tag cannot be read without destroying the
+// state. This type probes that capability at construction time and, when
+// duplication is unavailable, buffers the written data and recomputes on
+// Sum (the memory cost applies only to such builds).
 type macHash struct {
 	ctx   *core.MACCtx
 	size  int
 	block int
+	// replay 为 true 时按缓冲重算（本构建不支持 CTX_dup）。
+	//
+	// replay selects the buffered recompute path when CTX_dup is
+	// unavailable.
+	replay bool
+	buf    []byte
+	// err 记录最近一次失败，供调用方通过 Err 查询（Sum 不返回 error）。
+	//
+	// err keeps the most recent failure for Err (Sum returns no error).
+	err error
 }
+
+// Err 返回最近一次 Sum / Reset 失败的原因，无失败时返回 nil。
+// 只有具体类型 *macHash 提供该方法；New 返回的 hash.Hash 可用类型断言获取。
+// 之所以不 panic：本库约定库内不得 panic，而 hash.Hash.Sum 无错误返回位。
+//
+// Err returns the cause of the most recent Sum / Reset failure, or nil.
+// Only the concrete *macHash exposes it; callers of New's hash.Hash can
+// obtain it through a type assertion. It exists because hash.Hash.Sum has
+// no error return and this library never panics.
+func (h *macHash) Err() error { return h.err }
 
 // Write 追加数据，实现 io.Writer 与 hash.Hash。
 //
@@ -344,26 +404,77 @@ func (h *macHash) Write(p []byte) (int, error) {
 	if err := h.ctx.Update(p); err != nil {
 		return 0, err
 	}
+	if h.replay {
+		h.buf = append(h.buf, p...)
+	}
 	return len(p), nil
 }
 
 // Sum 返回 MAC 标签追加到 in 后，不改变内部状态。
+// 失败时不写入任何字节，失败原因可通过 Err 查询。
 //
-// Sum appends the current MAC tag to in without mutating state.
+// Sum appends the current MAC tag to in without mutating state. On
+// failure nothing is appended and the cause is available via Err.
 func (h *macHash) Sum(in []byte) []byte {
-	sum, err := h.ctx.Sum()
+	var (
+		sum []byte
+		err error
+	)
+	if h.replay {
+		sum, err = h.recompute()
+	} else {
+		sum, err = h.ctx.Sum()
+	}
 	if err != nil {
-		panic(err)
+		h.err = err
+		return in
 	}
 	return append(in, sum...)
 }
 
+// recompute 在 dup 不可用的构建上按缓冲重算标签：
+// 重置 → 重放缓冲 → Final，然后再重置并把缓冲重新喂回去，
+// 使调用方可以继续 Write（hash.Hash 的 Sum 不得改变状态）。
+//
+// recompute produces the tag on builds without CTX_dup: reset, replay
+// the buffer, Final, then reset and replay again so the caller can keep
+// writing (hash.Hash's Sum must not mutate state).
+func (h *macHash) recompute() ([]byte, error) {
+	if err := h.rewind(); err != nil {
+		return nil, err
+	}
+	tag, err := h.ctx.Final()
+	if err != nil {
+		return nil, err
+	}
+	if err := h.rewind(); err != nil {
+		return nil, err
+	}
+	return tag, nil
+}
+
+// rewind 重置上下文并把已写入的数据重新喂回。
+//
+// rewind resets the context and replays the buffered data.
+func (h *macHash) rewind() error {
+	if err := h.ctx.Reset(); err != nil {
+		return err
+	}
+	if len(h.buf) == 0 {
+		return nil
+	}
+	return h.ctx.Update(h.buf)
+}
+
 // Reset 重置 MAC 状态（保留密钥与算法参数）。
+// 失败原因可通过 Err 查询。
 //
 // Reset clears the MAC state; the key and algorithm parameters are kept.
+// The cause of a failure is available via Err.
 func (h *macHash) Reset() {
+	h.buf = h.buf[:0]
 	if err := h.ctx.Reset(); err != nil {
-		panic(err)
+		h.err = err
 	}
 }
 

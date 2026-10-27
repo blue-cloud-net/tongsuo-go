@@ -79,9 +79,14 @@ internal/testutil ← 仅被 *_test.go 使用
 - `func (c *Cipher) BlockSize() int` / `KeySize() int` / `IVSize() int` — 元数据
 - `func SM4ECB()` / `SM4CBC()` / `SM4CTR()` / `SM4OFB()` / `SM4CFB()` / `SM4GCM()` `*Cipher` — SM4 各模式描述符
 - `func AES128ECB()` / `AES128CBC()` / `AES128CTR()` / `AES128GCM()` `*Cipher`、`func AES256ECB()` / `AES256CBC()` / `AES256CTR()` / `AES256GCM()` `*Cipher` — AES 各模式描述符
+- `func AES192ECB()` / `AES192CBC()` / `AES192CTR()` / `AES192GCM()` `*Cipher` — AES-192（`0.5.0`）
+- `func SM4CCM()` `*Cipher` / `func ChaCha20()` `*Cipher` / `func ChaCha20Poly1305()` `*Cipher` — `0.5.0` 新增描述符
+- `func SM4XTS()` `*Cipher` — 走 `EVP_CIPHER_fetch("SM4-XTS")`（带所有权，需 `Close`）
+- `func (c *Cipher) Close() error` — 释放自有描述符（`fetch` 路径专用，幂等）
 - `type CipherCtx struct { …（内部字段） }` — 加解密上下文
 - `func NewCipherCtx(c *Cipher, key, iv []byte, enc bool) (*CipherCtx, error)` — 创建上下文
 - `func NewGcmCtx(c *Cipher, key, nonce []byte, enc bool) (*CipherCtx, error)` — 创建 GCM 模式上下文
+- `func NewCCMCtx(c *Cipher, key, nonce []byte, plaintextLen, tagLen int, enc bool) (*CipherCtx, error)` — 创建 CCM 上下文（序列：init → SET_IVLEN → SET_TAG → init(key,nonce) → `EVP_CipherSetLength`）
 - `func (c *CipherCtx) SetPadding(pad bool) error` — 开关填充
 - `func (c *CipherCtx) Update(in []byte) ([]byte, error)` — 流式加解密
 - `func (c *CipherCtx) Final() ([]byte, error)` — 收尾
@@ -100,6 +105,14 @@ internal/testutil ← 仅被 *_test.go 使用
 - `func HKDF(mdName string, secret, salt, info []byte, length int) ([]byte, error)` — 一次性 HKDF
 - `func PBKDF2(mdName string, password, salt []byte, iter, keyLen int) ([]byte, error)` — 一次性 PBKDF2
 - `func Argon2IDAvailable() bool` — 探测 Argon2ID 是否可用（本机构建不可用时返回 false）
+- `type MAC struct { … }` / `func MACFetch(alg string) (*MAC, error)` — `EVP_MAC` 句柄包装（`0.5.0`）
+- `type MACOptions struct { Cipher string; IV, AAD, Custom []byte; OutputLen int; Digest string }` — `set_params` 掩码驱动
+- `type MACCtx struct { … }` / `func NewMACCtx(m *MAC, key []byte, opts *MACOptions) (*MACCtx, error)`
+- `func (c *MACCtx) Update(data []byte) error` / `Final() ([]byte, error)` / `Sum() ([]byte, error)` / `Reset() error` / `Size() int` / `BlockSize() int` / `Close() error` — `Sum` 内部经 `EVP_MAC_CTX_dup`，不破坏原上下文
+- `type KDFParams struct { Digest, Mode, CEKAlg, MAC string; Key, Secret, Salt, Info, Pass, Seed, Label, Prefix, Data, UKM, Entropy, Nonce []byte; Iter, N, R, P, MaxMem uint64; UseL, UseSeparator, UseKeyBits bool }` — 泛化 KDF 参数（核心层形态，无 `internal/native` 类型泄漏）
+- `func Derive(alg string, p *KDFParams, out []byte) error` — 按 provider 名派生（内部转换为 `native.KDFParams`）
+- `type AlgKind int` 与 `AlgKindMD` / `AlgKindCipher` / `AlgKindMAC` / `AlgKindKDF` / `AlgKindSignature` / `AlgKindKeyExch` / `AlgKindKEM` — 算法族枚举
+- `func AlgNames(kind AlgKind) []string` / `func Providers() []ProviderInfo` / `func SeedingSource() string` / `func TLSGroups() []string` — provider 元信息代理（`meta` 经此访问，不经 `internal/native`）
 
 ### 1.5 非对称密钥
 
@@ -306,7 +319,7 @@ internal/testutil ← 仅被 *_test.go 使用
 
 ### 2.3 `binding_cipher.go` — 对称密码
 
-`EVP_sm4_{ecb,cbc,ctr,ofb,cfb128,gcm}`、`EVP_aes_{128,256}_{ecb,cbc,ctr,gcm}`、`EVP_CIPHER_get_{block_size,key_length,iv_length}`、`EVP_CIPHER_CTX_new` `free` `copy` `ctrl` `set_padding`、`EVP_CipherInit_ex`、`EVP_EncryptUpdate` `EVP_DecryptUpdate` `EVP_EncryptFinal_ex` `EVP_DecryptFinal_ex`、`EVP_UpdateAAD`
+`EVP_sm4_{ecb,cbc,ctr,ofb,cfb128,gcm}`、`EVP_sm4_ccm`、`EVP_aes_{128,192,256}_{ecb,cbc,ctr,gcm}`、`EVP_chacha20` `EVP_chacha20_poly1305`、`EVP_CIPHER_fetch` `EVP_CIPHER_free`（SM4-XTS）、`EVP_CIPHER_get_{block_size,key_length,iv_length}`、`EVP_CIPHER_CTX_new` `free` `copy` `ctrl` `set_padding`、`EVP_CipherInit_ex`、`EVP_EncryptUpdate` `EVP_DecryptUpdate` `EVP_EncryptFinal_ex` `EVP_DecryptFinal_ex`、`EVP_CipherSetLength`（CCM 的 "out==nil && in==nil" 形式）、`EVP_UpdateAAD`
 
 ### 2.4 `binding_pkey.go` — 非对称密钥
 
@@ -316,9 +329,24 @@ internal/testutil ← 仅被 *_test.go 使用
 
 `HMAC_CTX_new` `HMAC_CTX_free` `HMAC_CTX_copy`、`HMAC_Init_ex` `HMAC_Update` `HMAC_Final`
 
+> 注：`HMAC_CTX_*` 为 legacy 路径；`0.5.0` 起 `mac` 公开包全部走下面的 `binding_mac.go`
+> （provider 路径）。
+
+### 2.5.1 `binding_mac.go` — `EVP_MAC` 全家族（`0.5.0`）
+
+`EVP_MAC_fetch` `EVP_MAC_free`、`EVP_MAC_CTX_new` `free` `dup`、`EVP_MAC_CTX_set_params`（
+`X_MAC_OPT_CIPHER` / `_IV` / `_CUSTOM` / `_SIZE` / `_DIGEST` 掩码）、`EVP_MAC_CTX_get_{size,block_size}`、`EVP_MAC_init` `EVP_MAC_update` `EVP_MAC_final`；辅助函数 `MacOptCipher` / `MacOptIV` / `MacOptCustom` / `MacOptSize` / `MacOptDigest`
+
 ### 2.6 `binding_kdf.go` — KDF
 
-`EVP_KDF_HKDF`、`EVP_KDF_PBKDF2`、`EVP_KDF_Available`
+`X_EVP_KDF_derive`（泛化：按算法名 fetch 并逐算法组装 `OSSL_PARAM`，覆盖 HKDF / PBKDF2 / SCRYPT / SSKDF / TLS1-PRF / TLS13-KDF / KBKDF / X942KDF-ASN1 / X963KDF / HMAC-DRBG-KDF）、`EVP_KDF_HKDF`、`EVP_KDF_PBKDF2`、`EVP_KDF_Available`
+
+> 注意两个「只在显式给出时下传」的参数：scrypt 的 `maxmem == 0` 与 X942 的
+> `use-keybits == 0` 都不下传，避免 Go 零值覆盖 provider 默认值（后者默认即为 1）。
+
+### 2.6.1 `binding_meta.go` — 枚举与运行环境（`0.5.0`）
+
+`AlgKind{MD,Cipher,MAC,KDF,Signature,KeyExch,KEM}` 与 `AlgNames(kind)`（`EVP_*_do_all_provided` + `EVP_*_fetch` 可获取性过滤）、`Providers()`（`OSSL_PROVIDER_get0_name` 取短名，版本/状态取参数）、`SeedingSource()`（`OPENSSL_info(OPENSSL_INFO_SEED_SOURCE)`）、`TLSGroupNames()`（探测上下文固定 TLS1.3，`all=0` 只取规范名）
 
 ### 2.7 `binding_rand.go` — 随机数
 

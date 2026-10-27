@@ -506,3 +506,36 @@ func buildParams(alg, name string, o *Options) (*core.KDFParams, error) {
 	}
 	return p, nil
 }
+
+// Available 报告当前铜锁构建是否真的提供指定 KDF 算法。
+// 与 Names() 的关系：Names() 是**编译期**清单（本库实现了哪些），
+// Available 是**运行时**事实（本机铜锁的 provider 能跑哪些）。两者不一致的
+// 典型情形：Tongsuo 8.4.0（OpenSSL 3.0.3 底座）没有 HMAC-DRBG-KDF，
+// 而本库仍实现了它。
+// name 大小写不敏感；未知名称返回 false。
+//
+// Available reports whether the installed Tongsuo build actually offers
+// the named KDF algorithm. Names() is the compile-time list (what this
+// library implements) whereas Available is the runtime fact (what the
+// local providers can run). They disagree in a typical case: Tongsuo
+// 8.4.0 (OpenSSL 3.0.3 base) has no HMAC-DRBG-KDF although this library
+// implements it. Matching is case-insensitive; unknown names return
+// false.
+func Available(name string) bool {
+	alg, err := lookup(name)
+	if err != nil {
+		return false
+	}
+	return core.KDFAvailable(alg)
+}
+
+// KBKDFCounterWidthSupported 报告当前构建的 KBKDF 是否接受 R（计数器宽度）参数。
+// 仅 OpenSSL 3.2+ 支持；在 Tongsuo 8.4.0 上 KBKDFOptions.R 会被忽略，
+// 计数器宽度固定为 provider 默认的 32 位（此时与只用默认值的 CLI 输出一致）。
+//
+// KBKDFCounterWidthSupported reports whether the current build's KBKDF
+// accepts the R (counter width) parameter. Only OpenSSL 3.2+ supports it;
+// on Tongsuo 8.4.0 KBKDFOptions.R is ignored and the counter width stays
+// at the provider default of 32 bits (matching a CLI run that leaves it
+// at the default).
+func KBKDFCounterWidthSupported() bool { return core.KBKDFCounterWidthSupported() }

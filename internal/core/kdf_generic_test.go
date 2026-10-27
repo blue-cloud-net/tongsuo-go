@@ -29,6 +29,9 @@ func TestDeriveFamilies(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if !KDFAvailable(tt.alg) {
+				t.Skipf("this build's providers do not include %s", tt.alg)
+			}
 			out := make([]byte, 32)
 			if err := Derive(tt.alg, tt.p, out); err != nil {
 				t.Fatalf("Derive(%s): %v", tt.alg, err)

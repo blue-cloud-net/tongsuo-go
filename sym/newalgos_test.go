@@ -211,6 +211,9 @@ func TestSM4CCMArgumentValidation(t *testing.T) {
 // vectors in Tongsuo's evpciph_sm4.txt. Tongsuo defaults to the GB tweak
 // convention (big-endian data-unit number) for SM4-XTS.
 func TestSM4XTSKnownVectors(t *testing.T) {
+	if !Available("SM4-XTS") {
+		t.Skip("this build has no SM4-XTS (it is fetched via EVP_CIPHER_fetch; Tongsuo 8.4.0 lacks it)")
+	}
 	tests := []struct {
 		name  string
 		key   string
@@ -278,6 +281,13 @@ func TestSM4XTSArgumentValidation(t *testing.T) {
 	}
 	if _, err := EncryptSM4XTS(key, tweak, nil); err == nil {
 		t.Error("empty data accepted")
+	}
+	if !Available("SM4-XTS") {
+		// 长度校验已在提供该算法的构建上覆盖；本构建的 provider 没有
+		// SM4-XTS，17 字节的「接受」断言无从验证。
+		// The length checks ran above; this build's providers have no
+		// SM4-XTS, so the 17-byte acceptance assertion cannot be made.
+		t.Skip("this build has no SM4-XTS; length checks covered, acceptance cannot be asserted")
 	}
 	// XTS 允许末块不足 16 字节（密文窃取），17 字节应当被接受。
 	if _, err := EncryptSM4XTS(key, tweak, bytes.Repeat([]byte{3}, 17)); err != nil {

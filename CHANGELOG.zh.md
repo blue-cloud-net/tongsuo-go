@@ -24,9 +24,84 @@
 
 ## [0.5.0] - TBD
 
+### 新增功能
+
+- `meta`：新增「形态词汇」与枚举 API（对齐铜锁 CLI 的 `list` / `dgst` / `enc`
+  等命令的形状）：
+  - 枚举：`Digests` / `Ciphers` / `MACs` / `KDFs` / `Signatures` /
+    `KeyExchanges` / `KEMs` / `TLSGroups` / `Providers` / `SeedingSource`，
+    结果去重并按字典序返回；
+  - 输入输出：`Source`（bytes / reader / file / stdin）与 `Sink`
+    （bytes / writer / file / stdout，支持 raw / hex / base64 编码）；
+  - 辅助：`Encoding` / `ParseEncoding` / `Encode` / `Decode` / `Hex` /
+    `Base64` / `Dump`、`Format`（PEM / DER）、`Passphrase`
+    （`pass:` / `env:` / `file:` / `fd:` / `stdin:`，`String()` 脱敏）。
+- `mac`：从单一 HMAC 扩到 14 种 `EVP_MAC` 算法（HMAC-SHA2 系列、HMAC-SM3、
+  CMAC、GMAC、KMAC-128 / KMAC-256、SipHash、Poly1305、EIA3 等），新增按名
+  分发 `New` / `Sum` / `SumReader`，类型化入口 `CMAC` / `GMAC` / `KMAC128` /
+  `KMAC256` / `SipHash` / `Poly1305` / `EIA3`，以及 14 个
+  `NewHMAC*` / `SumHMAC*` 便捷函数。
+- `sym`：新增 AES-192 全模式（ECB / CBC / CTR / GCM）与 SM4-CCM、SM4-XTS、
+  ChaCha20、ChaCha20-Poly1305；新增按名 AEAD 入口 `NewAEAD` / `EncryptAEAD` /
+  `DecryptAEAD`；`AESKey` / `NewAESKey` / `GenerateSymmetricKey` 接受
+  24 字节（AES-192）。
+- `kdf`：从 HKDF / PBKDF2 扩到 10 种 —— 新增 SCRYPT、SSKDF、TLS1-PRF、
+  TLS13-KDF、KBKDF、X942KDF、X963KDF、HMAC-DRBG-KDF；类型化入口为 `Scrypt` /
+  `SSKDF` / `TLS1PRF` / `TLS13KDFExtract` / `TLS13KDFExpand` / `KBKDF`（含
+  `KBKDFOptions`）/ `X942KDF` / `X963KDF` / `HMACDRBG`；按名入口 `Derive` 的
+  `Options` 补齐模式、标签、成本参数等字段；新增 `HashMD5SHA1`
+  （TLS1-PRF 的默认摘要）。
+- 各原语包新增 CLI 式形态入口（配合 `meta` 的 `Source` / `Sink`）：
+  - `digest`：`SumSource` / `SumFile` / `SumTo` / `SumReaderTo`；
+  - `mac`：`SumSource` / `SumFile` / `SumTo`；
+  - `sym`：`EncryptSource` / `DecryptSource`（流式；ECB / CBC 走 PKCS#7，
+    CTR / OFB / CFB / ChaCha20 无填充；AEAD 与 XTS 返回 `ErrUnsupported`）；
+  - `kdf`：`DeriveTo`；
+  - `asym`：`LoadPrivateKeySource` / `LoadPublicKeySource` /
+    `MarshalPrivateKeyTo` / `MarshalPublicKeyTo`；
+  - `x509`：`MarshalFormat` / `LoadCertificateSource`（自动识别 PEM / DER）/
+    `MarshalCertificateTo` / `MarshalCSRTo`。
+- `tls`：新增 `NewListener(config, ln)`（等价 `crypto/tls.Listen`）：Accept 内
+  完成握手，失败关闭连接；`Close` 幂等且并发安全；启动即校验 TLS / NTLS
+  服务端凭证是否齐备。
+- `internal/native`：新增 `EVP_MAC` 全家族绑定、泛化 `EVP_KDF_derive`、
+  算法与 provider 枚举（`EVP_*_do_all_provided` + fetch 过滤）、seed 来源与
+  TLS 组枚举、`EVP_CIPHER_fetch` 路径（SM4-XTS）、AES-192 与 ChaCha20
+  描述符、`EVP_CipherSetLength`（CCM 长度参数）。
+- `internal/core`：新增 `MAC` / `MACCtx`、`KDFParams` + 泛化 `Derive`、
+  `AlgKind` 与算法枚举、`NewCCMCtx`、`Cipher.Close`。
+- 运行时能力探测：`kdf.Available(name)` 与 `sym.Available(name)` 报告**本机铜锁**
+  是否真的提供某算法（`Names()` 是编译期清单），`kdf.KBKDFCounterWidthSupported()`
+  报告 KBKDF 是否接受 `R` 参数。三个入场口用于处理与 CI 固定版本（Tongsuo 8.4.0）
+  的能力差异。
+
 ### Bug 修复
 
+- `mac`：不再在 `Sum` / `Reset` 失败时 panic。`hash.Hash.Sum` 无错误返回位，
+  原先实现直接 `panic(err)`，这既违反「库内禁止 panic」的约定，也让
+  `EVP_MAC_CTX_dup` 不可用的构建（典型：Tongsuo 8.4.0 的 GMAC，报
+  `not able to copy ctx`）直接崩溃。现改为：构造时探测 dup 能力，不可复制时
+  改为「缓冲写入 + `Sum` 时重算」；失败原因通过具体类型的 `Err()` 暴露，
+  一次性入口（`Sum` / `SumReader`）在 `Sum` 之后回查并返回该错误。
+- `internal/native`：适配 Tongsuo 8.4.0（CI 固定版本、OpenSSL 3.0.3 底座）的
+  编译与运行差异：KBKDF 的 `r` 参数（`OSSL_KDF_PARAM_KBKDF_R`）与
+  HMAC-DRBG-KDF 的 `entropy` / `nonce` 参数在旧头文件中不存在，改为 `#ifdef`
+  保护；`SSL_CTX_get0_implemented_groups` 缺失时 `X_SSL_group_names` 返回空列表
+  并新增 `X_SSL_groups_supported` / `X_EVP_KDF_kbkdf_r_supported` 两个编译期探测。
+  对应地，`meta.TLSGroups()` 在旧构建上返回空切片，`kdf.Available` /
+  `sym.Available` 可区分「本库实现了」与「本机能跑」。
+- `internal/native`：PEM 私钥读取不再向终端索要口令。`PEM_read_bio_PrivateKey`
+  原先传 `NULL` 回调，OpenSSL 会退回默认 UI 回调并读 `/dev/tty`，在没有终端的
+  进程里直接阻塞；现改为传「永不提供口令」的回调，加密 PEM 走
+  `LoadPrivateKeyPEM` 会立即失败并返回错误（应改用
+  `LoadEncryptedPrivateKeyPEM`）。
+- `meta`：不再直接 `import internal/native`（改用 `core.AlgKind`），恢复
+  「API 层 → `internal/core` → `internal/native`」的单向分层。
+- `internal/native`：scrypt 的 `maxmem` 与 X942KDF 的 `use-keybits` 只在显式
+  给出时下传，避免 Go 零值（`0` / `false`）覆盖 provider 默认值——后者默认即为
+  启用，覆盖会让 X942KDF 输出与 RFC 2631 向量不一致。
 - `internal/core` / `tls`：修复 `SSLConn` 误用 `sync.WaitGroup` 引入的数据竞争
+
   （`go test -race ./tls/` 在 `TestReadReturnsAfterCancel` 下稳定复现，
   `tls.Conn.Close` ↔ `core.SSLConn.Read`）。`begin` 原先在互斥锁之外先
   `inflight.Add` 再检查 `stopped`，因此可能与该调用 `Done` 归零之后的

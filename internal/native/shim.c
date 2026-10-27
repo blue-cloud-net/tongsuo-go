@@ -1216,8 +1216,22 @@ int X_EVP_KDF_derive(const char *alg, const X_KDF_PARAMS *p,
         if (p->info != NULL)
             params[idx++] = OSSL_PARAM_construct_octet_string(
                 OSSL_KDF_PARAM_INFO, (void *)p->info, p->infolen);
-        params[idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_KBKDF_R,
-                                                 &r_int);
+        /*
+         * KBKDF 的计数器宽度参数 r 是 OpenSSL 3.2+ 才有的；Tongsuo 8.4.0
+         * （OpenSSL 3.0.3 底座，CI 固定版本）没有该参数，下传会让 provider
+         * 报 "Parameter unknown"。未定义时直接略过，此时 R 取 provider 默认值。
+         * The KBKDF counter-width parameter r only exists in OpenSSL 3.2+;
+         * Tongsuo 8.4.0 (OpenSSL 3.0.3 base, the CI pin) lacks it and would
+         * reject the parameter. When the macro is missing the parameter is
+         * simply omitted and R falls back to the provider default.
+         */
+#ifdef OSSL_KDF_PARAM_KBKDF_R
+        if (p->r != 0)
+            params[idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_KBKDF_R,
+                                                     &r_int);
+#else
+        (void)r_int;
+#endif
         params[idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_KBKDF_USE_L,
                                                  &use_l);
         params[idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_KBKDF_USE_SEPARATOR,
@@ -1263,6 +1277,13 @@ int X_EVP_KDF_derive(const char *alg, const X_KDF_PARAMS *p,
             params[idx++] = OSSL_PARAM_construct_octet_string(
                 OSSL_KDF_PARAM_INFO, (void *)p->info, p->infolen);
     } else if (strcmp(alg, "HMAC-DRBG-KDF") == 0) {
+        /*
+         * HMAC-DRBG-KDF 及其 entropy / nonce 参数在 Tongsuo 8.4.0
+         * （OpenSSL 3.0.3 底座）不存在，那类构建直接拒绝。
+         * HMAC-DRBG-KDF and its entropy / nonce parameters do not exist in
+         * Tongsuo 8.4.0 (OpenSSL 3.0.3 base); such builds are rejected here.
+         */
+#ifdef OSSL_KDF_PARAM_HMACDRBG_ENTROPY
         if (p->digest != NULL)
             params[idx++] = OSSL_PARAM_construct_utf8_string(
                 OSSL_KDF_PARAM_DIGEST, (char *)p->digest, 0);
@@ -1273,6 +1294,9 @@ int X_EVP_KDF_derive(const char *alg, const X_KDF_PARAMS *p,
         if (p->nonce != NULL)
             params[idx++] = OSSL_PARAM_construct_octet_string(
                 OSSL_KDF_PARAM_HMACDRBG_NONCE, (void *)p->nonce, p->noncelen);
+#else
+        goto end;
+#endif
     } else {
         goto end;
     }
@@ -1586,6 +1610,21 @@ char *X_SSL_group_names(void)
             || !SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION))
         goto err;
 #endif
+#if OPENSSL_VERSION_NUMBER < 0x30200000L
+    /*
+     * SSL_CTX_get0_implemented_groups 是 OpenSSL 3.2+ 的接口；
+     * Tongsuo 8.4.0（OpenSSL 3.0.3 底座，CI 固定版本）没有它，
+     * 此时返回空列表，由上层表现为「本构建不支持枚举 TLS 组」。
+     * SSL_CTX_get0_implemented_groups is an OpenSSL 3.2+ API. Tongsuo
+     * 8.4.0 (OpenSSL 3.0.3 base, the CI pin) lacks it; an empty list is
+     * returned instead and the caller sees "group enumeration not
+     * supported by this build".
+     */
+    sk_OPENSSL_CSTRING_free(groups);
+    SSL_CTX_free(ctx);
+    OPENSSL_free(sb.buf);
+    return NULL;
+#else
     if (!SSL_CTX_get0_implemented_groups(ctx, 0, groups))
         goto err;
     num = sk_OPENSSL_CSTRING_num(groups);
@@ -1602,9 +1641,45 @@ char *X_SSL_group_names(void)
         return NULL;
     }
     return sb.buf;
+#endif
 err:
     sk_OPENSSL_CSTRING_free(groups);
     SSL_CTX_free(ctx);
     OPENSSL_free(sb.buf);
     return NULL;
+}
+
+/*
+ * X_SSL_groups_supported：报告本构建是否支持枚举 TLS 组。
+ * SSL_CTX_get0_implemented_groups 是 OpenSSL 3.2+ 接口；Tongsuo 8.4.0
+ * （OpenSSL 3.0.3 底座）没有它，此时 X_SSL_group_names 返回空列表。
+ *
+ * X_SSL_groups_supported reports whether this build can enumerate TLS
+ * groups. SSL_CTX_get0_implemented_groups is an OpenSSL 3.2+ API and
+ * Tongsuo 8.4.0 (OpenSSL 3.0.3 base) lacks it, in which case
+ * X_SSL_group_names returns an empty list.
+ */
+int X_SSL_groups_supported(void)
+{
+#if OPENSSL_VERSION_NUMBER < 0x30200000L
+    return 0;
+#else
+    return 1;
+#endif
+}
+
+/*
+ * X_EVP_KDF_kbkdf_r_supported：报告本构建的 KBKDF 是否接受 r 参数。
+ * OSSL_KDF_PARAM_KBKDF_R 是 OpenSSL 3.2+ 才有的参数名。
+ *
+ * X_EVP_KDF_kbkdf_r_supported reports whether this build's KBKDF accepts
+ * the r parameter. OSSL_KDF_PARAM_KBKDF_R only exists in OpenSSL 3.2+.
+ */
+int X_EVP_KDF_kbkdf_r_supported(void)
+{
+#ifdef OSSL_KDF_PARAM_KBKDF_R
+    return 1;
+#else
+    return 0;
+#endif
 }
