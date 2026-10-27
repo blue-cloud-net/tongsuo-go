@@ -611,7 +611,7 @@
 - ♻️ `type Extension struct { Nid int; Field string; OID string; Critical bool; Value string; Data []byte }` — 单个 X.509 扩展（`Value` 为构建用的 `X509V3_EXT_conf` 配置串，`Data` 为读取到的 DER 值）
 - ✨ `type CertificatePolicy struct { OID string; CPSURIs []string; UserNotice *UserNotice }` — certificatePolicies 扩展中的一条策略（`OID` 为策略标识符；`CPSURIs` 为 id-qt-cps 限定符的策略声明 URL 列表；`UserNotice` 为 id-qt-unotice 限定符）
 - ✨ `type UserNotice struct { Organization string; NoticeNumbers []int; ExplicitText string }` — certificatePolicies 的 userNotice 限定符（RFC 5280 §4.2.1.4）
-- ♻️ `type Name struct { …（内部字段） }` — 证书 subject / issuer 名字
+- ♻️ `type Name struct { …（内部字段） }` — 证书 subject / issuer 名字（RDN 值按 **UTF-8** 写入，非 ASCII 字符原样保存为 `UTF8String`；非法 UTF-8 报错；`Add` 按**调用顺序追加**，DER 顺序 = 书写顺序，与 `openssl -subj` 一致；`Entries()` / `Get()` 不再受 256 字节缓冲限制）
 - ♻️ `type NameEntry struct { Nid int; Field string; Value string }` — 名字中的单个 RDN 条目
 
 **类型｜CSR / CRL / OCSP**
@@ -737,7 +737,7 @@
 - ♻️ `func (r *CertificateRequest) SetSubject(n *Name) error` / `SetPublicKey(pub asym.PublicKey) error` / `Sign(priv asym.PrivateKey) error` / `Verify() error` — 构建与自校验
 - ♻️ `func (r *CertificateRequest) MarshalPEM() ([]byte, error)` / `MarshalDER() ([]byte, error)` — 导出
 - ♻️ `func (r *CertificateRequest) SubjectName() *Name` / `SubjectEntries() []NameEntry` / `SubjectText() string` — subject 读取
-- ♻️ `func (r *CertificateRequest) SetChallengePassword(pwd string) error` / `ChallengePassword() string` — challengePassword 属性
+- ♻️ `func (r *CertificateRequest) SetChallengePassword(pwd string) error` / `ChallengePassword() string` — challengePassword 属性（`pwd` 按 **UTF-8** 写入；内含 `\x00` 仍按 C 字符串截断）
 - ♻️ `func (r *CertificateRequest) AddExtensions(exts ...Extension) error` / `AddExtension(nid int, value string) error` / `AddSubjectAltName(value string) error` / `Extensions() []Extension` — 扩展
 - ✨ `func (r *CertificateRequest) AddExtensionByName(name, value string) error` — 任意扩展（按短名 / 长名 / 点分 OID）
 - ✨ `func (r *CertificateRequest) AddKeyUsage(value string) error` / `AddExtendedKeyUsage(value string) error` / `AddBasicConstraints(isCA bool) error` — 与 `Certificate` 对称的便利方法

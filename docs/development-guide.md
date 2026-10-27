@@ -145,6 +145,16 @@ func Cgo_SM2_Encrypt(...) (...) { ... }
 - `unsafe` 仅限绑定层与核心层使用，作用域**尽量小**
 - **不在 Go 与 C 之间直接传递 Go 指针**；需要回调时经 shim + `//export` thunk 桥接
 - 释放 OpenSSL 分配的内存必须用对应的 `*_free` / `OPENSSL_free`，**禁止** `C.free`
+- Go `string` 交给带 `MBSTRING_*` 字符串类型的原生函数时**一律用 `MBSTRING_UTF8`**
+  （`X509_NAME_add_entry_by_txt`、`X509_REQ_add1_attr_by_NID` 等）：Go 字符串是
+  UTF-8，`MBSTRING_ASC` 会把每个字节当作 Latin-1 字符再编码一次，非 ASCII 值即
+  双重编码（`CN=海峰` 由 6 字节变 12 字节）。需要与 `openssl` CLI 对齐时，对应
+  参数是 `-utf8`
+- 读取名字 / 文本类属性时用 `ASN1_STRING_to_UTF8` 解码（或已有的
+  `X509_NAME_ENTRY_value` 封装），**不要**用固定长度的栈缓冲：
+  `X509_NAME_get_text_by_NID` 最多只写 255 字节，会把多字节字符截断
+- `X509_NAME_add_entry_by_txt` 的 `loc` 参数传 **`-1`**（追加）：传 `0` 是**前插**，
+  会让 DER 的 `RDNSequence` 与调用顺序相反（`0.5.0` 前本库即如此，已按 BREAKING 修正）
 - 平台相关差异（如动态库名）用 build tags（`//go:build linux` / `darwin`）与 `#cgo`
   指令隔离
 

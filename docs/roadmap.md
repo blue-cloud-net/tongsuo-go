@@ -54,6 +54,7 @@
 | `sym` | AES-192 全模式（含 GCM）；SM4-CCM / SM4-XTS；ChaCha20 / ChaCha20-Poly1305 | §6.B B12、§6.A 15 | AES-192、SM4 扩展模式、流密码 |
 | `kdf` | scrypt、SSKDF、TLS1-PRF、TLS13-KDF、X9.42 / X9.63、KBKDF、HMAC-DRBG-KDF | §6.A 24 | KDF 泛化 |
 | `tls` | `NewListener(config, ln)`（`net.Listener` 包装） | §6.B A8 | 无（Go 侧） |
+| `x509` | RDN 写入顺序修正（**BREAKING**）：`Name.Add` 由前插改为追加，DER 顺序 = 书写顺序，与 `openssl req -subj` / `crypto/x509` 的 `pkix.Name` 一致 | — | 无（`internal/native` 的 `loc` 参数） |
 
 **验收要点**：四个主命令（`dgst` / `enc` / `mac` / `kdf`）对 `dgst -sm3 -hex`、`mac -macopt hexkey:… HMAC-SM3`、
 `enc -sm4-cbc`、`kdf -kdfopt digest:SM3 … HKDF` 的 CLI 对拍逐字节一致（注意 `mac` 本版起走

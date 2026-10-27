@@ -293,3 +293,30 @@ go test -fuzz FuzzRoundTrip ./sym
 生成证书后由本库读回（校验 VisibleString 兼容）；② 本库生成的证书交
 `openssl x509 -ext certificatePolicies` 展示（校验 UTF8String 可被铜锁读回，
 含非 ASCII 文本时逐字断言）。
+
+---
+
+## 12. X.509 名字与非 ASCII 内容（`x509`）
+
+`X509_NAME` 写入走 `X509_NAME_add_entry_by_txt`，字符串类型**必须是
+`MBSTRING_UTF8`**：`MBSTRING_ASC` 会把 Go 的 UTF-8 字节按 Latin-1 逐字节重编码，
+`CN=海峰` 由 6 字节变成 12 字节 mojibake（`CN=æµ·å³°`）。同理，读取不得使用
+固定长度的栈缓冲（`X509_NAME_get_text_by_NID` 最多写 255 字节，会把多字节字符
+截断）。
+
+| 层次 | 用例 | 断言要点 |
+|------|------|---------|
+| 名字层 | `name_test.go` `TestNameNonASCII` | CJK 单值、ASCII/CJK 混合、非 BMP（emoji）、超长值（`L` 100 汉字 = 300 字节）、上限边界（`O` 64 字符）均 `Entries()` / `Get()` 逐字符相等 |
+| 名字层 | `TestNameInvalidUTF8`、`TestNameRejectNonASCIIForRestrictedTypes` | 非法 UTF-8（`\xff\xfe`、孤立代理、截断序列）与 `C=中国`、`emailAddress=海峰@…`、空值一律报错，且 `Len()` 保持 0（不留半成品） |
+| DER 编码 | `cert_test.go` `TestCertificateNonASCIISubjectRoundTrip` | DER 直接含 `0C 06 E6 B5 B7 E5 B3 B0`；**不含**双重编码串 `C3 A6 C2 B5 C2 B7…`；`asn1.Parse` 复核 CN 为 `UTF8String` 且全树无 `BMPString`；PEM 往返后条目与顺序不变 |
+| 签发 | `chain_test.go` `TestChainVerifyNonASCIINames`、`issue_test.go` `TestIssueFromCSRNonASCII` | CJK CA / leaf 链 `ChainVerify` 通过；leaf 的 issuer 与 CA 的 subject 逐条相等；CSR 签发后 subject 逐条相等 |
+| CSR | `csr_test.go` `TestCSRNonASCII`、`TestCSRChallengePasswordInvalidUTF8` | subject、challengePassword、`nsComment` 的中英值经 PEM 往返全保真且 `Verify()` 通过；非法 UTF-8 口令报错 |
+| 扩展 | `extension_test.go` `TestExtensionNonASCII` | `nsComment` 的 `Data` 含原始 UTF-8 字节；`certificatePolicies` 的 `organization` / `explicitText` 读回一致 |
+| CRL | `crl_test.go` `TestCRLNonASCIIIssuer` | CJK 颁发者在 DER 往返后逐条保真，`Verify(ca)` 通过 |
+| 名字顺序 | `name_test.go` `TestNameAddOrder` | `.Add("C").Add("O").Add("OU").Add("CN")` → `Entries()` 顺序与调用一致（追加语义，`0.5.0` 前是前插）；`String()` 按 DER 前向输出，等于书写顺序 |
+| 传输层 | `tls` `TestLoopbackNonASCIISubject`、`TestNTLSLoopbackNonASCII` | CJK subject 经 TLS / NTLS 握手到达对端后 `PeerCertificates()` / `PeerEncCertificates()` 仍逐条保真（goroutine 内不得 `t.Fatal*`，见 P1004） |
+| CLI 对拍 | `name_tongsuocli_test.go` | `TestCLISubjectDERParity`：同一书写顺序下本库与 `openssl req -x509 -subj` 的 subject DER **逐字节相同**（RDN 顺序 + 编码类型的强断言）；本库证书 → `openssl x509 -subject -nameopt utf8` 与 `asn1parse`；`openssl req -utf8` 产物 → 本库读回；`openssl verify` / `req -verify` / `crl -issuer`；另含对照用例：不带 `-utf8` 的 CLI 产物读回就是 12 字节 mojibake |
+
+> ⚠️ **不要把 CLI 默认行为当基准**：`openssl req -subj` 不带 `-utf8` 时用
+> `MBSTRING_ASC`，与本库修复后的行为**不同**。ASCII 值的 DER 两者一致（既有
+> 逐字节对拍仍成立），含非 ASCII 时必须加 `-utf8` 对拍，或断言语义而非字节。
