@@ -2,6 +2,10 @@
 
 #include <string.h>
 
+#include <openssl/bio.h>
+#include <openssl/params.h>
+#include <openssl/provider.h>
+
 int X_EVP_Digest(const EVP_MD *md, const unsigned char *data, size_t count,
                  unsigned char *md_out, unsigned int *size)
 {
@@ -1036,4 +1040,518 @@ int X_EVP_KDF_available(const char *algorithm)
     }
     EVP_KDF_free(kdf);
     return 1;
+}
+
+/*
+ * X_EVP_KDF_derive：按算法名 fetch KDF 并一次性派生。
+ * 各算法的 OSSL_PARAM 集合差异很大，这里按 alg 分支组装参数数组。
+ * 返回 1 成功，0 失败（错误已入队列）。
+ */
+int X_EVP_KDF_derive(const char *alg, const X_KDF_PARAMS *p,
+                     unsigned char *out, size_t out_len)
+{
+    EVP_KDF *kdf = NULL;
+    EVP_KDF_CTX *ctx = NULL;
+    OSSL_PARAM params[16];
+    int idx = 0;
+    int ok = 0;
+    int mode = 0;
+    uint64_t iter64 = 0;
+    int use_l = 0, use_separator = 0, use_keybits = 0;
+
+    if (alg == NULL || p == NULL)
+        return 0;
+
+    kdf = EVP_KDF_fetch(NULL, alg, NULL);
+    if (kdf == NULL)
+        goto end;
+    ctx = EVP_KDF_CTX_new(kdf);
+    if (ctx == NULL)
+        goto end;
+
+    if (strcmp(alg, "HKDF") == 0) {
+        mode = EVP_KDF_HKDF_MODE_EXTRACT_AND_EXPAND;
+        params[idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_MODE, &mode);
+        if (p->digest != NULL)
+            params[idx++] = OSSL_PARAM_construct_utf8_string(
+                OSSL_KDF_PARAM_DIGEST, (char *)p->digest, 0);
+        if (p->key != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_KEY, (void *)p->key, p->keylen);
+        if (p->salt != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_SALT, (void *)p->salt, p->saltlen);
+        if (p->info != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_INFO, (void *)p->info, p->infolen);
+    } else if (strcmp(alg, "PBKDF2") == 0) {
+        iter64 = p->iter;
+        if (p->digest != NULL)
+            params[idx++] = OSSL_PARAM_construct_utf8_string(
+                OSSL_KDF_PARAM_DIGEST, (char *)p->digest, 0);
+        if (p->pass != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_PASSWORD, (void *)p->pass, p->passlen);
+        if (p->salt != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_SALT, (void *)p->salt, p->saltlen);
+        params[idx++] = OSSL_PARAM_construct_uint64(OSSL_KDF_PARAM_ITER,
+                                                    &iter64);
+    } else if (strcmp(alg, "SCRYPT") == 0) {
+        uint64_t n = p->n, r = p->r, pp = p->p, maxmem = p->maxmem;
+
+        if (p->pass != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_PASSWORD, (void *)p->pass, p->passlen);
+        if (p->salt != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_SALT, (void *)p->salt, p->saltlen);
+        params[idx++] = OSSL_PARAM_construct_uint64(OSSL_KDF_PARAM_SCRYPT_N, &n);
+        params[idx++] = OSSL_PARAM_construct_uint64(OSSL_KDF_PARAM_SCRYPT_R, &r);
+        params[idx++] = OSSL_PARAM_construct_uint64(OSSL_KDF_PARAM_SCRYPT_P, &pp);
+        params[idx++] = OSSL_PARAM_construct_uint64(OSSL_KDF_PARAM_SCRYPT_MAXMEM,
+                                                    &maxmem);
+    } else if (strcmp(alg, "SSKDF") == 0) {
+        if (p->digest != NULL)
+            params[idx++] = OSSL_PARAM_construct_utf8_string(
+                OSSL_KDF_PARAM_DIGEST, (char *)p->digest, 0);
+        if (p->secret != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_SECRET, (void *)p->secret, p->secretlen);
+        if (p->key != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_KEY, (void *)p->key, p->keylen);
+        if (p->salt != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_SALT, (void *)p->salt, p->saltlen);
+        if (p->info != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_INFO, (void *)p->info, p->infolen);
+    } else if (strcmp(alg, "TLS1-PRF") == 0) {
+        if (p->digest != NULL)
+            params[idx++] = OSSL_PARAM_construct_utf8_string(
+                OSSL_KDF_PARAM_DIGEST, (char *)p->digest, 0);
+        if (p->secret != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_SECRET, (void *)p->secret, p->secretlen);
+        if (p->seed != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_SEED, (void *)p->seed, p->seedlen);
+    } else if (strcmp(alg, "TLS13-KDF") == 0) {
+        /*
+         * TLS13-KDF 只支持 EXTRACT_ONLY 与 EXPAND_ONLY 两种模式，
+         * 不支持 HKDF 的 EXTRACT_AND_EXPAND。
+         */
+        mode = EVP_KDF_HKDF_MODE_EXTRACT_ONLY;
+        if (p->mode != NULL && OPENSSL_strcasecmp(p->mode, "EXPAND_ONLY") == 0)
+            mode = EVP_KDF_HKDF_MODE_EXPAND_ONLY;
+        else if (p->mode != NULL && OPENSSL_strcasecmp(p->mode, "EXTRACT_ONLY") == 0)
+            mode = EVP_KDF_HKDF_MODE_EXTRACT_ONLY;
+        else if (p->mode != NULL && p->mode[0] != '\0')
+            goto end;
+        params[idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_MODE, &mode);
+        if (p->digest != NULL)
+            params[idx++] = OSSL_PARAM_construct_utf8_string(
+                OSSL_KDF_PARAM_DIGEST, (char *)p->digest, 0);
+        if (p->key != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_KEY, (void *)p->key, p->keylen);
+        if (p->salt != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_SALT, (void *)p->salt, p->saltlen);
+        if (p->label != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_LABEL, (void *)p->label, p->labellen);
+        if (p->prefix != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_PREFIX, (void *)p->prefix, p->prefixlen);
+        if (p->data != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_DATA, (void *)p->data, p->datalen);
+    } else if (strcmp(alg, "KBKDF") == 0) {
+        int r_int = (int)p->r;
+
+        use_l = p->use_l;
+        use_separator = p->use_separator;
+        if (p->mode != NULL)
+            params[idx++] = OSSL_PARAM_construct_utf8_string(
+                OSSL_KDF_PARAM_MODE, (char *)p->mode, 0);
+        if (p->mac != NULL)
+            params[idx++] = OSSL_PARAM_construct_utf8_string(
+                OSSL_KDF_PARAM_MAC, (char *)p->mac, 0);
+        if (p->digest != NULL)
+            params[idx++] = OSSL_PARAM_construct_utf8_string(
+                OSSL_KDF_PARAM_DIGEST, (char *)p->digest, 0);
+        if (p->key != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_KEY, (void *)p->key, p->keylen);
+        if (p->salt != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_SALT, (void *)p->salt, p->saltlen);
+        if (p->info != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_INFO, (void *)p->info, p->infolen);
+        params[idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_KBKDF_R,
+                                                 &r_int);
+        params[idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_KBKDF_USE_L,
+                                                 &use_l);
+        params[idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_KBKDF_USE_SEPARATOR,
+                                                 &use_separator);
+    } else if (strcmp(alg, "X942KDF-ASN1") == 0) {
+        use_keybits = p->use_keybits;
+        if (p->digest != NULL)
+            params[idx++] = OSSL_PARAM_construct_utf8_string(
+                OSSL_KDF_PARAM_DIGEST, (char *)p->digest, 0);
+        if (p->secret != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_SECRET, (void *)p->secret, p->secretlen);
+        if (p->key != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_KEY, (void *)p->key, p->keylen);
+        if (p->ukm != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_UKM, (void *)p->ukm, p->ukmlen);
+        if (p->cekalg != NULL)
+            params[idx++] = OSSL_PARAM_construct_utf8_string(
+                OSSL_KDF_PARAM_CEK_ALG, (char *)p->cekalg, 0);
+        params[idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_X942_USE_KEYBITS,
+                                                 &use_keybits);
+    } else if (strcmp(alg, "X963KDF") == 0) {
+        if (p->digest != NULL)
+            params[idx++] = OSSL_PARAM_construct_utf8_string(
+                OSSL_KDF_PARAM_DIGEST, (char *)p->digest, 0);
+        if (p->secret != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_SECRET, (void *)p->secret, p->secretlen);
+        if (p->key != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_KEY, (void *)p->key, p->keylen);
+        if (p->info != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_INFO, (void *)p->info, p->infolen);
+    } else if (strcmp(alg, "HMAC-DRBG-KDF") == 0) {
+        if (p->digest != NULL)
+            params[idx++] = OSSL_PARAM_construct_utf8_string(
+                OSSL_KDF_PARAM_DIGEST, (char *)p->digest, 0);
+        if (p->entropy != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_HMACDRBG_ENTROPY, (void *)p->entropy,
+                p->entropylen);
+        if (p->nonce != NULL)
+            params[idx++] = OSSL_PARAM_construct_octet_string(
+                OSSL_KDF_PARAM_HMACDRBG_NONCE, (void *)p->nonce, p->noncelen);
+    } else {
+        goto end;
+    }
+
+    params[idx] = OSSL_PARAM_construct_end();
+    ok = EVP_KDF_derive(ctx, out, out_len, params) == 1;
+end:
+    EVP_KDF_CTX_free(ctx);
+    EVP_KDF_free(kdf);
+    return ok;
+}
+
+/*
+ * X_EVP_MAC_CTX_set_params：按 mask 组装 OSSL_PARAM 并设置到 MAC 上下文。
+ * 返回 1 成功，0 失败（错误已入队列）。
+ */
+int X_EVP_MAC_CTX_set_params(EVP_MAC_CTX *ctx, int mask,
+                             const char *cipher, const char *digest,
+                             const unsigned char *iv, size_t iv_len,
+                             const unsigned char *custom, size_t custom_len,
+                             size_t size)
+{
+    OSSL_PARAM params[6];
+    int idx = 0;
+
+    if (ctx == NULL)
+        return 0;
+
+    if ((mask & X_MAC_OPT_CIPHER) && cipher != NULL)
+        params[idx++] = OSSL_PARAM_construct_utf8_string(
+            OSSL_MAC_PARAM_CIPHER, (char *)cipher, 0);
+    if ((mask & X_MAC_OPT_DIGEST) && digest != NULL)
+        params[idx++] = OSSL_PARAM_construct_utf8_string(
+            OSSL_MAC_PARAM_DIGEST, (char *)digest, 0);
+    if ((mask & X_MAC_OPT_IV) && iv != NULL)
+        params[idx++] = OSSL_PARAM_construct_octet_string(
+            OSSL_MAC_PARAM_IV, (void *)iv, iv_len);
+    if ((mask & X_MAC_OPT_CUSTOM) && custom != NULL)
+        params[idx++] = OSSL_PARAM_construct_octet_string(
+            OSSL_MAC_PARAM_CUSTOM, (void *)custom, custom_len);
+    if (mask & X_MAC_OPT_SIZE)
+        params[idx++] = OSSL_PARAM_construct_size_t(OSSL_MAC_PARAM_SIZE,
+                                                    &size);
+    params[idx] = OSSL_PARAM_construct_end();
+    return EVP_MAC_CTX_set_params(ctx, params);
+}
+
+/*
+ * 可增长字符串缓冲：算法枚举结果用 '\n' 分隔累积。
+ */
+typedef struct {
+    char *buf;
+    size_t len;
+    size_t cap;
+} X_STRBUF;
+
+static int x_strbuf_append(X_STRBUF *sb, const char *s)
+{
+    size_t n;
+
+    if (s == NULL)
+        return 1;
+    n = strlen(s);
+    if (sb->len + n + 2 > sb->cap) {
+        size_t ncap = sb->cap ? sb->cap : 256;
+        char *nb;
+
+        while (ncap < sb->len + n + 2)
+            ncap *= 2;
+        nb = OPENSSL_realloc(sb->buf, ncap);
+        if (nb == NULL)
+            return 0;
+        sb->buf = nb;
+        sb->cap = ncap;
+    }
+    memcpy(sb->buf + sb->len, s, n);
+    sb->len += n;
+    sb->buf[sb->len++] = '\n';
+    sb->buf[sb->len] = '\0';
+    return 1;
+}
+
+static void x_collect_md(EVP_MD *md, void *arg)
+{
+    X_STRBUF *sb = (X_STRBUF *)arg;
+    const char *name = EVP_MD_get0_name(md);
+
+    if (name == NULL)
+        return;
+    {
+        EVP_MD *impl = EVP_MD_fetch(NULL, name, NULL);
+
+        if (impl == NULL) {
+            ERR_clear_error();
+            return;
+        }
+        EVP_MD_free(impl);
+    }
+    x_strbuf_append(sb, name);
+}
+
+static void x_collect_cipher(EVP_CIPHER *cipher, void *arg)
+{
+    X_STRBUF *sb = (X_STRBUF *)arg;
+    const char *name = EVP_CIPHER_get0_name(cipher);
+
+    if (name == NULL)
+        return;
+    {
+        EVP_CIPHER *impl = EVP_CIPHER_fetch(NULL, name, NULL);
+
+        if (impl == NULL) {
+            ERR_clear_error();
+            return;
+        }
+        EVP_CIPHER_free(impl);
+    }
+    x_strbuf_append(sb, name);
+}
+
+static void x_collect_mac(EVP_MAC *mac, void *arg)
+{
+    X_STRBUF *sb = (X_STRBUF *)arg;
+    const char *name = EVP_MAC_get0_name(mac);
+
+    if (name == NULL)
+        return;
+    {
+        EVP_MAC *impl = EVP_MAC_fetch(NULL, name, NULL);
+
+        if (impl == NULL) {
+            ERR_clear_error();
+            return;
+        }
+        EVP_MAC_free(impl);
+    }
+    x_strbuf_append(sb, name);
+}
+
+static void x_collect_kdf(EVP_KDF *kdf, void *arg)
+{
+    X_STRBUF *sb = (X_STRBUF *)arg;
+    const char *name = EVP_KDF_get0_name(kdf);
+
+    if (name == NULL)
+        return;
+    {
+        EVP_KDF *impl = EVP_KDF_fetch(NULL, name, NULL);
+
+        if (impl == NULL) {
+            ERR_clear_error();
+            return;
+        }
+        EVP_KDF_free(impl);
+    }
+    x_strbuf_append(sb, name);
+}
+
+static void x_collect_signature(EVP_SIGNATURE *sig, void *arg)
+{
+    X_STRBUF *sb = (X_STRBUF *)arg;
+    const char *name = EVP_SIGNATURE_get0_name(sig);
+
+    if (name != NULL)
+        x_strbuf_append(sb, name);
+}
+
+static void x_collect_keyexch(EVP_KEYEXCH *keyexch, void *arg)
+{
+    X_STRBUF *sb = (X_STRBUF *)arg;
+    const char *name = EVP_KEYEXCH_get0_name(keyexch);
+
+    if (name != NULL)
+        x_strbuf_append(sb, name);
+}
+
+static void x_collect_kem(EVP_KEM *kem, void *arg)
+{
+    X_STRBUF *sb = (X_STRBUF *)arg;
+    const char *name = EVP_KEM_get0_name(kem);
+
+    if (name != NULL)
+        x_strbuf_append(sb, name);
+}
+
+/*
+ * X_EVP_alg_names：枚举当前已加载 provider 提供的算法规范名。
+ * 返回以 '\n' 分隔的 OPENSSL_malloc 字符串；无元素时返回 NULL。
+ */
+char *X_EVP_alg_names(int kind)
+{
+    X_STRBUF sb;
+
+    memset(&sb, 0, sizeof(sb));
+    switch (kind) {
+    case X_ALG_KIND_MD:
+        EVP_MD_do_all_provided(NULL, x_collect_md, &sb);
+        break;
+    case X_ALG_KIND_CIPHER:
+        EVP_CIPHER_do_all_provided(NULL, x_collect_cipher, &sb);
+        break;
+    case X_ALG_KIND_MAC:
+        EVP_MAC_do_all_provided(NULL, x_collect_mac, &sb);
+        break;
+    case X_ALG_KIND_KDF:
+        EVP_KDF_do_all_provided(NULL, x_collect_kdf, &sb);
+        break;
+    case X_ALG_KIND_SIGNATURE:
+        EVP_SIGNATURE_do_all_provided(NULL, x_collect_signature, &sb);
+        break;
+    case X_ALG_KIND_KEYEXCH:
+        EVP_KEYEXCH_do_all_provided(NULL, x_collect_keyexch, &sb);
+        break;
+    case X_ALG_KIND_KEM:
+        EVP_KEM_do_all_provided(NULL, x_collect_kem, &sb);
+        break;
+    default:
+        return NULL;
+    }
+    if (sb.len == 0) {
+        OPENSSL_free(sb.buf);
+        return NULL;
+    }
+    return sb.buf;
+}
+
+/*
+ * X_OSSL_provider_list：列出活跃 provider 的名称 / 版本 / 状态。
+ * 每行 "<name>\t<version>\t<status>"，以 '\n' 分隔。
+ * name 取 OSSL_PROVIDER_get0_name 的短名（如 "default"），与
+ * `openssl list -providers` 的首行一致。
+ */
+static int x_collect_provider(OSSL_PROVIDER *prov, void *arg)
+{
+    X_STRBUF *sb = (X_STRBUF *)arg;
+    OSSL_PARAM params[4];
+    char *version = NULL;
+    int status = 0;
+    const char *name = OSSL_PROVIDER_get0_name(prov);
+    char line[512];
+
+    params[0] = OSSL_PARAM_construct_utf8_ptr(OSSL_PROV_PARAM_VERSION,
+                                               &version, 0);
+    params[1] = OSSL_PARAM_construct_int(OSSL_PROV_PARAM_STATUS, &status);
+    params[2] = OSSL_PARAM_construct_end();
+    if (!OSSL_PROVIDER_get_params(prov, params))
+        return 1;
+    BIO_snprintf(line, sizeof(line), "%s\t%s\t%s",
+                 name != NULL ? name : "",
+                 version != NULL ? version : "",
+                 status ? "active" : "inactive");
+    x_strbuf_append(sb, line);
+    return 1;
+}
+
+char *X_OSSL_provider_list(void)
+{
+    X_STRBUF sb;
+
+    memset(&sb, 0, sizeof(sb));
+    if (!OSSL_PROVIDER_do_all(NULL, x_collect_provider, &sb)) {
+        OPENSSL_free(sb.buf);
+        return NULL;
+    }
+    if (sb.len == 0) {
+        OPENSSL_free(sb.buf);
+        return NULL;
+    }
+    return sb.buf;
+}
+
+const char *X_OPENSSL_seed_source(void)
+{
+    return OPENSSL_info(OPENSSL_INFO_SEED_SOURCE);
+}
+
+/*
+ * X_SSL_group_names：列出本机构建的 TLS 组名。
+ */
+char *X_SSL_group_names(void)
+{
+    SSL_CTX *ctx = NULL;
+    STACK_OF(OPENSSL_CSTRING) *groups = NULL;
+    X_STRBUF sb;
+    size_t i, num;
+
+    memset(&sb, 0, sizeof(sb));
+    groups = sk_OPENSSL_CSTRING_new_null();
+    if (groups == NULL)
+        return NULL;
+    ctx = SSL_CTX_new(TLS_method());
+    if (ctx == NULL)
+        goto err;
+    if (!SSL_CTX_get0_implemented_groups(ctx, 1, groups))
+        goto err;
+    num = sk_OPENSSL_CSTRING_num(groups);
+    for (i = 0; i < num; i++) {
+        const char *g = sk_OPENSSL_CSTRING_value(groups, (int)i);
+
+        if (g != NULL)
+            x_strbuf_append(&sb, g);
+    }
+    sk_OPENSSL_CSTRING_free(groups);
+    SSL_CTX_free(ctx);
+    if (sb.len == 0) {
+        OPENSSL_free(sb.buf);
+        return NULL;
+    }
+    return sb.buf;
+err:
+    sk_OPENSSL_CSTRING_free(groups);
+    SSL_CTX_free(ctx);
+    OPENSSL_free(sb.buf);
+    return NULL;
 }
