@@ -19,6 +19,8 @@
 #                                      #  - linux host：amd64 + arm64 两路
 #                                      #  - darwin host：amd64 + darwin 两路
 #   scripts/run-act.sh -j all          # lint + 全部可跑 test 矩阵项
+#   scripts/run-act.sh -j interop      # interop（CLI 逐字节对拍）
+#                                      #   只跑 interop 单个 job（不展开 needs 链）
 #   scripts/run-act.sh -j test --matrix os:ubuntu-latest,arch:amd64
 #                                      # 显式只跑这一个矩阵项（覆盖 host 自省）
 #
@@ -92,7 +94,7 @@ ACT_MATRIX_ARCH="${ACT_MATRIX_ARCH:-amd64}"
 [ -n "${ACT_MATRIX_OS_OVERRIDE:-}" ] && MATRIX_EXPLICIT=1
 [ -n "${ACT_MATRIX_ARCH_OVERRIDE:-}" ] && MATRIX_EXPLICIT=1
 
-JOB="lint"           # lint | test | all
+JOB="lint"           # lint | test | interop | all
 VERBOSE=0
 CONTAINER_ARCH=""    # 空=让 act/Docker 用默认（host arch）；显式设了 act --container-architecture 用之
 
@@ -399,6 +401,35 @@ case "$JOB" in
             done
         fi
         ;;
+    interop)
+        # interop 固定跑 ubuntu-latest（amd64）。不能直接 `-j interop`：
+        # act 会把 `needs: test` 的 4 路矩阵全部展开，而每条腿需要独立的
+        # --container-architecture（单次 act 调用无法同时满足），arm64 腿会以
+        # “build constraints exclude all Go files” 失败。
+        # 因此这里生成一份**只含 interop job 且去掉 needs** 的临时 workflow，
+        # 由它单独跑 CLI 逐字节对拍（lint / test 请分别用 -j lint / -j test 跑）。
+        select_runner_images "$ACT_MATRIX_ARCH"
+        ACT_INTEROP_WF="$(mktemp -t act-interop-XXXXXX.yml)"
+        python3 - "$ACT_WORKFLOW_FILE" "$ACT_INTEROP_WF" <<'PYEOF'
+import sys, yaml
+src, dst = sys.argv[1], sys.argv[2]
+with open(src) as f:
+    wf = yaml.safe_load(f)
+# PyYAML 按 YAML 1.1 把裸键 `on` 解析成布尔 true，回写时必须还原成字符串，
+# 否则 act 会报 "Unknown Property true"。
+if True in wf:
+    wf["on"] = wf.pop(True)
+job = wf["jobs"]["interop"]
+job.pop("needs", None)   # 只跑 interop，不展开 test 矩阵
+wf["jobs"] = {"interop": job}
+with open(dst, "w") as f:
+    yaml.safe_dump(wf, f, allow_unicode=True, sort_keys=False)
+PYEOF
+        ACT_WORKFLOW_FILE="$ACT_INTEROP_WF" run_act interop \
+            && RESULTS+=("interop:OK") \
+            || { RESULTS+=("interop:FAIL($?)"); overall_rc=1; }
+        rm -f "$ACT_INTEROP_WF"
+        ;;
     all)
         run_act lint \
             && RESULTS+=("lint:OK") \
@@ -439,7 +470,7 @@ case "$JOB" in
         [ -n "$SKIPPED" ] && echo "[skip] $SKIPPED — 此 host 无法跑"
         ;;
     *)
-        echo "unknown job '$JOB'；可选：lint | test | all" >&2
+        echo "unknown job '$JOB'；可选：lint | test | interop | all" >&2
         exit 2
         ;;
 esac
