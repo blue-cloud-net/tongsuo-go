@@ -482,7 +482,8 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
   - `## [Unreleased]`（**尚未决定归入哪个版本**的改动暂存区）放在**最顶部**；
   - `## [x.y.z] - TBD`（**已定目标版本、尚未发 tag**的条目）紧随其后；
   - 打 tag 时把 `TBD` 换成真实日期（推荐格式 `YYYY-MM-DD`）
-- 待发布版本用 `## [0.4.0] - TBD`
+- 已定版本、未发 tag 的段写成 `## [x.y.z] - TBD`（`x.y.z` 换成实际目标版本号，
+  不要照抄历史版本号）
 - 术语保留英文（SM2 / SM4 / PEM / DER / PKCS#8 / NTLS / RFC xxxx …）
 - 底部链接定义区必须与正文标题一一对应（无引用即无定义）
 - ❌ 反例：只改 `CHANGELOG.zh.md` 而不改 `CHANGELOG.md`（发版会被脚本拦下）

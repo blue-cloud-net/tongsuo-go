@@ -7,7 +7,7 @@
 > 报告**不写代码改动、不给新 API 签名**；所有「本库现状」结论均可在源码中校验。
 >
 > **包名口径**：本文件的「本库现状」列使用**重构前**包名（`crypto/*` / `key` / `ocsp`）——那是采集时的真实状态。重构后的 16 包名与逐符号签名见 [api-reference.md](api-reference.md)，迁移对照见 [api-reference.md](api-reference.md) §0.1。
-> 公开面收敛（§6.E 的 12 项内部类型泄露 E1）已在 `0.3.0` 全部落实；剩余的 E2 / E3 见 [roadmap.md](roadmap.md) §2.5。
+> 公开面收敛（§6.E 的 12 项内部类型泄露 E1）已在 `0.3.0` 全部落实；剩余的 E2 / E3 见 [roadmap.md](roadmap.md) §2.4。
 
 ---
 
@@ -38,7 +38,7 @@
 |---|---|
 | **对比基线（CLI）** | `/opt/tongsuo/bin/tongsuo`<br>`Tongsuo: Tongsuo 8.5.0-pre2 (Library: Tongsuo 8.5.0-pre2)`<br>`OpenSSL 3.5.4 3 Aug 2026 (Library: OpenSSL 3.5.4 3 Aug 2026)`<br>`platform: linux-x86_64`，`OPENSSLDIR: "/opt/tongsuo/ssl"` |
 | **铜锁源码基线** | `/workspace/opensources/nginx/tongsuo`（`configdata.pm`：`linux-x86_64`，`--prefix=/opt/tongsuo`） |
-| **本库基线** | `github.com/blue-cloud-net/tongsuo-go`，CHANGELOG `0.4.0`（2026-10-23 发布） |
+| **本库基线** | `github.com/blue-cloud-net/tongsuo-go`，CHANGELOG `0.5.0`（2026-10-27 发布） |
 | **CLI 侧检索方式** | 实机采集：`tongsuo version -a`、`tongsuo help`、`tongsuo list -commands -1`、`tongsuo list -<family> -1`（14 个族）、`tongsuo list -options <cmd>`（逐命令）、`tongsuo ciphers -v`；并与 `apps/progs.h`、`apps/progs.pl`、`configdata.pm` 交叉校验 |
 | **本库侧检索方式** | 全仓库检索导出符号 + `internal/native/binding_*.go`（已绑定的 C 函数）+ 逐符号复核（文件:行） |
 | **环境声明** | 本机**已安装铜锁 8.5.0-pre2**，故「CLI 能力」列全部为实机输出；本库侧为**静态检索**，未运行 `go build` / `go vet` / `go test`。 |

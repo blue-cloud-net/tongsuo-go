@@ -1,9 +1,9 @@
-# 版本路线图（`0.5.0` 及以后）
+# 版本路线图（`0.6.0` 及以后）
 
 > **用途**：本文件是本仓库**唯一的版本归属来源**——某个能力落在哪个 `0.x` 版本，以本文件 §2 为准。
 >
 > **口径**：
-> 1. **只写未做的事**。`0.4.0`（2026-10-23 发布）及其之前已发布的能力不在本文范围内，
+> 1. **只写未做的事**。`0.5.0`（2026-10-27 发布）及其之前已发布的能力不在本文范围内，
 >    其符号清单见 [api-reference.md](api-reference.md)，其变更记录见 [CHANGELOG.md](../CHANGELOG.md)；
 > 2. 本文件**不重复**能力级判定与优先级。缺口编号与「本库现状」列见
 >    [cli-comparison.md](cli-comparison.md)（对铜锁 CLI）、[official-sdk-comparison.md](official-sdk-comparison.md)（对官方 SDK）、
@@ -12,7 +12,7 @@
 >    若该行标注的版本与本文件 §2 冲突，以本文件为准并回改 api-reference；
 > 4. 「需新增 cgo 绑定」是实施前置条件，统一列在 §3，§2 各表以「前置」列引用。
 >
-> **基线**：`0.4.0`（2026-10-23 发布）——16 个顶级包形态已定格，见 [architecture.md](architecture.md) §2 / §3。
+> **基线**：`0.5.0`（2026-10-27 发布）——16 个顶级包形态不变，`meta` 新增形态词汇（`Source` / `Sink` / `Encoding` / `Format` / `Passphrase`），见 [architecture.md](architecture.md) §2 / §3。
 
 ---
 
@@ -20,7 +20,6 @@
 
 | 版本 | 主题 | 关键内容 | 破坏性 |
 |------|------|----------|--------|
-| `0.5.0` | **形态地基 + 高频算法** | 文件 / stdio / `io.Reader` 入口与出口；统一任务入口（`dgst`/`enc`/`mac`/`kdf` 四条主命令）；`meta` 算法枚举与 provider；`mac` 的 CMAC/GMAC/KMAC 家族；AES-192、SM4-CCM/XTS、ChaCha20(-Poly1305)；`kdf` 扩到 10 种；`tls.NewListener` | 否 |
 | `0.6.0` | **算法覆盖主体 + 格式容器** | SHA-512/224·256、SHA3、SHAKE、KECCAK、SHA-256/192；AES 扩展模式（OFB/CFB/OCB/SIV/WRAP/…）与 ZUC；上下文签名（ED25519ph/ctx）；`x509` 的 `-x509toreq`、OCSP HTTP 与 nonce；`jwk` 的 OKP/oct；`crl2pkcs7`；PKCS#12 PBE/iter | 部分（按名分发入口收敛） |
 | `0.7.0` | **容器协议 + PQC** | `pkcs7` 签名/验签/加密/解密族；ML-DSA-44/65/87、SLH-DSA 12 变体、KEM（`-encap`/`-decap`）；SM2DH 密钥协商；通用 KEX 适配点 | 否 |
 | `0.8.0` | **协议族与 CA 形态** | CMS 族、RFC 3161 `ts`；`ca` 工作流（形态待定，见 §4）；`storeutl` 统一加载器 | 否 |
@@ -38,36 +37,7 @@
 
 ## 2. 分版本范围
 
-### 2.1 `0.5.0` — 形态地基与高频算法补齐
-
-> **实施状态（2026-10-27）**：本节全部条目已在 `dev` 分支实现并通过门禁
-> （`gofmt` / `go vet` / `go build` / `go test` / `go test -tags tongsuocli` /
-> `go test -race ./tls/`），**待发 tag**。发 tag 前需按
-> [release-guide.md](release-guide.md) 用 CI 同款铜锁 8.4.0 复跑。符号清单见
-> [api-reference.md](api-reference.md)，变更记录见
-> [CHANGELOG](../CHANGELOG.md) 的 `[0.5.0]` 段；未纳入本版的相邻项已留在 §2.2。
->
-> 本版目标是让本库**用起来像 CLI 一样直接**：调用方给出「算法名 + 输入源 + 输出编码」即可拿到结果。
-
-| 领域 | 内容 | 对应缺口 | 前置（§3） |
-|------|------|----------|-------------|
-| 形态 | 文件 / stdin / stdout 入口与出口；`io.Reader` / `io.Writer` 流式 | cli-comparison §6.C C1 / C2 / C3 / C11 | 无（Go 侧） |
-| 形态 | 统一任务入口：按「算法名 + 输入源 + 输出编码」一次调用完成 **摘要 / 加解密 / MAC / KDF** | §6.A 8 / 15 / 26 / 24 | 无 |
-| 形态 | hex / base64 / hexdump 编码助手；统一 `Format` 维度（PEM / DER）；口令来源抽象（`pass:` / `env:` / `file:` / `fd:` / `stdin`） | §6.C C5 / C6 / C4 / C8 | 无 |
-| 形态 | 一行生成自签证书、一行由密钥生成 CSR | §6.A 40、§6.B B4 / B5 | 无（`x509.CreateSelfSigned` 已具备） |
-| `meta` | 算法枚举：`Digests` / `Ciphers` / `MACs` / `KDFs` / `Signatures` / `KeyExchanges` / `KEMs` / `TLSGroups` | §6.A 25、§6.B B16 | 算法枚举、Provider、TLS 组 |
-| `meta` | `Providers` / `ProviderInfo` / `SeedingSource` | §6.A 23 | Provider、环境信息 |
-| `mac` | CMAC、GMAC、KMAC-128/256、SipHash、Poly1305、EIA3（`EVP_MAC_*` 全家族，`New(name, …)` 同时接受非 HMAC） | §6.A 26 | MAC |
-| `sym` | AES-192 全模式（含 GCM）；SM4-CCM / SM4-XTS；ChaCha20 / ChaCha20-Poly1305 | §6.B B12、§6.A 15 | AES-192、SM4 扩展模式、流密码 |
-| `kdf` | scrypt、SSKDF、TLS1-PRF、TLS13-KDF、X9.42 / X9.63、KBKDF、HMAC-DRBG-KDF | §6.A 24 | KDF 泛化 |
-| `tls` | `NewListener(config, ln)`（`net.Listener` 包装） | §6.B A8 | 无（Go 侧） |
-| `x509` | RDN 写入顺序修正（**BREAKING**）：`Name.Add` 由前插改为追加，DER 顺序 = 书写顺序，与 `openssl req -subj` / `crypto/x509` 的 `pkix.Name` 一致 | — | 无（`internal/native` 的 `loc` 参数） |
-
-**验收要点**：四个主命令（`dgst` / `enc` / `mac` / `kdf`）对 `dgst -sm3 -hex`、`mac -macopt hexkey:… HMAC-SM3`、
-`enc -sm4-cbc`、`kdf -kdfopt digest:SM3 … HKDF` 的 CLI 对拍逐字节一致（注意 `mac` 本版起走
-provider `EVP_MAC_*`，与旧版 HMAC legacy 路径需双向验证一致）。
-
-### 2.2 `0.6.0` — 算法覆盖主体与格式容器
+### 2.1 `0.6.0` — 算法覆盖主体与格式容器
 
 | 领域 | 内容 | 对应缺口 | 前置（§3） |
 |------|------|----------|-------------|
@@ -89,7 +59,7 @@ provider `EVP_MAC_*`，与旧版 HMAC legacy 路径需双向验证一致）。
 **已知限制（沿用）**：铜锁 8.4 的 HKDF 实现与 `kdf` 命令行输出存在差异
 （`kdf/kdf_tongsuocli_test.go` 记录过该 known bug），本版维持既有的降级断言策略，不改期望值。
 
-### 2.3 `0.7.0` — 容器协议与 PQC
+### 2.2 `0.7.0` — 容器协议与 PQC
 
 | 领域 | 内容 | 对应缺口 | 前置（§3） |
 |------|------|----------|-------------|
@@ -99,7 +69,7 @@ provider `EVP_MAC_*`，与旧版 HMAC legacy 路径需双向验证一致）。
 | `ecdh` | SM2DH 密钥协商（`CurveByName("SM2DH")`） | §6.A 29 | 铜锁已启用 `key-exchange-algorithms`；`EVP_PKEY_derive*` 已绑定，需补 SM2 派生参数 |
 | `ecdh` | 通用 KEX 适配点（`DeriveSharedSecret(priv, pub)`） | §6.B B4 | 无 |
 
-### 2.4 `0.8.0` — 协议族与 CA 形态
+### 2.3 `0.8.0` — 协议族与 CA 形态
 
 | 领域 | 内容 | 对应缺口 | 前置（§3） |
 |------|------|----------|-------------|
@@ -110,7 +80,7 @@ provider `EVP_MAC_*`，与旧版 HMAC legacy 路径需双向验证一致）。
 
 > `ts` 的体量与 `x509` 相当，建议作为独立顶级包 `ts`，与 `x509` 平级而非塞进 `x509`。
 
-### 2.5 `1.0.0` — 传输深度与公开面收敛
+### 2.4 `1.0.0` — 传输深度与公开面收敛
 
 > 本版是**集中做破坏性收敛**的版本，需配迁移指南（`BREAKING` 段写法参照 `0.4.0` 与 `0.3.0`）。
 
@@ -145,15 +115,6 @@ provider `EVP_MAC_*`，与旧版 HMAC legacy 路径需双向验证一致）。
 
 | 家族 | 需要的 C 接口 | 服务对象 | 目标版本 |
 |------|--------------|----------|----------|
-| MAC | `EVP_MAC_fetch` / `EVP_MAC_new` / `EVP_MAC_init` / `EVP_MAC_update` / `EVP_MAC_final` | `mac` 的 CMAC / GMAC / KMAC-128/256 / SipHash / Poly1305 / EIA3 | `0.5.0` |
-| AES-192 | `EVP_aes_192_{ecb,cbc,ctr,gcm}` | `sym` | `0.5.0` |
-| SM4 扩展模式 | `EVP_sm4_ccm` / `EVP_sm4_xts` | `sym` | `0.5.0` |
-| 流密码 | `EVP_chacha20` / `EVP_chacha20_poly1305` | `sym` | `0.5.0` |
-| KDF 泛化 | 现有 shim 仅 `HKDF` / `PBKDF2`；其余需 `EVP_KDF_fetch(alg)` 泛化 | `kdf` | `0.5.0` |
-| 算法枚举 | `EVP_{MD,CIPHER,MAC,KDF,SIGNATURE,KEYEXCH,KEM}_do_all_provided` | `meta` | `0.5.0` |
-| Provider | `OSSL_PROVIDER_*` | `meta` | `0.5.0` |
-| 环境信息 | `OPENSSL_info(OPENSSL_INFO_SEED_SOURCE)` | `meta` | `0.5.0` |
-| TLS 组 | `SSL_get1_groups` / `SSL_group_to_name` | `meta` | `0.5.0` |
 | 扩展摘要 | `EVP_sha512_224` / `EVP_sha512_256` / `EVP_sha3_*` / `EVP_shake_*` / `EVP_keccak_*` | `digest` | `0.6.0` |
 | AES 扩展模式 | `EVP_aes_*_{ofb,cfb,ccm,xts,ocb,siv,wrap,cbc-cts}` | `sym` | `0.6.0` |
 | ZUC | `EVP_zuc` | `sym` | `0.6.0` |
@@ -168,10 +129,15 @@ provider `EVP_MAC_*`，与旧版 HMAC legacy 路径需双向验证一致）。
 | TLS 深度 | `SSL_CTX_set_alpn_protos` / `SSL_get0_alpn_selected`、`SSL_SESSION_*`、`SSL_CTX_set_tlsext_servername_callback`、`SSL_CTX_set_client_CA_list` | `tls` | `1.0.0` |
 | 主机名校验 flags | `X509_check_host` 的 flags 扩展 / `X509_check_email` 等 | `tls` 的 `HostnameOptions` | `1.0.0` |
 
-**已在 `0.3.0` 落地的相关绑定**（列此便于对照，避免重复规划）：
-`OpenSSLVersionWithIndex`（`meta` 版本/构建信息）、`X509_REVOKED_*` / `X509_CRL_add0_revoked` /
-`X509_CRL_sort`（`x509.CRLBuilder`）、`X509_check_host` / `X509_check_ip_asc`（`Certificate.VerifyHostname`）、
-`X509_STORE_set_verify_time`（`Store.SetTime`）。
+**已落地的相关绑定**（列此便于对照，避免重复规划）：
+
+- `0.3.0`：`OpenSSLVersionWithIndex`（`meta` 版本/构建信息）、`X509_REVOKED_*` /
+  `X509_CRL_add0_revoked` / `X509_CRL_sort`（`x509.CRLBuilder`）、`X509_check_host` /
+  `X509_check_ip_asc`（`Certificate.VerifyHostname`）、`X509_STORE_set_verify_time`（`Store.SetTime`）；
+- `0.5.0`：`EVP_MAC_*` 全家族（`mac`）、`EVP_aes_192_*` / `EVP_sm4_ccm` / `EVP_sm4_xts` /
+  `EVP_chacha20*`（`sym`）、泛化 `EVP_KDF_fetch` + `EVP_KDF_derive`（`kdf` 10 种）、
+  `EVP_*_do_all_provided` 与 `OSSL_PROVIDER_*` / `OPENSSL_info(SEED_SOURCE)` /
+  `SSL_CTX_get0_implemented_groups`（`meta` 枚举，注：TLS 组枚举需 OpenSSL 3.2+）。
 
 **`0.4.0` 未新增 C 接口**：本版只修正既有 `X509_sk_X509_EXTENSION_push` / `X509_sk_X509_push`
 的返回值语义（OpenSSL 3 的 `sk_TYPE_push` 返回压入后的**栈长度**，原实现按 0/1 布尔判断），

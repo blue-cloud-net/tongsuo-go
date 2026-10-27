@@ -17,7 +17,7 @@
 | 次序 | 子命令 | §6.A 编号 | 优先级 | 归属包 | API 数 | 需新增 native 绑定 |
 |---|---|---|---|---|---|---|
 | 1 | `version` | 55 | P1 | `meta`（已建） | 4 | 否（`internal/core` 已有实现） |
-| 2 | `mac` | 26 | P1 | `mac`（已建） | 13 | 是（`EVP_MAC_*`；当前仅 HMAC，其余见 [roadmap.md](roadmap.md) §2.1） |
+| 2 | `mac` | 26 | P1 | `mac`（已建） | 14 | 是（`0.5.0` 已补齐 `EVP_MAC_*` 全家族；符号清单见 [api-reference.md](api-reference.md) §3） |
 | 3 | `ca` | 2 | P1 | `x509`（现有） | 12 | 否 |
 | 4 | `cms` | 5 | P2 | `pkcs/pkcs7`（现有） | 8 | 是（`CMS_*`） |
 | 5 | `crl2pkcs7` | 7 | P2 | `pkcs/pkcs7`（现有） | 2 | 否 |
