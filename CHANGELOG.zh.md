@@ -22,6 +22,22 @@
 
 ---
 
+## [0.4.1] - TBD
+
+### Bug 修复
+
+- `internal/core` / `tls`：修复 `SSLConn` 误用 `sync.WaitGroup` 引入的数据竞争
+  （`go test -race ./tls/` 在 `TestReadReturnsAfterCancel` 下稳定复现，
+  `tls.Conn.Close` ↔ `core.SSLConn.Read`）。`begin` 原先在互斥锁之外先
+  `inflight.Add` 再检查 `stopped`，因此可能与该调用 `Done` 归零之后的
+  `Close` → `inflight.Wait` 并发访问计数器，违反 `sync.WaitGroup`「计数器为 0
+  时不得与 `Wait` 并发」的契约。现改为在 `s.mu` 内完成「检查 `stopped` +
+  `Add`」，`Close` / `Stop` 也在同一把锁内置 `stopped` 之后才 `Wait`，二者严格
+  互斥（Add 一定先于 Wait）。`stopped` 随之由 `atomic.Bool` 降为由 `mu` 保护的
+  普通 `bool`。
+
+---
+
 ## [0.4.0] - 2026-10-23
 
 ### 新增功能

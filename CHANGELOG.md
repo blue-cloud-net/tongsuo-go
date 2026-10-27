@@ -24,6 +24,24 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
+## [0.4.1] - TBD
+
+### Fixed
+
+- `internal/core` / `tls`: fixed a data race caused by `SSLConn` misusing
+  `sync.WaitGroup` (`go test -race ./tls/` reproduces it reliably in
+  `TestReadReturnsAfterCancel`, `tls.Conn.Close` vs. `core.SSLConn.Read`).
+  `begin` used to call `inflight.Add` outside the mutex and only then check
+  `stopped`, so it could touch the counter concurrently with
+  `Close`'s `inflight.Wait` right after a `Done` dropped the counter to zero —
+  violating the `sync.WaitGroup` contract that an `Add` starting from zero must
+  not race with `Wait`. The stopped check and `Add` now both happen under
+  `s.mu`, and `Close` / `Stop` set `stopped` under the same mutex before
+  calling `Wait`, so `Add` is strictly ordered before `Wait`. As a consequence
+  `stopped` is a plain `bool` guarded by `mu` instead of an `atomic.Bool`.
+
+---
+
 ## [0.4.0] - 2026-10-23
 
 ### Added
