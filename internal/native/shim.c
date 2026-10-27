@@ -1109,8 +1109,11 @@ int X_EVP_KDF_derive(const char *alg, const X_KDF_PARAMS *p,
         params[idx++] = OSSL_PARAM_construct_uint64(OSSL_KDF_PARAM_SCRYPT_N, &n);
         params[idx++] = OSSL_PARAM_construct_uint64(OSSL_KDF_PARAM_SCRYPT_R, &r);
         params[idx++] = OSSL_PARAM_construct_uint64(OSSL_KDF_PARAM_SCRYPT_P, &pp);
-        params[idx++] = OSSL_PARAM_construct_uint64(OSSL_KDF_PARAM_SCRYPT_MAXMEM,
-                                                    &maxmem);
+        /* maxmem 为 0 表示不下传，让 provider 使用其默认值。 */
+        /* A zero maxmem means "not supplied", letting the provider default apply. */
+        if (p->maxmem != 0)
+            params[idx++] = OSSL_PARAM_construct_uint64(OSSL_KDF_PARAM_SCRYPT_MAXMEM,
+                                                        &maxmem);
     } else if (strcmp(alg, "SSKDF") == 0) {
         if (p->digest != NULL)
             params[idx++] = OSSL_PARAM_construct_utf8_string(
@@ -1214,8 +1217,16 @@ int X_EVP_KDF_derive(const char *alg, const X_KDF_PARAMS *p,
         if (p->cekalg != NULL)
             params[idx++] = OSSL_PARAM_construct_utf8_string(
                 OSSL_KDF_PARAM_CEK_ALG, (char *)p->cekalg, 0);
-        params[idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_X942_USE_KEYBITS,
-                                                 &use_keybits);
+        /*
+         * use-keybits 的 provider 默认值为 1；只有显式启用时才下传，
+         * 避免用 0 覆盖默认值（那会改变 OtherInfo 的构成）。
+         * The provider default for use-keybits is 1; the parameter is only
+         * forwarded when explicitly enabled so that an implicit zero does
+         * not override the default (which would change OtherInfo).
+         */
+        if (use_keybits != 0)
+            params[idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_X942_USE_KEYBITS,
+                                                    &use_keybits);
     } else if (strcmp(alg, "X963KDF") == 0) {
         if (p->digest != NULL)
             params[idx++] = OSSL_PARAM_construct_utf8_string(

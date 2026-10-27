@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"testing"
-
-	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
 
 // TestDeriveFamilies 验证泛化 KDF 派生的各算法族可派生出结果。
@@ -16,18 +14,18 @@ func TestDeriveFamilies(t *testing.T) {
 	tests := []struct {
 		name string
 		alg  string
-		p    *native.KDFParams
+		p    *KDFParams
 	}{
-		{"HKDF", "HKDF", &native.KDFParams{Digest: "SHA256", Key: []byte("ikm"), Salt: []byte("salt"), Info: []byte("info")}},
-		{"PBKDF2", "PBKDF2", &native.KDFParams{Digest: "SHA256", Pass: []byte("pw"), Salt: []byte("salt"), Iter: 1}},
-		{"SCRYPT", "SCRYPT", &native.KDFParams{Pass: []byte("pw"), Salt: []byte("salt"), N: 1024, R: 8, P: 1, MaxMem: 32 * 1024 * 1024}},
-		{"SSKDF", "SSKDF", &native.KDFParams{Digest: "SHA256", Secret: []byte("z"), Info: []byte("info")}},
-		{"TLS1-PRF", "TLS1-PRF", &native.KDFParams{Digest: "SHA256", Secret: []byte("secret"), Seed: []byte("seed")}},
-		{"TLS13-KDF", "TLS13-KDF", &native.KDFParams{Digest: "SHA256", Mode: "EXTRACT_ONLY", Key: []byte("ikm")}},
-		{"KBKDF", "KBKDF", &native.KDFParams{Digest: "SHA256", MAC: "HMAC", Mode: "counter", Key: []byte("ki"), Salt: []byte("label"), Info: []byte("context"), R: 8}},
-		{"X942KDF-ASN1", "X942KDF-ASN1", &native.KDFParams{Digest: "SHA256", Secret: []byte("z"), Key: []byte("kek"), CEKAlg: "AES-128-WRAP"}},
-		{"X963KDF", "X963KDF", &native.KDFParams{Digest: "SHA256", Secret: []byte("z"), Info: []byte("info")}},
-		{"HMAC-DRBG-KDF", "HMAC-DRBG-KDF", &native.KDFParams{Digest: "SHA256", Entropy: []byte("entropy"), Nonce: []byte("nonce")}},
+		{"HKDF", "HKDF", &KDFParams{Digest: "SHA256", Key: []byte("ikm"), Salt: []byte("salt"), Info: []byte("info")}},
+		{"PBKDF2", "PBKDF2", &KDFParams{Digest: "SHA256", Pass: []byte("pw"), Salt: []byte("salt"), Iter: 1}},
+		{"SCRYPT", "SCRYPT", &KDFParams{Pass: []byte("pw"), Salt: []byte("salt"), N: 1024, R: 8, P: 1, MaxMem: 32 * 1024 * 1024}},
+		{"SSKDF", "SSKDF", &KDFParams{Digest: "SHA256", Secret: []byte("z"), Info: []byte("info")}},
+		{"TLS1-PRF", "TLS1-PRF", &KDFParams{Digest: "SHA256", Secret: []byte("secret"), Seed: []byte("seed")}},
+		{"TLS13-KDF", "TLS13-KDF", &KDFParams{Digest: "SHA256", Mode: "EXTRACT_ONLY", Key: []byte("ikm")}},
+		{"KBKDF", "KBKDF", &KDFParams{Digest: "SHA256", MAC: "HMAC", Mode: "counter", Key: []byte("ki"), Salt: []byte("label"), Info: []byte("context"), R: 8}},
+		{"X942KDF-ASN1", "X942KDF-ASN1", &KDFParams{Digest: "SHA256", Secret: []byte("z"), Key: []byte("kek"), CEKAlg: "AES-128-WRAP"}},
+		{"X963KDF", "X963KDF", &KDFParams{Digest: "SHA256", Secret: []byte("z"), Info: []byte("info")}},
+		{"HMAC-DRBG-KDF", "HMAC-DRBG-KDF", &KDFParams{Digest: "SHA256", Entropy: []byte("entropy"), Nonce: []byte("nonce")}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -56,7 +54,7 @@ func TestDeriveFamilies(t *testing.T) {
 // section 11 test vector.
 func TestDeriveScryptKnownVector(t *testing.T) {
 	out := make([]byte, 64)
-	p := &native.KDFParams{
+	p := &KDFParams{
 		Pass:   []byte("password"),
 		Salt:   []byte("NaCl"),
 		N:      1024,
