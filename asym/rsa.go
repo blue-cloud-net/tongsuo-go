@@ -88,6 +88,12 @@ func GenerateRSA(bits int) (PrivateKey, error) {
 }
 
 // digestForRSAHash 按名称解析 RSA 签名摘要；空串默认 SHA-256。
+// 支持 sha1 / sha224 / sha256 / sha384 / sha512 / sm3（sm3 同时适用于
+// PKCS#1 v1.5、PSS 与 OAEP）。
+//
+// digestForRSAHash resolves the RSA digest by name; the empty string
+// defaults to SHA-256. Supported: sha1 / sha224 / sha256 / sha384 /
+// sha512 / sm3 (sm3 applies to PKCS#1 v1.5, PSS and OAEP alike).
 func digestForRSAHash(hash string) (*core.Digest, error) {
 	switch hash {
 	case "", "sha256":
@@ -100,6 +106,8 @@ func digestForRSAHash(hash string) (*core.Digest, error) {
 		return core.SHA384(), nil
 	case "sha512":
 		return core.SHA512(), nil
+	case "sm3":
+		return core.SM3(), nil
 	default:
 		return nil, fmt.Errorf("asym: rsa: unsupported hash %q", hash)
 	}
