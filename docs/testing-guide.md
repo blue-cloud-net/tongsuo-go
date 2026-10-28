@@ -152,6 +152,22 @@ go test -fuzz FuzzRoundTrip ./sym
 | 流式拒绝 AEAD | `EncryptSource("SM4-GCM", …)` 等返回 `ErrUnsupported` |
 | 流式坏填充 | 破坏最后一密文块→ `DecryptSource` 必须返回错误（不放宽校验） |
 
+**`0.6.0` 新增模式与填充矩阵（`sym/des_test.go` / `sym/padding_test.go` / `sym/newmodes_tongsuocli_test.go`）**
+
+| 测试用例 | 描述 |
+|---------|------|
+| AES-OFB / CFB | 128 / 192 / 256 三种密钥长度各自往返；密文长度等于明文长度（流模式）；`DecryptAESOFB` 与 `EncryptAESOFB` 结果相同；IV 非 `BlockSize` 返回错误；与 CLI `-aes-{128,256}-{ofb,cfb}` 逐字节一致 |
+| DES 家族往返 | `DES-ECB/CBC`、`DES-EDE-ECB/CBC`、`DES-EDE3-ECB/CBC` 六个名字的往返、空明文与分组对齐明文 |
+| **单 DES 等价性** | `DES-*` 的输出必须与 `DES-EDE3-*` 在 `K‖K‖K` 密钥下**逐字节相同**（实现依赖的数学事实，必须钉住） |
+| 单 DES 基准真相 | `-tags tongsuocli` 下用 `openssl enc -des-cbc -provider legacy -provider default` 作基准，与 `DES-CBC` 输出逐字节比对；无法加载 legacy 时 `t.Skip`（**库运行时不加载 legacy，仅测试用**） |
+| DES 长度错误 | 密钥长度不符 → `ErrInvalidKeyLength`；IV 非 8 字节 → `invalid iv size`；`NewDESCipher` 的 `BlockSize() == 8` |
+| 3DES / 2-key 3DES 对拍 | `-des-ede3-{ecb,cbc}` 与 `-des-ede-{ecb,cbc}` 逐字节一致 |
+| 填充矩阵静态查询 | `Paddings` / `Supports`：分组模式返回 `pkcs7/zero/none`，流模式与 XTS 返回 `none`，AEAD 返回空；未知名返回 `ErrUnknownAlgorithm`，未知填充名返回 `(false, nil)` |
+| 非法组合不发数据即拒 | `Encrypt("AES-128-CTR", …, nil, &Options{Padding: pkcs7})` 等在**空数据**上即返回 `ErrUnsupportedPadding` |
+| AES-CBC 真正消费填充 | `PaddingNone` 下密文长度等于明文（已对齐），且与 pkcs7 密文前缀一致；未对齐时报错 |
+| zero 填充语义 | 加密补零到分组整数倍、解密**不剥离**（长度仍为分组倍数） |
+| Zero 入口一致性 | `EncryptSM4CBCZero` 与 `Encrypt("SM4-CBC", …, &Options{Padding: "zero"})` 逐字节相同 |
+
 ---
 
 ## 5. 非对称与协商测试（`asym` / `ecdh`）
@@ -188,6 +204,18 @@ go test -fuzz FuzzRoundTrip ./sym
 | 低阶点 / 非曲线点 | X25519 低阶点与非法公钥返回错误（不得返回全零共享密钥） |
 
 **CLI 对比测试**：`openssl pkeyutl -derive` 双向对拍。
+
+### 5.3 签名表示转换与 RSA-SM3（`0.6.0`）
+
+| 测试用例 | 描述 |
+|---------|------|
+| DER → (r,s) → DER | SM2 与 ECDSA 各取真实签名，拆分后重组必须逐字节等于原 DER |
+| der → raw → der | `FormatSignature` 宽度 32（SM2 / P-256）；raw 长度必须为 64 |
+| 前导零补齐 | `r` / `s` 最高位为 0 时 DER 更短，raw 必须左补回定长（最易错处，必须有专门用例） |
+| 宽度缺失 / 不符 | `der → raw` 不给 width 报错；width 过小报错；raw 长度与 width 不一致报错 |
+| 结构严格性 | 空 SEQUENCE、垃圾字节、**尾随字节**、空 / 零分量均返回错误 |
+| RSA + SM3（PKCS#1 v1.5 / PSS / OAEP） | 三种填充下签名、验签、加解密往返；篡改消息必失败；摘要不匹配必失败 |
+| RSA-SM3 与 CLI 互验 | 本库签名 → `openssl dgst -sm3 -verify`；`openssl dgst -sm3 -sign` → 本库验签；PSS 带 `-sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:digest` |
 
 ---
 

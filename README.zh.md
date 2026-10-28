@@ -32,7 +32,10 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 - 🔒 **SM4 对称加密**（GB/T 32907，`sym`）：ECB / CBC / CTR / OFB / CFB / GCM（AEAD），以及 SM4-CCM 与 SM4-XTS
 - 🧮 **消息认证码**（`mac`）：14 种 `EVP_MAC` 算法 —— HMAC-SM3 / MD5 / SHA1 / SHA224 / SHA256 / SHA384 / SHA512、CMAC、GMAC、KMAC-128/256、SipHash、Poly1305、EIA3
 - 🔗 **更多哈希**（`digest`）：MD5、SHA1、SHA224、SHA256、SHA384、SHA512（`hash.Hash` + `Sum`）
-- 🔄 **AES 对称加密**（`sym`）：128 / 192 / 256 位的 ECB / CBC / CTR / GCM（`cipher.Block` + `cipher.AEAD`）
+- 🔄 **AES 对称加密**（`sym`）：128 / 192 / 256 位的 ECB / CBC / CTR / OFB / CFB / GCM（`cipher.Block` + `cipher.AEAD`）
+- 🗝️ **DES / 3DES 兼容**（`sym`）：DES / DES-EDE（2 密钥）/ DES-EDE3 的 ECB / CBC —— 仅用于兼容存量数据。单 DES 以 `K‖K‖K` 走 DES-EDE3 实现，全程不加载 legacy provider
+- 🧾 **填充矩阵**（`sym`）：`Supports(name, padding)` / `Paddings(name)` 在不提交数据的前提下回答「该算法 × 该填充是否合法」；非法组合返回 `ErrUnsupportedPadding`，不再静默退化
+- ✍️ **签名格式与 RSA 摘要**（`asym`）：SM2 / ECDSA 的 DER ↔ 裸 `r‖s` 互转（`SignatureParts` / `SignatureDER` / `FormatSignature`）；RSA-PKCS1v15 / PSS / OAEP 接受 `sm3`
 - 🌊 **流密码**（`sym`）：ChaCha20、ChaCha20-Poly1305
 - 🧬 **密钥派生**（`kdf`）：10 种 KDF —— HKDF / PBKDF2 / scrypt / SSKDF / TLS1-PRF / TLS13-KDF / KBKDF / X942KDF / X963KDF / HMAC-DRBG-KDF，均含类型化入口与按名分发 `Derive`
 - 🧰 **CLI 式形态入口**：`meta` 提供 `Source`（bytes / reader / 文件 / stdin）、`Sink`（含 raw / hex / base64 编码）、`Format`（PEM / DER）与 `Passphrase`（`pass:` / `env:` / `file:` / `fd:` / `stdin:`）；各原语包提供 `SumSource` / `SumTo` / `EncryptSource` / `DeriveTo` / `MarshalPrivateKeyTo` / `LoadCertificateSource` 等一行式入口
@@ -65,10 +68,6 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 
 ### `0.6.0` 计划提供（尚未发布）
 
-- `sym`：AES-OFB / CFB（CFB128），以及 DES / DES-EDE（2 密钥）/ DES-EDE3 的 ECB / CBC
-- `sym`：公布 `Options.Padding` 支持矩阵并提供 `Supports` / `Paddings` 查询——非法组合改为
-  显式报错，不再静默退化为 PKCS#7
-- `asym`：签名在 DER 与裸 `r‖s` 之间互转
 - `asym`：RSA 摘要接受 `sm3`（PKCS#1 v1.5 / PSS / OAEP）
 
 完整规划与「不做」清单（含理由与重开条件）见 [docs/roadmap.md](docs/roadmap.md) §2 与 §4。

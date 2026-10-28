@@ -471,19 +471,28 @@
   没有 SM4-XTS（走 `EVP_CIPHER_fetch`），此时 `EncryptSM4XTS` 返回
   「unavailable in this build」
 
+**函数｜新增模式与填充矩阵（`0.6.0` 新增）**
+
+- 🆕 `AES-{128,192,256}-{OFB,CFB}` 名字（CFB 为 CFB128）
+- 🆕 `func EncryptAESOFB(key, iv, data []byte) ([]byte, error)` / 🆕 `func DecryptAESOFB(key, iv, data []byte) ([]byte, error)` — OFB 加解密为同一运算
+- 🆕 `func EncryptAESCFB(key, iv, data []byte) ([]byte, error)` / 🆕 `func DecryptAESCFB(key, iv, data []byte) ([]byte, error)` — CFB128，iv 为 `BlockSize`
+- 🆕 `DESKeySize = 8`、`DESEDEKeySize = 16`、`DESEDE3KeySize = 24`、`DESBlockSize = 8`
+- 🆕 `DES-{ECB,CBC}`、`DES-EDE-{ECB,CBC}`（2 密钥）、`DES-EDE3-{ECB,CBC}` 名字；🆕 `func EncryptDES{ECB,CBC}` / `DecryptDES{ECB,CBC}` / `EncryptDESEDE{ECB,CBC}` / `DecryptDESEDE{ECB,CBC}` / `EncryptDESEDE3{ECB,CBC}` / `DecryptDESEDE3{ECB,CBC}` / `NewDESCipher`
+  - 单 DES 以 `K‖K‖K` 驱动 DES-EDE3 实现，输出与真单 DES 逐字节相同；**不加载 legacy provider**（见 [roadmap.md](roadmap.md) §4 第 10 条）
+- 🆕 `PaddingPKCS7` / `PaddingZero` / `PaddingNone`；🆕 `var ErrUnsupportedPadding`
+- 🆕 `func Supports(name, padding string) (bool, error)` — 静态判定「算法名 × 填充」是否合法（未知名返回 `ErrUnknownAlgorithm`，未知填充名返回 `(false, nil)`）
+- 🆕 `func Paddings(name string) ([]string, error)` — 分组模式返回 `pkcs7/zero/none`，流模式与 XTS 返回 `none`，AEAD 返回空切片
+
 **规划中**
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
-| 🧭 AES-OFB / CFB（CFB128）：`EncryptAESOFB` / `DecryptAESOFB` / `EncryptAESCFB` / `DecryptAESCFB` | `0.6.0` | `EVP_aes_{128,192,256}_{ofb,cfb128}` |
 | 🧭 AES-CCM / XTS / OCB / SIV / GCM-SIV / WRAP / CBC-CTS | `0.6.0` | `EVP_aes_*_{ccm,xts,ocb,siv,…}` |
-| 🧭 DES / DES-EDE（2 密钥）/ DES-EDE3 × ECB / CBC：`EncryptDES{ECB,CBC}` / `DecryptDES{ECB,CBC}` / `EncryptDESEDE{ECB,CBC}` / `DecryptDESEDE{ECB,CBC}` / `EncryptDESEDE3{ECB,CBC}` / `DecryptDESEDE3{ECB,CBC}` / `NewDESCipher` | `0.6.0` | `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}` |
-| 🧭 `func Supports(name, padding string) (bool, error)` / `func Paddings(name string) ([]string, error)` / `PaddingPKCS7` / `PaddingZero` / `PaddingNone` / `ErrUnsupportedPadding` | `0.6.0` | 无 |
 | 🧭 ZUC-128-EEA3 | `0.6.0` | `EVP_zuc` |
 
 > **DES 的实现方式与安全口径**：单 DES 在铜锁中只注册在 legacy provider，本库不加载 legacy（见
 > [roadmap.md](roadmap.md) §4 第 10 条），改以 `K‖K‖K`（三份相同密钥）驱动 DES-EDE3 实现——
-> 两者输出逐字节相同。对外仍以 `DES-ECB` / `DES-CBC` 命名，GoDoc 须写明这是等价变换。
+> 两者输出逐字节相同。对外仍以 `DES-ECB` / `DES-CBC` 命名，GoDoc 已写明这是等价变换。
 > DES 的 56-bit 密钥已可穷举，**仅用于兼容既有数据**，不建议用于新协议。
 
 **破坏性变更**
@@ -594,12 +603,18 @@
   — 未加密 → PKCS#8 PEM；带口令 → 加密 PEM，结果按 `sink` 编码写出
 - 🆕 `func MarshalPublicKeyTo(pub PublicKey, sink *meta.Sink) error` — SPKI PEM 写出
 
+**函数｜签名表示转换与 RSA-SM3（`0.6.0` 新增）**
+
+- 🆕 `func SignatureParts(sig []byte) (r, s []byte, err error)` — DER `SEQUENCE{INTEGER r, INTEGER s}` → 两个大端分量（最小长度，不补齐）
+- 🆕 `func SignatureDER(r, s []byte) ([]byte, error)` — 两个分量 → 最短形式 DER
+- 🆕 `func FormatSignature(sig []byte, from, to string, width int) ([]byte, error)` — `der` ↔ `raw`；`width` 为每分量字节数（SM2 / P-256 = 32，P-384 = 48，P-521 = 66），从 der 转出时必填，从 raw 转出时可传 0 自动推断
+- 适用范围：**仅 SM2 与 ECDSA**；RSA 签名本身即裸字节串，Ed25519 / Ed448 恒为定长裸签名，三者不适用
+- `SignPKCS1v15` / `VerifyPKCS1v15` / `SignPSS` / `VerifyPSS` / `EncryptOAEP` / `DecryptOAEP` 的 `hash` 参数新增 `"sm3"`
+
 **规划中**
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
-| 🧭 签名 DER ↔ 裸 `r‖s`：`func SignatureParts(sig []byte) (r, s []byte, err error)` / `func SignatureDER(r, s []byte) ([]byte, error)` / `func FormatSignature(sig []byte, from, to string, width int) ([]byte, error)` | `0.6.0` | 无（纯 Go DER 编解码） |
-| 🧭 RSA 摘要补 `sm3`：`SignPKCS1v15` / `VerifyPKCS1v15` / `SignPSS` / `VerifyPSS` / `EncryptOAEP` / `DecryptOAEP` 的 `hash` 参数接受 `"sm3"` | `0.6.0` | 无（`EVP_sm3` 已绑定） |
 | 🧭 ED25519ph / ED25519ctx / ED448ph | `0.6.0` | `EVP_DigestSignInit_ex` 的 `context-string` 选项 |
 | 🧭 ML-DSA-44 / 65 / 87 | `0.7.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
 | 🧭 SLH-DSA 12 变体 | `0.7.0` | 同上 |

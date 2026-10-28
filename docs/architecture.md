@@ -271,8 +271,10 @@ tongsuo-go/
 ├── rand/                      # 【原语】安全随机数
 │   └── rand.go                # Read / Bytes / Reader
 ├── sym/                       # 【原语】对称加密 + 对称密钥对象
-│   ├── sym.go                 # 按名分发：Names / NewCipher / NewGCM / NewAEAD / Encrypt / Decrypt
+│   ├── sym.go                 # 按名分发：Names / NewCipher / NewGCM / NewAEAD / Encrypt / Decrypt / Supports / Paddings
 │   ├── aes.go  sm4.go         # 类型化入口：EncryptAESCBC / EncryptSM4ECB / SM4-CCM / SM4-XTS …
+│   ├── des.go                 # DES / DES-EDE / DES-EDE3（单 DES 以 K‖K‖K 走 DES-EDE3）
+│   ├── padding.go             # 填充矩阵：PaddingPKCS7/Zero/None / cryptPadded / ErrUnsupportedPadding
 │   ├── chacha20.go            # ChaCha20 / ChaCha20-Poly1305
 │   ├── forms.go               # 形态入口：EncryptSource / DecryptSource（流式）
 │   └── key.go                 # SymmetricKey / AESKey / SM4Key / GenerateSymmetricKey
@@ -283,6 +285,7 @@ tongsuo-go/
 │   ├── sign.go  encrypt.go    # Sign / Verify / Encrypt / Decrypt + 算法特定入口
 │   ├── register.go            # CorePKey() 契约（供 internal/keyaccess 反查）
 │   ├── params.go              # KeyParams
+│   ├── signature.go           # 签名 DER ↔ 裸 r‖s：SignatureParts / SignatureDER / FormatSignature
 │   └── forms.go               # 形态入口：LoadPrivateKeySource / MarshalPrivateKeyTo …
 ├── ecdh/                      # 【密钥】密钥协商
 │   └── ecdh.go                # Curve / LoadPrivateKey / LoadPublicKey / SharedSecret

@@ -22,6 +22,57 @@
 
 ---
 
+## [0.6.0] - TBD
+
+### 新增功能
+
+- `sym`：新增 AES-OFB 与 AES-CFB（全字节反馈，即 CFB128），支持
+  128 / 192 / 256 位密钥：`EncryptAESOFB` / `DecryptAESOFB` /
+  `EncryptAESCFB` / `DecryptAESCFB`，并在 `Names()` 中登记
+  `AES-{128,192,256}-{OFB,CFB}`。
+- `sym`：新增 DES 家族的 ECB / CBC 入口——`DES-{ECB,CBC}`、
+  `DES-EDE-{ECB,CBC}`（2 密钥 3DES）与 `DES-EDE3-{ECB,CBC}`，含
+  `EncryptDES*` / `DecryptDES*` / `EncryptDESEDE*` / `DecryptDESEDE3*`
+  类型化入口、`Names()` 登记项与 `NewDESCipher`（8 字节分组）。单 DES 以
+  `K‖K‖K`（三份相同密钥）驱动 DES-EDE3 实现，输出与真正的单 DES 逐字节
+  相同，且无需加载 legacy provider；这一点在 `tongsuocli` 标签下的测试中
+  以真单 DES 为基准做了验证。
+- `sym`：填充矩阵可在不提交数据的前提下查询——新增 `Supports(name, padding)`
+  与 `Paddings(name)`，以及常量 `PaddingPKCS7` / `PaddingZero` / `PaddingNone`
+  与哨兵错误 `ErrUnsupportedPadding`。
+- `asym`：新增签名在 DER 与裸 `r‖s` 之间互转的入口——`SignatureParts`
+  （DER 拆分量）、`SignatureDER`（分量拼 DER）与 `FormatSignature`
+  （der/raw 互转，需显式给每分量宽度）。适用于 SM2 与 ECDSA，并与 openssl
+  CLI 交叉验证。
+- `asym`：`SignPKCS1v15` / `VerifyPKCS1v15` / `SignPSS` / `VerifyPSS` /
+  `EncryptOAEP` / `DecryptOAEP` 的摘要参数接受 `"sm3"`，即
+  RSA-PKCS1v15-SM3、RSA-PSS-SM3 与 RSA-OAEP-SM3，并与
+  `openssl dgst -sm3` 双向互验。
+- `internal/native`：新增 `EVP_aes_{128,192,256}_{ofb,cfb128}` 与
+  `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}`。
+- `internal/core`：新增 `AES{128,192,256}{OFB,CFB}` 与
+  `DESEDE3{ECB,CBC}` / `DESEDE{ECB,CBC}` 描述符。
+
+### 行为变化与重构
+
+- `sym`：`Options.Padding` 对**所有**分组模式生效。`0.5.0` 及之前它只被
+  SM4-CBC / ECB 消费，AES-CBC / ECB **静默忽略**该参数（传 `none` 仍产出
+  PKCS#7 密文），且无法识别的填充名会静默退化为 `pkcs7`。本版起，未知填充名与
+  不相容组合（如流模式上的 `pkcs7`）一律返回 `ErrUnsupportedPadding`，不再静默
+  产出与预期不符的结果。
+- `sym`：`zero` 填充真正生效——`*Zero` 入口（如 `EncryptSM4CBCZero`）此前与
+  `none` 行为完全相同且拒绝未对齐输入，现在会在尾部补 `0x00` 补足到分组整数倍。
+  解密仍不剥离零填充，需要精确明文长度时由调用方按已知长度截断。
+
+### 已知限制
+
+- DES / DES-EDE / DES-EDE3 **仅用于兼容既有数据**：单 DES 只有 56 位有效密钥
+  且已可被穷举，2 密钥 3DES 约 80 位。不得用于新协议。
+- 不提供 `ECIES`：请使用 `asym.Encrypt`（SM2），或标准化的替代方案
+  （RFC 9180 HPKE、JWE `ECDH-ES`）。见 `docs/roadmap.md` §4。
+
+---
+
 ## [0.5.0] - 2026-10-27
 
 ### 新增功能
@@ -712,7 +763,8 @@
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...v0.3.0

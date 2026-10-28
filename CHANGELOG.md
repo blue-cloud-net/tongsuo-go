@@ -24,6 +24,65 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
+## [0.6.0] - TBD
+
+### Added
+
+- `sym`: AES-OFB and AES-CFB (full-byte feedback, i.e. CFB128) for
+  128 / 192 / 256-bit keys: `EncryptAESOFB` / `DecryptAESOFB` /
+  `EncryptAESCFB` / `DecryptAESCFB`, plus the by-name entries
+  `AES-{128,192,256}-{OFB,CFB}` in `Names()`.
+- `sym`: the DES family in ECB / CBC — `DES-{ECB,CBC}`,
+  `DES-EDE-{ECB,CBC}` (two-key 3DES) and `DES-EDE3-{ECB,CBC}` — with
+  `EncryptDES*` / `DecryptDES*` / `EncryptDESEDE*` / `DecryptDESEDE3*`
+  entries, the by-name entries in `Names()` and `NewDESCipher` (8-byte
+  block). Single DES is implemented by driving DES-EDE3 with `K‖K‖K`
+  (three identical subkeys), which produces byte-identical output without
+  loading the legacy provider; this is verified in the
+  `tongsuocli`-tagged tests against real single DES.
+- `sym`: the padding matrix is now queryable without submitting data —
+  `Supports(name, padding)` and `Paddings(name)`, plus the constants
+  `PaddingPKCS7` / `PaddingZero` / `PaddingNone` and the sentinel
+  `ErrUnsupportedPadding`.
+- `asym`: signature representation conversion between DER and the bare
+  `r‖s` form — `SignatureParts` (DER to components), `SignatureDER`
+  (components to DER) and `FormatSignature` (der/raw with an explicit
+  per-component width). Applies to SM2 and ECDSA, verified against the
+  openssl CLI.
+- `asym`: `SignPKCS1v15` / `VerifyPKCS1v15` / `SignPSS` / `VerifyPSS` /
+  `EncryptOAEP` / `DecryptOAEP` accept `"sm3"` as the digest, giving
+  RSA-PKCS1v15-SM3, RSA-PSS-SM3 and RSA-OAEP-SM3, cross-validated against
+  `openssl dgst -sm3` in both directions.
+- `internal/native`: added `EVP_aes_{128,192,256}_{ofb,cfb128}` and
+  `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}`.
+- `internal/core`: added `AES{128,192,256}{OFB,CFB}` and
+  `DESEDE3{ECB,CBC}` / `DESEDE{ECB,CBC}` descriptors.
+
+### Changed
+
+- `sym`: `Options.Padding` now takes effect for **every** block mode. Up
+  to `0.5.0` it was consumed only by SM4-CBC / ECB; AES-CBC / ECB
+  silently ignored it (passing `none` still produced PKCS#7 ciphertext)
+  and any unrecognised padding name silently fell back to `pkcs7`. From
+  this version on, unknown names and incompatible combinations (for
+  example `pkcs7` on a stream mode) return `ErrUnsupportedPadding`
+  instead of silently producing unexpected output.
+- `sym`: `zero` padding now really pads — the `*Zero` entries (e.g.
+  `EncryptSM4CBCZero`) previously behaved exactly like `none` and rejected
+  unaligned input; they now append `0x00` up to a block boundary.
+  Decryption still does not strip zero padding, so callers needing the
+  exact plaintext length must truncate using a known size.
+
+### Known limitations
+
+- DES / DES-EDE / DES-EDE3 exist **for legacy data only**: single DES has
+  a 56-bit effective key and is brute-forceable, two-key 3DES about 80
+  bits. Do not use them in new protocols.
+- `ECIES` is not provided; use `asym.Encrypt` (SM2) or the standardised
+  replacements (RFC 9180 HPKE, JWE `ECDH-ES`). See `docs/roadmap.md` §4.
+
+---
+
 ## [0.5.0] - 2026-10-27
 
 ### Added
@@ -871,7 +930,8 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...v0.3.0

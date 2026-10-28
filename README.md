@@ -34,7 +34,10 @@ interfaces and a CLI-style by-name entry point; see the
 - 🔒 **SM4 symmetric cipher** (GB/T 32907, `sym`): ECB / CBC / CTR / OFB / CFB / GCM (AEAD), plus SM4-CCM and SM4-XTS
 - 🧮 **Message authentication codes** (`mac`): 14 `EVP_MAC` algorithms — HMAC-SM3 / MD5 / SHA1 / SHA224 / SHA256 / SHA384 / SHA512, CMAC, GMAC, KMAC-128/256, SipHash, Poly1305, EIA3
 - 🔗 **More hashes** (`digest`): MD5, SHA1, SHA224, SHA256, SHA384, SHA512 (`hash.Hash` + `Sum`)
-- 🔄 **AES symmetric cipher** (`sym`): 128 / 192 / 256-bit ECB / CBC / CTR / GCM (`cipher.Block` + `cipher.AEAD`)
+- 🔄 **AES symmetric cipher** (`sym`): 128 / 192 / 256-bit ECB / CBC / CTR / OFB / CFB / GCM (`cipher.Block` + `cipher.AEAD`)
+- 🗝️ **DES / 3DES compatibility** (`sym`): DES / DES-EDE (two-key) / DES-EDE3 in ECB / CBC — for legacy data only. Single DES is realised as DES-EDE3 with `K‖K‖K`, so no legacy provider is ever loaded
+- 🧾 **Padding matrix** (`sym`): `Supports(name, padding)` / `Paddings(name)` answer "is this algorithm × padding combination valid?" without submitting data; invalid combinations return `ErrUnsupportedPadding` instead of silently falling back
+- ✍️ **Signature formats and RSA digests** (`asym`): DER ↔ bare `r‖s` conversion for SM2 / ECDSA (`SignatureParts` / `SignatureDER` / `FormatSignature`); RSA-PKCS1v15 / PSS / OAEP accept `sm3`
 - 🌊 **Stream ciphers** (`sym`): ChaCha20, ChaCha20-Poly1305
 - 🧬 **Key derivation** (`kdf`): 10 KDFs — HKDF / PBKDF2 / scrypt / SSKDF / TLS1-PRF / TLS13-KDF / KBKDF / X942KDF / X963KDF / HMAC-DRBG-KDF, each with a typed entry plus the by-name `Derive`
 - 🧰 **CLI-style form entries**: `meta` provides `Source` (bytes / reader / file / stdin), `Sink` (with raw / hex / base64 encoding), `Format` (PEM / DER) and `Passphrase` (`pass:` / `env:` / `file:` / `fd:` / `stdin:`); the primitive packages add one-liners such as `SumSource` / `SumTo` / `EncryptSource` / `DeriveTo` / `MarshalPrivateKeyTo` / `LoadCertificateSource`
@@ -70,10 +73,6 @@ itself, and the Tongsuo installation is a build prerequisite (see [Requirements]
 
 ### Planned for `0.6.0` (not yet released)
 
-- `sym`: AES-OFB / CFB (CFB128), DES / DES-EDE (2-key) / DES-EDE3 in ECB / CBC
-- `sym`: an `Options.Padding` support matrix plus `Supports` / `Paddings` queries — invalid
-  combinations now fail loudly instead of silently falling back to PKCS#7
-- `asym`: signature conversion between DER and the raw `r‖s` form
 - `asym`: RSA digests accept `sm3` (PKCS#1 v1.5 / PSS / OAEP)
 
 The full plan, and the complete "not doing" list with the rationale and the conditions for
