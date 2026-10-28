@@ -123,6 +123,66 @@ func EVP_aes_192_gcm() unsafe.Pointer {
 	return unsafe.Pointer(C.EVP_aes_192_gcm())
 }
 
+// EVP_aes_128_ofb 返回 AES-128-OFB 分组算法描述符（流模式）。
+// EVP_aes_128_ofb returns the AES-128-OFB cipher descriptor (stream mode, static singleton).
+func EVP_aes_128_ofb() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_aes_128_ofb())
+}
+
+// EVP_aes_128_cfb128 返回 AES-128-CFB（128 位反馈）分组算法描述符（流模式）。
+// EVP_aes_128_cfb128 returns the AES-128-CFB128 cipher descriptor (stream mode, static singleton).
+func EVP_aes_128_cfb128() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_aes_128_cfb128())
+}
+
+// EVP_aes_192_ofb 返回 AES-192-OFB 分组算法描述符（流模式）。
+// EVP_aes_192_ofb returns the AES-192-OFB cipher descriptor (stream mode, static singleton).
+func EVP_aes_192_ofb() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_aes_192_ofb())
+}
+
+// EVP_aes_192_cfb128 返回 AES-192-CFB（128 位反馈）分组算法描述符（流模式）。
+// EVP_aes_192_cfb128 returns the AES-192-CFB128 cipher descriptor (stream mode, static singleton).
+func EVP_aes_192_cfb128() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_aes_192_cfb128())
+}
+
+// EVP_aes_256_ofb 返回 AES-256-OFB 分组算法描述符（流模式）。
+// EVP_aes_256_ofb returns the AES-256-OFB cipher descriptor (stream mode, static singleton).
+func EVP_aes_256_ofb() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_aes_256_ofb())
+}
+
+// EVP_aes_256_cfb128 返回 AES-256-CFB（128 位反馈）分组算法描述符（流模式）。
+// EVP_aes_256_cfb128 returns the AES-256-CFB128 cipher descriptor (stream mode, static singleton).
+func EVP_aes_256_cfb128() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_aes_256_cfb128())
+}
+
+// EVP_des_ede3_ecb 返回 3DES（三密钥 EDE）-ECB 分组算法描述符（8 字节分组）。
+// EVP_des_ede3_ecb returns the DES-EDE3-ECB cipher descriptor (8-byte block, static singleton).
+func EVP_des_ede3_ecb() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_des_ede3_ecb())
+}
+
+// EVP_des_ede3_cbc 返回 3DES（三密钥 EDE）-CBC 分组算法描述符（8 字节分组、24 字节密钥、8 字节 IV）。
+// EVP_des_ede3_cbc returns the DES-EDE3-CBC cipher descriptor (8-byte block, static singleton).
+func EVP_des_ede3_cbc() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_des_ede3_cbc())
+}
+
+// EVP_des_ede_ecb 返回 2 密钥 3DES（EDE）-ECB 分组算法描述符（8 字节分组、16 字节密钥）。
+// EVP_des_ede_ecb returns the DES-EDE-ECB (two-key) cipher descriptor (8-byte block, static singleton).
+func EVP_des_ede_ecb() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_des_ede_ecb())
+}
+
+// EVP_des_ede_cbc 返回 2 密钥 3DES（EDE）-CBC 分组算法描述符（8 字节分组、16 字节密钥、8 字节 IV）。
+// EVP_des_ede_cbc returns the DES-EDE-CBC (two-key) cipher descriptor (8-byte block, static singleton).
+func EVP_des_ede_cbc() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_des_ede_cbc())
+}
+
 // EVP_sm4_ccm 返回 SM4-CCM 认证加密算法描述符（AEAD，12 字节 nonce）。
 // EVP_sm4_ccm returns the SM4-CCM AEAD cipher descriptor (12-byte nonce).
 func EVP_sm4_ccm() unsafe.Pointer {

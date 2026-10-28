@@ -354,9 +354,12 @@ func TestNewGCM(t *testing.T) {
 // TestNames 验证 Names 返回稳定且完整。
 func TestNames(t *testing.T) {
 	want := []string{
-		"AES-128-CBC", "AES-128-CTR", "AES-128-ECB", "AES-128-GCM",
-		"AES-192-CBC", "AES-192-CTR", "AES-192-ECB", "AES-192-GCM",
-		"AES-256-CBC", "AES-256-CTR", "AES-256-ECB", "AES-256-GCM",
+		"AES-128-CBC", "AES-128-CFB", "AES-128-CTR", "AES-128-ECB", "AES-128-GCM", "AES-128-OFB",
+		"AES-192-CBC", "AES-192-CFB", "AES-192-CTR", "AES-192-ECB", "AES-192-GCM", "AES-192-OFB",
+		"AES-256-CBC", "AES-256-CFB", "AES-256-CTR", "AES-256-ECB", "AES-256-GCM", "AES-256-OFB",
+		"DES-CBC", "DES-ECB",
+		"DES-EDE-CBC", "DES-EDE-ECB",
+		"DES-EDE3-CBC", "DES-EDE3-ECB",
 		"SM4-CBC", "SM4-CCM", "SM4-CFB", "SM4-CTR", "SM4-ECB", "SM4-GCM",
 		"SM4-OFB", "SM4-XTS",
 		"ChaCha20", "ChaCha20-Poly1305",

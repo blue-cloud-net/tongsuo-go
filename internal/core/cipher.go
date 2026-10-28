@@ -221,6 +221,85 @@ func AES192CTR() *Cipher { return newCipher(native.EVP_aes_192_ctr()) }
 // and authenticity.
 func AES192GCM() *Cipher { return newCipher(native.EVP_aes_192_gcm()) }
 
+// AES128OFB 返回 AES-128-OFB 流模式算法描述符（16 字节密钥、16 字节 IV）。
+// IV 必须在每个 (key, message) 对中唯一；复用会破坏机密性。
+//
+// AES128OFB returns AES-128 in OFB mode (a stream mode). 16-byte key,
+// 16-byte IV. The IV MUST be unique per (key, message) pair; reuse
+// breaks confidentiality.
+func AES128OFB() *Cipher { return newCipher(native.EVP_aes_128_ofb()) }
+
+// AES128CFB 返回 AES-128-CFB（128 位反馈）流模式算法描述符（16 字节密钥、16 字节 IV）。
+// IV 必须在每个 (key, message) 对中唯一；复用会破坏机密性。
+//
+// AES128CFB returns AES-128 in CFB128 mode (a stream mode). 16-byte key,
+// 16-byte IV. The IV MUST be unique per (key, message) pair; reuse
+// breaks confidentiality.
+func AES128CFB() *Cipher { return newCipher(native.EVP_aes_128_cfb128()) }
+
+// AES192OFB 返回 AES-192-OFB 流模式算法描述符（24 字节密钥、16 字节 IV）。
+// IV 必须在每个 (key, message) 对中唯一；复用会破坏机密性。
+//
+// AES192OFB returns AES-192 in OFB mode (a stream mode). 24-byte key,
+// 16-byte IV. The IV MUST be unique per (key, message) pair; reuse
+// breaks confidentiality.
+func AES192OFB() *Cipher { return newCipher(native.EVP_aes_192_ofb()) }
+
+// AES192CFB 返回 AES-192-CFB（128 位反馈）流模式算法描述符（24 字节密钥、16 字节 IV）。
+// IV 必须在每个 (key, message) 对中唯一；复用会破坏机密性。
+//
+// AES192CFB returns AES-192 in CFB128 mode (a stream mode). 24-byte key,
+// 16-byte IV. The IV MUST be unique per (key, message) pair; reuse
+// breaks confidentiality.
+func AES192CFB() *Cipher { return newCipher(native.EVP_aes_192_cfb128()) }
+
+// AES256OFB 返回 AES-256-OFB 流模式算法描述符（32 字节密钥、16 字节 IV）。
+// IV 必须在每个 (key, message) 对中唯一；复用会破坏机密性。
+//
+// AES256OFB returns AES-256 in OFB mode (a stream mode). 32-byte key,
+// 16-byte IV. The IV MUST be unique per (key, message) pair; reuse
+// breaks confidentiality.
+func AES256OFB() *Cipher { return newCipher(native.EVP_aes_256_ofb()) }
+
+// AES256CFB 返回 AES-256-CFB（128 位反馈）流模式算法描述符（32 字节密钥、16 字节 IV）。
+// IV 必须在每个 (key, message) 对中唯一；复用会破坏机密性。
+//
+// AES256CFB returns AES-256 in CFB128 mode (a stream mode). 32-byte key,
+// 16-byte IV. The IV MUST be unique per (key, message) pair; reuse
+// breaks confidentiality.
+func AES256CFB() *Cipher { return newCipher(native.EVP_aes_256_cfb128()) }
+
+// DESEDE3ECB 返回 3DES（三密钥 EDE）-ECB 分组算法描述符（8 字节分组、24 字节密钥、无 IV）。
+// ECB 不推荐用于多块数据。
+//
+// DESEDE3ECB returns DES-EDE3 in ECB mode. 8-byte blocks, 24-byte key,
+// no IV (IVSize == 0). ECB is NOT recommended for multi-block data.
+func DESEDE3ECB() *Cipher { return newCipher(native.EVP_des_ede3_ecb()) }
+
+// DESEDE3CBC 返回 3DES（三密钥 EDE）-CBC 分组算法描述符（8 字节分组、24 字节密钥、8 字节 IV）。
+// CBC 要求每次加密使用随机不可预测的 IV，同一密钥下严禁复用 IV。
+//
+// DESEDE3CBC returns DES-EDE3 in CBC mode. 8-byte blocks, 24-byte key,
+// 8-byte IV. CBC requires a random unpredictable IV per encryption;
+// never reuse an IV with the same key.
+func DESEDE3CBC() *Cipher { return newCipher(native.EVP_des_ede3_cbc()) }
+
+// DESEDEECB 返回 2 密钥 3DES（EDE）-ECB 分组算法描述符（8 字节分组、16 字节密钥、无 IV）。
+// 2 密钥 3DES 的有效强度约 80 位，仅用于兼容既有数据。
+//
+// DESEDEECB returns the two-key DES-EDE variant in ECB mode. 8-byte
+// blocks, 16-byte key, no IV (IVSize == 0). Two-key 3DES has roughly
+// 80 bits of security and is kept for legacy interoperability only.
+func DESEDEECB() *Cipher { return newCipher(native.EVP_des_ede_ecb()) }
+
+// DESEDECBC 返回 2 密钥 3DES（EDE）-CBC 分组算法描述符（8 字节分组、16 字节密钥、8 字节 IV）。
+// 2 密钥 3DES 的有效强度约 80 位，仅用于兼容既有数据。
+//
+// DESEDECBC returns the two-key DES-EDE variant in CBC mode. 8-byte
+// blocks, 16-byte key, 8-byte IV. Two-key 3DES has roughly 80 bits of
+// security and is kept for legacy interoperability only.
+func DESEDECBC() *Cipher { return newCipher(native.EVP_des_ede_cbc()) }
+
 // SM4CCM 返回 SM4-CCM 认证加密算法描述符（AEAD，16 字节密钥、12 字节 nonce）。
 // nonce 必须在每个 (key, message) 对中唯一；复用会同时破坏机密性与真实性。
 //

@@ -44,6 +44,24 @@ const (
 	//
 	// SM4KeySize is the SM4 key length in bytes.
 	SM4KeySize = 16
+	// DESKeySize 为单 DES 密钥长度（8 字节）。
+	//
+	// DESKeySize is the single-DES key length in bytes.
+	DESKeySize = 8
+	// DESEDEKeySize 为 2 密钥 3DES 的密钥长度（16 字节）。
+	//
+	// DESEDEKeySize is the two-key 3DES key length in bytes.
+	DESEDEKeySize = 16
+	// DESEDE3KeySize 为 3 密钥 3DES 的密钥长度（24 字节）。
+	//
+	// DESEDE3KeySize is the three-key 3DES key length in bytes.
+	DESEDE3KeySize = 24
+	// DESBlockSize 为 DES 家族的分组长度（8 字节）。与 BlockSize（16）区分：
+	// AES / SM4 为 16 字节分组。
+	//
+	// DESBlockSize is the DES-family block length in bytes (8). It is
+	// distinct from BlockSize (16), which covers AES / SM4.
+	DESBlockSize = 8
 	// SM4XTSKeySize 为 SM4-XTS 密钥长度（32 字节，两个 16 字节分量密钥）。
 	//
 	// SM4XTSKeySize is the SM4-XTS key length in bytes (two 16-byte

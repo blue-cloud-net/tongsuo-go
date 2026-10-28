@@ -7,10 +7,10 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
-// aesCipher 选择 Tongsuo 描述符（AES-128 / AES-192 / AES-256 × ECB / CBC / CTR / GCM）。
+// aesCipher 选择 Tongsuo 描述符（AES-128 / AES-192 / AES-256 × ECB / CBC / CTR / OFB / CFB / GCM）。
 //
 // aesCipher selects the Tongsuo descriptor for the given key size and
-// mode ("ecb" / "cbc" / "ctr" / "gcm").
+// mode ("ecb" / "cbc" / "ctr" / "ofb" / "cfb" / "gcm").
 func aesCipher(key []byte, mode string) (*core.Cipher, error) {
 	var c *core.Cipher
 	switch len(key) {
@@ -22,6 +22,10 @@ func aesCipher(key []byte, mode string) (*core.Cipher, error) {
 			c = core.AES128CBC()
 		case "ctr":
 			c = core.AES128CTR()
+		case "ofb":
+			c = core.AES128OFB()
+		case "cfb":
+			c = core.AES128CFB()
 		case "gcm":
 			c = core.AES128GCM()
 		}
@@ -33,6 +37,10 @@ func aesCipher(key []byte, mode string) (*core.Cipher, error) {
 			c = core.AES192CBC()
 		case "ctr":
 			c = core.AES192CTR()
+		case "ofb":
+			c = core.AES192OFB()
+		case "cfb":
+			c = core.AES192CFB()
 		case "gcm":
 			c = core.AES192GCM()
 		}
@@ -44,6 +52,10 @@ func aesCipher(key []byte, mode string) (*core.Cipher, error) {
 			c = core.AES256CBC()
 		case "ctr":
 			c = core.AES256CTR()
+		case "ofb":
+			c = core.AES256OFB()
+		case "cfb":
+			c = core.AES256CFB()
 		case "gcm":
 			c = core.AES256GCM()
 		}
@@ -62,19 +74,23 @@ func aesCipher(key []byte, mode string) (*core.Cipher, error) {
 //
 // aesCryptAll drives the core.CipherCtx pipeline.
 func aesCryptAll(key, iv, data []byte, enc bool, mode string) ([]byte, error) {
+	return aesCryptWithPad(key, iv, data, enc, mode, PaddingPKCS7)
+}
+
+// aesCryptWithPad 按填充方式驱动 AES 分组成模式（ECB / CBC）的加解密。
+// 流模式（CTR / OFB / CFB）不使用本函数。
+//
+// aesCryptWithPad drives AES ECB / CBC with the requested padding.
+// Stream modes (CTR / OFB / CFB) do not go through this helper.
+func aesCryptWithPad(key, iv, data []byte, enc bool, mode, pad string) ([]byte, error) {
 	c, err := aesCipher(key, mode)
 	if err != nil {
 		return nil, err
 	}
-	ctx, err := core.NewCipherCtx(c, key, iv, enc)
-	if err != nil {
-		return nil, err
+	if mode == "ecb" {
+		iv = nil
 	}
-	defer ctx.Close()
-	if enc {
-		return ctx.EncryptAll(data)
-	}
-	return ctx.DecryptAll(data)
+	return cryptPadded(c, key, iv, data, enc, pad, BlockSize)
 }
 
 // NewAESCipher 返回 AES 分组密码（cipher.Block，无填充）。
@@ -303,6 +319,58 @@ func DecryptAESCTR(key, iv, data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("sym: invalid iv size %d, want %d", len(iv), BlockSize)
 	}
 	return aesCryptAll(key, iv, data, false, "ctr")
+}
+
+// EncryptAESOFB 使用 AES-OFB 加密（流式模式）。
+// iv 必须为 BlockSize；OFB 加解密函数等价（流式 + XOR）。
+//
+// 安全：OFB 不提供完整性保护；同一密钥下 IV 必须唯一，否则破坏机密性。
+//
+// EncryptAESOFB encrypts with AES-OFB (stream mode).
+// iv must be BlockSize bytes; OFB encryption and decryption are the same
+// operation (stream + XOR).
+//
+// Security: OFB provides no integrity protection; under a fixed key the
+// IV must be unique per message.
+func EncryptAESOFB(key, iv, data []byte) ([]byte, error) {
+	if len(iv) != BlockSize {
+		return nil, fmt.Errorf("sym: invalid iv size %d, want %d", len(iv), BlockSize)
+	}
+	return aesCryptAll(key, iv, data, true, "ofb")
+}
+
+// DecryptAESOFB 等价 EncryptAESOFB（流式对称）。
+//
+// DecryptAESOFB is equivalent to EncryptAESOFB (OFB is symmetric).
+func DecryptAESOFB(key, iv, data []byte) ([]byte, error) {
+	return EncryptAESOFB(key, iv, data)
+}
+
+// EncryptAESCFB 使用 AES-CFB（128 位反馈，即 CFB128）加密（流式模式）。
+// iv 必须为 BlockSize。
+//
+// 安全：CFB 不提供完整性保护；同一密钥下 IV 必须唯一，否则破坏机密性。
+//
+// EncryptAESCFB encrypts with AES-CFB128 (stream mode).
+// iv must be BlockSize bytes.
+//
+// Security: CFB provides no integrity protection; under a fixed key the
+// IV must be unique per message.
+func EncryptAESCFB(key, iv, data []byte) ([]byte, error) {
+	if len(iv) != BlockSize {
+		return nil, fmt.Errorf("sym: invalid iv size %d, want %d", len(iv), BlockSize)
+	}
+	return aesCryptAll(key, iv, data, true, "cfb")
+}
+
+// DecryptAESCFB 使用 AES-CFB 解密（与 EncryptAESCFB 对称）。
+//
+// DecryptAESCFB decrypts with AES-CFB128 (the mirror of EncryptAESCFB).
+func DecryptAESCFB(key, iv, data []byte) ([]byte, error) {
+	if len(iv) != BlockSize {
+		return nil, fmt.Errorf("sym: invalid iv size %d, want %d", len(iv), BlockSize)
+	}
+	return aesCryptAll(key, iv, data, false, "cfb")
 }
 
 // EncryptAESGCM 使用 AES-GCM 认证加密（AEAD）。返回密文与认证标签。
