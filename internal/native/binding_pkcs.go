@@ -168,6 +168,22 @@ func PKCS7_get0_certificates(p7 unsafe.Pointer) unsafe.Pointer {
 	return unsafe.Pointer(C.X_PKCS7_get0_certificates((*C.PKCS7)(p7)))
 }
 
+// PKCS7_add_crl 向 SignedData 追加一个 CRL（对应 CLI `crl2pkcs7`）。
+//
+// PKCS7_add_crl appends a CRL to the SignedData container (the CLI
+// crl2pkcs7 equivalent). The caller retains ownership of crl.
+func PKCS7_add_crl(p7, crl unsafe.Pointer) bool {
+	return C.X_PKCS7_add_crl((*C.PKCS7)(p7), (*C.X509_CRL)(crl)) > 0
+}
+
+// PKCS7_get0_crls 返回 SignedData 的 CRL 栈（内部指针，勿释放）。
+//
+// PKCS7_get0_crls returns the internal CRL stack of a SignedData PKCS7.
+// The pointer is owned by p7 and must NOT be freed.
+func PKCS7_get0_crls(p7 unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X_PKCS7_get0_crls((*C.PKCS7)(p7)))
+}
+
 // I2d_PKCS7 将 PKCS7 编码为 DER。
 // I2d_PKCS7 serializes p7 to DER. Returns (bytes, true) on success or
 // (nil, false) when the encoder reports a non-positive length.

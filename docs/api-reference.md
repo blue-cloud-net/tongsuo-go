@@ -1137,12 +1137,16 @@ cgo-free 的只读 DER 解析与转储；`Parse` 对深度设上限（`maxDERDep
 - `func MarshalPEM(der []byte) []byte` — DER → PEM
 - `func Extract(data []byte) ([]*tx509.Certificate, error)` — 从 PKCS#7（DER 或 PEM）提取证书
 
+**函数｜CRL 支持（`0.6.0` 新增）**
+
+- 🆕 `func FromCRL(crls []*tx509.CRL) ([]byte, error)` — 把 CRL 列表打包为 PKCS#7 SignedData（无签名者），对应 `crl2pkcs7` 的 CRL 侧
+- 🆕 `func ExtractCRLs(data []byte) ([]*tx509.CRL, error)` — 从 PKCS#7（DER 或 PEM）提取 CRL；容器无 CRL 时返回空切片
+
 **规划中**
 
 | 符号 | 目标版本 | 前置 |
 |---|---|---|
 | 🧭 `pkcs7.Sign` / `Verify` / `Encrypt` / `Decrypt` | `0.7.0` | 新增 `PKCS7_sign` / `PKCS7_encrypt` 等绑定 |
-| 🧭 `pkcs7.FromCRL` / `ExtractCRLs`（`crl2pkcs7`） | `0.6.0` | 无需新绑定 |
 | 🧭 CMS 族（`cms` 命令） | `0.8.0` | 新增 `CMS_*` 绑定 |
 
 ---

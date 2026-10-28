@@ -55,10 +55,12 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   `openssl dgst -sm3` in both directions.
 - `internal/native`: added `EVP_aes_{128,192,256}_{ofb,cfb128}` and
   `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}`.
-- `meta`: added PUBLIC PEM splitting — `SplitPEM` (returns the
-  `[]*pem.Block` in input order, ignoring inter-block noise),
-  `SplitPEMByType`, `DecodePEMFirst` and `EncodePEM`, plus the
-  `ErrNoPEMBlock` sentinel (no PEM block is an error, not an empty slice).
+- `pkcs/pkcs7`: added CRL support — `FromCRL` packs a list of CRLs into a
+  SignedData container and `ExtractCRLs` reads them back (both the DER and
+  PEM forms are accepted, and a container without CRLs yields an empty
+  slice). Verified in both directions against `openssl crl2pkcs7`.
+- `internal/native`: added `PKCS7_add_crl`, a CRL-stack accessor and the
+  `X509_sk_X509_CRL_{num,value}` helpers.
 - `digest`: registry grew from 7 to 20 algorithms — SHA-256/192,
   SHA-512/224, SHA-512/256, SHA3-224/256/384/512, SHAKE128/256 and
   KECCAK-224/256/384/512; typed entries `SumSHA256_192` /

@@ -50,9 +50,11 @@
   `openssl dgst -sm3` 双向互验。
 - `internal/native`：新增 `EVP_aes_{128,192,256}_{ofb,cfb128}` 与
   `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}`。
-- `meta`：新增 PEM 公开切分——`SplitPEM`（按输入顺序返回
-  `[]*pem.Block`，忽略块间噪音）、`SplitPEMByType`、`DecodePEMFirst` 与
-  `EncodePEM`，以及 `ErrNoPEMBlock` 哨兵错误（无 PEM 块是错误，不是空切片）。
+- `pkcs/pkcs7`：新增 CRL 支持——`FromCRL` 把 CRL 列表打包为 SignedData，
+  `ExtractCRLs` 取回（DER 与 PEM 两种输入均支持；容器无 CRL 时返回空切片）。
+  与 `openssl crl2pkcs7` 做了双向互通验证。
+- `internal/native`：新增 `PKCS7_add_crl`、CRL 栈访问与
+  `X509_sk_X509_CRL_{num,value}` 辅助函数。
 - `digest`：注册表从 7 种扩到 20 种 —— SHA-256/192、SHA-512/224、
   SHA-512/256、SHA3-224/256/384/512、SHAKE128/256 与
   KECCAK-224/256/384/512；类型化入口 `SumSHA256_192` /

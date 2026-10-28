@@ -70,6 +70,76 @@ func MarshalPEM(der []byte) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: "PKCS7", Bytes: der})
 }
 
+// FromCRL 把一组 CRL 打包为 PKCS#7（SignedData，无签名者，仅证书吊销列表），
+// 返回 DER。对应铜锁 CLI 的 `crl2pkcs7 -nocrl -certfile ...` 中的 CRL 侧用法。
+// crls 中的 nil 条目会被静默跳过。
+//
+// FromCRL packs a list of CRLs into a PKCS#7 SignedData structure (empty
+// signer info, CRLs only) and returns the DER encoding — the CRL side of
+// the Tongsuo CLI `crl2pkcs7`. nil entries in crls are silently skipped.
+func FromCRL(crls []*tx509.CRL) ([]byte, error) {
+	p7, err := core.NewPKCS7SignedData()
+	if err != nil {
+		return nil, err
+	}
+	defer p7.Close()
+	for _, c := range crls {
+		if c == nil {
+			continue
+		}
+		der, err := c.MarshalDER()
+		if err != nil {
+			return nil, fmt.Errorf("pkcs7: crl: %w", err)
+		}
+		h, err := core.LoadCRLDER(der)
+		if err != nil {
+			return nil, fmt.Errorf("pkcs7: crl: %w", err)
+		}
+		addErr := p7.AddCRL(h)
+		_ = h.Close()
+		if addErr != nil {
+			return nil, addErr
+		}
+	}
+	return p7.MarshalDER()
+}
+
+// ExtractCRLs 从 PKCS#7（DER 或 PEM）提取 CRL。
+// 容器中没有 CRL 时返回空切片与 nil 错误。
+//
+// ExtractCRLs reads the CRLs out of a PKCS#7 container given as DER or PEM
+// (with "BEGIN PKCS7" header). A container without CRLs yields an empty
+// slice and a nil error.
+func ExtractCRLs(data []byte) ([]*tx509.CRL, error) {
+	der, err := decode(data)
+	if err != nil {
+		return nil, err
+	}
+	p7, err := core.LoadPKCS7DER(der)
+	if err != nil {
+		return nil, err
+	}
+	defer p7.Close()
+	crls, err := p7.CRLs()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*tx509.CRL, 0, len(crls))
+	for _, c := range crls {
+		raw, merr := c.MarshalDER()
+		_ = c.Close()
+		if merr != nil {
+			return nil, fmt.Errorf("pkcs7: crl: %w", merr)
+		}
+		wrapped, werr := tx509.ParseCRL(raw)
+		if werr != nil {
+			return nil, fmt.Errorf("pkcs7: crl: %w", werr)
+		}
+		out = append(out, wrapped)
+	}
+	return out, nil
+}
+
 // Extract 从 PKCS#7（DER 或 PEM）提取证书。
 // 输入支持 DER 或 PEM（含 "BEGIN PKCS7" 头）；返回按叶到根顺序排列的
 // *x509.Certificate 包装列表。

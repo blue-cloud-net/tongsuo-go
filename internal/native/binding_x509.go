@@ -1489,6 +1489,18 @@ func X509_sk_X509_value(sk unsafe.Pointer, i int) unsafe.Pointer {
 	return unsafe.Pointer(C.X_sk_X509_value(sk, C.int(i)))
 }
 
+// X509_sk_X509_CRL_num 返回 X509_CRL 栈条目数。
+// X509_sk_X509_CRL_num returns the number of entries in an X509_CRL stack.
+func X509_sk_X509_CRL_num(sk unsafe.Pointer) int {
+	return int(C.X_sk_X509_CRL_num(sk))
+}
+
+// X509_sk_X509_CRL_value 返回 X509_CRL 栈第 i 个 CRL（内部指针）。
+// X509_sk_X509_CRL_value returns the i-th CRL as an internal pointer; do NOT free.
+func X509_sk_X509_CRL_value(sk unsafe.Pointer, i int) unsafe.Pointer {
+	return unsafe.Pointer(C.X_sk_X509_CRL_value(sk, C.int(i)))
+}
+
 // X509_NAME_cmp 比较两个名字（0=相等）。
 // X509_NAME_cmp compares a and b: returns 0 for equal, non-zero otherwise.
 func X509_NAME_cmp(a, b unsafe.Pointer) int {

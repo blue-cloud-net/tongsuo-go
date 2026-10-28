@@ -725,6 +725,34 @@ int X_sk_X509_REVOKED_num(const void *sk)
     return sk_X509_REVOKED_num((const STACK_OF(X509_REVOKED) *)sk);
 }
 
+int X_sk_X509_CRL_num(const void *sk)
+{
+    return sk_X509_CRL_num((const STACK_OF(X509_CRL) *)sk);
+}
+
+void *X_sk_X509_CRL_value(const void *sk, int i)
+{
+    return sk_X509_CRL_value((const STACK_OF(X509_CRL) *)sk, i);
+}
+
+int X_PKCS7_add_crl(PKCS7 *p7, X509_CRL *crl)
+{
+    return PKCS7_add_crl(p7, crl);
+}
+
+/*
+ * 铜锁 / OpenSSL 3.x 没有 PKCS7_get0_crls 访问器，只能经 PKCS7_SIGNED 的
+ * crl 栈（`[1] IMPLICIT`）读取。仅当类型为 signed 且结构完整时返回非空。
+ */
+void *X_PKCS7_get0_crls(const PKCS7 *p7)
+{
+    if (p7 == NULL || !PKCS7_type_is_signed((PKCS7 *)p7))
+        return NULL;
+    if (p7->d.sign == NULL)
+        return NULL;
+    return (void *)p7->d.sign->crl;
+}
+
 void *X_sk_X509_REVOKED_value(const void *sk, int i)
 {
     return sk_X509_REVOKED_value((const STACK_OF(X509_REVOKED) *)sk, i);
