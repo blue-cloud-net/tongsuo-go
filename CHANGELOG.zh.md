@@ -50,9 +50,11 @@
   `openssl dgst -sm3` 双向互验。
 - `internal/native`：新增 `EVP_aes_{128,192,256}_{ofb,cfb128}` 与
   `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}`。
-- `pkcs/pkcs7`：新增 CRL 支持——`FromCRL` 把 CRL 列表打包为 SignedData，
-  `ExtractCRLs` 取回（DER 与 PEM 两种输入均支持；容器无 CRL 时返回空切片）。
-  与 `openssl crl2pkcs7` 做了双向互通验证。
+- `jwk`：新增 OKP（RFC 8037：Ed25519 / Ed448 / X25519 / X448）与对称密钥
+  （RFC 7518 oct）——`MarshalKey` 现可导出 OKP 密钥，`MarshalSymmetric`
+  导出 `Kty: "oct"`，`ToOKPKey` / `ToSymmetricKey` 负责反向转换
+  （`ToOKPKey` 会拒绝与私钥种子不一致的 `x`）。`ToPEM` / `ToPublicPEM`
+  对 OKP 改走 `asym`，因此 Ed448 / X448 同样可用。
 - `internal/native`：新增 `PKCS7_add_crl`、CRL 栈访问与
   `X509_sk_X509_CRL_{num,value}` 辅助函数。
 - `digest`：注册表从 7 种扩到 20 种 —— SHA-256/192、SHA-512/224、

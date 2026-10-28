@@ -1111,12 +1111,18 @@ cgo-free 的只读 DER 解析与转储；`Parse` 对深度设上限（`maxDERDep
 - ♻️ `func (k *Key) ToPEM() ([]byte, error)` — 转换为私钥 PEM（PKCS#8）
 - ♻️ `func (k *Key) ToPublicPEM() ([]byte, error)` — 转换为公钥 PEM（SPKI）
 
-**规划中（`0.6.0`）**
+**函数｜OKP 与对称密钥（`0.6.0` 新增）**
 
-| 符号 | 说明 |
-|---|---|
-| 🧭 OKP 支持（`Kty: "OKP"`，Ed25519 / Ed448 / X25519 / X448） | 需 `asym` 提供 `Ed25519` / `X25519` 的曲线标识 |
-| 🧭 对称密钥（`Kty: "oct"`） | 需 `sym.SymmetricKey` 的 base64url 导出 |
+- 🆕 `CrvEd25519` / `CrvEd448` / `CrvX25519` / `CrvX448` — OKP 的 JWK crv 常量
+- 🆕 `type Key` 新增 `K string`（`Kty: "oct"` 的密钥字节）；`Kty` 接受 `"OKP"` / `"oct"`
+- 🆕 `func MarshalSymmetric(k sym.SymmetricKey) (*Key, error)` — 对称密钥 → `Kty: "oct"` JWK
+- 🆕 `func (k *Key) ToOKPKey() (asym.Key, error)` — OKP JWK → `asym` 密钥（有 `d` 为私钥，否则公钥；`x` 与种子不一致时报错）
+- 🆕 `func (k *Key) ToSymmetricKey() (sym.SymmetricKey, error)` — `oct` JWK → 对称密钥（`alg` 缺省时按长度推断）
+- `MarshalKey` / `ToPEM` / `ToPublicPEM` 支持 OKP：PEM 路径走 `asym` 序列化，覆盖标准库不支持的 Ed448 / X448
+
+**规划中**
+
+_（本包已无待实现项）_
 
 **破坏性变更**
 

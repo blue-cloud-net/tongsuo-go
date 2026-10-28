@@ -55,10 +55,12 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   `openssl dgst -sm3` in both directions.
 - `internal/native`: added `EVP_aes_{128,192,256}_{ofb,cfb128}` and
   `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}`.
-- `pkcs/pkcs7`: added CRL support — `FromCRL` packs a list of CRLs into a
-  SignedData container and `ExtractCRLs` reads them back (both the DER and
-  PEM forms are accepted, and a container without CRLs yields an empty
-  slice). Verified in both directions against `openssl crl2pkcs7`.
+- `jwk`: added OKP (RFC 8037: Ed25519 / Ed448 / X25519 / X448) and
+  symmetric keys (RFC 7518 oct) — `MarshalKey` now exports OKP keys,
+  `MarshalSymmetric` exports `Kty: "oct"`, and `ToOKPKey` /
+  `ToSymmetricKey` convert back (`ToOKPKey` rejects an `x` that does not
+  match the private seed). `ToPEM` / `ToPublicPEM` route OKP through
+  `asym`, so Ed448 / X448 work too.
 - `internal/native`: added `PKCS7_add_crl`, a CRL-stack accessor and the
   `X509_sk_X509_CRL_{num,value}` helpers.
 - `digest`: registry grew from 7 to 20 algorithms — SHA-256/192,
