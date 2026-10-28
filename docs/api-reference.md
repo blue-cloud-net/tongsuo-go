@@ -387,6 +387,7 @@
 **类型与变量**
 
 - 🆕 `type Options struct { Padding string; AAD []byte; Tag []byte; Order string }` — 按名分发的参数包（`Padding` 取 `"pkcs7"` / `"zero"` / `"none"`）
+  - ⚠️ **语义变化（`0.6.0`）**：现状下 `Padding` 仅对 SM4-CBC / ECB 生效，AES-CBC / ECB **静默忽略**该参数，且无法识别的填充名静默退化为 `pkcs7`。`0.6.0` 起 `Padding` 对所有分组模式一致生效，非法组合返回 `ErrUnsupportedPadding`；各名字 × 填充的合法组合见本节末尾「规划中」的 `Supports` / `Paddings`。
 - 🆕 `var ErrUnknownAlgorithm` / 🆕 `var ErrInvalidKeyLength` / 🆕 `var ErrUnsupported` — 哨兵错误
 
 **类型与函数｜对称密钥对象（迁移自 `key`）**
@@ -404,6 +405,8 @@
 **函数｜按算法名分发（新增）**
 
 > `name` 取值形如 `"AES-128-CBC"` / `"AES-256-GCM"` / `"SM4-CBC"` / `"SM4-GCM"`，与铜锁 `enc -<name>` 命名对齐。
+> `0.6.0` 起将增补 `"AES-{128,192,256}-{OFB,CFB}"`（CFB 为全字节反馈即 CFB128）、`"DES-{ECB,CBC}"`、
+> `"DES-EDE-{ECB,CBC}"`（2 密钥）、`"DES-EDE3-{ECB,CBC}"`。
 
 - 🆕 `func Names() []string` — 返回本版已支持的「算法-模式」名
 - 🆕 `func NewCipher(name string, key []byte) (cipher.Block, error)` — 无填充分组密码（实现 `cipher.Block`）
@@ -472,8 +475,16 @@
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
-| 🧭 AES-OFB / CFB / CCM / XTS / OCB / SIV / GCM-SIV / WRAP / CBC-CTS | `0.6.0` | `EVP_aes_*_{ofb,cfb,ccm,xts,ocb,…}` |
+| 🧭 AES-OFB / CFB（CFB128）：`EncryptAESOFB` / `DecryptAESOFB` / `EncryptAESCFB` / `DecryptAESCFB` | `0.6.0` | `EVP_aes_{128,192,256}_{ofb,cfb128}` |
+| 🧭 AES-CCM / XTS / OCB / SIV / GCM-SIV / WRAP / CBC-CTS | `0.6.0` | `EVP_aes_*_{ccm,xts,ocb,siv,…}` |
+| 🧭 DES / DES-EDE（2 密钥）/ DES-EDE3 × ECB / CBC：`EncryptDES{ECB,CBC}` / `DecryptDES{ECB,CBC}` / `EncryptDESEDE{ECB,CBC}` / `DecryptDESEDE{ECB,CBC}` / `EncryptDESEDE3{ECB,CBC}` / `DecryptDESEDE3{ECB,CBC}` / `NewDESCipher` | `0.6.0` | `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}` |
+| 🧭 `func Supports(name, padding string) (bool, error)` / `func Paddings(name string) ([]string, error)` / `PaddingPKCS7` / `PaddingZero` / `PaddingNone` / `ErrUnsupportedPadding` | `0.6.0` | 无 |
 | 🧭 ZUC-128-EEA3 | `0.6.0` | `EVP_zuc` |
+
+> **DES 的实现方式与安全口径**：单 DES 在铜锁中只注册在 legacy provider，本库不加载 legacy（见
+> [roadmap.md](roadmap.md) §4 第 10 条），改以 `K‖K‖K`（三份相同密钥）驱动 DES-EDE3 实现——
+> 两者输出逐字节相同。对外仍以 `DES-ECB` / `DES-CBC` 命名，GoDoc 须写明这是等价变换。
+> DES 的 56-bit 密钥已可穷举，**仅用于兼容既有数据**，不建议用于新协议。
 
 **破坏性变更**
 
@@ -538,12 +549,14 @@
 - ♻️ `func SignPSS(priv PrivateKey, data []byte, saltLen int, hash string) ([]byte, error)` / ♻️ `func VerifyPSS(pub PublicKey, data, sig []byte, saltLen int, hash string) error` — 原 RSA 方法
 - ♻️ `func EncryptPKCS1v15(pub PublicKey, data []byte) ([]byte, error)` / ♻️ `func DecryptPKCS1v15(priv PrivateKey, data []byte) ([]byte, error)` — 原 `crypto/rsa` 同名函数
 - ♻️ `func EncryptOAEP(pub PublicKey, data []byte, hash string) ([]byte, error)` / ♻️ `func DecryptOAEP(priv PrivateKey, data []byte, hash string) ([]byte, error)` — 原 `crypto/rsa` 同名函数；**参数由 `md *core.Digest` 改为 `hash string`（修复 E1-2）**
+- `hash` 参数的取值范围（`0.6.0` 起含 `sm3`）：`""`（默认 SHA-256）/ `"sha1"` / `"sha224"` / `"sha256"` / `"sha384"` / `"sha512"` / `"sm3"`。`sm3` 适用于 PKCS#1 v1.5、PSS 与 OAEP（OAEP 的摘要同时用作 MGF1 哈希）。
 
 **函数｜SM2 类型化入口（迁移自 `crypto/sm2`）**
 
 - ♻️ `func SignWithID(priv PrivateKey, data, id []byte) ([]byte, error)` / ♻️ `func VerifyWithID(pub PublicKey, data, sig, id []byte) error` — 原 SM2 同名函数
 - ♻️ `func EncryptWithOrder(pub PublicKey, data []byte, order string) ([]byte, error)` / ♻️ `func DecryptWithOrder(priv PrivateKey, data []byte, order string) ([]byte, error)` — 原 SM2 同名函数（`order` 取 `"c1c3c2"` / `"c1c2c3"`）
 - ♻️ `func Format(ct []byte, from, to string) ([]byte, error)` — 密文格式互转（`"der"` / `"c1c3c2"` / `"c1c2c3"`）；原 `crypto/sm2.Format`
+  - 注：此函数只处理 **SM2 密文**；**签名**的 DER ↔ 裸 `r‖s` 互转为 `0.6.0` 新增的 `SignatureParts` / `SignatureDER` / `FormatSignature`（见下方「规划中」）。
 
 **方法**
 
@@ -585,6 +598,8 @@
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
+| 🧭 签名 DER ↔ 裸 `r‖s`：`func SignatureParts(sig []byte) (r, s []byte, err error)` / `func SignatureDER(r, s []byte) ([]byte, error)` / `func FormatSignature(sig []byte, from, to string, width int) ([]byte, error)` | `0.6.0` | 无（纯 Go DER 编解码） |
+| 🧭 RSA 摘要补 `sm3`：`SignPKCS1v15` / `VerifyPKCS1v15` / `SignPSS` / `VerifyPSS` / `EncryptOAEP` / `DecryptOAEP` 的 `hash` 参数接受 `"sm3"` | `0.6.0` | 无（`EVP_sm3` 已绑定） |
 | 🧭 ED25519ph / ED25519ctx / ED448ph | `0.6.0` | `EVP_DigestSignInit_ex` 的 `context-string` 选项 |
 | 🧭 ML-DSA-44 / 65 / 87 | `0.7.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
 | 🧭 SLH-DSA 12 变体 | `0.7.0` | 同上 |

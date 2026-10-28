@@ -300,6 +300,7 @@
 
 1. **24 项 ⚠️ 部分对齐**（本次口径为「仅 ❌ 缺失项」）：`asn1parse`(1)、`ciphers`(3)、`crl`(6)、`dgst`(8)、`ec`(12)、`enc`(15)、`genpkey`(20)、`genrsa`(21)、`kdf`(24)、`list`(25)、`ocsp`(28)、`pkcs12`(31)、`pkcs7`(32)、`pkcs8`(33)、`pkey`(34)、`pkeyutl`(36)、`rand`(38)、`req`(40)、`rsa`(41)、`s_client`(43)、`s_server`(44)、`skeyutl`(47)、`verify`(54)、`x509`(56)。
    > 其中 `dgst`(8) / `enc`(15) / `req`(40) 为 **P0**，`pkcs7 -sign`、`pkcs8 -topk8`、`pkeyutl -derive` 等为高频缺口；若后续要做，需另开一份同格式的 TODO。
-2. **18 项 §9「明确不实现」**：`engine`、`fipsinstall`、`rsautl`、`s_time`、`speed`、`rehash`、`nseq`、`spkac`、`passwd`、`prime`、`dsaparam`、`gendsa`、`dsa`、`dhparam`、`srp`、`cmp`、`smime`、`help`。
+2. **20 项 §9「明确不实现」**：`engine`、`fipsinstall`、`rsautl`、`s_time`、`speed`、`rehash`、`nseq`、`spkac`、`passwd`、`prime`、`dsaparam`、`gendsa`、`dsa`、`dhparam`、`srp`、`cmp`、`smime`、`help`、`ECIES`、库内加载 legacy provider。
 3. **无对应子命令的扩展算法**（本次以子命令为维度，故不含）：ML-KEM（含 5 个混合组）、ML-DSA-44/65/87、SLH-DSA 12 变体（§6.D D1–D4）。
 4. **横切项**（不单独设 API，随上述各项落地）：默认 stdin/stdout（§6.C C1/C2）、文件读写（C3）、统一 `Format` 维度（C4）、hex/base64/hexdump 助手（C5/C6）、口令来源抽象（C8）。
+5. **下游需求（非 CLI 缺口）**：DES / DES-EDE / DES-EDE3 兼容入口、`sym` 的 `Options.Padding` 支持矩阵与非法组合校验、签名 DER ↔ 裸 `r‖s` 互转、RSA 摘要补 `sm3` —— 这几项来自下游使用场景而非铜锁 CLI 的缺失子命令，故不按本文件的子命令维度展开；其排期与目标 API 形态见 [roadmap.md](roadmap.md) §2.1 与 [api-reference.md](api-reference.md) 的「规划中」小节（目标版本均为 `0.6.0`）。

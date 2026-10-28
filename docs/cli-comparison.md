@@ -16,7 +16,7 @@
 | 维度 | 结论 |
 |---|---|
 | **命令面** | 铜锁 CLI 提供 **56 个普通子命令** + **44 个伪命令**（摘要 15 + 密码 29）。本库**没有也不计划提供 CLI 程序**，因此逐命令对齐应理解为「该命令**所承载的能力**在本库有没有对应的应用级函数」。 |
-| **对称算法面** | 铜锁 provider 侧共 **177 条 cipher 条目**；本库覆盖 AES-128/256 的 4 种模式与 SM4 的 6 种模式，**差距明显**：缺 AES-192、AES 的 OFB/CFB/CCM/XTS/OCB/SIV/GCM-SIV/WRAP/CTS、SM4-CCM/XTS、ChaCha20(-Poly1305)、ZUC-128-EEA3、DES/3DES/RC4/DESX。 |
+| **对称算法面** | 铜锁 provider 侧共 **177 条 cipher 条目**；本库覆盖 AES-128/256 的 4 种模式与 SM4 的 6 种模式，**差距明显**：缺 AES-192、AES 的 OFB/CFB/CCM/XTS/OCB/SIV/GCM-SIV/WRAP/CTS、SM4-CCM/XTS、ChaCha20(-Poly1305)、ZUC-128-EEA3、DES/3DES/RC4/DESX。其中 **AES 的 OFB/CFB 与 DES / DES-EDE / DES-EDE3 已排期至 `0.6.0`**（见 [roadmap.md](roadmap.md) §2.1）；单 DES 不依赖 legacy provider（以 `K‖K‖K` 走 DES-EDE3 等价实现）。 |
 | **摘要算法面** | 铜锁提供 16 个摘要（含 SHA-224/384、SHA-512/224、SHA-512/256、SHA3 四档、SHAKE128/256、KECCAK 四档、SHA-256/192）；本库只有 **MD5 / SHA-1 / SHA-256 / SHA-512 / SM3** 五个独立包，缺 SHA-224、SHA-384、SHA3、SHAKE、KECCAK。 |
 | **MAC 与 KDF 面** | 铜锁有 **8 个 MAC** 与 **13 个 KDF**；本库只有 HMAC（6 种摘要）与 HKDF/PBKDF2——`crypto/kdf` 甚至**没有 `Argon2ID` 派生函数**（只有可用性探测），真正派生在 `key.Argon2ID`。 |
 | **非对称面** | 铜锁有 RSA / DSA / DH / EC / SM2 / Ed25519(ph/ctx) / Ed448(ph) / X25519 / X448 / ML-DSA / SLH-DSA / Paillier / EC-ElGamal 等；本库覆盖 RSA / ECDSA / SM2 / Ed25519 / Ed448 / X25519 / X448 / ECDH，**缺 DSA、DH、SM2 密钥交换（`SM2DH`）、KEM（`-encap/-decap`）**。 |
@@ -228,6 +228,8 @@
 `internal/core` 的包装类型：`Handle`、`OpError`、`Digest`、`DigestCtx`、`Cipher`、`CipherCtx`、`HmacCtx`、`PKey`、`KeyParams`、`Name`、`Certificate`、`CertificateRequest`、`Extension`、`Store`、`VerifyError`、`RevokedEntry`、`CRL`、`MemBIO`、`PKCS12`、`PKCS7`、`OCSPRequest`、`OCSPResponse`、`CertStatus`、`TLSContext`、`SSLConn`、`CipherInfo`。
 
 **未绑定/未暴露**：`SSL_SESSION_*`、`SSL_CTX_set_alpn*`、`SSL_CTX_set_tlsext_ticket_key_cb`、`SSL_CTX_set_tlsext_status*`（OCSP stapling）、`SSL_CTX_set_client_CA_list`、`CMS_*`、`OSSL_STORE_*`、`TS_*`、`EVP_MAC_*`、`EVP_PKEY_encapsulate/decapsulate`、`EVP_*_xts/ccm/ocb/wrap`、除 HKDF/PBKDF2 之外的 `EVP_KDF` 算法、`EVP_aes_192_*`、`EVP_aes_*_ofb/cfb`、`EVP_chacha20*`、`EVP_sm4_ccm/xts`、`ZUC`、SM9、Paillier/EC-ElGamal、ML-KEM/ML-DSA/SLH-DSA、白盒 SM4。
+
+> 上表为**采集时点**状态（`0.3.0` 重构前）。`0.5.0` 已补齐 `EVP_aes_192_*`、`EVP_chacha20*`、`EVP_sm4_ccm/xts` 与 `EVP_MAC_*` 全家族；`0.6.0` 计划再补 `EVP_aes_{128,192,256}_{ofb,cfb128}`、`EVP_des_ede3_{ecb,cbc}`、`EVP_des_ede_{ecb,cbc}`（均属 default provider，**无需 legacy**）。逐项归属见 [roadmap.md](roadmap.md) §3。
 
 ---
 
@@ -489,7 +491,7 @@
 
 | 分组 | 项 |
 |---|---|
-| 对称 | AES-192；AES OFB/CFB/CCM/XTS/OCB/SIV/GCM-SIV/WRAP/CBC-CTS；SM4-CCM/XTS；ChaCha20(-Poly1305)；ZUC-128-EEA3 |
+| 对称 | AES-192；AES OFB/CFB/CCM/XTS/OCB/SIV/GCM-SIV/WRAP/CBC-CTS；SM4-CCM/XTS；ChaCha20(-Poly1305)；ZUC-128-EEA3；**DES / DES-EDE（2 密钥）/ DES-EDE3 × ECB / CBC（单 DES 以 `K‖K‖K` 等价实现，仅兼容存量）** |
 | 摘要 | SHA-224、SHA-384、SHA-512/224、SHA-512/256、SHA3-224/256/384/512、SHAKE128/256、KECCAK-224/256/384/512、SHA-256/192 |
 | MAC | CMAC、GMAC、KMAC-128/256、SipHash、Poly1305、EIA3 |
 | KDF | scrypt、SSKDF、TLS1-PRF、TLS13-KDF、X9.42、KBKDF、KRB5KDF、PKCS12KDF、SSHKDF、HMAC-DRBG-KDF；`crypto/kdf` 补 `Argon2ID` 派生函数 |
@@ -552,6 +554,8 @@
 | 13 | provider / 属性查询（§6.C C13） | provider 固定为 default，无多 provider 语义 |
 | 14 | 压缩（§6.C C7） | 本机构建 `ZLIB`/`BROTLI`/`ZSTD` 均 disabled |
 | 15 | SM9（§6.D D20） | **铜锁本版本不提供**，无对应 C API |
+| 16 | ECIES（ECDH + KDF + AEAD 的组合封装） | 「ECIES」无唯一容器标准（SEC1 §5.1 / IEEE 1363a / ISO 18033-2 / X9.63 各不相同），自造容器无外部事实可对拍；标准化的替代是 RFC 9180 HPKE（铜锁 8.5 起提供 `OSSL_HPKE_*`）与 JWE `ECDH-ES`（RFC 7518）。国密场景用 `asym.Encrypt`（SM2 加密）。**本版不做（不写死）**，重开条件见 [roadmap.md](roadmap.md) §4 第 9 条 |
+| 17 | 在库内加载 legacy provider（单 DES / RC4 / DESX） | 会全局启用 RC4 / RC5 / DESX 等弱算法，与本库安全取向相反；单 DES 已由 `K‖K‖K` 等价实现覆盖，legacy 仅作测试基准。见 [roadmap.md](roadmap.md) §4 第 10 条 |
 
 ---
 
@@ -618,10 +622,10 @@
 | `SM4-CCM` / `SM4-XTS` | 无 | ❌ |
 | `AES-128/256-CBC/ECB/CTR/GCM` | `crypto/aes.EncryptCBC` / `EncryptECB` / `EncryptCTR` / `EncryptGCM` | ✅ |
 | `AES-192-*` | 无（密钥长度仅 16/32） | ❌ |
-| `AES-*-OFB/CFB/CCM/XTS/OCB/SIV/GCM-SIV/WRAP/CBC-CTS` | 无 | ❌ |
-| `ChaCha20` / `ChaCha20-Poly1305` | 无 | ❌ |
-| `ZUC-128-EEA3` | 无 | ❌ |
-| `DES` / `DES-EDE` / `DES-EDE3` / `DESX` / `RC4` / `RC4-40` | 无 | ❌ |
+| `AES-*-OFB/CFB/CCM/XTS/OCB/SIV/GCM-SIV/WRAP/CBC-CTS` | 无 | ❌（OFB/CFB 已排期 `0.6.0`） |
+| `ChaCha20` / `ChaCha20-Poly1305` | 无 | ❌（`0.5.0` 已补） |
+| `ZUC-128-EEA3` | 无 | ❌（`0.6.0` 排期） |
+| `DES` / `DES-EDE` / `DES-EDE3` / `DESX` / `RC4` / `RC4-40` | 无 | ❌（DES / DES-EDE / DES-EDE3 已排期 `0.6.0`；DESX / RC4 / RC4-40 不做） |
 | `base64` | 无 | ❌ |
 | `zlib` / `brotli` / `zstd` | 无（本机构建均 disabled） | ❌ |
 
