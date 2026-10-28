@@ -47,6 +47,32 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 - 📦 **容器与格式**：PKCS#7（`pkcs/pkcs7`）、PKCS#12（`pkcs/pkcs12`）、JWK（`jwk`）、ASN.1 DER 查看（`asn1`）、.NET 风格 RSA XML（`xml/rsa`）
 - 🧪 **标准向量测试**：每个算法包覆盖国标标准向量、往返、边界与错误路径，并与 openssl CLI 双向交叉验证
 
+## 范围与非目标
+
+`tongsuo-go` 是铜锁原生库的**封装层**：不包含铜锁本体，铜锁的安装是构建前置条件
+（见[环境要求](#环境要求)）。
+
+### 不提供的能力
+
+- **ECIES** —— 「ECIES」这一名称没有唯一的容器格式：SEC1 §5.1 只定义了 KDF 与 XOR 步骤，
+  而 IEEE 1363a、ISO 18033-2、ANSI X9.63 各自规定了不同的头部与 KDF，自造容器无法与
+  openssl CLI 逐字节对拍。国密场景请用 `asym.Encrypt`（SM2 加密，输出
+  C1‖C3‖C2 / C1‖C2‖C3 / DER）。标准化的替代路径是 RFC 9180 **HPKE**（铜锁 8.5 起原生提供）
+  与 JWE `ECDH-ES`（RFC 7518）。
+- **加载 legacy provider** —— 本库从不加载它：那会让 RC4 / RC5 / DESX 在整个进程内可用。
+  单 DES 改以 `K‖K‖K` 走 DES-EDE3 等价实现（输出逐字节相同，且无 provider 副作用）。
+- **在新协议中使用 DES / 3DES** —— 56-bit DES 已被穷举，这些入口仅用于读写既有数据。
+
+### `0.6.0` 计划提供（尚未发布）
+
+- `sym`：AES-OFB / CFB（CFB128），以及 DES / DES-EDE（2 密钥）/ DES-EDE3 的 ECB / CBC
+- `sym`：公布 `Options.Padding` 支持矩阵并提供 `Supports` / `Paddings` 查询——非法组合改为
+  显式报错，不再静默退化为 PKCS#7
+- `asym`：签名在 DER 与裸 `r‖s` 之间互转
+- `asym`：RSA 摘要接受 `sm3`（PKCS#1 v1.5 / PSS / OAEP）
+
+完整规划与「不做」清单（含理由与重开条件）见 [docs/roadmap.md](docs/roadmap.md) §2 与 §4。
+
 ## 使用教程
 
 ### 环境要求

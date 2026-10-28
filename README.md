@@ -49,6 +49,36 @@ interfaces and a CLI-style by-name entry point; see the
 - 📦 **Containers and formats**: PKCS#7 (`pkcs/pkcs7`), PKCS#12 (`pkcs/pkcs12`), JWK (`jwk`), ASN.1 DER viewer (`asn1`), .NET-style RSA XML (`xml/rsa`)
 - 🧪 **Standard-vector tests**: every algorithm package covers national-standard vectors, round-trips, edge cases and error paths, with bidirectional cross-validation against the openssl CLI
 
+## Scope and non-goals
+
+`tongsuo-go` is a **wrapper** around the Tongsuo native library: it does not bundle Tongsuo
+itself, and the Tongsuo installation is a build prerequisite (see [Requirements](#requirements)).
+
+### Not provided
+
+- **ECIES** — the term has no single container format: SEC1 §5.1 defines only the KDF and the
+  XOR step, while IEEE 1363a, ISO 18033-2 and ANSI X9.63 each specify a different header and
+  KDF, so a self-invented container could never be cross-validated against the openssl CLI.
+  For Chinese commercial cryptography use `asym.Encrypt` (SM2 encryption, producing
+  C1‖C3‖C2 / C1‖C2‖C3 / DER). The standardized alternatives are RFC 9180 **HPKE** (native in
+  Tongsuo 8.5+) and JWE `ECDH-ES` (RFC 7518).
+- **Loading the legacy provider** — the library never loads it, because doing so would enable
+  RC4 / RC5 / DESX process-wide. Single DES is instead provided as a `K‖K‖K` DES-EDE3
+  equivalent (byte-identical output, no provider side effects).
+- **DES / 3DES for new protocols** — 56-bit DES is brute-forceable; these entries exist only
+  to read and write existing data.
+
+### Planned for `0.6.0` (not yet released)
+
+- `sym`: AES-OFB / CFB (CFB128), DES / DES-EDE (2-key) / DES-EDE3 in ECB / CBC
+- `sym`: an `Options.Padding` support matrix plus `Supports` / `Paddings` queries — invalid
+  combinations now fail loudly instead of silently falling back to PKCS#7
+- `asym`: signature conversion between DER and the raw `r‖s` form
+- `asym`: RSA digests accept `sm3` (PKCS#1 v1.5 / PSS / OAEP)
+
+The full plan, and the complete "not doing" list with the rationale and the conditions for
+revisiting each item, live in [docs/roadmap.md](docs/roadmap.md) §2 and §4.
+
 ## Getting Started
 
 ### Requirements
