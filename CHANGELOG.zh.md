@@ -52,6 +52,18 @@
   `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}`。
 - `internal/core`：新增 `AES{128,192,256}{OFB,CFB}` 与
   `DESEDE3{ECB,CBC}` / `DESEDE{ECB,CBC}` 描述符。
+- `digest`：注册表从 7 种扩到 20 种 —— SHA-256/192、SHA-512/224、
+  SHA-512/256、SHA3-224/256/384/512、SHAKE128/256 与
+  KECCAK-224/256/384/512；类型化入口 `SumSHA256_192` /
+  `SumSHA512_224` / `SumSHA512_256` / `SumSHA3_*` / `SumKECCAK*`（含对应
+  `New*`），以及需显式输出长度的 `SumSHAKE128` / `SumSHAKE256`。
+  新增 `Available(name)` 运行时能力探测与 `ErrUnsupported` /
+  `ErrXOFNeedsLength` 哨兵错误。
+- `internal/native`：新增 `EVP_sha512_224/256`、`EVP_sha3_*`、
+  `EVP_shake128/256`、`EVP_MD_fetch` / `EVP_MD_free` 与
+  `X_EVP_DigestFinalXOF`。
+- `internal/core`：新增对应描述符与 `Digest.XOFOneShot`；KECCAK-* 与
+  SHA-256/192 经 `EVP_MD_fetch` 取得（8.4 无静态取函数）并在进程内缓存。
 
 ### 行为变化与重构
 

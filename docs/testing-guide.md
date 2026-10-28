@@ -64,6 +64,17 @@ go test -fuzz FuzzRoundTrip ./sym
 
 ### 3.1 `digest`
 
+**`0.6.0` 扩展摘要（`digest/extended_test.go` / `digest/digest_tongsuocli_test.go`）**
+
+| 测试用例 | 描述 |
+|---------|------|
+| 标准向量 | SHA-512/224 / SHA-512/256（FIPS 180-4）、SHA3-224/256/384/512（FIPS 202）、KECCAK-256（原始 Keccak 空串向量），按名与类型化两条路径均逐字节比对 |
+| SHAKE 显式长度 | `Sum("SHAKE128", …)` / `New("SHAKE128")` 必须返回 `ErrXOFNeedsLength`；`SumSHAKE128` 需 0 长度报错 |
+| XOF 前缀性质 | 同一输入的 64 字节输出必须以 16 字节输出为前缀 |
+| 长度与分组 | `Size` / `BlockSize` 与导出的 `*Size` / `*BlockSize` 常量一致 |
+| 运行时探测 | `Available` 对 8.4 缺失的 KECCAK-* / SHA-256/192 返回 false，相应测试 `t.Skip` |
+| CLI 对拍 | 14 种定长算法与 `openssl dgst -<name>` 逐字节一致；SHAKE 用 `-xoflen N` 对拍 |
+
 合并后的 `digest` 同时服务 SM3 / MD5 / SHA1 / SHA224 / SHA256 / SHA384 / SHA512，
 下列用例需**逐算法**覆盖：
 

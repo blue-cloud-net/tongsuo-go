@@ -258,6 +258,7 @@ tongsuo-go/
 ├── digest/                    # 【原语】摘要
 │   ├── digest.go              # 按名分发：Names / New / Sum / SumReader / Size / BlockSize
 │   ├── hashes.go              # 类型化：NewSM3 / SumSM3 / NewSHA256 / SumSHA256 …
+│   ├── extended.go            # 0.6.0 扩展摘要：SHA3 / SHAKE / KECCAK / SHA-512-224·256 / Available
 │   └── forms.go               # 形态入口：SumSource / SumFile / SumTo / SumReaderTo
 ├── mac/                       # 【原语】消息认证码
 │   ├── mac.go                 # 按名分发（EVP_MAC 14 种）：Names / New / Sum / SumReader

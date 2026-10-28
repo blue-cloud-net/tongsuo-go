@@ -31,7 +31,7 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 - 🔑 **SM3 哈希算法**（GB/T 32905-2016，`digest`）：`hash.Hash` 接口 + 定长 `SumSM3` + 按名 `Sum("SM3", d)`
 - 🔒 **SM4 对称加密**（GB/T 32907，`sym`）：ECB / CBC / CTR / OFB / CFB / GCM（AEAD），以及 SM4-CCM 与 SM4-XTS
 - 🧮 **消息认证码**（`mac`）：14 种 `EVP_MAC` 算法 —— HMAC-SM3 / MD5 / SHA1 / SHA224 / SHA256 / SHA384 / SHA512、CMAC、GMAC、KMAC-128/256、SipHash、Poly1305、EIA3
-- 🔗 **更多哈希**（`digest`）：MD5、SHA1、SHA224、SHA256、SHA384、SHA512（`hash.Hash` + `Sum`）
+- 🔗 **更多哈希**（`digest`）：MD5、SHA1、SHA224、SHA256、SHA384、SHA512、SHA-256/192、SHA-512/224、SHA-512/256、SHA3-224/256/384/512、KECCAK-224/256/384/512 与 SHAKE128/256（`hash.Hash` + `Sum`，SHAKE 的 `SumSHAKE*` 需显式输出长度）
 - 🔄 **AES 对称加密**（`sym`）：128 / 192 / 256 位的 ECB / CBC / CTR / OFB / CFB / GCM（`cipher.Block` + `cipher.AEAD`）
 - 🗝️ **DES / 3DES 兼容**（`sym`）：DES / DES-EDE（2 密钥）/ DES-EDE3 的 ECB / CBC —— 仅用于兼容存量数据。单 DES 以 `K‖K‖K` 走 DES-EDE3 实现，全程不加载 legacy provider
 - 🧾 **填充矩阵**（`sym`）：`Supports(name, padding)` / `Paddings(name)` 在不提交数据的前提下回答「该算法 × 该填充是否合法」；非法组合返回 `ErrUnsupportedPadding`，不再静默退化

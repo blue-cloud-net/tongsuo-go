@@ -33,7 +33,7 @@ interfaces and a CLI-style by-name entry point; see the
 - 🔑 **SM3 hash algorithm** (GB/T 32905-2016, `digest`): `hash.Hash` interface + fixed-size `SumSM3` + by-name `Sum("SM3", d)`
 - 🔒 **SM4 symmetric cipher** (GB/T 32907, `sym`): ECB / CBC / CTR / OFB / CFB / GCM (AEAD), plus SM4-CCM and SM4-XTS
 - 🧮 **Message authentication codes** (`mac`): 14 `EVP_MAC` algorithms — HMAC-SM3 / MD5 / SHA1 / SHA224 / SHA256 / SHA384 / SHA512, CMAC, GMAC, KMAC-128/256, SipHash, Poly1305, EIA3
-- 🔗 **More hashes** (`digest`): MD5, SHA1, SHA224, SHA256, SHA384, SHA512 (`hash.Hash` + `Sum`)
+- 🔗 **More hashes** (`digest`): MD5, SHA1, SHA224, SHA256, SHA384, SHA512, SHA-256/192, SHA-512/224, SHA-512/256, SHA3-224/256/384/512, KECCAK-224/256/384/512 and SHAKE128/256 (`hash.Hash` + `Sum`, with `SumSHAKE*` taking an explicit output length)
 - 🔄 **AES symmetric cipher** (`sym`): 128 / 192 / 256-bit ECB / CBC / CTR / OFB / CFB / GCM (`cipher.Block` + `cipher.AEAD`)
 - 🗝️ **DES / 3DES compatibility** (`sym`): DES / DES-EDE (two-key) / DES-EDE3 in ECB / CBC — for legacy data only. Single DES is realised as DES-EDE3 with `K‖K‖K`, so no legacy provider is ever loaded
 - 🧾 **Padding matrix** (`sym`): `Supports(name, padding)` / `Paddings(name)` answer "is this algorithm × padding combination valid?" without submitting data; invalid combinations return `ErrUnsupportedPadding` instead of silently falling back

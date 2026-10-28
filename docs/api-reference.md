@@ -214,14 +214,22 @@
 - 🆕 `func SumReaderTo(name string, r io.Reader, sink *meta.Sink) error` — 直接持
   有 `io.Reader` 时的等价入口
 
-**规划中（`0.6.0`）**
+**函数｜扩展摘要（`0.6.0` 新增）**
 
-| 符号 | 说明 | 前置（需新增 `internal/native` 绑定） |
-|---|---|---|
-| 🧭 `SHA512_224` / `SHA512_256` | 截断变体（按名 + 类型化入口） | `EVP_sha512_224` / `EVP_sha512_256` |
-| 🧭 `SHA3_224` / `SHA3_256` / `SHA3_384` / `SHA3_512` | SHA-3 四档 | `EVP_sha3_*` |
-| 🧭 `SHAKE128` / `SHAKE256` | 可扩展输出（需输出长度参数） | `EVP_shake128` / `EVP_shake256` |
-| 🧭 `KECCAK224` / `KECCAK256` / `KECCAK384` / `KECCAK512`、`SHA256_192` | 铜锁扩展摘要 | `EVP_keccak_*` 等 |
+注册表从 7 项扩到 20 项（顺序稳定）：`SM3`、`MD5`、`SHA1`、`SHA224`、`SHA256`、
+`SHA384`、`SHA512`、`SHA256-192`、`SHA512-224`、`SHA512-256`、`SHA3-224/256/384/512`、
+`SHAKE128/256`、`KECCAK-224/256/384/512`。
+
+- 🆕 尺寸常量：`SHA256_192Size`、`SHA512_224Size`、`SHA512_256Size`、`SHA3_*Size` /
+  `SHA3_*BlockSize`、`KECCAK*Size` / `KECCAK*BlockSize`、`SHAKE128Size` / `SHAKE256Size`
+- 🆕 类型化入口：`SumSHA256_192` / `NewSHA256_192`、`SumSHA512_224` / `NewSHA512_224`、
+  `SumSHA512_256` / `NewSHA512_256`、`SumSHA3_224/256/384/512` 与对应 `New*`、
+  `SumKECCAK224/256/384/512` 与对应 `New*`
+- 🆕 `func SumSHAKE128(data []byte, outLen int) ([]byte, error)` / 🆕 `func SumSHAKE256(data []byte, outLen int) ([]byte, error)`
+  — XOF 必须显式给出输出长度；`Sum("SHAKE128", …)` / `New("SHAKE128")` 返回 `ErrXOFNeedsLength`
+- 🆕 `func Available(name string) bool` — 运行时能力探测；典型差异：铜锁 8.4.0（OpenSSL 3.0.3 底座）
+  不提供 `KECCAK-*` 与 `SHA256-192`（走 `EVP_MD_fetch`），此时对应入口返回 `ErrUnsupported`
+- 🆕 `var ErrUnsupported` / 🆕 `var ErrXOFNeedsLength` — 哨兵错误
 
 **破坏性变更**
 

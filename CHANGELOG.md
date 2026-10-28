@@ -57,6 +57,19 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}`.
 - `internal/core`: added `AES{128,192,256}{OFB,CFB}` and
   `DESEDE3{ECB,CBC}` / `DESEDE{ECB,CBC}` descriptors.
+- `digest`: registry grew from 7 to 20 algorithms — SHA-256/192,
+  SHA-512/224, SHA-512/256, SHA3-224/256/384/512, SHAKE128/256 and
+  KECCAK-224/256/384/512; typed entries `SumSHA256_192` /
+  `SumSHA512_224` / `SumSHA512_256` / `SumSHA3_*` / `SumKECCAK*` (plus the
+  matching `New*`), and `SumSHAKE128` / `SumSHAKE256`, which take an
+  explicit output length. Added `Available(name)` for runtime probing, and
+  `ErrUnsupported` / `ErrXOFNeedsLength` sentinels.
+- `internal/native`: added `EVP_sha512_224/256`, `EVP_sha3_*`,
+  `EVP_shake128/256`, `EVP_MD_fetch` / `EVP_MD_free` and
+  `X_EVP_DigestFinalXOF`.
+- `internal/core`: added the matching descriptors plus `Digest.XOFOneShot`;
+  KECCAK-* and SHA-256/192 are fetched through `EVP_MD_fetch` (no static
+  accessor on 8.4) and cached for the process lifetime.
 
 ### Changed
 
