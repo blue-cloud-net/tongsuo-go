@@ -120,7 +120,7 @@ func ExampleSumReader() {
 // version.
 func ExampleNames() {
 	fmt.Println(strings.Join(digest.Names(), ","))
-	// Output: SM3,MD5,SHA1,SHA224,SHA256,SHA384,SHA512
+	// Output: SM3,MD5,SHA1,SHA224,SHA256,SHA384,SHA512,SHA256-192,SHA512-224,SHA512-256,SHA3-224,SHA3-256,SHA3-384,SHA3-512,SHAKE128,SHAKE256,KECCAK-224,KECCAK-256,KECCAK-384,KECCAK-512
 }
 
 // ExampleSize 演示按名查询摘要长度，并演示未知算法名的错误判定。

@@ -12,6 +12,11 @@ int X_EVP_Digest(const EVP_MD *md, const unsigned char *data, size_t count,
     return EVP_Digest(data, count, md_out, size, md, NULL);
 }
 
+int X_EVP_DigestFinalXOF(EVP_MD_CTX *ctx, unsigned char *out, size_t outlen)
+{
+    return EVP_DigestFinalXOF(ctx, out, outlen);
+}
+
 EVP_PKEY *X_EVP_PKEY_Q_keygen_sm2(void)
 {
     return EVP_PKEY_Q_keygen(NULL, NULL, "SM2");

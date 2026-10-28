@@ -50,6 +50,89 @@ func EVP_sha512() unsafe.Pointer {
 	return unsafe.Pointer(C.EVP_sha512())
 }
 
+// EVP_sha512_224 返回 SHA-512/224 摘要算法描述符。
+// EVP_sha512_224 returns the SHA-512/224 message digest descriptor (static singleton, do not free).
+func EVP_sha512_224() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_sha512_224())
+}
+
+// EVP_sha512_256 返回 SHA-512/256 摘要算法描述符。
+// EVP_sha512_256 returns the SHA-512/256 message digest descriptor (static singleton, do not free).
+func EVP_sha512_256() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_sha512_256())
+}
+
+// EVP_sha3_224 返回 SHA3-224 摘要算法描述符。
+// EVP_sha3_224 returns the SHA3-224 message digest descriptor (static singleton, do not free).
+func EVP_sha3_224() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_sha3_224())
+}
+
+// EVP_sha3_256 返回 SHA3-256 摘要算法描述符。
+// EVP_sha3_256 returns the SHA3-256 message digest descriptor (static singleton, do not free).
+func EVP_sha3_256() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_sha3_256())
+}
+
+// EVP_sha3_384 返回 SHA3-384 摘要算法描述符。
+// EVP_sha3_384 returns the SHA3-384 message digest descriptor (static singleton, do not free).
+func EVP_sha3_384() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_sha3_384())
+}
+
+// EVP_sha3_512 返回 SHA3-512 摘要算法描述符。
+// EVP_sha3_512 returns the SHA3-512 message digest descriptor (static singleton, do not free).
+func EVP_sha3_512() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_sha3_512())
+}
+
+// EVP_shake128 返回 SHAKE128 可扩展输出摘要描述符（输出长度需显式给出）。
+// EVP_shake128 returns the SHAKE128 XOF descriptor (the output length must be supplied explicitly).
+func EVP_shake128() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_shake128())
+}
+
+// EVP_shake256 返回 SHAKE256 可扩展输出摘要描述符（输出长度需显式给出）。
+// EVP_shake256 returns the SHAKE256 XOF descriptor (the output length must be supplied explicitly).
+func EVP_shake256() unsafe.Pointer {
+	return unsafe.Pointer(C.EVP_shake256())
+}
+
+// EVP_MD_Fetch 按 provider 算法名取摘要描述符（如 "KECCAK-256"、"SHA2-256-192"）。
+// 取不到时返回 nil（错误已入队列）；返回的描述符由调用方用 EVP_MD_Free 释放。
+//
+// EVP_MD_Fetch fetches a digest descriptor by provider algorithm name
+// (for example "KECCAK-256" or "SHA2-256-192"). It returns nil when the
+// algorithm is unavailable (the error is queued); the caller must release
+// the descriptor with EVP_MD_Free.
+func EVP_MD_Fetch(name string) unsafe.Pointer {
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+	return unsafe.Pointer(C.EVP_MD_fetch(nil, cname, nil))
+}
+
+// EVP_MD_Free 释放由 EVP_MD_Fetch 取得的摘要描述符。
+// EVP_MD_Free releases a digest descriptor obtained from EVP_MD_Fetch.
+func EVP_MD_Free(md unsafe.Pointer) {
+	if md == nil {
+		return
+	}
+	C.EVP_MD_free((*C.EVP_MD)(md))
+}
+
+// EVP_DigestFinalXOF 以指定长度完成可扩展输出摘要（SHAKE128 / SHAKE256）。
+// out 的长度即请求的输出长度；成功返回 true。
+//
+// EVP_DigestFinalXOF finalises an extendable-output digest (SHAKE128 /
+// SHAKE256) with the requested length: len(out) is the output length. It
+// returns true on success.
+func EVP_DigestFinalXOF(ctx unsafe.Pointer, out []byte) bool {
+	if len(out) == 0 {
+		return false
+	}
+	return C.X_EVP_DigestFinalXOF((*C.EVP_MD_CTX)(ctx), (*C.uchar)(unsafe.Pointer(&out[0])), C.size_t(len(out))) == 1
+}
+
 // EVP_MD_get_size 返回摘要算法输出长度（字节）。
 // EVP_MD_get_size returns the output size of md in bytes (e.g. 32 for SHA-256).
 func EVP_MD_get_size(md unsafe.Pointer) int {

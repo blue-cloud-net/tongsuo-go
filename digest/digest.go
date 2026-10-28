@@ -89,15 +89,33 @@ const (
 // errors.Is(err, ErrUnknownAlgorithm).
 var ErrUnknownAlgorithm = errors.New("digest: unknown algorithm")
 
-// algo 描述一个已支持的摘要算法：名称、尺寸、分组长度与核心层工厂函数。
+// ErrUnsupported 表示该算法在当前铜锁构建中不可用（例如 8.4.0 底座不提供
+// KECCAK-* / SHA-256/192）。
+//
+// ErrUnsupported reports that the algorithm is unavailable in the current
+// Tongsuo build (for example KECCAK-* / SHA-256/192 on a 8.4.0 base).
+var ErrUnsupported = errors.New("digest: unsupported algorithm")
+
+// ErrXOFNeedsLength 表示对可扩展输出函数（SHAKE128 / SHAKE256）使用了固定长度的
+// 入口；请改用 SumSHAKE128 / SumSHAKE256 并显式给出输出长度。
+//
+// ErrXOFNeedsLength reports that a fixed-length entry was used for an
+// extendable-output function (SHAKE128 / SHAKE256); use SumSHAKE128 /
+// SumSHAKE256 with an explicit length instead.
+var ErrXOFNeedsLength = errors.New("digest: XOF requires an explicit output length")
+
+// algo 描述一个已支持的摘要算法：名称、尺寸、分组长度、核心层工厂函数与是否为
+// 可扩展输出（XOF）。
 //
 // algo describes one supported digest algorithm: its name, digest size,
-// block size and the core-layer descriptor factory.
+// block size, the core-layer descriptor factory and whether it is an
+// extendable-output function (XOF).
 type algo struct {
 	name  string
 	size  int
 	block int
 	desc  func() *core.Digest
+	xof   bool
 }
 
 // algos 是算法注册表；切片顺序即 Names() 的返回顺序（稳定）。
@@ -105,13 +123,26 @@ type algo struct {
 // algos is the algorithm registry; the slice order defines the stable
 // order returned by Names().
 var algos = []algo{
-	{"SM3", SM3Size, SM3BlockSize, core.SM3},
-	{"MD5", MD5Size, MD5BlockSize, core.MD5},
-	{"SHA1", SHA1Size, SHA1BlockSize, core.SHA1},
-	{"SHA224", SHA224Size, SHA224BlockSize, core.SHA224},
-	{"SHA256", SHA256Size, SHA256BlockSize, core.SHA256},
-	{"SHA384", SHA384Size, SHA384BlockSize, core.SHA384},
-	{"SHA512", SHA512Size, SHA512BlockSize, core.SHA512},
+	{"SM3", SM3Size, SM3BlockSize, core.SM3, false},
+	{"MD5", MD5Size, MD5BlockSize, core.MD5, false},
+	{"SHA1", SHA1Size, SHA1BlockSize, core.SHA1, false},
+	{"SHA224", SHA224Size, SHA224BlockSize, core.SHA224, false},
+	{"SHA256", SHA256Size, SHA256BlockSize, core.SHA256, false},
+	{"SHA384", SHA384Size, SHA384BlockSize, core.SHA384, false},
+	{"SHA512", SHA512Size, SHA512BlockSize, core.SHA512, false},
+	{"SHA256-192", SHA256_192Size, SHA256_192BlockSize, core.SHA256_192, false},
+	{"SHA512-224", SHA512_224Size, SHA512_224BlockSize, core.SHA512_224, false},
+	{"SHA512-256", SHA512_256Size, SHA512_256BlockSize, core.SHA512_256, false},
+	{"SHA3-224", SHA3_224Size, SHA3_224BlockSize, core.SHA3_224, false},
+	{"SHA3-256", SHA3_256Size, SHA3_256BlockSize, core.SHA3_256, false},
+	{"SHA3-384", SHA3_384Size, SHA3_384BlockSize, core.SHA3_384, false},
+	{"SHA3-512", SHA3_512Size, SHA3_512BlockSize, core.SHA3_512, false},
+	{"SHAKE128", SHAKE128Size, SHAKE128BlockSize, core.SHAKE128, true},
+	{"SHAKE256", SHAKE256Size, SHAKE256BlockSize, core.SHAKE256, true},
+	{"KECCAK-224", KECCAK224Size, KECCAK224BlockSize, core.KECCAK224, false},
+	{"KECCAK-256", KECCAK256Size, KECCAK256BlockSize, core.KECCAK256, false},
+	{"KECCAK-384", KECCAK384Size, KECCAK384BlockSize, core.KECCAK384, false},
+	{"KECCAK-512", KECCAK512Size, KECCAK512BlockSize, core.KECCAK512, false},
 }
 
 // lookup 按算法名查找注册项；名称大小写不敏感。
@@ -176,6 +207,12 @@ func New(name string) (hash.Hash, error) {
 	if err != nil {
 		return nil, err
 	}
+	if a.xof {
+		return nil, fmt.Errorf("digest: %q: %w: use SumSHAKE128/SumSHAKE256 with an explicit length", name, ErrXOFNeedsLength)
+	}
+	if d := a.desc(); d == nil {
+		return nil, fmt.Errorf("digest: %q: %w", name, ErrUnsupported)
+	}
 	return extdigest.NewHash(a.desc(), a.size, a.block), nil
 }
 
@@ -190,7 +227,14 @@ func Sum(name string, data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	sum, err := a.desc().OneShot(data)
+	if a.xof {
+		return nil, fmt.Errorf("digest: %q: %w: use SumSHAKE128/SumSHAKE256 with an explicit length", name, ErrXOFNeedsLength)
+	}
+	d := a.desc()
+	if d == nil {
+		return nil, fmt.Errorf("digest: %q: %w", name, ErrUnsupported)
+	}
+	sum, err := d.OneShot(data)
 	if err != nil {
 		return nil, fmt.Errorf("digest: %s: one-shot: %w", a.name, err)
 	}

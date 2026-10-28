@@ -27,6 +27,12 @@ int X_EVP_Digest(const EVP_MD *md, const unsigned char *data, size_t count,
                  unsigned char *md_out, unsigned int *size);
 
 /*
+ * X_EVP_DigestFinalXOF：以指定长度完成可扩展输出摘要（SHAKE128 / SHAKE256）。
+ * 输出长度由调用方通过 outlen 给出，而非固定为摘要默认长度。
+ */
+int X_EVP_DigestFinalXOF(EVP_MD_CTX *ctx, unsigned char *out, size_t outlen);
+
+/*
  * X_EVP_PKEY_Q_keygen_sm2：生成 SM2 密钥对。
  * EVP_PKEY_Q_keygen 为可变参数函数，经 C 包装以规避 cgo 限制。
  */
