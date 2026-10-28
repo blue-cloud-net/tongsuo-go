@@ -50,8 +50,9 @@
   `openssl dgst -sm3` 双向互验。
 - `internal/native`：新增 `EVP_aes_{128,192,256}_{ofb,cfb128}` 与
   `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}`。
-- `internal/core`：新增 `AES{128,192,256}{OFB,CFB}` 与
-  `DESEDE3{ECB,CBC}` / `DESEDE{ECB,CBC}` 描述符。
+- `meta`：新增 PEM 公开切分——`SplitPEM`（按输入顺序返回
+  `[]*pem.Block`，忽略块间噪音）、`SplitPEMByType`、`DecodePEMFirst` 与
+  `EncodePEM`，以及 `ErrNoPEMBlock` 哨兵错误（无 PEM 块是错误，不是空切片）。
 - `digest`：注册表从 7 种扩到 20 种 —— SHA-256/192、SHA-512/224、
   SHA-512/256、SHA3-224/256/384/512、SHAKE128/256 与
   KECCAK-224/256/384/512；类型化入口 `SumSHA256_192` /

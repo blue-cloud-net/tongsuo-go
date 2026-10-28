@@ -55,8 +55,10 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   `openssl dgst -sm3` in both directions.
 - `internal/native`: added `EVP_aes_{128,192,256}_{ofb,cfb128}` and
   `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}`.
-- `internal/core`: added `AES{128,192,256}{OFB,CFB}` and
-  `DESEDE3{ECB,CBC}` / `DESEDE{ECB,CBC}` descriptors.
+- `meta`: added PUBLIC PEM splitting — `SplitPEM` (returns the
+  `[]*pem.Block` in input order, ignoring inter-block noise),
+  `SplitPEMByType`, `DecodePEMFirst` and `EncodePEM`, plus the
+  `ErrNoPEMBlock` sentinel (no PEM block is an error, not an empty slice).
 - `digest`: registry grew from 7 to 20 algorithms — SHA-256/192,
   SHA-512/224, SHA-512/256, SHA3-224/256/384/512, SHAKE128/256 and
   KECCAK-224/256/384/512; typed entries `SumSHA256_192` /
