@@ -2,6 +2,7 @@ package x509
 
 import (
 	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/asym"
@@ -11,15 +12,23 @@ import (
 //
 // 零值不可直接使用：Serial、NotBefore、NotAfter 必须显式给出，
 // 否则 IssueCertificateFromRequest 返回错误。
+// 0.7.0 起可用 SerialBigInt 替代 Serial，两者不得同时设置。
 //
 // IssueOptions controls how a CA issues a certificate from a CSR.
 //
 // The zero value is not usable: Serial, NotBefore and NotAfter must be set
 // explicitly, otherwise IssueCertificateFromRequest returns an error.
+// Since 0.7.0 SerialBigInt may replace Serial; setting both is rejected.
 type IssueOptions struct {
-	// Serial 是新证书的序列号；必填。
+	// SerialBigInt 为完整序列号；非 nil 时 Serial 必须为零，调用时复制。
 	//
-	// Serial is the serial number of the issued certificate; required.
+	// SerialBigInt supplies a full serial copied on use; Serial must then be zero.
+	SerialBigInt *big.Int
+	// Serial 是新证书的序列号；必填。
+	// 使用 SerialBigInt 时本字段必须为零。
+	//
+	// Serial is the serial number of the issued certificate; required unless
+	// SerialBigInt is set, in which case Serial must be zero.
 	Serial int64
 
 	// NotBefore / NotAfter 是新证书的有效期窗口；必填且 NotAfter 必须晚于 NotBefore。
@@ -162,7 +171,14 @@ func IssueCertificateFromRequest(req *CertificateRequest, issuer *Certificate,
 	if err := cert.SetVersion(2); err != nil { // v3
 		return nil, err
 	}
-	if err := cert.SetSerial(opts.Serial); err != nil {
+	serial := opts.SerialBigInt
+	if serial != nil && opts.Serial != 0 {
+		return nil, fmt.Errorf("x509: conflicting serial options")
+	}
+	if serial == nil {
+		serial = big.NewInt(opts.Serial)
+	}
+	if err := cert.SetSerialBigInt(serial); err != nil {
 		return nil, err
 	}
 	if err := cert.SetIssuer(issuer.SubjectName()); err != nil {

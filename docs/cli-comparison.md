@@ -17,6 +17,11 @@
 > **包名口径**：本文件的「本库现状」列使用**重构前**包名（`crypto/*` / `key` / `ocsp`）——那是采集时的真实状态。重构后的 16 包名与逐符号签名见 [api-reference.md](api-reference.md)，迁移对照见 [api-reference.md](api-reference.md) §0.1。
 > 公开面收敛（§6.E 的 12 项内部类型泄露 E1）已在 `0.3.0` 全部落实；剩余的 E2 / E3 见 [roadmap.md](roadmap.md) §2.6。
 
+> **0.7.0 实施更新**：可靠性与 PKCS 容器已落地，包括复杂 P12 两入口无损改密、
+> PKCS#7 Sign/Verify/Encrypt/Decrypt、完整序列号/CRL、DER 扩展、信任路径和压缩 SM2
+> 输入。签验/信封对拍使用 smime；下文历史 pkcs7 -sign/-encrypt 写法不是实际 CLI
+> 选项。当前接口与算法边界见公开 API 清单，CMS 仍归 0.10.0。
+
 ---
 
 ## 1. 摘要与结论

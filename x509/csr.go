@@ -136,6 +136,9 @@ func (c *Certificate) ToCertificateRequest(priv asym.PrivateKey) (ret *Certifica
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) SetSubject(n *Name) error {
+	if r == nil || r.req == nil {
+		return fmt.Errorf("x509: request closed")
+	}
 	if n == nil {
 		return fmt.Errorf("x509: nil subject name")
 	}
@@ -150,6 +153,9 @@ func (r *CertificateRequest) SetSubject(n *Name) error {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) SetPublicKey(pub asym.PublicKey) error {
+	if r == nil || r.req == nil {
+		return fmt.Errorf("x509: request closed")
+	}
 	k, err := corePublicKey(pub)
 	if err != nil {
 		return err
@@ -166,6 +172,9 @@ func (r *CertificateRequest) SetPublicKey(pub asym.PublicKey) error {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) Sign(priv asym.PrivateKey) error {
+	if r == nil || r.req == nil {
+		return fmt.Errorf("x509: request closed")
+	}
 	k, err := corePrivateKey(priv)
 	if err != nil {
 		return err
@@ -211,6 +220,9 @@ func LoadCertificateRequestDER(der []byte) (*CertificateRequest, error) {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) MarshalPEM() ([]byte, error) {
+	if r == nil || r.req == nil {
+		return nil, fmt.Errorf("x509: request closed")
+	}
 	return r.req.MarshalPEM()
 }
 
@@ -222,6 +234,9 @@ func (r *CertificateRequest) MarshalPEM() ([]byte, error) {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) Verify() error {
+	if r == nil || r.req == nil {
+		return fmt.Errorf("x509: request closed")
+	}
 	return r.req.Verify()
 }
 
@@ -242,6 +257,9 @@ func (r *CertificateRequest) Verify() error {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) PublicKey() (asym.PublicKey, error) {
+	if r == nil || r.req == nil {
+		return nil, fmt.Errorf("x509: request closed")
+	}
 	k, err := r.req.PublicKey()
 	if err != nil {
 		return nil, err
@@ -254,22 +272,40 @@ func (r *CertificateRequest) PublicKey() (asym.PublicKey, error) {
 // Signature 返回 CSR 的原始签名字节（DER 编码）；CSR 无效或未签名返回 nil。
 //
 // Signature returns the CSR's raw signature bytes (DER-encoded), or nil when the CSR is invalid or has no signature.
-func (r *CertificateRequest) Signature() []byte { return r.req.Signature() }
+func (r *CertificateRequest) Signature() []byte {
+	if r == nil || r.req == nil {
+		return nil
+	}
+	return r.req.Signature()
+}
 
 // SignatureAlgorithm 返回 CSR 签名算法的短名（如 "SM2-SM3"、"RSA-SHA256"、"ecdsa-with-SHA256"）；不可识别返回 ""。
 //
 // SignatureAlgorithm returns the signature algorithm short name (for example "SM2-SM3", "RSA-SHA256", or "ecdsa-with-SHA256"), or "" when the algorithm is not recognized.
-func (r *CertificateRequest) SignatureAlgorithm() string { return r.req.SignatureAlgorithm() }
+func (r *CertificateRequest) SignatureAlgorithm() string {
+	if r == nil || r.req == nil {
+		return ""
+	}
+	return r.req.SignatureAlgorithm()
+}
 
 // SignatureAlgorithmOID 返回 CSR 签名算法的 OID 点分文本（如 "1.2.156.10197.1.501"、"1.2.840.113549.1.1.11"）；不可读取返回 ""。
 //
 // SignatureAlgorithmOID returns the signature algorithm OID as a dotted string (for example "1.2.156.10197.1.501" for SM2-with-SM3 or "1.2.840.113549.1.1.11" for sha256WithRSAEncryption), or "" when the OID cannot be read.
-func (r *CertificateRequest) SignatureAlgorithmOID() string { return r.req.SignatureAlgorithmOID() }
+func (r *CertificateRequest) SignatureAlgorithmOID() string {
+	if r == nil || r.req == nil {
+		return ""
+	}
+	return r.req.SignatureAlgorithmOID()
+}
 
 // SubjectName 返回 CSR 主题的完整名字（含全部 RDN 条目）。
 //
 // SubjectName returns the full CSR subject name containing all RDN entries; inspect it with Entries, Get, or String.
 func (r *CertificateRequest) SubjectName() *Name {
+	if r == nil || r.req == nil {
+		return nil
+	}
 	return &Name{name: r.req.SubjectName()}
 }
 
@@ -277,6 +313,9 @@ func (r *CertificateRequest) SubjectName() *Name {
 //
 // SubjectEntries returns every RDN entry of the CSR subject in the order they appear.
 func (r *CertificateRequest) SubjectEntries() []NameEntry {
+	if r == nil || r.req == nil {
+		return nil
+	}
 	n := r.req.SubjectName()
 	if n == nil {
 		return nil
@@ -288,6 +327,9 @@ func (r *CertificateRequest) SubjectEntries() []NameEntry {
 //
 // SubjectText returns the CSR subject's full RDN sequence as a single-line string.
 func (r *CertificateRequest) SubjectText() string {
+	if r == nil || r.req == nil {
+		return ""
+	}
 	n := r.req.SubjectName()
 	if n == nil {
 		return ""
@@ -303,6 +345,9 @@ func (r *CertificateRequest) SubjectText() string {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) SetChallengePassword(pwd string) error {
+	if r == nil || r.req == nil {
+		return fmt.Errorf("x509: request closed")
+	}
 	return r.req.SetChallengePassword(pwd)
 }
 
@@ -310,6 +355,9 @@ func (r *CertificateRequest) SetChallengePassword(pwd string) error {
 //
 // ChallengePassword returns the CSR's challengePassword attribute, or an empty string when it has not been set.
 func (r *CertificateRequest) ChallengePassword() string {
+	if r == nil || r.req == nil {
+		return ""
+	}
 	return r.req.ChallengePassword()
 }
 
@@ -321,6 +369,9 @@ func (r *CertificateRequest) ChallengePassword() string {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
+	if r == nil || r.req == nil {
+		return fmt.Errorf("x509: request closed")
+	}
 	cexts := make([]core.Extension, 0, len(exts))
 	for _, e := range exts {
 		cexts = append(cexts, core.Extension{Nid: e.Nid, Value: e.Value})
@@ -353,6 +404,9 @@ func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) AddExtension(nid int, value string) error {
+	if r == nil || r.req == nil {
+		return fmt.Errorf("x509: request closed")
+	}
 	return r.req.AddExtension(nid, value)
 }
 
@@ -373,6 +427,9 @@ func (r *CertificateRequest) AddExtension(nid int, value string) error {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) AddExtensionByName(name, value string) error {
+	if r == nil || r.req == nil {
+		return fmt.Errorf("x509: request closed")
+	}
 	return r.req.AddExtensionByName(name, value)
 }
 
@@ -388,6 +445,9 @@ func (r *CertificateRequest) AddExtensionByName(name, value string) error {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) AddKeyUsage(value string) error {
+	if r == nil || r.req == nil {
+		return fmt.Errorf("x509: request closed")
+	}
 	return r.req.AddKeyUsage(value)
 }
 
@@ -403,6 +463,9 @@ func (r *CertificateRequest) AddKeyUsage(value string) error {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) AddExtendedKeyUsage(value string) error {
+	if r == nil || r.req == nil {
+		return fmt.Errorf("x509: request closed")
+	}
 	return r.req.AddExtendedKeyUsage(value)
 }
 
@@ -418,6 +481,9 @@ func (r *CertificateRequest) AddExtendedKeyUsage(value string) error {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) AddBasicConstraints(isCA bool) error {
+	if r == nil || r.req == nil {
+		return fmt.Errorf("x509: request closed")
+	}
 	return r.req.AddBasicConstraints(isCA)
 }
 
@@ -436,6 +502,9 @@ func (r *CertificateRequest) AddBasicConstraints(isCA bool) error {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) AddSubjectAltName(value string) error {
+	if r == nil || r.req == nil {
+		return fmt.Errorf("x509: request closed")
+	}
 	return r.req.AddSubjectAltName(value)
 }
 
@@ -443,6 +512,9 @@ func (r *CertificateRequest) AddSubjectAltName(value string) error {
 //
 // Extensions returns the extensions included in the CSR via the extensionRequest attribute.
 func (r *CertificateRequest) Extensions() []Extension {
+	if r == nil || r.req == nil {
+		return nil
+	}
 	return convertExtensions(r.req.Extensions())
 }
 
@@ -454,5 +526,20 @@ func (r *CertificateRequest) Extensions() []Extension {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) MarshalDER() ([]byte, error) {
+	if r == nil || r.req == nil {
+		return nil, fmt.Errorf("x509: request closed")
+	}
 	return r.req.MarshalDER()
+}
+
+// Close 释放 CSR；nil、零值和重复调用幂等，关闭后可失败操作返回错误。
+// 调用方须先结束使用，不能与其他操作并发调用。
+//
+// Close releases a CSR idempotently for nil, zero and closed requests.
+// Failable operations subsequently return errors; finish all uses before closing.
+func (r *CertificateRequest) Close() error {
+	if r == nil || r.req == nil {
+		return nil
+	}
+	return r.req.Close()
 }

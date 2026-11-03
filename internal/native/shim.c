@@ -1720,3 +1720,45 @@ int X_EVP_KDF_kbkdf_r_supported(void)
     return 0;
 #endif
 }
+
+/* Complete INTEGER conversion never passes through C long. */
+static ASN1_INTEGER *X_integer_from_hex(const char *hex) {
+ BIGNUM *bn = NULL; ASN1_INTEGER *ai = NULL;
+ if (BN_hex2bn(&bn, hex) > 0) ai = BN_to_ASN1_INTEGER(bn, NULL);
+ BN_free(bn); return ai;
+}
+int X_X509_set_serial_hex(X509 *cert, const char *hex) {
+ ASN1_INTEGER *ai = X_integer_from_hex(hex);
+ int ok = ai != NULL && X509_set_serialNumber(cert, ai);
+ ASN1_INTEGER_free(ai); return ok;
+}
+int X_X509_REVOKED_set_serial_hex(X509_REVOKED *rev, const char *hex) {
+ ASN1_INTEGER *ai = X_integer_from_hex(hex);
+ int ok = ai != NULL && X509_REVOKED_set_serialNumber(rev, ai);
+ ASN1_INTEGER_free(ai); return ok;
+}
+char *X_X509_REVOKED_serial_hex(const X509_REVOKED *rev) {
+ BIGNUM *bn = ASN1_INTEGER_to_BN(X509_REVOKED_get0_serialNumber(rev), NULL);
+ char *hex = bn == NULL ? NULL : BN_bn2hex(bn);
+ BN_free(bn); return hex;
+}
+int X_X509_add_ext_der(X509 *cert, const char *oid, int critical, const unsigned char *der, int len) {
+ ASN1_OBJECT *obj = OBJ_txt2obj(oid, 1);
+ ASN1_OCTET_STRING *value = ASN1_OCTET_STRING_new();
+ X509_EXTENSION *ext = NULL; int ok = 0;
+ if (obj != NULL && value != NULL && ASN1_OCTET_STRING_set(value, der, len))
+  ext = X509_EXTENSION_create_by_OBJ(NULL, obj, critical, value);
+ if (ext != NULL) ok = X509_add_ext(cert, ext, -1);
+ X509_EXTENSION_free(ext); ASN1_OCTET_STRING_free(value); ASN1_OBJECT_free(obj);
+ return ok;
+}
+int X_SM2_expand_point(const unsigned char *in, size_t len, unsigned char *out) {
+ EC_GROUP *group = EC_GROUP_new_by_curve_name(NID_sm2);
+ EC_POINT *point = group == NULL ? NULL : EC_POINT_new(group);
+ int ok = point != NULL && len == 33 && (in[0] == 2 || in[0] == 3)
+  && EC_POINT_oct2point(group, point, in, len, NULL)
+  && EC_POINT_is_at_infinity(group, point) == 0
+  && EC_POINT_is_on_curve(group, point, NULL) == 1
+  && EC_POINT_point2oct(group, point, POINT_CONVERSION_UNCOMPRESSED, out, 65, NULL) == 65;
+ EC_POINT_free(point); EC_GROUP_free(group); return ok;
+}

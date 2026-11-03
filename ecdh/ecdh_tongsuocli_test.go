@@ -129,7 +129,12 @@ func TestCLIParsesLibraryPEM(t *testing.T) {
 			if err != nil {
 				t.Fatalf("MarshalPEM: %v", err)
 			}
-			pubPEM, err := priv.Public().MarshalPEM()
+			derivedPub, err := priv.Public()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer derivedPub.Close()
+			pubPEM, err := derivedPub.MarshalPEM()
 			if err != nil {
 				t.Fatalf("Public MarshalPEM: %v", err)
 			}

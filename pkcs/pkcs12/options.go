@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/blue-cloud-net/tongsuo-go/asym"
+	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
 // Options 配置 PKCS#12 编码与改密；ReadPass 用于输入，WritePass 用于输出。
@@ -75,20 +75,23 @@ func ParseWithOptions(data []byte, opts *Options) (*Bundle, error) {
 
 // ChangePasswordWithOptions 使用独立读写口令重新编码容器，并应用 PBE 与迭代参数。
 // FriendlyName 为新名称；失败返回错误。
+// 0.7.0 起保留复杂 safe/bag、顺序与全部属性；空名称保留原名，多密钥非空改名报错。
 //
 // ChangePasswordWithOptions rewrites a container using separate read/write passwords and PBE settings.
-// FriendlyName supplies the new name; failures return errors.
+// FriendlyName supplies a new name; empty preserves names and multiple-key renaming fails.
+// Complex safes/bags, ordering and all other attributes are preserved; failures return errors.
 func ChangePasswordWithOptions(data []byte, opts *Options) ([]byte, error) {
-	b, err := ParseWithOptions(data, opts)
+	o, err := normalizeOptions(opts)
 	if err != nil {
 		return nil, err
 	}
-	defer asym.Close(b.PrivateKey)
-	if b.Certificate != nil {
-		defer b.Certificate.Close()
+	p, err := core.LoadPKCS12DER(data)
+	if err != nil {
+		return nil, err
 	}
-	for _, c := range b.CACerts {
-		defer c.Close()
+	defer p.Close()
+	if err := p.ReencryptPassword(o.ReadPass, o.WritePass, o.PBE, o.Iterations, o.FriendlyName); err != nil {
+		return nil, err
 	}
-	return PackWithOptions(b.Certificate, b.PrivateKey, b.CACerts, opts)
+	return p.MarshalDER()
 }

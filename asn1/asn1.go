@@ -104,6 +104,30 @@ const maxDERDepth = 128
 // nesting budget for constructed types; once it reaches 0 and further
 // descent is needed, "asn1: DER nesting too deep" is returned.
 func parseNode(der []byte, base, depth int) (*Node, int, error) {
+	node, used, err := parseHeader(der, base)
+	if err != nil {
+		return nil, 0, err
+	}
+	start, length, value := base, node.Length, node.Value
+	off, constructed := used-length, node.Constructed
+	if constructed {
+		if depth <= 0 {
+			return nil, 0, fmt.Errorf("asn1: DER nesting too deep at offset %d", start)
+		}
+		cur := off
+		for cur < off+length {
+			child, used, err := parseNode(value[cur-off:], start+cur, depth-1)
+			if err != nil {
+				return nil, 0, err
+			}
+			node.Children = append(node.Children, child)
+			cur += used
+		}
+	}
+	return node, off + length, nil // used 为相对 der 子切片的消费字节数
+}
+
+func parseHeader(der []byte, base int) (*Node, int, error) {
 	if len(der) == 0 {
 		return nil, 0, fmt.Errorf("asn1: truncated")
 	}
@@ -132,7 +156,7 @@ func parseNode(der []byte, base, depth int) (*Node, int, error) {
 		return nil, 0, err
 	}
 	off += nLen
-	if length < 0 || off+length > len(der) {
+	if length < 0 || length > len(der)-off {
 		return nil, 0, fmt.Errorf("asn1: bad length %d at offset %d", length, start)
 	}
 	value := der[off : off+length]
@@ -140,21 +164,7 @@ func parseNode(der []byte, base, depth int) (*Node, int, error) {
 		Offset: start, Tag: tagByte, Class: class, Number: number,
 		Constructed: constructed, Length: length, Value: value,
 	}
-	if constructed {
-		if depth <= 0 {
-			return nil, 0, fmt.Errorf("asn1: DER nesting too deep at offset %d", start)
-		}
-		cur := off
-		for cur < off+length {
-			child, used, err := parseNode(value[cur-off:], start+cur, depth-1)
-			if err != nil {
-				return nil, 0, err
-			}
-			node.Children = append(node.Children, child)
-			cur += used
-		}
-	}
-	return node, off + length, nil // used 为相对 der 子切片的消费字节数
+	return node, off + length, nil
 }
 
 // parseLength 解析长度字节，返回长度与消耗字节数。

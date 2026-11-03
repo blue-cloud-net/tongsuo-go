@@ -494,9 +494,10 @@ go test -fuzz FuzzRoundTrip ./sym
 `go test -tags tongsuocli -count=1 ./...`，涉及句柄生命周期的本版还需 `go test -race ./...`。
 
 
-## 后续版本验收要求（规划，尚未增加测试）
+## 0.7.0 验收与后续版本要求
 
-以下是交付门槛，不表示当前已有相应 API 或测试；版本归属见 [roadmap.md](roadmap.md) §2。
+0.7.0 已实现并增加以下测试；0.8.0 及以后的条目仍为未来门槛，版本归属见
+[roadmap.md](roadmap.md) §2。
 
 ### `0.7.0` — 可靠性、数据完整性与 PKCS 容器
 
@@ -544,6 +545,20 @@ WithOptions 应用 PBE/迭代后仍保留内容与属性；空 FriendlyName 不�
   SM2 签验/加解密及其他不支持组合明确报错，不以 Skip 掩盖。CLI 使用 smime 进行
   双向互通，证书袋/CRL 提取仍使用 pkcs7。
 - 保持铜锁 8.4.0 发布基线，完成 build/vet/单元测试/CLI 对拍及生命周期 race 检查。
+
+#### 0.7.0 实际验证与夹具
+
+8.4.0 环境中已通过默认单元测试、tongsuocli 全量互操作、race、build/vet 及 Linux
+static 标签构建。新增测试集中于 limits/lifecycle/reliability、SM2 压缩输入、RSA
+签名字节串和 PKCS operations/complex/lossless 测试文件；FuzzPKCS7EnvelopeRoundTrip
+验证随机二进制内容的信封往返，FuzzParseWithLimits 验证 DER 限额；随机产物验证内容与结构，
+不修改标准向量或放宽断言。
+
+复杂 P12 单元测试使用 `pkcs/pkcs12/testdata/complex.c`，在临时目录编译/生成多密钥、
+嵌套、CRL、secretBag、自定义属性夹具，解密后比较每项内容及属性的摘要/名称/顺序。
+编译器沿用 cgo 所需的 `cc`，头文件和库取 `TONGSUO_HOME`；不依赖 openssl CLI。
+CLI 测试额外检查外部 PBES2/AES 与 3DES 的算法、迭代及 MAC 参数保留。原生 P12
+改密成功/错误路径另经临时 ASan/LSan 驱动检查，无原生内存错误或泄漏。
 
 ### `0.8.0` 至 `1.0.0`
 
