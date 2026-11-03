@@ -550,7 +550,8 @@ WithOptions 应用 PBE/迭代后仍保留内容与属性；空 FriendlyName 不�
 
 8.4.0 环境中已通过默认单元测试、tongsuocli 全量互操作、race、build/vet 及 Linux
 static 标签构建。新增测试集中于 limits/lifecycle/reliability、SM2 压缩输入、RSA
-签名字节串和 PKCS operations/complex/lossless 测试文件；随机产物验证内容与结构，
+签名字节串和 PKCS operations/complex/lossless 测试文件；FuzzPKCS7EnvelopeRoundTrip
+验证随机二进制内容的信封往返，FuzzParseWithLimits 验证 DER 限额；随机产物验证内容与结构，
 不修改标准向量或放宽断言。
 
 复杂 P12 单元测试使用 `pkcs/pkcs12/testdata/complex.c`，在临时目录编译/生成多密钥、

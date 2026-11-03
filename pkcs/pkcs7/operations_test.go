@@ -12,7 +12,7 @@ import (
 
 var operationSerial atomic.Int64
 
-func operationIdentity(t *testing.T, alg string) (*x509.Certificate, asym.PrivateKey) {
+func operationIdentity(t testing.TB, alg string) (*x509.Certificate, asym.PrivateKey) {
 	t.Helper()
 	var key asym.PrivateKey
 	var err error
