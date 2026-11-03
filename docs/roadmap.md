@@ -45,7 +45,7 @@
 |------|----------------|----------|-------------|
 | 生命周期 | ECDH 公私钥与 CSR 公开幂等 `Close()`；关闭 ECDH 副本不影响原 `asym` 密钥，关闭后可失败操作返回错误 | I-09 / I-15 | 复用 core 句柄关闭与 `EVP_PKEY_dup` |
 | `asn1` | `ParseWithLimits` 与可识别的深度/节点数超限错误；保留 `Parse` 的固定 128 层保护和既有行为 | I-16 | 无（纯 Go） |
-| `x509` 序列号 | 新增 `RevokedEntry.SerialHex`、`CRLBuilder.RevokeSerialHex`；旧 `Serial int64` 保留为受限兼容视图。现有 `Revoke(cert)` 改走完整序列号，不得再经 `int64` 截断；读写至少覆盖 20 字节 | I-18 / I-20 | 完整 ASN.1 INTEGER 读写 |
+| `x509` 序列号与 CRL | 新增 `Certificate.SerialBigInt` / `SetSerialBigInt`、`IssueOptions.SerialBigInt`、`CRLBuilder.RevokeSerial(*big.Int, …)`、`RevokedEntry.SerialBigInt`，保留规划的 `SerialHex` / `RevokeSerialHex` 适配。旧 int64 入口保留为受限兼容接口；证书设置、CSR 签发、`Revoke(cert)`、CRL 读写、`IsRevoked` / `RevocationCheck` 均贯通完整值，覆盖 RFC 5280 的 20 octets 边界 | I-18 / I-20、I-23 / I-24 | 完整 ASN.1 INTEGER 读写与比较 |
 | `x509` 扩展 | 公开按 OID 写入 DER 的入口，支持已知和自定义 OID；`Data` 保留原始扩展值，不还原任意配置串，不放开签名后修改 | I-19 | 按 OID 构造 DER 扩展 |
 | `x509` 信任路径 | `Store.SetDefaultPaths`、`LoadLocations`；默认路径属于铜锁配置，不等同于各平台原生信任库，不隐式信任输入链的自签根 | I-17 | 默认路径与 CA 文件/目录加载 |
 | `asym` SM2 | 经 native → core → API 解码、校验压缩 C1，支持转换与解密；保持既有输出形式，不新增压缩输出选项 | I-10 | EC 点解码与校验 |
@@ -56,6 +56,13 @@ RSA 的签名格式符合 [RFC 8017 §8](https://www.rfc-editor.org/rfc/rfc8017.
 不改成 SM2/ECDSA 的 `SEQUENCE { r, s }`。`0.6.0` 的 PKCS#12
 `ChangePasswordWithOptions` 是解析后重打包，不代表已经完成 I-22 的无损改密。
 实现必须明确报告不支持的容器/算法，不能静默丢失 bag 或属性。
+
+**CRL 与序列号需求的取舍**：直接按序列号吊销与完整
+大整数接口均属 SDK 的基础数据封装，接受并合入现有序列号工作项，作为同版验收条件。
+不能只新增 int64 的 `RevokeSerial` 后把完整匹配推迟；序列号归属、授权与持久化仍由
+调用方负责，数据库化 CA 工作流继续按 §4 暂缓。新增写入口校验正整数及长度，读取外部
+值不得静默截断；兼容策略、错误路径与可变 `big.Int` 的复制语义见
+[需求台账 §3](requirements.md#3-crl-与完整序列号职责判断与排期)。
 
 ### 2.2 `0.8.0` — PKCS#7 容器
 
@@ -132,7 +139,7 @@ RSA 的签名格式符合 [RFC 8017 §8](https://www.rfc-editor.org/rfc/rfc8017.
 
 | 家族 | 需要的 C 接口或扩展 | 服务对象 | 目标版本 |
 |------|--------------------|----------|----------|
-| 完整序列号 | ASN.1 INTEGER / BIGNUM 无损转换、`X509_REVOKED_set_serialNumber`，复用已有证书序列号读取 | `x509` CRL 读写 | `0.7.0` |
+| 完整序列号 | ASN.1 INTEGER / BIGNUM 无损转换、`X509_set_serialNumber` / `X509_REVOKED_set_serialNumber` 的完整值路径及无损比较；复用已有证书 hex 读取，不经 C long/int64 中转 | `x509` 证书/CSR 签发、CRL 读写与吊销匹配 | `0.7.0` |
 | DER 扩展 | `OBJ_txt2obj`、`X509_EXTENSION_create_by_OBJ` 与对应释放；复用已有扩展提交路径 | `x509` | `0.7.0` |
 | 信任路径 | `X509_STORE_set_default_paths` / `X509_STORE_load_locations` | `x509.Store` | `0.7.0` |
 | SM2 压缩点 | `EC_POINT_oct2point`、`EC_POINT_is_on_curve` / `EC_POINT_is_at_infinity`、仿射坐标读取 | `asym` 经 `core` 校验与展开 | `0.7.0` |

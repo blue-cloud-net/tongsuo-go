@@ -1028,14 +1028,26 @@
 | 符号 | 目标版本 | 前置 |
 |---|---|---|
 | 🧭 `func (r *CertificateRequest) Close() error` | `0.7.0` | 复用 core Close；幂等，关闭后可失败操作返回错误 |
+| 🧭 `func (c *Certificate) SerialBigInt() (*big.Int, error)` | `0.7.0` | 无损读取；结果为独立对象，已关闭/缺失序列号及转换失败返回错误，不以 int64 溢出值代替 |
+| 🧭 `func (c *Certificate) SetSerialBigInt(serial *big.Int) error` | `0.7.0` | 完整整数写入；复制输入，校验正数与长度，仍禁止签名后修改 |
+| 🧭 `IssueOptions.SerialBigInt *big.Int` | `0.7.0` | CSR 签发无损序列号；非 nil 且旧 Serial 非零时报冲突，nil 保留旧路径，调用时复制 |
 | 🧭 `RevokedEntry.SerialHex string` | `0.7.0` | 无损读取完整 ASN.1 INTEGER；旧 `Serial int64` 保留为受限兼容视图 |
-| 🧭 `func (b *CRLBuilder) RevokeSerialHex(serial string, at time.Time, reason RevocationReason) error` | `0.7.0` | 完整序列号写入；现有 `Revoke(cert)` 同步摆脱 int64 中转 |
+| 🧭 `func (e RevokedEntry) SerialBigInt() (*big.Int, error)` | `0.7.0` | 从完整 SerialHex 取得独立大整数；缺失或无效时明确报错，不回退到受限 Serial 字段 |
+| 🧭 `func (b *CRLBuilder) RevokeSerial(serial *big.Int, at time.Time, reason RevocationReason) error` | `0.7.0` | 无需被吊销证书；复制输入并校验序列号、原因码与构建器状态，归属与授权由调用方确认 |
+| 🧭 `func (b *CRLBuilder) RevokeSerialHex(serial string, at time.Time, reason RevocationReason) error` | `0.7.0` | hex 适配入口，复用 RevokeSerial 的完整值与校验路径 |
+| 🧭 现有 `Revoke(cert)` / `IsRevoked(cert)` / `RevocationCheck` 使用完整序列号 | `0.7.0` | 不经 int64 中转，按整数值匹配，保持各入口既有 issuer/信任边界；见 I-23/I-24 |
 | 🧭 `func (c *Certificate) AddExtensionDER(oid string, critical bool, der []byte) error` | `0.7.0` | 按已知/自定义 OID 写入原始扩展值，保持签名后不可变 |
 | 🧭 `func (s *Store) SetDefaultPaths() error` | `0.7.0` | `X509_STORE_set_default_paths`；铜锁默认路径不等于平台原生信任库 |
 | 🧭 `func (s *Store) LoadLocations(caFile, caDir string) error` | `0.7.0` | `X509_STORE_load_locations`；不隐式信任输入链根 |
 | 🧭 带扩展的分步证书签发示例与入口说明 | `0.7.0` | 复用 `NewCertificate` → Set/Add → Sign，不新增重复便捷入口 |
 | 🧭 CRL 配置式签发与应用级组合入口 | `1.0.0` | 复用现有内存构建流程，与公开面收敛一并设计 |
 | 🧭 `ca` 式数据库化签发 / 吊销 / 续期 | 暂缓，不承诺版本 | 文件系统状态机不列入容器/协议里程碑 |
+
+完整序列号入口为 I-23/I-24 与 I-18/I-20 的同一工作项，均尚未实现；`big.Int`
+来自标准库 `math/big`。现有 `CreateCertificate` / `CreateSelfSigned` 的 int64 签名保留，
+大整数签发使用 `NewCertificate` → `SetSerialBigInt` → Set/Add → `Sign`；
+不为每个便捷函数平行扩充所有序列号表示。输入边界与兼容性验收见
+[功能需求记录 §3](requirements.md#3-crl-与完整序列号职责判断与排期)。
 
 **破坏性变更**
 

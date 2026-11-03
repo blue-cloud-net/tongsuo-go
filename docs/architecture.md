@@ -404,8 +404,11 @@ tongsuo-go/
 - `0.7.0` 的 ECDH/CSR 释放复用 core 句柄；EC 点解码、完整序列号、按 OID 的
   DER 扩展、信任路径和 PKCS#12 safe/bag 操作仍按 API → core → native 单向调用。
   `asn1` 限额保持纯 Go；所有新公开签名不得暴露 internal 或原生类型。
-- `RevokedEntry.SerialHex` 与 `RevokeSerialHex` 贯通完整序列号，现有证书吊销路径
-  不再经 int64 中转；旧 Serial 仅保留为受限兼容视图。
+- 完整序列号以标准库 `*big.Int` 增补证书读写、CSR 签发、按序列号吊销与 CRL 条目
+  读取入口；保留 `RevokedEntry.SerialHex` / `RevokeSerialHex` 适配，底层 ASN.1 INTEGER
+  转换仍由 native → core 封装。`Revoke(cert)`、`IsRevoked` 与 `RevocationCheck`
+  不再经 int64 中转；旧 Serial 仅保留为受限兼容视图。输入与返回的大整数独立复制，
+  不暴露可修改的原生状态。I-23/I-24 不引入签发数据库或持久化工作流。
 - DER 扩展的 Data 是原始扩展值，Value 是配置串，不保证二者可逆；签名后不可变。
   默认信任路径是铜锁配置，不能替代平台原生信任库承诺，也不能隐式信任输入链根。
 - `0.8.0` 的 PKCS#7 明确区分签名验证与证书信任；涉及私钥时，按架构规范增补
