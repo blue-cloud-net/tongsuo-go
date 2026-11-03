@@ -49,7 +49,7 @@ interfaces and a CLI-style by-name entry point; see the
 - 🗄️ **Key storage and rotation** (`keystore`): key metadata, in-memory / custom stores, version rotation and history; `Load` / `LoadAllFromReader` detect local multiple PEM objects, DER and PKCS#12
 - 📜 **X.509 certificate management** (`x509`): parse and issue certificates / CSR / CRL / OCSP, one-line self-signed certificates (`CreateSelfSigned`), step-by-step CRL issuance (`CRLBuilder`), CA-signed certificates (SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448), arbitrary X.509 v3 extensions by NID or name (`AddExtension` / `AddExtensionByName` / `AddExtensions`), CSR-driven issuance (`IssueCertificateFromRequest`), hostname / IP / e-mail verification (`VerifyHostname` / `CheckEmail`), subject / issuer name hashes (`SubjectHash` / `IssuerHash`) and chain verification with an optional pinned verification instant (`Store.SetTime`); OCSP HTTP/nonces, trusted PEM purposes and unified certificate/CRL loading
 - 🌐 **TLS / NTLS transport** (`tls`): client / server wrappers, supporting Tongsuo NTLS dual certificates (signing certificate + encryption certificate); `tls.NewListener` returns a `net.Listener` whose Accept completes the handshake
-- 📦 **Containers and formats**: PKCS#7 certificates/CRLs (`pkcs/pkcs7`), configurable PKCS#12 PBE/iterations (`pkcs/pkcs12`), PKCS#8 PBE/PRF/PEM/DER and RSA PKCS#1 public keys (`asym`), OKP/oct JWK (`jwk`), PEM splitting (`meta`), ASN.1 DER viewer (`asn1`), .NET-style RSA XML (`xml/rsa`)
+- 📦 **Containers and formats**: PKCS#7 certificates/CRLs, signing/verification and envelopes (`pkcs/pkcs7`), configurable PKCS#12 PBE/iterations and complex lossless password changes (`pkcs/pkcs12`), PKCS#8 PBE/PRF/PEM/DER and RSA PKCS#1 public keys (`asym`), OKP/oct JWK (`jwk`), PEM splitting (`meta`), ASN.1 DER viewer with configurable limits (`asn1`), .NET-style RSA XML (`xml/rsa`)
 - 🧪 **Standard-vector tests**: every algorithm package covers national-standard vectors, round-trips, edge cases and error paths, with bidirectional cross-validation against the openssl CLI
 
 ## Scope and non-goals
@@ -73,10 +73,11 @@ itself, and the Tongsuo installation is a build prerequisite (see [Requirements]
 
 ### Implementation baseline and future releases
 
-`0.6.0` is the current implementation baseline (finalized on 2026-11-03); Tongsuo 8.4.0 is the validation baseline and AES-SIV rejects empty messages.
+`0.7.0` is implemented and awaiting release; Tongsuo 8.4.0 remains the validation baseline and AES-SIV rejects empty messages.
+`0.7.0`: reliability, data integrity and PKCS containers: handle release, parser limits, full serial numbers, DER extensions, trust paths, compressed SM2 input, lossless password changes for complex PKCS#12 containers, and PKCS#7 signing, verification, encryption and decryption.
+
 The following releases are planned capabilities, not currently available features:
 
-- `0.7.0`: reliability, data integrity and PKCS containers: handle release, parser limits, full serial numbers, DER extensions, trust paths, compressed SM2 input, lossless password changes for complex PKCS#12 containers, and PKCS#7 signing, verification, encryption and decryption
 - `0.8.0` / `0.9.0`: Tongsuo 8.5 compatibility and classical algorithm extensions / PQC
 - `0.10.0` / `0.11.0` / `1.0.0`: CMS and RFC 3161 timestamps / TLS capabilities / public API convergence and stability
 
@@ -148,6 +149,22 @@ go get github.com/blue-cloud-net/tongsuo-go
 Then import the sub-packages you need from your code (see "Code Examples" below).
 
 ## Code Examples
+
+### PKCS#7 signatures (`0.7.0`)
+
+Given a signing certificate `cert`, its private `key` and an explicitly populated `roots` store:
+
+```go
+signed, err := pkcs7.Sign(data, &pkcs7.SignOptions{SignerCert: cert, SignerKey: key})
+if err != nil { panic(err) }
+verified, err := pkcs7.Verify(signed, &pkcs7.VerifyOptions{Roots: roots})
+if err != nil { panic(err) }
+defer verified.Close()
+```
+
+Verify checks all signers and their trust by default. Explicit SignatureOnly skips chain verification and reports TrustVerified=false. RSA/ECDSA signing and RSA recipient encryption are supported; CBC envelopes do not authenticate integrity.
+
+ECDH migration: use `pub, err := priv.Public()`, handle the error and `defer pub.Close()`; the public copy owns its handle independently. Full serials use `SerialBigInt` / `SetSerialBigInt`; old int64 write entries now reject zero/negative values. See [runnable examples](examples/README.md) for stepwise DER-extension issuance and PKCS#7.
 
 ### AES-OCB (`0.6.0`)
 

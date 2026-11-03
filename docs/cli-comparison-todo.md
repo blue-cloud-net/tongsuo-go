@@ -11,8 +11,8 @@
 > **范围**：**14 个子命令 / 100 条 API**。不含 ⚠️ 部分对齐项、不含 §9「明确不实现」项、不含无对应子命令的扩展算法（PQC 等）——三者见附录 B。
 
 > **排期更新**：本清单保留采集时的候选 API，不表示它们仍全部待实现或承诺交付。
-> `0.6.0` 的已实现符号以 [api-reference.md](api-reference.md) 为准；PKCS#7 基础流程
-> 归 `0.7.0`，CMS/ts 归 `0.10.0`，会话/TLS 归 `0.11.0`，文件系统 CA 继续暂缓。
+> `0.7.0` 的已实现符号以 [api-reference.md](api-reference.md) 为准；PKCS#7 基础流程
+> 已在 `0.7.0` 实现，CMS/ts 归 `0.10.0`，会话/TLS 归 `0.11.0`，文件系统 CA 继续暂缓。
 > 可靠性需求归 `0.7.0`，逐项见 [需求复核台账](requirements.md)。
 
 ---
@@ -108,18 +108,18 @@
 ## 4. `cms` — CMS 签名 / 验签 / 加密 / 解密
 
 - **§6.A**：5 ｜ **优先级**：P2 ｜ **归属包**：`pkcs/pkcs7`（现有，CMS 与 PKCS#7 同源 RFC 5652）｜ **API 数**：8
-- **现状**：`0.6.0` 已有证书/CRL 容器；`0.7.0` 规划 PKCS#7 基础签名/加密，`0.10.0` 再扩展 CMS。
+- **现状**：`0.6.0` 已有证书/CRL 容器；`0.7.0` 已实现 PKCS#7 基础签名/加密，`0.10.0` 再扩展 CMS。
 - **对齐 CLI**：`cms -sign` / `-verify` / `-encrypt` / `-decrypt` / `-digest_create` / `-digest_verify`
 - **前置**：`0.7.0` 先新增 `PKCS7_*` 基础流程绑定；`0.10.0` 再新增 `CMS_*`，不能把两者混作一种格式。以下签名为候选，最终目标形态见公开 API 清单。
 
-- [ ] `pkcs7.Sign(data []byte, opts *SignOptions) ([]byte, error)` — 生成签名/封装数据；输入：明文 + 签名证书与私钥 → 输出：PKCS#7 DER（`0.7.0`）；CMS 扩展另归 `0.10.0`
-- [ ] `pkcs7.Verify(data []byte, opts *VerifyOptions) (*SignedData, error)` — 验签并返回签名者信息
-- [ ] `pkcs7.Encrypt(data []byte, opts *EncryptOptions) ([]byte, error)` — 信封加密（多接收者）
-- [ ] `pkcs7.Decrypt(data []byte, opts *DecryptOptions) ([]byte, error)` — 信封解密
-- [ ] `type SignOptions` — 目标使用 `SignerCert *x509.Certificate`、`SignerKey asym.PrivateKey`、`ExtraCerts []*x509.Certificate`、`Detached bool`、`Digest string`；默认附带内容与 SHA-256，不复用旧的 PEM 字节候选签名
-- [ ] `type VerifyOptions` — `Roots *x509.Store`、`ExtraCerts []*x509.Certificate`、`DetachedContent []byte`、`SignatureOnly bool`；默认验证信任，分离内容的 nil 与非 nil 空切片须可区分
-- [ ] `type EncryptOptions` / `DecryptOptions` — 多 RSA 接收者证书与 Cipher（默认 AES-256-CBC）；接收者证书与 asym 私钥
-- [ ] `type SignedData` 与幂等 `Close() error` — Content、Signers、TrustVerified；验证全部签名者，SignatureOnly 成功不标为受信任；结果持有证书资源
+- [x] `pkcs7.Sign(data []byte, opts *SignOptions) ([]byte, error)` — 生成签名/封装数据；输入：明文 + 签名证书与私钥 → 输出：PKCS#7 DER（`0.7.0`）；CMS 扩展另归 `0.10.0`
+- [x] `pkcs7.Verify(data []byte, opts *VerifyOptions) (*SignedData, error)` — 验签并返回签名者信息
+- [x] `pkcs7.Encrypt(data []byte, opts *EncryptOptions) ([]byte, error)` — 信封加密（多接收者）
+- [x] `pkcs7.Decrypt(data []byte, opts *DecryptOptions) ([]byte, error)` — 信封解密
+- [x] `type SignOptions` — 目标使用 `SignerCert *x509.Certificate`、`SignerKey asym.PrivateKey`、`ExtraCerts []*x509.Certificate`、`Detached bool`、`Digest string`；默认附带内容与 SHA-256，不复用旧的 PEM 字节候选签名
+- [x] `type VerifyOptions` — `Roots *x509.Store`、`ExtraCerts []*x509.Certificate`、`DetachedContent []byte`、`SignatureOnly bool`；默认验证信任，分离内容的 nil 与非 nil 空切片须可区分
+- [x] `type EncryptOptions` / `DecryptOptions` — 多 RSA 接收者证书与 Cipher（默认 AES-256-CBC）；接收者证书与 asym 私钥
+- [x] `type SignedData` 与幂等 `Close() error` — Content、Signers、TrustVerified；验证全部签名者，SignatureOnly 成功不标为受信任；结果持有证书资源
 - [ ] `pkcs7.DigestCreate(data []byte, alg string) ([]byte, error)` / `pkcs7.DigestVerify(data []byte, opts *VerifyOptions) error`
 
 ---

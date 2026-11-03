@@ -8,7 +8,7 @@
 > 3. 每项格式为「完整签名 — 中文一句话」；未导出（小写）符号不列；
 > 4. 某些 `internal/core` 类型会**出现在公开 API 签名中**（如 `*core.PKey`），下文用 ⚠️ 标出。
 >
-> **范围**：**6 个包**。生成基线：`0.6.0`（2026-11-03 定版）。
+> **范围**：**6 个包**。生成基线：`0.7.0`（已实现，待发布）。
 
 ---
 
@@ -215,7 +215,7 @@ internal/testutil ← 仅被 *_test.go 使用
 - `func RevocationCheck(cert *Certificate, crls []*CRL) error` — 吊销检查
 - `type VerifyError struct { …（内部字段） }` — `X509_verify_cert` 失败信息（⚠️ 通过 `x509` 包同名类型转出）
 - `func VerifyErrorMessage(code int) string` — 错误码 → 文本
-- `type Store struct { …（内部字段） }` — `X509_STORE` 包装（⚠️ 通过 `x509.Store` 持有；公开层无 `Close`，见 `docs/issues/2026-09-24/P1010`）
+- `type Store struct { …（内部字段） }` — `X509_STORE` 包装；公开 x509.Store 提供幂等 Close，0.7 增加默认/显式信任路径
 - `func NewStore() (*Store, error)` — 创建
 - `func (s *Store) AddCert(c *Certificate) error` / `AddCRL(c *CRL) error` / `SetFlags(flags uint64) error` / `SetTime(t time.Time) error` / `Close() error` — 操作与释放（`SetTime` 写 `X509_VERIFY_PARAM_set_time`，对该 Store 后续每次 `ChainVerify` 生效）
 - `func ChainVerify(cert *Certificate, store *Store, intermediates []*Certificate) ([]*Certificate, error)` — 链验证并返回完整链
@@ -452,9 +452,7 @@ internal/testutil ← 仅被 *_test.go 使用
 - `type corePKeyer interface { CorePKey() *core.PKey }`（非导出）— 形状契约；由 `asym` 的非导出密钥类型隐式满足
 - `func PKey(v any) (*core.PKey, bool)` — 反查 `v` 背后的原生句柄；`v` 为 nil / 非本库密钥类型 / 未实现契约时返回 `(nil, false)`
 
-**当前消费方（6 个）**：`ecdh`、`x509`、`tls`、`jwk`、`keystore`、`pkcs/pkcs12`
-
-**0.7.0 规划新增白名单**：`pkcs/pkcs7`，签名/解密经桥接复制私钥句柄；当前尚未使用。
+**当前消费方（7 个）**：`ecdh`、`x509`、`tls`、`jwk`、`keystore`、`pkcs/pkcs12`、`pkcs/pkcs7`；P7 签名/解密经桥接复制私钥句柄。
 
 **契约要求（`asym` 侧）**
 
@@ -466,7 +464,7 @@ internal/testutil ← 仅被 *_test.go 使用
 **验收**
 
 - `go doc -all ./asym` 输出中**不得**出现 `CorePKey`
-- `grep -rln "internal/keyaccess" --include=*.go .` 当前只应命中 `internal/keyaccess/` 与上述 6 个消费方；0.7 实施后另允许 `pkcs/pkcs7`
+- `grep -rln "internal/keyaccess" --include=*.go .` 只应命中 `internal/keyaccess/` 与上述 7 个消费方
 
 ---
 
@@ -545,11 +543,19 @@ internal/testutil ← 仅被 *_test.go 使用
 - `CipherWrapAllow` — 显式启用 EVP 密钥包装；`ERR_clear_error()` 清理能力探测的线程错误队列。
 
 
+## `0.7.0` 增量：可靠性与 PKCS 容器（已实现）
+
+- core：`ValidateSerial(*big.Int) error`、`Certificate.SerialBigInt() (*big.Int, error)` / `SetSerialBigInt(*big.Int) error`、`CRL.AddRevokedSerial(*big.Int, time.Time, int) error` 与 `RevokedEntry.SerialHex string`，无损写入/比较完整整数。
+- core：`Certificate.AddExtensionOIDDER(string, bool, []byte) error`、`Store.SetDefaultPaths() error` / `LoadLocations(string, string) error`、`ExpandSM2Point([]byte) ([]byte, error)`，参数/关闭状态检查与原生错误包装。
+- core：`PKCS12.ReencryptPassword(oldPass, newPass, pbe string, iter int, name string) error`，仅成功后替换句柄，空 pbe 保留原算法。
+- core：`SignPKCS7([]byte, *Certificate, *PKey, []*Certificate, string, bool) ([]byte, error)`、`PKCS7.VerifySignatures([]byte, []*Certificate) ([]byte, []*Certificate, error)`、`EncryptPKCS7([]byte, []*Certificate, string) ([]byte, error)`、`PKCS7.DecryptContent(*Certificate, *PKey) ([]byte, error)`；输入借用并 KeepAlive，返回证书拥有独立句柄。
+- native：`X_X509_set_serial_hex`、`X_X509_REVOKED_set_serial_hex` / `X_X509_REVOKED_serial_hex`、`X_X509_add_ext_der`、`X509_STORE_set_default_paths` / `X509_STORE_load_locations`、`X_SM2_expand_point`，均经 core 使用。
+- native：`X_PKCS12_reencrypt` 遍历复杂 safe/bag、更新 PBE 与 MAC；`X_PKCS7_sign` / `X_PKCS7_verify` / `PKCS7_get0_signers` / `X_PKCS7_encrypt` / `X_PKCS7_decrypt` 与 `BIO_ctrl_pending`，空内容单独处理，无 Go 数据指针被 BIO 长期持有。
+
 ## 后续实施前置（规划，不属于已有符号清单）
 
 | 目标版本 | core/native 工作 | 边界 |
 |---|---|---|
-| `0.7.0` | ECDH/CSR Close 与独立 Public 副本；完整序列号、OID/DER 扩展、信任路径、SM2 点校验、复杂 P12 两入口无损改密；P7 签验/加解密与分离内容 | 保留副本所有权、签名终态、嵌套与属性；P7 私钥走已规划 keyaccess 白名单，证书走 certaccess；结果显式释放，不暴露原生类型 |
 | `0.8.0` | 8.5 兼容、上下文签验、RSA-SM3 原生能力验证、SM2DH 参数 | 8.4 编译保护与运行时探测 |
 | `0.9.0` | PQC 密钥/签验/序列化与 KEM | 不可用能力明确报错 |
 | `0.10.0` | CMS / TS | 复用容器基础设施 |

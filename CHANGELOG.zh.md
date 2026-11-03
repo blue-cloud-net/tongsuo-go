@@ -22,6 +22,31 @@
 
 ---
 
+## [0.7.0] - TBD
+
+### 新增功能
+
+- `ecdh` 公私钥与 `x509.CertificateRequest` 增加幂等 `Close()`；ECDH 公钥由独立副本持有，释放公钥、私钥或源 asym 密钥互不影响。
+- `asn1.ParseWithLimits` 增加正数深度/节点限额、`ErrDepthLimit` / `ErrNodeLimit` 与非递归遍历；原 `Parse` 保留 128 层行为和错误文本。
+- `x509` 增加 `SerialBigInt` / `SetSerialBigInt`、`IssueOptions.SerialBigInt`、`RevokedEntry.SerialHex` / `SerialBigInt`、`CRLBuilder.RevokeSerial` / `RevokeSerialHex`；输入与结果独立复制，写入正整数的 DER 内容含符号补零不超过 20 octets。
+- `x509.Certificate.AddExtensionDER` 按 OID 添加原始扩展；`Store.SetDefaultPaths` / `LoadLocations` 加载铜锁默认路径与显式 CA 文件/目录，保持签名后不可变及显式信任边界。
+- `pkcs/pkcs7` 增加 `Sign` / `Verify` / `Encrypt` / `Decrypt` 和 Options、`SignedData.Close`；支持附带/分离签名、二进制内容、多 RSA 接收者；默认 SHA-256、AES-256-CBC，Verify 默认要求显式 Roots 并验证全部签名者。
+
+### Bug 修复
+
+- 证书/CRL 读写、CSR 签发、`Revoke(cert)`、`IsRevoked` 与 `RevocationCheck` 贯通完整序列号，消除 int64 溢出导致不同长序列号误匹配的问题；旧 Serial 仅保留受限兼容视图。
+- SM2 裸密文支持经铜锁校验的压缩 C1，覆盖两种 C2/C3 顺序的转换与解密，输出规则保持原样。
+- PKCS#12 两个改密入口改为 safe/bag 层处理，支持多私钥、多 safe、嵌套、CRL 与自定义属性，保留内容/顺序；普通入口保留原算法/派生/MAC 参数，WithOptions 应用 PBE/迭代，均不再有损重打包。
+
+### BREAKING / 已知限制
+
+- **BREAKING**：`ecdh.PrivateKey.Public()` 由单返回值改为 `(*PublicKey, error)`；迁移为 `pub, err := priv.Public()`，处理错误并 `defer pub.Close()`。公私钥的 Close 不可与仍在执行的使用操作并发。
+- **BREAKING**：旧 int64 序列号写入口统一拒绝零/负数；完整读写使用 BigInt。`IssueOptions` / `RevokedEntry` 新增字段，使用无字段名字面量的调用方须改为带字段名初始化。
+- **BREAKING**：`ChangePasswordWithOptions` 不再清空未显式指定的名称或丢弃额外内容；空 FriendlyName 保留原名，非空在多私钥容器中报歧义。无 MAC、不同 MAC/加密口令、签名保护及未支持的算法/结构明确拒绝，不自动加载 legacy provider。
+- PKCS#7 以铜锁 8.4.0 的 RSA/ECDSA 签名与 RSA 接收者加密为边界，SM2 及其他不支持组合报错；显式 SignatureOnly 成功仍为 TrustVerified=false。CBC 信封不提供完整性认证，默认路径不等同平台原生信任库。RSA 签名仍为模数长度字节串。
+
+---
+
 ## [0.6.0] - 2026-11-03
 
 ### 新增功能
@@ -827,7 +852,8 @@
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.3.0...v0.4.0

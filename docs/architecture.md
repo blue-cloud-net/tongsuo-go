@@ -46,7 +46,7 @@ API 层（16 个顶级包：meta / digest / mac / sym / asym / ecdh / kdf / rand
 - 严格分层，**禁止跨层调用**：API 层不得直接调用绑定层；绑定层不得包含业务逻辑
 - 依赖方向**单向向下**，各层边界清晰，便于测试与替换
 - API 层内部：`ecdh → asym`（加载 `asym` 密钥对象）、`x509 → asym`（公钥/私钥接口）、
-  `tls/jwk/pkcs12 → x509` + `asym`；算法原语包只依赖 `internal/core`，不互相依赖
+  `tls/jwk/pkcs7/pkcs12 → x509` + `asym`；算法原语包只依赖 `internal/core`，不互相依赖
 - **唯一例外（`0.5.0` 起）**：`digest` / `mac` / `sym` / `kdf` / `asym` / `x509`
   → `meta`。`meta` 是**形态词汇的叶子包**（只依赖 `internal/core`），提供
   `Source` / `Sink` / `Encoding` / `Format` / `Passphrase`，供各原语包的「CLI 式
@@ -109,6 +109,8 @@ graph TD
   jwk --> keyaccess
   keystore --> keyaccess
   pkcs12 --> keyaccess
+  pkcs7 --> keyaccess
+  pkcs7 --> asym
   tls --> certaccess
   pkcs7 --> certaccess
   pkcs12 --> certaccess
@@ -181,7 +183,7 @@ API 层内部存在必须先拿到 `*core.PKey` 才能工作的场景（如 `ecd
 - **为何优于反向注册表**：无全局可变状态、无 `init()` 顺序依赖、无并发写入，且契约由类型系统
   隐式校验——改签名会在断言处立刻暴露
 - 当前消费方：`ecdh`、`x509`、`tls`、`jwk`、`keystore`、`pkcs/pkcs12`；
-  `0.7.0` 规划允许新增 `pkcs/pkcs7` 消费方，签名/解密经该桥接取私钥，不增设桥接。
+  `0.7.0` 已新增 `pkcs/pkcs7` 消费方，签名/解密经该桥接取私钥，不增设桥接。
   拿到句柄后**必须**用
   `EVP_PKEY_dup` 复制，保证两侧生命周期独立（否则 `asym` 侧 `Close()` 后消费方即为悬垂指针）
 - 验收：`go doc -all ./asym` 输出中不得出现 `CorePKey`；`internal/` 路径规则保证外部模块无法 import
@@ -322,7 +324,7 @@ tongsuo-go/
 ├── asn1/                      # 【格式】DER viewer（纯 Go，cgo-free）
 ├── jwk/                       # 【格式】JWK ↔ PEM / JSON
 ├── pkcs/                      # 【容器】
-│   ├── pkcs7/                 # PKCS#7（Build / Extract / MarshalPEM）
+│   ├── pkcs7/                 # PKCS#7 证书/CRL 与 Sign/Verify/Encrypt/Decrypt
 │   └── pkcs12/                # PKCS#12（Pack / Parse / ChangePassword；options.go = PBE/iter/口令）
 ├── xml/                       # 【格式族】预留命名空间
 │   └── rsa/                   # .NET RSAKeyValue XML 序列化
@@ -345,6 +347,10 @@ tongsuo-go/
 │   │   ├── binding_ssl.go     # SSL_CTX / SSL / TLS 会话
 │   │   ├── binding_x509.go    # X509 / X509_REQ / X509_CRL / X509_STORE / PEM / DER
 │   │   ├── binding_pkcs.go    # PKCS#7 / PKCS#12 系列
+│   │   ├── binding_pkcs7_ops.go # PKCS#7 签验与信封
+│   │   ├── binding_reliability.go # 完整序列号、信任路径、SM2 点、P12 改密
+│   │   ├── pkcs12_reencrypt.c # 复杂 safe/bag 无损改密
+│   │   ├── pkcs7_ops.c       # PKCS#7 shim
 │   │   ├── binding_ocsp.go    # OCSP_REQ / OCSP_RES 系列
 │   │   ├── binding_error.go   # ERR_get_error / 错误码
 │   │   └── binding_version.go # OpenSSL_version / Tongsuo_version_num
@@ -401,7 +407,7 @@ tongsuo-go/
 - 8.4.0 为本版唯一验证基线，8.5 兼容见 `roadmap.md` §2.2。SIV 空消息明确拒绝；
   RSA-SM3 签名按 provider 能力报错，不回退其他密码实现。
 
-### `0.7.0` 及以后的架构约束（规划，尚未实现）
+### `0.7.0` 实现与后续架构约束
 
 - `0.7.0` 的 ECDH/CSR 释放复用 core 句柄；ECDH Public 改为独立句柄与 error，
   公私钥及源 asym 密钥独立释放。EC 点解码、完整序列号、按 OID 的
@@ -427,8 +433,15 @@ tongsuo-go/
 - `0.10.0` 的新顶级 `ts` 包与 x509 平级，实施时再更新包计数与依赖图；当前包数
   保持 16。`0.11.0` 先完成 TLS 能力，`1.0.0` 再集中稳定公开 API。
 
+新增实现按职责分布：`asn1/limits.go` 使用显式栈；`x509/reliability.go` 公开完整序列号、
+DER 扩展与信任路径；`internal/core/reliability.go` 管理校验和句柄，`pkcs7_ops.go` 管理
+P7 BIO/证书资源。绑定在 `binding_reliability.go` / `binding_pkcs7_ops.go` 与
+`shim.c` / `pkcs12_reencrypt.c` / `pkcs7_ops.c`；P12 使用公开 ASN.1/PBE 接口重加密，
+不经 Bundle 丢失属性。复杂 P12 默认测试在临时目录用 cgo 已要求的 C 编译器编译
+`pkcs/pkcs12/testdata/complex.c`，不需要额外库或 CLI。
+
 具体排期见 [roadmap.md](roadmap.md) §2；功能需求与验收边界见
-[requirements.md](requirements.md)。本节不表示目录或 API 已新增。
+[requirements.md](requirements.md)。本节 0.7.0 能力已落地，0.8.0 及以后仍为规划。
 
 ---
 

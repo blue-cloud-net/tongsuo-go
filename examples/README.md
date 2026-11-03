@@ -76,3 +76,11 @@ cd examples/ecdh && go run .
 - [PKCS#8](../asym/pkcs8_example_test.go)：显式 PBES2/PRF 的加密 DER 往返。
 - [EC 参数](../ecdh/parameters_example_test.go)：命名曲线参数 PEM 往返。
 - [统一密钥加载](../keystore/load_example_test.go)：同一 PEM 中读取私钥与公钥。
+
+## `0.7.0` 包级可运行示例
+
+使用铜锁 8.4.0 的对应环境运行 `go test ./x509 ./pkcs/pkcs7`：
+
+- [分步签发与 DER 扩展](../x509/reliability_example_test.go)：大序列号、SAN/KU/SKID/AKID、自定义 OID、最后签名并验签；签名后不可修改。
+- [PKCS#7 签验与信封](../pkcs/pkcs7/operations_example_test.go)：显式信任存储、验证结果 Close、多接收者入口与 CBC 完整性边界。
+- [ECDH](./ecdh/main.go)：Public 返回独立公钥与 error，公私钥均显式 Close。
