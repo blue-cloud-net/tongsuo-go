@@ -5,8 +5,8 @@
 > 证书信任属性已在 8.4.0 基线上实现，当前逐符号事实见 [api-reference.md](api-reference.md)。
 > 铜锁 8.5 兼容、GCM-SIV、EdDSA 上下文签名与 RSA-SM3 签名可运行支持归 `0.9.0`。
 > 后续按“0.7 可靠性 → 0.8 PKCS#7 → 0.9 兼容/经典算法 → 0.10 PQC →
-> 0.11 CMS/时间戳 → 0.12 TLS → 1.0 公开面稳定”交付；下游逐条结论见
-> [downstream-requirements.md](downstream-requirements.md)。以下采集基线不代表未来能力已实现。
+> 0.11 CMS/时间戳 → 0.12 TLS → 1.0 公开面稳定”交付；功能需求逐条结论见
+> [requirements.md](requirements.md)。以下采集基线不代表未来能力已实现。
 
 > 本文件回答：**与官方 [Tongsuo-Project/tongsuo-go-sdk](https://github.com/Tongsuo-Project/tongsuo-go-sdk) 相比，本仓库还有哪些能力没有对齐？是否要把对侧分阶段补齐？**
 >

@@ -263,7 +263,7 @@ docs/bilingual-doc-guide.md   # 双语 GoDoc 段式规则与检查清单
 docs/api-reference.md         # 公开 API 清单（重构后 16 包，三态标记）
 docs/api-reference-internal.md# 内部 API 清单（internal/* 五个包）
 docs/roadmap.md                 # 版本路线图（0.7.0–1.0.0：范围 / 前置绑定 / 不做）
-docs/downstream-requirements.md # Toolbit 22 项需求复核、纠偏与交付边界
+docs/requirements.md # 功能需求复核、技术判断与交付边界
 docs/cli-comparison.md        # 铜锁 CLI 与本库能力对比（能力级）
 docs/official-sdk-comparison.md # 与官方 SDK 对比
 docs/release-guide.md         # 发版操作手册（前置 / 重排 / 验证 / tag / 回退）
@@ -538,6 +538,8 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 - 双语正文同样遵循「术语保留英文」约定
 - 本文件（`AGENTS.md`）与上述文档**同源**：若规范变更，先改 `docs/` 细则，
   再更新本文件的摘要与指针，避免两处规则打架
+- 功能需求仅记录本库的缺口、技术判断、排期与验收边界，不记录需求来源、使用方身份、
+  外部代码路径或业务侧限制；详见 `docs/requirements.md` §4
 - 不要在没有明确要求时改动 `docs/issues/` 下的历史审计报告、CHANGELOG 的既有版本段
   - ❌ 反例：顺手「订正」`docs/issues/` 下旧报告的结论
 
@@ -644,7 +646,7 @@ go test -count=1 ./...    # 必须 ok（无铜锁环境则如实说明未能运�
 | 三层边界与目录 | `docs/architecture.md` §2 / §3 / §5 |
 | 生命周期与所有权 | `docs/architecture.md` §7 / §8 |
 | **版本路线图（0.7.0–1.0.0：范围 / 前置绑定 / 不做）** | `docs/roadmap.md` |
-| 下游 22 项需求复核与排期依据 | `docs/downstream-requirements.md` |
+| 功能需求复核与排期依据 | `docs/requirements.md` |
 | **公开 API 逐符号清单（三态）** | `docs/api-reference.md` |
 | **内部 API 清单（`internal/*`）** | `docs/api-reference-internal.md` |
 | 各算法必测用例 | `docs/testing-guide.md` §3～§7 |

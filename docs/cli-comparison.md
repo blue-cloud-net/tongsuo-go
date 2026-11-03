@@ -5,8 +5,8 @@
 > 证书信任属性已在 8.4.0 基线上实现，当前逐符号事实见 [api-reference.md](api-reference.md)。
 > 铜锁 8.5 兼容、GCM-SIV、EdDSA 上下文签名与 RSA-SM3 签名可运行支持归 `0.9.0`。
 > 后续按“0.7 可靠性 → 0.8 PKCS#7 → 0.9 兼容/经典算法 → 0.10 PQC →
-> 0.11 CMS/时间戳 → 0.12 TLS → 1.0 公开面稳定”交付；下游逐条结论见
-> [downstream-requirements.md](downstream-requirements.md)。以下采集基线不代表未来能力已实现。
+> 0.11 CMS/时间戳 → 0.12 TLS → 1.0 公开面稳定”交付；功能需求逐条结论见
+> [requirements.md](requirements.md)。以下采集基线不代表未来能力已实现。
 
 > 本文件回答：**与铜锁自带的命令行（`tongsuo`，即铜锁发行版中的 `openssl` 程序）相比，本仓库还有哪些能力没有覆盖？**
 >
@@ -537,7 +537,7 @@
 |---|---|
 | Phase 1 采集型小件 + Phase 2 输入输出形态 | `0.5.0` |
 | Phase 2 收尾 + Phase 3 算法覆盖主体 + Phase 4 的格式容器部分 | `0.6.0` |
-| 下游可靠性与数据完整性（见 [需求台账](downstream-requirements.md)） | `0.7.0` |
+| 可靠性与数据完整性（见 [需求台账](requirements.md)） | `0.7.0` |
 | Phase 4 的 PKCS#7 签名/验签/加密/解密 | `0.8.0` |
 | 铜锁 8.5 兼容、经典算法扩展与 Phase 3 的 SM2DH / 通用 KEX | `0.9.0` |
 | Phase 3 的 PQC / KEM | `0.10.0` |

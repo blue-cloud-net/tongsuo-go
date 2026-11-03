@@ -415,8 +415,8 @@ tongsuo-go/
 - `0.11.0` 的新顶级 `ts` 包与 x509 平级，实施时再更新包计数与依赖图；当前包数
   保持 16。`0.12.0` 先完成 TLS 能力，`1.0.0` 再集中稳定公开 API。
 
-具体排期见 [roadmap.md](roadmap.md) §2；下游依据见
-[downstream-requirements.md](downstream-requirements.md)。本节不表示目录或 API 已新增。
+具体排期见 [roadmap.md](roadmap.md) §2；功能需求与验收边界见
+[requirements.md](requirements.md)。本节不表示目录或 API 已新增。
 
 ---
 

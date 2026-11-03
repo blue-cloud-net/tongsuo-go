@@ -76,12 +76,12 @@ itself, and the Tongsuo installation is a build prerequisite (see [Requirements]
 `0.6.0` is the current implementation baseline (finalized on 2026-11-03); Tongsuo 8.4.0 is the validation baseline and AES-SIV rejects empty messages.
 The following releases are planned capabilities, not currently available features:
 
-- `0.7.0`: downstream reliability and data integrity, including handle release, parser limits, full serial numbers, DER extensions, trust paths, compressed SM2 input and PKCS#12 password-change interop
+- `0.7.0`: reliability and data integrity, including handle release, parser limits, full serial numbers, DER extensions, trust paths, compressed SM2 input and PKCS#12 password-change interop
 - `0.8.0`: PKCS#7 signing, verification, encryption and decryption
 - `0.9.0` / `0.10.0`: Tongsuo 8.5 compatibility and classical algorithm extensions / PQC
 - `0.11.0` / `0.12.0` / `1.0.0`: CMS and RFC 3161 timestamps / TLS capabilities / public API convergence and stability
 
-See [docs/downstream-requirements.md](docs/downstream-requirements.md) for the review of all 22 downstream requests.
+See [docs/requirements.md](docs/requirements.md) for functional requirements, technical decisions and acceptance criteria.
 
 The full plan, and the complete "not doing" list with the rationale and the conditions for
 revisiting each item, live in [docs/roadmap.md](docs/roadmap.md) §2 and §4.
