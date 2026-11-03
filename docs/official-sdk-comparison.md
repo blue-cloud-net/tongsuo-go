@@ -1,5 +1,13 @@
 # 官方 tongsuo-go-sdk 与本库功能对比
 
+> **`0.6.0` 实施更新**：下文采集时的基线表保留原口径；AES 扩展/ZUC、EC 参数、
+> PKCS#8/12 配置、PKCS#7 CRL、JWK OKP/oct、本地多对象加载、OCSP HTTP/nonce 与
+> 证书信任属性已在 8.4.0 基线上实现，当前逐符号事实见 [api-reference.md](api-reference.md)。
+> 铜锁 8.5 兼容、GCM-SIV、EdDSA 上下文签名与 RSA-SM3 签名可运行支持归 `0.9.0`。
+> 后续按“0.7 可靠性 → 0.8 PKCS#7 → 0.9 兼容/经典算法 → 0.10 PQC →
+> 0.11 CMS/时间戳 → 0.12 TLS → 1.0 公开面稳定”交付；下游逐条结论见
+> [downstream-requirements.md](downstream-requirements.md)。以下采集基线不代表未来能力已实现。
+
 > 本文件回答：**与官方 [Tongsuo-Project/tongsuo-go-sdk](https://github.com/Tongsuo-Project/tongsuo-go-sdk) 相比，本仓库还有哪些能力没有对齐？是否要把对侧分阶段补齐？**
 >
 > 口径：**只对齐「能力」，不对齐「命名」**——本库以 Go 惯例 API（`hash.Hash` / `cipher.Block` / `cipher.AEAD` / `Config` 字段 / `(T, error)` 返回）面向使用者，而官方 SDK 几乎是 [`gost`](https://github.com/gostc/go) 的 Tongsuo fork、把 `SSL_CTX`/`SSL` 的 OpenSSL 原生配置 1:1 暴露出去，命名上无必要一一对应。
@@ -31,7 +39,7 @@
 | **对比基线（官方）** | [`Tongsuo-Project/tongsuo-go-sdk`](https://github.com/Tongsuo-Project/tongsuo-go-sdk) `main` @ [`002a0963`](https://github.com/Tongsuo-Project/tongsuo-go-sdk/commit/002a09631de785f2d984d9e0b3a7f1e9a169940c)（2025-01-14，Merge PR #40 Update README.md） |
 | **官方 README 自报能力** | Hash（SM3/MD5/SHA1/SHA256）、SM4、SM2 加解密、SM2withSM3 签名、HMAC、SM2 证书、TLCP + TLSv1.0/1.1/1.2/1.3（详见 README §Features） |
 | **官方内部文件基线** | 顶层 `ctx.go` / `ssl.go` / `conn.go` / `net.go` / `http.go` / `tickets.go` / `pem.go` / `init.go`；`crypto/`（`bio.go` `cert.go` `ciphers.go` `ciphers_gcm.go` `dh.go` `dhparam.go` `digest.go` `engine.go` `hmac.go` `hostname.go` `key.go` `mapping.go` `nid.go`）；`crypto/{md5,sha1,sha256,sm2,sm3,sm4}/` 子包；`utils/{errors,future}.go`；`test/`；`examples/{cert_gen,hmac_sm3,sm2_encrypt,sm2_keygen,sm2_sign,sm2_signasn1,sm3,sm4,tlcp_client,tlcp_server}` |
-| **本库基线** | `tongsuo-go` `0.5.0`（2026-10-27 发布） |
+| **本库基线** | `tongsuo-go` `0.6.0`（2026-11-03 定版） |
 | **检索方式** | 全仓库 `grep`/`ripgrep` 导出符号 + `internal/native/binding_*.go` + 现有 `docs/architecture.md` §3、§5 目录地图；结论字段「本库现状」均可在源码中校验 |
 | **环境声明** | 本机未安装 Tongsuo C 库，因此本次仅做静态比对；后续具体 PR 的实施必须 `gofmt -l .` / `go vet ./...` / `go build ./...` / `go test -count=1 ./...` 通过后才能合入 |
 
@@ -207,7 +215,7 @@
 
 > 本节**只列能力 + 优先级**。每个 PR 自行设计「涉及文件 / 验收方式」，按 §10 的验证与维护约定走。
 >
-> 本节**只列能力与优先级，不带版本号**。版本归属以 [roadmap.md](roadmap.md) §2 为准：包结构重构已于 `0.3.0` 落地，本节的能力补全自 `0.5.0` 起，其中传输深度（Phase 3 / Phase 4 的 TLS 项）归 `1.0.0`。
+> 本节**只列能力与优先级，不带版本号**。版本归属以 [roadmap.md](roadmap.md) §2 为准：包结构重构已于 `0.3.0` 落地，本节的能力补全自 `0.5.0` 起，其中传输深度（Phase 3 / Phase 4 的 TLS 项）归 `0.12.0`，公开面收敛归 `1.0.0`。
 
 ### Phase 1 — 基础设施小件（风险低、价值高、几乎不动 native shim）
 

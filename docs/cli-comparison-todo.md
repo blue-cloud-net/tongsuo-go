@@ -10,6 +10,11 @@
 >
 > **范围**：**14 个子命令 / 100 条 API**。不含 ⚠️ 部分对齐项、不含 §9「明确不实现」项、不含无对应子命令的扩展算法（PQC 等）——三者见附录 B。
 
+> **排期更新**：本清单保留采集时的候选 API，不表示它们仍全部待实现或承诺交付。
+> `0.6.0` 的已实现符号以 [api-reference.md](api-reference.md) 为准；PKCS#7 基础流程
+> 归 `0.8.0`，CMS/ts 归 `0.11.0`，会话/TLS 归 `0.12.0`，文件系统 CA 继续暂缓。
+> 下游新增的可靠性需求归 `0.7.0`，逐项见 [需求复核台账](downstream-requirements.md)。
+
 ---
 
 ## 0. 范围总览
@@ -83,7 +88,7 @@
 - **§6.A**：2 ｜ **优先级**：P1 ｜ **归属包**：`x509`（现有）｜ **API 数**：12
 - **现状**：有 `x509.CreateCertificate` + `CRL` + `Store`（纯内存对象），但**无状态化工作流**（index.txt / serial / crlnumber）。
 - **对齐 CLI**：`tongsuo ca -batch -config x.cnf`、`-gencrl`、`-revoke`、`-renew`
-- **前置决策**：本库为内存对象模型，`ca` 本质是「文件系统 + 策略」，**需先定形态**（内存 CA 结构体 vs 目录绑定）。
+- **排期决策**：数据库化、文件系统绑定的 CA 工作流继续暂缓，不承诺版本。以下保留为历史候选，不构成交付承诺；既有内存签发流程直接复用，CRL 配置式签发归 `1.0.0`。
 
 - [ ] `x509.OpenCA(dir string, opts *CAOptions) (*CA, error)` — 打开或初始化 CA 目录；输入：目录路径 → 输出：`*CA`
 - [ ] `x509.NewCA(opts *CAOptions) (*CA, error)` — 纯内存 CA（不落盘）
@@ -103,11 +108,11 @@
 ## 4. `cms` — CMS 签名 / 验签 / 加密 / 解密
 
 - **§6.A**：5 ｜ **优先级**：P2 ｜ **归属包**：`pkcs/pkcs7`（现有，CMS 与 PKCS#7 同源 RFC 5652）｜ **API 数**：8
-- **现状**：`pkcs/pkcs7` 只有证书袋 `Build`/`Extract`/`MarshalPEM`。
+- **现状**：`0.6.0` 已有证书/CRL 容器；`0.8.0` 规划 PKCS#7 基础签名/加密，`0.11.0` 再扩展 CMS。
 - **对齐 CLI**：`cms -sign` / `-verify` / `-encrypt` / `-decrypt` / `-digest_create` / `-digest_verify`
-- **前置**：`internal/native` 需新增 `CMS_*` 绑定。
+- **前置**：`0.8.0` 先新增 `PKCS7_*` 基础流程绑定；`0.11.0` 再新增 `CMS_*`，不能把两者混作一种格式。以下签名为候选，最终目标形态见公开 API 清单。
 
-- [ ] `pkcs7.Sign(data []byte, opts *SignOptions) ([]byte, error)` — 生成签名/封装数据；输入：明文 + 签名证书与私钥 → 输出：CMS/PKCS#7 DER
+- [ ] `pkcs7.Sign(data []byte, opts *SignOptions) ([]byte, error)` — 生成签名/封装数据；输入：明文 + 签名证书与私钥 → 输出：PKCS#7 DER（`0.8.0`）；CMS 扩展另归 `0.11.0`
 - [ ] `pkcs7.Verify(data []byte, opts *VerifyOptions) (*SignedData, error)` — 验签并返回签名者信息
 - [ ] `pkcs7.Encrypt(data []byte, opts *EncryptOptions) ([]byte, error)` — 信封加密（多接收者）
 - [ ] `pkcs7.Decrypt(data []byte, opts *DecryptOptions) ([]byte, error)` — 信封解密
@@ -156,11 +161,11 @@
 - **对齐 CLI**：`ecparam -list_curves` / `-genkey` / `-param_enc` / `-conv_form` / `-check`
 
 - [ ] `ecdh.ListCurves() []string` — 命名曲线枚举（含 `SM2`、`secp256k1`、brainpool 族）
-- [ ] `ecdh.MarshalParametersPEM(c *Curve, explicit bool) ([]byte, error)` — 输出参数文件（`explicit` 对应 `-param_enc explicit`）
-- [ ] `ecdh.LoadParametersPEM(paramPEM []byte) (*Curve, error)` — 读取参数文件
-- [ ] `ecdh.LoadParametersFile(path string) (*Curve, error)` — 文件入口
-- [ ] `ecdh.GenerateKeyFromParameters(paramPEM []byte) (*PrivateKey, error)` — 由参数文件生成密钥
-- [ ] `(*Curve).Check() error` — 参数合法性校验（等价 `-check`）
+- [x] `ecdh.MarshalParametersPEM(c *Curve, explicit bool) ([]byte, error)` — 输出参数文件（`explicit` 对应 `-param_enc explicit`）
+- [x] `ecdh.LoadParametersPEM(paramPEM []byte) (*Curve, error)` — 读取参数文件
+- [x] `ecdh.LoadParametersFile(path string) (*Curve, error)` — 文件入口
+- [x] `ecdh.GenerateKeyFromParameters(paramPEM []byte) (asym.PrivateKey, error)` — 由参数文件生成密钥
+- [x] `(*Curve).Check() error` — 参数合法性校验（等价 `-check`）
 - [ ] `ecdh.PointForm` 常量 + `ecdh.MarshalPublicPEMForm(c *Curve, pub *PublicKey, form PointForm) ([]byte, error)` — 点形式控制（`compressed` / `uncompressed` / `hybrid`）
 
 ---
@@ -250,12 +255,12 @@
 - **对齐 CLI**：`storeutl -certs -crls file:c.pem`、`storeutl file:k.p12`
 - **URI 语法**：`file:path`、`file:path#<n>`（等价 `-r <n>`），裸路径视同 `file:`。
 
-- [ ] `key.Load(uri string) (Key, error)` — 统一加载单个密钥；自动识别 PKCS#8 / PKCS#1 / SEC1 / SPKI / PKCS#12
-- [ ] `key.LoadAll(uri string) ([]Key, error)` — 多对象（多 PEM 块、PKCS#12 bundle）
-- [ ] `key.LoadFromReader(r io.Reader) (Key, error)` — 流式入口（stdin 场景）
-- [ ] `key.LoadWithPassphrase(uri string, pass Passphrase) (Key, error)` — 口令来源抽象（依赖 §6.C C8）
-- [ ] `x509.LoadFromURI(uri string) (certs []*Certificate, crls []*CRL, err error)` — 证书与 CRL 统一加载
-- [ ] `x509.LoadFromReader(r io.Reader) ([]*Certificate, []*CRL, error)` — 流式入口
+- [x] `keystore.Load(uri string) (asym.Key, error)` — 统一加载单个密钥；自动识别 PKCS#8 / PKCS#1 / SEC1 / SPKI / PKCS#12
+- [x] `keystore.LoadAll(uri string) ([]asym.Key, error)` — 多对象（多 PEM 块、PKCS#12 bundle）
+- [x] `keystore.LoadFromReader(r io.Reader) (asym.Key, error)` — 流式入口（stdin 场景）
+- [x] `keystore.LoadWithPassphrase(uri string, pass *meta.Passphrase) (asym.Key, error)` — 口令来源抽象（依赖 §6.C C8）
+- [x] `x509.LoadFromURI(uri string) (certs []*Certificate, crls []*CRL, err error)` — 证书与 CRL 统一加载
+- [x] `x509.LoadFromReader(r io.Reader) ([]*Certificate, []*CRL, error)` — 流式入口
 
 ---
 
@@ -284,7 +289,7 @@
 
 | 包 | 承载 | 理由 |
 |---|---|---|
-| `ts`（顶层，`0.8.0`） | `ts` | RFC 3161 协议栈，含 ASN.1 结构与 HTTP 传输，体量与 `x509` 相当 |
+| `ts`（顶层，`0.11.0`） | `ts` | RFC 3161 协议栈，含 ASN.1 结构与 HTTP 传输，体量与 `x509` 相当 |
 
 **归入既有包的 7 项**：`ca` → `x509`；`ecparam` → `ecdh`；`pkeyparam`、`storeutl` → `asym`
 （`storeutl` 另有 `x509` 部分）；`sess_id` → `tls`；`cms`、`crl2pkcs7` → `pkcs/pkcs7`。
@@ -300,6 +305,7 @@
 
 1. **24 项 ⚠️ 部分对齐**（本次口径为「仅 ❌ 缺失项」）：`asn1parse`(1)、`ciphers`(3)、`crl`(6)、`dgst`(8)、`ec`(12)、`enc`(15)、`genpkey`(20)、`genrsa`(21)、`kdf`(24)、`list`(25)、`ocsp`(28)、`pkcs12`(31)、`pkcs7`(32)、`pkcs8`(33)、`pkey`(34)、`pkeyutl`(36)、`rand`(38)、`req`(40)、`rsa`(41)、`s_client`(43)、`s_server`(44)、`skeyutl`(47)、`verify`(54)、`x509`(56)。
    > 其中 `dgst`(8) / `enc`(15) / `req`(40) 为 **P0**，`pkcs7 -sign`、`pkcs8 -topk8`、`pkeyutl -derive` 等为高频缺口；若后续要做，需另开一份同格式的 TODO。
-2. **18 项 §9「明确不实现」**：`engine`、`fipsinstall`、`rsautl`、`s_time`、`speed`、`rehash`、`nseq`、`spkac`、`passwd`、`prime`、`dsaparam`、`gendsa`、`dsa`、`dhparam`、`srp`、`cmp`、`smime`、`help`。
+2. **20 项 §9「明确不实现」**：`engine`、`fipsinstall`、`rsautl`、`s_time`、`speed`、`rehash`、`nseq`、`spkac`、`passwd`、`prime`、`dsaparam`、`gendsa`、`dsa`、`dhparam`、`srp`、`cmp`、`smime`、`help`、`ECIES`、库内加载 legacy provider。
 3. **无对应子命令的扩展算法**（本次以子命令为维度，故不含）：ML-KEM（含 5 个混合组）、ML-DSA-44/65/87、SLH-DSA 12 变体（§6.D D1–D4）。
 4. **横切项**（不单独设 API，随上述各项落地）：默认 stdin/stdout（§6.C C1/C2）、文件读写（C3）、统一 `Format` 维度（C4）、hex/base64/hexdump 助手（C5/C6）、口令来源抽象（C8）。
+5. **下游需求（非 CLI 缺口）**：AES-OFB/CFB、DES 家族、padding 矩阵、签名 DER/raw、OAEP-SM3、OKP/oct 与 PKCS#1 公钥已在 `0.6.0` 实现；剩余可靠性归 `0.7.0`，PKCS#7 基础流程归 `0.8.0`，RSA-SM3 签名可运行支持归 `0.9.0`。全部 I-01 至 I-22 的纠偏、暂缓和验收边界见 [downstream-requirements.md](downstream-requirements.md)，不再笼统标注为“均归 0.6”。

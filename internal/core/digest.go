@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"sync"
 	"unsafe"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
@@ -76,10 +77,117 @@ func SHA384() *Digest { return newDigest(native.EVP_sha384()) }
 // SHA512 returns the SHA-512 hash descriptor, 64-byte output.
 func SHA512() *Digest { return newDigest(native.EVP_sha512()) }
 
+// SHA512_224 返回 SHA-512/224 摘要算法（28 字节输出）。
+//
+// SHA512_224 returns the SHA-512/224 hash descriptor, 28-byte output.
+func SHA512_224() *Digest { return newDigest(native.EVP_sha512_224()) }
+
+// SHA512_256 返回 SHA-512/256 摘要算法（32 字节输出）。
+//
+// SHA512_256 returns the SHA-512/256 hash descriptor, 32-byte output.
+func SHA512_256() *Digest { return newDigest(native.EVP_sha512_256()) }
+
+// SHA3_224 返回 SHA3-224 摘要算法（28 字节输出）。
+//
+// SHA3_224 returns the SHA3-224 hash descriptor, 28-byte output.
+func SHA3_224() *Digest { return newDigest(native.EVP_sha3_224()) }
+
+// SHA3_256 返回 SHA3-256 摘要算法（32 字节输出）。
+//
+// SHA3_256 returns the SHA3-256 hash descriptor, 32-byte output.
+func SHA3_256() *Digest { return newDigest(native.EVP_sha3_256()) }
+
+// SHA3_384 返回 SHA3-384 摘要算法（48 字节输出）。
+//
+// SHA3_384 returns the SHA3-384 hash descriptor, 48-byte output.
+func SHA3_384() *Digest { return newDigest(native.EVP_sha3_384()) }
+
+// SHA3_512 返回 SHA3-512 摘要算法（64 字节输出）。
+//
+// SHA3_512 returns the SHA3-512 hash descriptor, 64-byte output.
+func SHA3_512() *Digest { return newDigest(native.EVP_sha3_512()) }
+
+// SHAKE128 返回 SHAKE128 可扩展输出摘要描述符。输出长度由 XOFOneShot 指定。
+//
+// SHAKE128 returns the SHAKE128 extendable-output descriptor; the
+// output length is chosen by XOFOneShot.
+func SHAKE128() *Digest { return newDigest(native.EVP_shake128()) }
+
+// SHAKE256 返回 SHAKE256 可扩展输出摘要描述符。输出长度由 XOFOneShot 指定。
+//
+// SHAKE256 returns the SHAKE256 extendable-output descriptor; the
+// output length is chosen by XOFOneShot.
+func SHAKE256() *Digest { return newDigest(native.EVP_shake256()) }
+
+// fetchedDigests 缓存 EVP_MD_fetch 取得的描述符。
+// 铜锁 8.4（OpenSSL 3.0 底座）没有 KECCAK-* 与 SHA2-256-192 的静态取函数，
+// 只能走 fetch；缓存的描述符在进程生命周期内不释放（集合有界，避免每次调用都
+// 泄漏一个句柄），也不需调用方释放。
+//
+// fetchedDigests caches descriptors obtained through EVP_MD_fetch. Tongsuo
+// 8.4 (OpenSSL 3.0 base) has no static accessors for KECCAK-* or
+// SHA2-256-192, so those must be fetched; the cached descriptors are kept
+// for the process lifetime (the set is bounded, which avoids leaking one
+// handle per call) and callers never release them.
+var fetchedDigests sync.Map // map[string]*Digest
+
+// fetchedDigest 按 provider 算法名取摘要描述符（带缓存）；不可用时返回 nil。
+//
+// fetchedDigest returns the digest descriptor for the provider algorithm
+// name (cached); it returns nil when unavailable.
+func fetchedDigest(name string) *Digest {
+	if v, ok := fetchedDigests.Load(name); ok {
+		if d, _ := v.(*Digest); d != nil && d.handle != nil && !d.handle.IsClosed() {
+			return d
+		}
+		fetchedDigests.Delete(name)
+	}
+	md := native.EVP_MD_Fetch(name)
+	if md == nil {
+		return nil
+	}
+	d := newDigest(md)
+	if d == nil {
+		native.EVP_MD_Free(md)
+		return nil
+	}
+	fetchedDigests.Store(name, d)
+	return d
+}
+
+// KECCAK224 返回 KECCAK-224 摘要算法（28 字节输出，原始 Keccak 填充）。
+//
+// KECCAK224 returns the KECCAK-224 hash descriptor (28-byte output, the
+// original Keccak padding).
+func KECCAK224() *Digest { return fetchedDigest("KECCAK-224") }
+
+// KECCAK256 返回 KECCAK-256 摘要算法（32 字节输出）。
+//
+// KECCAK256 returns the KECCAK-256 hash descriptor (32-byte output).
+func KECCAK256() *Digest { return fetchedDigest("KECCAK-256") }
+
+// KECCAK384 返回 KECCAK-384 摘要算法（48 字节输出）。
+//
+// KECCAK384 returns the KECCAK-384 hash descriptor (48-byte output).
+func KECCAK384() *Digest { return fetchedDigest("KECCAK-384") }
+
+// KECCAK512 返回 KECCAK-512 摘要算法（64 字节输出）。
+//
+// KECCAK512 returns the KECCAK-512 hash descriptor (64-byte output).
+func KECCAK512() *Digest { return fetchedDigest("KECCAK-512") }
+
+// SHA256_192 返回 SHA-256/192 摘要算法（24 字节输出，铜锁扩展）。
+//
+// SHA256_192 returns the SHA-256/192 hash descriptor (24-byte output, a
+// Tongsuo extension).
+func SHA256_192() *Digest { return fetchedDigest("SHA2-256-192") }
+
 // Size 返回摘要长度（字节），例如 SHA-256 为 32、SHA-512 为 64、MD5 为 16。
+// 对 SHAKE 系返回其默认输出长度（调用方应改用 XOFOneShot 并显式给定长度）。
 //
 // Size returns the digest output length in bytes (for example 32 for
-// SHA-256, 64 for SHA-512, 16 for MD5).
+// SHA-256, 64 for SHA-512, 16 for MD5). For SHAKE it returns the default
+// output length; callers should use XOFOneShot with an explicit length.
 func (d *Digest) Size() int { return d.size }
 
 // BlockSize 返回内部分组长度（字节），例如 SHA-256 为 64、SHA-512 为 128、SM3 为 64。
@@ -108,6 +216,40 @@ func (d *Digest) OneShot(data []byte) ([]byte, error) {
 		return nil, NewOpError("digest: EVP_Digest", native.PopError())
 	}
 	return out[:n], nil
+}
+
+// XOFOneShot 以指定输出长度一次性计算可扩展输出摘要（SHAKE128 / SHAKE256）。
+// outLen 必须大于 0；对非 XOF 摘要返回错误。
+// nil 接收者或已释放的句柄返回 "digest: invalid digest"，底层失败包装为 OpError。
+//
+// XOFOneShot computes an extendable-output digest (SHAKE128 / SHAKE256)
+// of the requested length in a single call. outLen must be positive;
+// non-XOF digests return an error. A nil receiver or a released handle
+// returns "digest: invalid digest"; underlying failures are wrapped as
+// OpError.
+func (d *Digest) XOFOneShot(data []byte, outLen int) ([]byte, error) {
+	if d == nil || d.handle == nil || d.handle.IsClosed() {
+		return nil, fmt.Errorf("digest: invalid digest")
+	}
+	if outLen <= 0 {
+		return nil, fmt.Errorf("digest: invalid XOF output length %d", outLen)
+	}
+	ctx := native.EVP_MD_CTX_new()
+	if ctx == nil {
+		return nil, NewOpError("digest: EVP_MD_CTX_new", native.PopError())
+	}
+	defer native.EVP_MD_CTX_free(ctx)
+	if !native.EVP_DigestInit_ex(ctx, d.handle.Ptr(), nil) {
+		return nil, NewOpError("digest: EVP_DigestInit_ex", native.PopError())
+	}
+	if len(data) > 0 && !native.EVP_DigestUpdate(ctx, data) {
+		return nil, NewOpError("digest: EVP_DigestUpdate", native.PopError())
+	}
+	out := make([]byte, outLen)
+	if !native.EVP_DigestFinalXOF(ctx, out) {
+		return nil, NewOpError("digest: EVP_DigestFinalXOF", native.PopError())
+	}
+	return out, nil
 }
 
 // DigestCtx 表示一个摘要计算上下文（EVP_MD_CTX 的包装）。

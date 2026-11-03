@@ -129,9 +129,10 @@ API 层（16 个顶级包：meta / digest / mac / sym / asym / ecdh / kdf / rand
 
 - `crypto/` 整目录与 `key/` 已在 `0.3.0` 的包结构重构中**取消**；当前 16 包形态与依赖方向见 `docs/architecture.md` §2 / §3
 - API 层内部依赖：算法原语包只依赖 `internal/core`；`ecdh → asym`；`x509 → asym`；
-  `tls` / `jwk` / `pkcs12` → `x509` + `asym`（单向，无环）
+  `tls` / `jwk` / `pkcs12` → `x509` + `asym`；`0.6.0` 的统一加载器新增
+  `keystore → asym` + `pkcs/pkcs12`（单向，无环）
 - **唯一例外（`0.5.0` 起）**：`digest` / `mac` / `sym` / `kdf` / `asym` / `x509`
-  → `meta`。`meta` 是形态词汇的**叶子包**（只依赖 `internal/core`），提供
+  → `meta`；`0.6.0` 新增 `keystore → meta`（统一加载的口令参数）。`meta` 是形态词汇的**叶子包**（只依赖 `internal/core`），提供
   `Source` / `Sink` / `Encoding` / `Format` / `Passphrase` 供各包的形态入口复用。
   该边单向、无环；**不得反向**（`meta` 不得 import 任何原语包），**也不得**让
   `meta` 直接 import `internal/native`（这一点在 `0.5.0` 已修正一次）
@@ -175,12 +176,12 @@ digest/             # 摘要（合并原 crypto/{sm3,md5,sha1,sha256,sha512}）�
 mac/                # 消息认证码（原 crypto/hmac；14 种 EVP_MAC：HMAC / CMAC / GMAC / KMAC / SipHash / Poly1305 / EIA3）
 kdf/                # 密钥派生（原 crypto/kdf + key 的 KDF；10 种，见 algorithms.go）
 rand/               # 安全随机数（原 crypto/rand）
-sym/                # 对称加密 + 对称密钥对象（原 crypto/{aes,sm4} + key 对称部分）
+sym/                # 对称加密 + 对称密钥对象；extended.go = AES-CCM/OCB/SIV/XTS/WRAP/CBC-CTS 与 ZUC
                     #   + AES-192 全模式 / SM4-CCM / SM4-XTS / ChaCha20(-Poly1305) / forms.go 流式入口
 asym/               # 非对称密钥 / 签名验签 / 加解密 / KEM；forms.go = Load*Source / Marshal*To
                     #   原 crypto/{sm2,rsa,ecdsa,ed25519,ed448} + crypto/{x25519,x448} 生成 + key 非对称部分
-ecdh/               # 密钥协商（原 crypto/ecdh + crypto/{x25519,x448} 协商）
-keystore/           # 密钥元数据、存储与轮转（原 key 的 Handle / Store / Rotate）
+ecdh/               # 密钥协商；parameters.go = 命名/显式 EC 参数 PEM/文件读写
+keystore/           # 密钥元数据、存储与轮转；load.go = 本地 PEM/DER/PKCS#12 多对象加载
 
 x509/               # 证书 + CSR + CRL + OCSP + 链验证（单包；原 x509 + ocsp）
 ├── x509.go         # Certificate / Extension / CreateCertificate / CreateSelfSigned
@@ -188,6 +189,9 @@ x509/               # 证书 + CSR + CRL + OCSP + 链验证（单包；原 x509 
 ├── csr.go          # CertificateRequest
 ├── crl.go          # CRL / RevokedEntry / CRLBuilder / RevocationCheck
 ├── ocsp.go         # Request / Response / CreateOCSPRequest / ParseOCSPResponse
+├── ocsp_http.go    # FetchOCSP / CreateOCSPRequestWithNonce / Response.CheckNonce
+├── trust.go        # AUX 信任/拒绝属性与 trusted PEM
+├── load.go         # 本地证书/CRL 多对象加载
 ├── store.go        # Store / VerifyError / ChainVerify
 ├── forms.go        # MarshalFormat / LoadCertificateSource / MarshalCertificateTo / MarshalCSRTo
 └── helpers.go      # convertEntries / convertExtensions（内部辅助）
@@ -202,7 +206,7 @@ tls/                # TLS / NTLS 传输层
 asn1/               # DER viewer（纯 Go，cgo-free）
 jwk/                # JWK ↔ PEM（RFC 7517）
 pkcs/pkcs7/         # PKCS#7（Build / Extract / MarshalPEM）
-pkcs/pkcs12/        # PKCS#12（Pack / Parse / ChangePassword）
+pkcs/pkcs12/        # PKCS#12（Pack / Parse / ChangePassword；options.go = PBE/iter/读写口令）
 xml/doc.go          # 格式族预留命名空间
 xml/rsa/            # .NET RSAKeyValue XML 序列化
 ```
@@ -258,7 +262,8 @@ docs/testing-guide.md         # 测试组织、各算法必测用例、向量来
 docs/bilingual-doc-guide.md   # 双语 GoDoc 段式规则与检查清单
 docs/api-reference.md         # 公开 API 清单（重构后 16 包，三态标记）
 docs/api-reference-internal.md# 内部 API 清单（internal/* 五个包）
-docs/roadmap.md                 # 版本路线图（0.5.0–1.0.0：范围 / 前置绑定 / 不做）
+docs/roadmap.md                 # 版本路线图（0.7.0–1.0.0：范围 / 前置绑定 / 不做）
+docs/downstream-requirements.md # Toolbit 22 项需求复核、纠偏与交付边界
 docs/cli-comparison.md        # 铜锁 CLI 与本库能力对比（能力级）
 docs/official-sdk-comparison.md # 与官方 SDK 对比
 docs/release-guide.md         # 发版操作手册（前置 / 重排 / 验证 / tag / 回退）
@@ -638,7 +643,8 @@ go test -count=1 ./...    # 必须 ok（无铜锁环境则如实说明未能运�
 | 双语注释规则 | `docs/bilingual-doc-guide.md` |
 | 三层边界与目录 | `docs/architecture.md` §2 / §3 / §5 |
 | 生命周期与所有权 | `docs/architecture.md` §7 / §8 |
-| **版本路线图（0.5.0–1.0.0：范围 / 前置绑定 / 不做）** | `docs/roadmap.md` |
+| **版本路线图（0.7.0–1.0.0：范围 / 前置绑定 / 不做）** | `docs/roadmap.md` |
+| 下游 22 项需求复核与排期依据 | `docs/downstream-requirements.md` |
 | **公开 API 逐符号清单（三态）** | `docs/api-reference.md` |
 | **内部 API 清单（`internal/*`）** | `docs/api-reference-internal.md` |
 | 各算法必测用例 | `docs/testing-guide.md` §3～§7 |

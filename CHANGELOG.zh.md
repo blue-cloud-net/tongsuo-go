@@ -22,6 +22,121 @@
 
 ---
 
+## [0.6.0] - 2026-11-03
+
+### 新增功能
+
+- `sym`：新增 AES-OFB 与 AES-CFB（全字节反馈，即 CFB128），支持
+  128 / 192 / 256 位密钥：`EncryptAESOFB` / `DecryptAESOFB` /
+  `EncryptAESCFB` / `DecryptAESCFB`，并在 `Names()` 中登记
+  `AES-{128,192,256}-{OFB,CFB}`。
+- `sym`：新增 DES 家族的 ECB / CBC 入口——`DES-{ECB,CBC}`、
+  `DES-EDE-{ECB,CBC}`（2 密钥 3DES）与 `DES-EDE3-{ECB,CBC}`，含
+  `EncryptDES*` / `DecryptDES*` / `EncryptDESEDE*` / `DecryptDESEDE3*`
+  类型化入口、`Names()` 登记项与 `NewDESCipher`（8 字节分组）。单 DES 以
+  `K‖K‖K`（三份相同密钥）驱动 DES-EDE3 实现，输出与真正的单 DES 逐字节
+  相同，且无需加载 legacy provider；这一点在 `tongsuocli` 标签下的测试中
+  以真单 DES 为基准做了验证。
+- `sym`：填充矩阵可在不提交数据的前提下查询——新增 `Supports(name, padding)`
+  与 `Paddings(name)`，以及常量 `PaddingPKCS7` / `PaddingZero` / `PaddingNone`
+  与哨兵错误 `ErrUnsupportedPadding`。
+- `asym`：新增签名在 DER 与裸 `r‖s` 之间互转的入口——`SignatureParts`
+  （DER 拆分量）、`SignatureDER`（分量拼 DER）与 `FormatSignature`
+  （der/raw 互转，需显式给每分量宽度）。适用于 SM2 与 ECDSA，并与 openssl
+  CLI 交叉验证。
+- `asym`：RSA-OAEP 的摘要参数接受 `"sm3"`；新增
+  `SupportsRSASignatureDigest(key, hash)` 原生能力探测。铜锁 8.4.0 的 RSA
+  provider 不支持 SM3 签名，PKCS#1 v1.5 / PSS 签验在该基线上返回
+  `ErrUnsupported`；可运行签名支持随铜锁 8.5 兼容归 `0.9.0`。
+- `internal/native`：新增 `EVP_aes_{128,192,256}_{ofb,cfb128}` 与
+  `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}`。
+- `jwk`：新增 OKP（RFC 8037：Ed25519 / Ed448 / X25519 / X448）与对称密钥
+  （RFC 7518 oct）——`MarshalKey` 现可导出 OKP 密钥，`MarshalSymmetric`
+  导出 `Kty: "oct"`，`ToOKPKey` / `ToSymmetricKey` 负责反向转换
+  （`ToOKPKey` 会拒绝与私钥种子不一致的 `x`）。`ToPEM` / `ToPublicPEM`
+  对 OKP 改走 `asym`，因此 Ed448 / X448 同样可用。
+- `internal/native`：新增 `PKCS7_add_crl`、CRL 栈访问与
+  `X509_sk_X509_CRL_{num,value}` 辅助函数。
+- `digest`：注册表从 7 种扩到 20 种 —— SHA-256/192、SHA-512/224、
+  SHA-512/256、SHA3-224/256/384/512、SHAKE128/256 与
+  KECCAK-224/256/384/512；类型化入口 `SumSHA256_192` /
+  `SumSHA512_224` / `SumSHA512_256` / `SumSHA3_*` / `SumKECCAK*`（含对应
+  `New*`），以及需显式输出长度的 `SumSHAKE128` / `SumSHAKE256`。
+  新增 `Available(name)` 运行时能力探测与 `ErrUnsupported` /
+  `ErrXOFNeedsLength` 哨兵错误。
+- `internal/native`：新增 `EVP_sha512_224/256`、`EVP_sha3_*`、
+  `EVP_shake128/256`、`EVP_MD_fetch` / `EVP_MD_free` 与
+  `X_EVP_DigestFinalXOF`。
+- `internal/core`：新增对应描述符与 `Digest.XOFOneShot`；KECCAK-* 与
+  SHA-256/192 经 `EVP_MD_fetch` 取得（8.4 无静态取函数）并在进程内缓存。
+
+- `sym`：AES-CCM / OCB / SIV / WRAP / WRAP-PAD / CBC-CTS（128/192/256 位）、
+  AES-XTS（128/256 位）与 ZUC-128-EEA3，含类型化入口及按名分发；`Names` 共
+  55 项。SIV 使用双密钥，AEAD 的 nonce 长度为 0；一次性入口可用 nonce 作为
+  最后一个 AAD 分量。CBC-CTS 默认 CS1；WRAP 的 nil IV 使用标准值；
+  ZUC 原生 IV 为 5 字节（COUNT 大端 4 字节 + bearer/direction 字节）。
+  WRAP-PAD 的输出缓冲保留原生 cipher 所需的完整额外分组空间。
+- `ecdh`：命名/显式 EC 参数的 `MarshalParametersPEM` / `LoadParametersPEM` /
+  `LoadParametersFile`、`Curve.Check` 与返回 `asym.PrivateKey` 的
+  `GenerateKeyFromParameters`；支持 P-256/384/521 与 secp256k1。
+- `asym`：`PKCS8Options` / `MarshalPKCS8` / `LoadPKCS8`，支持 PEM/DER、PBE
+  v1（PBE-SHA1-3DES）/ v2（PBES2）、AES-CBC 与 HMAC-SHA1/224/256/384/512 PRF、
+  显式迭代与空口令加密；新增 RSA PKCS#1 公钥读写、`Check` / `PublicCheck`。
+- `pkcs/pkcs12`：`Options`、`PackWithOptions` / `ParseWithOptions` /
+  `ChangePasswordWithOptions`，支持 AES-CBC 或 PBE-SHA1-3DES、加密/MAC 迭代、
+  友好名和独立输入/输出口令；既有 `Pack` 的兼容 PBE 保持不变。
+- `x509`：`FetchOCSP` 发送 HTTP POST、匹配请求 CertID、校验 nonce，限制 4 MiB、
+  不跟随重定向、可设置超时；`CreateOCSPRequestWithNonce` 与 `Response.CheckNonce`。
+  响应仍须验签并校验状态/时间；`AddTrust` / `AddReject` / `ClearTrust` / `ClearReject`、
+  `MarshalTrustedPEM` / `LoadTrustedCertificatePEM` 保留证书本地 AUX 信任属性。
+- `keystore`：本地路径、file URI、stdin 与 reader 的统一密钥加载，自动识别 PEM
+  多对象、DER 与 PKCS#12，支持口令；单密钥入口拒绝多密钥，失败不返回部分结果。
+  `x509.LoadFromURI` / `LoadFromReader` 提供证书/CRL 的对应入口。
+- `meta`：`SplitPEM` / `SplitPEMByType` / `DecodePEMFirst` / `EncodePEM` 公开
+  PEM 切分与编码；`pkcs/pkcs7`：`FromCRL` / `ExtractCRLs` 支持 CRL 容器。
+
+### 行为变化与重构
+
+- `sym`：`Options.Padding` 对**所有**分组模式生效。`0.5.0` 及之前它只被
+  SM4-CBC / ECB 消费，AES-CBC / ECB **静默忽略**该参数（传 `none` 仍产出
+  PKCS#7 密文），且无法识别的填充名会静默退化为 `pkcs7`。本版起，未知填充名与
+  不相容组合（如流模式上的 `pkcs7`）一律返回 `ErrUnsupportedPadding`，不再静默
+  产出与预期不符的结果。
+- `sym`：`zero` 填充真正生效——`*Zero` 入口（如 `EncryptSM4CBCZero`）此前与
+  `none` 行为完全相同且拒绝未对齐输入，现在会在尾部补 `0x00` 补足到分组整数倍。
+  解密仍不剥离零填充，需要精确明文长度时由调用方按已知长度截断。
+
+### Bug 修复
+
+- `internal/native`：空载荷 update 保留非空数据指针，防止 CCM 将空消息误当成
+  总长度控制而不生成/校验 tag，包含既有 SM4-CCM 路径。
+- `pkcs/pkcs12`：解析后的临时原生 key/cert/CA 句柄以及包装失败时的部分结果均显式释放。
+
+### BREAKING / 迁移
+
+- AES-CBC / ECB 现在真正应用显式指定的 `zero` / `none` 填充。旧版本忽略这些
+  选项时生成的密文，仍须按当时实际使用的 `pkcs7` 解密。提交数据前可用
+  `Supports` / `Paddings` 校验组合；未知或不相容的填充现在明确失败。
+- `*Zero` 加密现在会为未对齐输入补零；解密仍保留尾部零字节，需要精确还原时
+  应保存原始明文长度。
+
+### 已知限制
+
+- 本版以铜锁 8.4.0 验证；8.5 兼容、GCM-SIV、EdDSA 上下文签名与 RSA-SM3
+  签名可运行支持排至 `0.9.0`。AES-SIV 在 8.4.0 上拒绝空消息并返回
+  `ErrUnsupported`，防止旧 provider 的空消息认证绕过；KECCAK-*、SHA-256/192、
+  SM4-XTS 按既有运行时探测报告不可用。
+
+- DES / DES-EDE / DES-EDE3 **仅用于兼容既有数据**：单 DES 只有 56 位有效密钥
+  且已可被穷举，2 密钥 3DES 约 80 位。不得用于新协议。
+- 外部 PBES2/AES PKCS#12 容器可能能够 Parse，却无法用 `ChangePassword` 改密。
+  `ChangePasswordWithOptions` 会解析并重打包已支持的密钥/证书集合，不保留任意
+  bag 和属性；无损互通改密排至 `0.7.0`。
+- 不提供 `ECIES`；本库已有 `asym.Encrypt`（SM2）。HPKE 与 JWE `ECDH-ES` 是
+  标准化替代方案，但本库尚未封装。见 `docs/roadmap.md` §4。
+
+---
+
 ## [0.5.0] - 2026-10-27
 
 ### 新增功能
@@ -712,7 +827,8 @@
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.2.0...v0.3.0

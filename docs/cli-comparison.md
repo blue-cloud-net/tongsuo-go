@@ -1,5 +1,13 @@
 # 铜锁 CLI 与本库能力对比
 
+> **`0.6.0` 实施更新**：下文采集时的基线表保留原口径；AES 扩展/ZUC、EC 参数、
+> PKCS#8/12 配置、PKCS#7 CRL、JWK OKP/oct、本地多对象加载、OCSP HTTP/nonce 与
+> 证书信任属性已在 8.4.0 基线上实现，当前逐符号事实见 [api-reference.md](api-reference.md)。
+> 铜锁 8.5 兼容、GCM-SIV、EdDSA 上下文签名与 RSA-SM3 签名可运行支持归 `0.9.0`。
+> 后续按“0.7 可靠性 → 0.8 PKCS#7 → 0.9 兼容/经典算法 → 0.10 PQC →
+> 0.11 CMS/时间戳 → 0.12 TLS → 1.0 公开面稳定”交付；下游逐条结论见
+> [downstream-requirements.md](downstream-requirements.md)。以下采集基线不代表未来能力已实现。
+
 > 本文件回答：**与铜锁自带的命令行（`tongsuo`，即铜锁发行版中的 `openssl` 程序）相比，本仓库还有哪些能力没有覆盖？**
 >
 > 口径：本库的目标形态是**「CLI 级应用函数」**——调用方只需给出输入与参数即可拿到输出，不必像裸 `EVP_*` 那样自行组装多步流程；本库**暂不提供底层函数**，也**不暴露底层 cgo 函数**。因此本报告既对比「CLI 有的功能本库有没有」，也对比「本库现有公开面是否偏离该目标形态」。
@@ -7,7 +15,7 @@
 > 报告**不写代码改动、不给新 API 签名**；所有「本库现状」结论均可在源码中校验。
 >
 > **包名口径**：本文件的「本库现状」列使用**重构前**包名（`crypto/*` / `key` / `ocsp`）——那是采集时的真实状态。重构后的 16 包名与逐符号签名见 [api-reference.md](api-reference.md)，迁移对照见 [api-reference.md](api-reference.md) §0.1。
-> 公开面收敛（§6.E 的 12 项内部类型泄露 E1）已在 `0.3.0` 全部落实；剩余的 E2 / E3 见 [roadmap.md](roadmap.md) §2.4。
+> 公开面收敛（§6.E 的 12 项内部类型泄露 E1）已在 `0.3.0` 全部落实；剩余的 E2 / E3 见 [roadmap.md](roadmap.md) §2.7。
 
 ---
 
@@ -16,7 +24,7 @@
 | 维度 | 结论 |
 |---|---|
 | **命令面** | 铜锁 CLI 提供 **56 个普通子命令** + **44 个伪命令**（摘要 15 + 密码 29）。本库**没有也不计划提供 CLI 程序**，因此逐命令对齐应理解为「该命令**所承载的能力**在本库有没有对应的应用级函数」。 |
-| **对称算法面** | 铜锁 provider 侧共 **177 条 cipher 条目**；本库覆盖 AES-128/256 的 4 种模式与 SM4 的 6 种模式，**差距明显**：缺 AES-192、AES 的 OFB/CFB/CCM/XTS/OCB/SIV/GCM-SIV/WRAP/CTS、SM4-CCM/XTS、ChaCha20(-Poly1305)、ZUC-128-EEA3、DES/3DES/RC4/DESX。 |
+| **对称算法面** | 铜锁 provider 侧共 **177 条 cipher 条目**；本库覆盖 AES-128/256 的 4 种模式与 SM4 的 6 种模式，**差距明显**：缺 AES-192、AES 的 OFB/CFB/CCM/XTS/OCB/SIV/GCM-SIV/WRAP/CTS、SM4-CCM/XTS、ChaCha20(-Poly1305)、ZUC-128-EEA3、DES/3DES/RC4/DESX。其中 **AES 的 OFB/CFB 与 DES / DES-EDE / DES-EDE3 已在 `0.6.0` 实现**（见 [api-reference.md](api-reference.md) §6）；单 DES 不依赖 legacy provider（以 `K‖K‖K` 走 DES-EDE3 等价实现）。 |
 | **摘要算法面** | 铜锁提供 16 个摘要（含 SHA-224/384、SHA-512/224、SHA-512/256、SHA3 四档、SHAKE128/256、KECCAK 四档、SHA-256/192）；本库只有 **MD5 / SHA-1 / SHA-256 / SHA-512 / SM3** 五个独立包，缺 SHA-224、SHA-384、SHA3、SHAKE、KECCAK。 |
 | **MAC 与 KDF 面** | 铜锁有 **8 个 MAC** 与 **13 个 KDF**；本库只有 HMAC（6 种摘要）与 HKDF/PBKDF2——`crypto/kdf` 甚至**没有 `Argon2ID` 派生函数**（只有可用性探测），真正派生在 `key.Argon2ID`。 |
 | **非对称面** | 铜锁有 RSA / DSA / DH / EC / SM2 / Ed25519(ph/ctx) / Ed448(ph) / X25519 / X448 / ML-DSA / SLH-DSA / Paillier / EC-ElGamal 等；本库覆盖 RSA / ECDSA / SM2 / Ed25519 / Ed448 / X25519 / X448 / ECDH，**缺 DSA、DH、SM2 密钥交换（`SM2DH`）、KEM（`-encap/-decap`）**。 |
@@ -38,7 +46,7 @@
 |---|---|
 | **对比基线（CLI）** | `/opt/tongsuo/bin/tongsuo`<br>`Tongsuo: Tongsuo 8.5.0-pre2 (Library: Tongsuo 8.5.0-pre2)`<br>`OpenSSL 3.5.4 3 Aug 2026 (Library: OpenSSL 3.5.4 3 Aug 2026)`<br>`platform: linux-x86_64`，`OPENSSLDIR: "/opt/tongsuo/ssl"` |
 | **铜锁源码基线** | `/workspace/opensources/nginx/tongsuo`（`configdata.pm`：`linux-x86_64`，`--prefix=/opt/tongsuo`） |
-| **本库基线** | `github.com/blue-cloud-net/tongsuo-go`，CHANGELOG `0.5.0`（2026-10-27 发布） |
+| **本库基线** | `github.com/blue-cloud-net/tongsuo-go`，CHANGELOG `0.6.0`（2026-11-03 定版） |
 | **CLI 侧检索方式** | 实机采集：`tongsuo version -a`、`tongsuo help`、`tongsuo list -commands -1`、`tongsuo list -<family> -1`（14 个族）、`tongsuo list -options <cmd>`（逐命令）、`tongsuo ciphers -v`；并与 `apps/progs.h`、`apps/progs.pl`、`configdata.pm` 交叉校验 |
 | **本库侧检索方式** | 全仓库检索导出符号 + `internal/native/binding_*.go`（已绑定的 C 函数）+ 逐符号复核（文件:行） |
 | **环境声明** | 本机**已安装铜锁 8.5.0-pre2**，故「CLI 能力」列全部为实机输出；本库侧为**静态检索**，未运行 `go build` / `go vet` / `go test`。 |
@@ -228,6 +236,8 @@
 `internal/core` 的包装类型：`Handle`、`OpError`、`Digest`、`DigestCtx`、`Cipher`、`CipherCtx`、`HmacCtx`、`PKey`、`KeyParams`、`Name`、`Certificate`、`CertificateRequest`、`Extension`、`Store`、`VerifyError`、`RevokedEntry`、`CRL`、`MemBIO`、`PKCS12`、`PKCS7`、`OCSPRequest`、`OCSPResponse`、`CertStatus`、`TLSContext`、`SSLConn`、`CipherInfo`。
 
 **未绑定/未暴露**：`SSL_SESSION_*`、`SSL_CTX_set_alpn*`、`SSL_CTX_set_tlsext_ticket_key_cb`、`SSL_CTX_set_tlsext_status*`（OCSP stapling）、`SSL_CTX_set_client_CA_list`、`CMS_*`、`OSSL_STORE_*`、`TS_*`、`EVP_MAC_*`、`EVP_PKEY_encapsulate/decapsulate`、`EVP_*_xts/ccm/ocb/wrap`、除 HKDF/PBKDF2 之外的 `EVP_KDF` 算法、`EVP_aes_192_*`、`EVP_aes_*_ofb/cfb`、`EVP_chacha20*`、`EVP_sm4_ccm/xts`、`ZUC`、SM9、Paillier/EC-ElGamal、ML-KEM/ML-DSA/SLH-DSA、白盒 SM4。
+
+> 上表为**采集时点**状态（`0.3.0` 重构前）。`0.5.0` 已补齐 `EVP_aes_192_*`、`EVP_chacha20*`、`EVP_sm4_ccm/xts` 与 `EVP_MAC_*` 全家族；`0.6.0` 已补齐 `EVP_aes_{128,192,256}_{ofb,cfb128}`、`EVP_des_ede3_{ecb,cbc}`、`EVP_des_ede_{ecb,cbc}`（均属 default provider，**无需 legacy**）。逐项归属见 [roadmap.md](roadmap.md) §3。
 
 ---
 
@@ -489,7 +499,7 @@
 
 | 分组 | 项 |
 |---|---|
-| 对称 | AES-192；AES OFB/CFB/CCM/XTS/OCB/SIV/GCM-SIV/WRAP/CBC-CTS；SM4-CCM/XTS；ChaCha20(-Poly1305)；ZUC-128-EEA3 |
+| 对称 | AES-192；AES OFB/CFB/CCM/XTS/OCB/SIV/GCM-SIV/WRAP/CBC-CTS；SM4-CCM/XTS；ChaCha20(-Poly1305)；ZUC-128-EEA3；**DES / DES-EDE（2 密钥）/ DES-EDE3 × ECB / CBC（单 DES 以 `K‖K‖K` 等价实现，仅兼容存量）** |
 | 摘要 | SHA-224、SHA-384、SHA-512/224、SHA-512/256、SHA3-224/256/384/512、SHAKE128/256、KECCAK-224/256/384/512、SHA-256/192 |
 | MAC | CMAC、GMAC、KMAC-128/256、SipHash、Poly1305、EIA3 |
 | KDF | scrypt、SSKDF、TLS1-PRF、TLS13-KDF、X9.42、KBKDF、KRB5KDF、PKCS12KDF、SSHKDF、HMAC-DRBG-KDF；`crypto/kdf` 补 `Argon2ID` 派生函数 |
@@ -527,9 +537,14 @@
 |---|---|
 | Phase 1 采集型小件 + Phase 2 输入输出形态 | `0.5.0` |
 | Phase 2 收尾 + Phase 3 算法覆盖主体 + Phase 4 的格式容器部分 | `0.6.0` |
-| Phase 3 剩余（SM2DH / PQC / KEM）+ Phase 4 的 `pkcs7` 签名加密族 | `0.7.0` |
-| Phase 4 的协议部分（CMS / ts / `ca`） | `0.8.0` |
-| Phase 5 传输深度与扩展算法 + §6.E 公开面收敛（破坏性，需迁移指南） | `1.0.0` |
+| 下游可靠性与数据完整性（见 [需求台账](downstream-requirements.md)） | `0.7.0` |
+| Phase 4 的 PKCS#7 签名/验签/加密/解密 | `0.8.0` |
+| 铜锁 8.5 兼容、经典算法扩展与 Phase 3 的 SM2DH / 通用 KEX | `0.9.0` |
+| Phase 3 的 PQC / KEM | `0.10.0` |
+| Phase 4 的 CMS / ts | `0.11.0` |
+| Phase 5 的 TLS 能力完善 | `0.12.0` |
+| §6.E 的 E2/E3 公开面收敛及 CRL 配置式签发 | `1.0.0` |
+| 数据库化、文件系统绑定的 CA 工作流 | 暂缓，不承诺版本 |
 
 ---
 
@@ -552,6 +567,8 @@
 | 13 | provider / 属性查询（§6.C C13） | provider 固定为 default，无多 provider 语义 |
 | 14 | 压缩（§6.C C7） | 本机构建 `ZLIB`/`BROTLI`/`ZSTD` 均 disabled |
 | 15 | SM9（§6.D D20） | **铜锁本版本不提供**，无对应 C API |
+| 16 | ECIES（ECDH + KDF + AEAD 的组合封装） | 「ECIES」无唯一容器标准（SEC1 §5.1 / IEEE 1363a / ISO 18033-2 / X9.63 各不相同），自造容器无外部事实可对拍；标准化的替代是 RFC 9180 HPKE（铜锁 8.5 起提供 `OSSL_HPKE_*`）与 JWE `ECDH-ES`（RFC 7518）。国密场景用 `asym.Encrypt`（SM2 加密）。**暂缓，不承诺版本**，有明确互通对象或标准协议需求后重新立项；见 [roadmap.md](roadmap.md) §4 第 9 条 |
+| 17 | 在库内加载 legacy provider（单 DES / RC4 / DESX） | 会全局启用 RC4 / RC5 / DESX 等弱算法，与本库安全取向相反；单 DES 已由 `K‖K‖K` 等价实现覆盖，legacy 仅作测试基准。见 [roadmap.md](roadmap.md) §4 第 10 条 |
 
 ---
 
@@ -618,10 +635,10 @@
 | `SM4-CCM` / `SM4-XTS` | 无 | ❌ |
 | `AES-128/256-CBC/ECB/CTR/GCM` | `crypto/aes.EncryptCBC` / `EncryptECB` / `EncryptCTR` / `EncryptGCM` | ✅ |
 | `AES-192-*` | 无（密钥长度仅 16/32） | ❌ |
-| `AES-*-OFB/CFB/CCM/XTS/OCB/SIV/GCM-SIV/WRAP/CBC-CTS` | 无 | ❌ |
-| `ChaCha20` / `ChaCha20-Poly1305` | 无 | ❌ |
-| `ZUC-128-EEA3` | 无 | ❌ |
-| `DES` / `DES-EDE` / `DES-EDE3` / `DESX` / `RC4` / `RC4-40` | 无 | ❌ |
+| `AES-*-OFB/CFB/CCM/XTS/OCB/SIV/GCM-SIV/WRAP/CBC-CTS` | 无 | ❌（OFB/CFB 已排期 `0.6.0`） |
+| `ChaCha20` / `ChaCha20-Poly1305` | 无 | ❌（`0.5.0` 已补） |
+| `ZUC-128-EEA3` | 无 | ❌（`0.6.0` 排期） |
+| `DES` / `DES-EDE` / `DES-EDE3` / `DESX` / `RC4` / `RC4-40` | 无 | ❌（DES / DES-EDE / DES-EDE3 已排期 `0.6.0`；DESX / RC4 / RC4-40 不做） |
 | `base64` | 无 | ❌ |
 | `zlib` / `brotli` / `zstd` | 无（本机构建均 disabled） | ❌ |
 

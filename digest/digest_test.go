@@ -37,13 +37,70 @@ func typedSum(name string, data []byte) []byte {
 	case "SHA512":
 		s := SumSHA512(data)
 		return s[:]
+	case "SHA256-192":
+		s := SumSHA256_192(data)
+		return s[:]
+	case "SHA512-224":
+		s := SumSHA512_224(data)
+		return s[:]
+	case "SHA512-256":
+		s := SumSHA512_256(data)
+		return s[:]
+	case "SHA3-224":
+		s := SumSHA3_224(data)
+		return s[:]
+	case "SHA3-256":
+		s := SumSHA3_256(data)
+		return s[:]
+	case "SHA3-384":
+		s := SumSHA3_384(data)
+		return s[:]
+	case "SHA3-512":
+		s := SumSHA3_512(data)
+		return s[:]
+	case "KECCAK-224":
+		s := SumKECCAK224(data)
+		return s[:]
+	case "KECCAK-256":
+		s := SumKECCAK256(data)
+		return s[:]
+	case "KECCAK-384":
+		s := SumKECCAK384(data)
+		return s[:]
+	case "KECCAK-512":
+		s := SumKECCAK512(data)
+		return s[:]
 	}
 	panic("typedSum: unknown name " + name)
 }
 
+// fixedNames 返回可用于「定长」入口的算法名：跳过 XOF（SHAKE，需要显式输出长度）
+// 与当前铜锁构建不提供的算法（如 8.4.0 无 KECCAK-*）。
+//
+// fixedNames returns the names usable with the fixed-length entries:
+// XOF algorithms (SHAKE, which need an explicit output length) and
+// algorithms missing from the current Tongsuo build (for example
+// KECCAK-* on 8.4.0) are skipped.
+func fixedNames() []string {
+	out := make([]string, 0, len(algos))
+	for _, a := range algos {
+		if a.xof || !Available(a.name) {
+			continue
+		}
+		out = append(out, a.name)
+	}
+	return out
+}
+
 // TestNames 验证 Names 返回稳定且完整的算法列表。
 func TestNames(t *testing.T) {
-	want := []string{"SM3", "MD5", "SHA1", "SHA224", "SHA256", "SHA384", "SHA512"}
+	want := []string{
+		"SM3", "MD5", "SHA1", "SHA224", "SHA256", "SHA384", "SHA512",
+		"SHA256-192", "SHA512-224", "SHA512-256",
+		"SHA3-224", "SHA3-256", "SHA3-384", "SHA3-512",
+		"SHAKE128", "SHAKE256",
+		"KECCAK-224", "KECCAK-256", "KECCAK-384", "KECCAK-512",
+	}
 	got := Names()
 	if len(got) != len(want) {
 		t.Fatalf("Names() = %v, want %v", got, want)
@@ -183,7 +240,7 @@ func TestNameIsCaseInsensitive(t *testing.T) {
 // TestSumByNameMatchesTyped 验证按名 Sum 与类型化 Sum* 结果一致。
 func TestSumByNameMatchesTyped(t *testing.T) {
 	data := []byte("tongsuo-go digest dispatch")
-	for _, name := range Names() {
+	for _, name := range fixedNames() {
 		t.Run(name, func(t *testing.T) {
 			got, err := Sum(name, data)
 			if err != nil {
@@ -199,7 +256,7 @@ func TestSumByNameMatchesTyped(t *testing.T) {
 
 // TestNewByNameMatchesSizeBlock 验证按名 New 返回的 hash.Hash 报告正确尺寸。
 func TestNewByNameMatchesSizeBlock(t *testing.T) {
-	for _, name := range Names() {
+	for _, name := range fixedNames() {
 		t.Run(name, func(t *testing.T) {
 			h, err := New(name)
 			if err != nil {
@@ -220,7 +277,7 @@ func TestNewByNameMatchesSizeBlock(t *testing.T) {
 // TestNewByNameStreamMatchesSum 验证按名流式与按名一次性结果一致。
 func TestNewByNameStreamMatchesSum(t *testing.T) {
 	data := bytes.Repeat([]byte("chunk"), 50)
-	for _, name := range Names() {
+	for _, name := range fixedNames() {
 		t.Run(name, func(t *testing.T) {
 			h, err := New(name)
 			if err != nil {
@@ -248,7 +305,7 @@ func TestNewByNameStreamMatchesSum(t *testing.T) {
 // TestSumReaderMatchesSum 验证 SumReader 与 Sum 结果一致（含分块边界）。
 func TestSumReaderMatchesSum(t *testing.T) {
 	data := []byte("stream me through an io.Reader, please")
-	for _, name := range Names() {
+	for _, name := range fixedNames() {
 		t.Run(name, func(t *testing.T) {
 			got, err := SumReader(name, bytes.NewReader(data))
 			if err != nil {

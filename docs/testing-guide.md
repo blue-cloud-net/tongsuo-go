@@ -64,6 +64,17 @@ go test -fuzz FuzzRoundTrip ./sym
 
 ### 3.1 `digest`
 
+**`0.6.0` 扩展摘要（`digest/extended_test.go` / `digest/digest_tongsuocli_test.go`）**
+
+| 测试用例 | 描述 |
+|---------|------|
+| 标准向量 | SHA-512/224 / SHA-512/256（FIPS 180-4）、SHA3-224/256/384/512（FIPS 202）、KECCAK-256（原始 Keccak 空串向量），按名与类型化两条路径均逐字节比对 |
+| SHAKE 显式长度 | `Sum("SHAKE128", …)` / `New("SHAKE128")` 必须返回 `ErrXOFNeedsLength`；`SumSHAKE128` 需 0 长度报错 |
+| XOF 前缀性质 | 同一输入的 64 字节输出必须以 16 字节输出为前缀 |
+| 长度与分组 | `Size` / `BlockSize` 与导出的 `*Size` / `*BlockSize` 常量一致 |
+| 运行时探测 | `Available` 对 8.4 缺失的 KECCAK-* / SHA-256/192 返回 false，相应测试 `t.Skip` |
+| CLI 对拍 | 14 种定长算法与 `openssl dgst -<name>` 逐字节一致；SHAKE 用 `-xoflen N` 对拍 |
+
 合并后的 `digest` 同时服务 SM3 / MD5 / SHA1 / SHA224 / SHA256 / SHA384 / SHA512，
 下列用例需**逐算法**覆盖：
 
@@ -152,6 +163,22 @@ go test -fuzz FuzzRoundTrip ./sym
 | 流式拒绝 AEAD | `EncryptSource("SM4-GCM", …)` 等返回 `ErrUnsupported` |
 | 流式坏填充 | 破坏最后一密文块→ `DecryptSource` 必须返回错误（不放宽校验） |
 
+**`0.6.0` 新增模式与填充矩阵（`sym/des_test.go` / `sym/padding_test.go` / `sym/newmodes_tongsuocli_test.go`）**
+
+| 测试用例 | 描述 |
+|---------|------|
+| AES-OFB / CFB | 128 / 192 / 256 三种密钥长度各自往返；密文长度等于明文长度（流模式）；`DecryptAESOFB` 与 `EncryptAESOFB` 结果相同；IV 非 `BlockSize` 返回错误；与 CLI `-aes-{128,256}-{ofb,cfb}` 逐字节一致 |
+| DES 家族往返 | `DES-ECB/CBC`、`DES-EDE-ECB/CBC`、`DES-EDE3-ECB/CBC` 六个名字的往返、空明文与分组对齐明文 |
+| **单 DES 等价性** | `DES-*` 的输出必须与 `DES-EDE3-*` 在 `K‖K‖K` 密钥下**逐字节相同**（实现依赖的数学事实，必须钉住） |
+| 单 DES 基准真相 | `-tags tongsuocli` 下用 `openssl enc -des-cbc -provider legacy -provider default` 作基准，与 `DES-CBC` 输出逐字节比对；无法加载 legacy 时 `t.Skip`（**库运行时不加载 legacy，仅测试用**） |
+| DES 长度错误 | 密钥长度不符 → `ErrInvalidKeyLength`；IV 非 8 字节 → `invalid iv size`；`NewDESCipher` 的 `BlockSize() == 8` |
+| 3DES / 2-key 3DES 对拍 | `-des-ede3-{ecb,cbc}` 与 `-des-ede-{ecb,cbc}` 逐字节一致 |
+| 填充矩阵静态查询 | `Paddings` / `Supports`：分组模式返回 `pkcs7/zero/none`，流模式与 XTS 返回 `none`，AEAD 返回空；未知名返回 `ErrUnknownAlgorithm`，未知填充名返回 `(false, nil)` |
+| 非法组合不发数据即拒 | `Encrypt("AES-128-CTR", …, nil, &Options{Padding: pkcs7})` 等在**空数据**上即返回 `ErrUnsupportedPadding` |
+| AES-CBC 真正消费填充 | `PaddingNone` 下密文长度等于明文（已对齐），且与 pkcs7 密文前缀一致；未对齐时报错 |
+| zero 填充语义 | 加密补零到分组整数倍、解密**不剥离**（长度仍为分组倍数） |
+| Zero 入口一致性 | `EncryptSM4CBCZero` 与 `Encrypt("SM4-CBC", …, &Options{Padding: "zero"})` 逐字节相同 |
+
 ---
 
 ## 5. 非对称与协商测试（`asym` / `ecdh`）
@@ -188,6 +215,18 @@ go test -fuzz FuzzRoundTrip ./sym
 | 低阶点 / 非曲线点 | X25519 低阶点与非法公钥返回错误（不得返回全零共享密钥） |
 
 **CLI 对比测试**：`openssl pkeyutl -derive` 双向对拍。
+
+### 5.3 签名表示转换与 RSA-SM3（`0.6.0`）
+
+| 测试用例 | 描述 |
+|---------|------|
+| DER → (r,s) → DER | SM2 与 ECDSA 各取真实签名，拆分后重组必须逐字节等于原 DER |
+| der → raw → der | `FormatSignature` 宽度 32（SM2 / P-256）；raw 长度必须为 64 |
+| 前导零补齐 | `r` / `s` 最高位为 0 时 DER 更短，raw 必须左补回定长（最易错处，必须有专门用例） |
+| 宽度缺失 / 不符 | `der → raw` 不给 width 报错；width 过小报错；raw 长度与 width 不一致报错 |
+| 结构严格性 | 空 SEQUENCE、垃圾字节、**尾随字节**、空 / 零分量均返回错误 |
+| RSA + SM3（PKCS#1 v1.5 / PSS / OAEP） | 三种填充下签名、验签、加解密往返；篡改消息必失败；摘要不匹配必失败 |
+| RSA-SM3 与 CLI 互验 | 本库签名 → `openssl dgst -sm3 -verify`；`openssl dgst -sm3 -sign` → 本库验签；PSS 带 `-sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:digest` |
 
 ---
 
@@ -425,3 +464,75 @@ go test -fuzz FuzzRoundTrip ./sym
 - `mac/*_tongsuocli_test.go`：`openssl mac -macopt …`
 - `sym/*_tongsuocli_test.go`：`openssl enc -<alg>`
 - `kdf/kdf_tongsuocli_test.go`：`openssl kdf -kdfopt … <ALG>`
+
+## `0.6.0` 增量验收（铜锁 8.4.0）
+
+- `sym/extended_test.go`：RFC 3394 WRAP、RFC 5297 SIV、RFC 7253 OCB 空消息、
+  ZUC 零向量、NIST CAVS 11.0 AES-128/256-XTS（含密文窃取）、OpenSSL 官方 AES-256-CCM 16 字节 tag 向量；全部新模式 × 密钥长度 × 输入长度往返；认证 tag/AAD/nonce/密文
+  篡改；WRAP 完整性；SIV 空消息拒绝；CCM 空载荷必须生成并校验 tag。
+  模糊种子为 `FuzzAESWrapPadRoundTrip`，基准为 `BenchmarkAESOCB`。
+- `ecdh/parameters*_test.go`：P-256/384/521/secp256k1 命名/显式参数逐字节 CLI 对拍，
+  文件入口、参数驱动生成、坏输入与不支持曲线。
+- `asym/pkcs8*_test.go`：PBE v1/v2、PRF、迭代、空/错误口令、PEM/DER；RSA PKCS#1
+  公钥与 `Check`/`PublicCheck`；PKCS#8 双向 CLI 转换后私钥 DER 一致。
+  RSA-SM3 签名不在 8.4.0 可用集：原生能力为 false 时必须断言 `ErrUnsupported`，
+  CLI 同时必须失败；不能以 t.Skip 掩盖不一致。OAEP-SM3 必须往返通过。
+- `pkcs/pkcs12/options*_test.go`：全部 PBE 选择、独立读/写口令、改密；CLI 输出
+  必须包含指定 PBE、迭代次数与 friendlyName，避免参数静默失效。
+- `keystore/load_test.go`、`x509/extended_test.go`：PEM 多对象/DER/PKCS#12 自动识别，
+  本地 file URI，未知块与部分结果清理；trusted PEM 往返不改变签名 DER，加载保持签名终态。
+- `x509/extended_tongsuocli_test.go`：离线 OCSP responder 只读取 `-reqin`，不附加
+  `-cert` 重新生成请求；HTTP 成功、nonce 一致/缺失/不匹配、响应签名与信任属性对拍。
+  默认测试覆盖 HTTP 状态、Content-Type、限长、超时与错误 DER。
+- AES-CCM/OCB/SIV/XTS 不由 `openssl enc` 提供；其标准向量与错误路径由单元测试覆盖，
+  CLI 对拍覆盖 `enc` 可用的 WRAP/WRAP-PAD/CBC-CTS/ZUC。既有 8.4 缺失算法与 HKDF
+  差异保持原能力探测/降级策略，不修改期望向量。
+
+显式设置 `TONGSUO_HOME=/opt/tongsuo-8.4.0`、对应 `CGO_CFLAGS` / `CGO_LDFLAGS` /
+`LD_LIBRARY_PATH` 与 `TONGSUO_OPENSSL_BIN`，不要跟随可能指向 master 的 `/opt/tongsuo`。
+完成 `go build ./...`、`go vet ./...`、`go test -count=1 ./...`、
+`go test -tags tongsuocli -count=1 ./...`，涉及句柄生命周期的本版还需 `go test -race ./...`。
+
+
+## 后续版本验收要求（规划，尚未增加测试）
+
+以下是交付门槛，不表示当前已有相应 API 或测试；版本归属见 [roadmap.md](roadmap.md) §2。
+
+### `0.7.0` — 可靠性与数据完整性
+
+| 能力 | 必测场景 |
+|---|---|
+| ECDH / CSR Close | nil/重复关闭；关闭后导出/协商/验签返回错误；ECDH 副本关闭不影响原 asym 密钥，反向关闭也不影响副本 |
+| ASN.1 限额 | 深度及节点数恰好达限/超限、宽树/深树、非法限额、可识别的超限错误；现有 Parse 的 128 层保护和合法输入结果保持 |
+| CRL 完整序列号 | 20 字节序列号读取、不同长序列号不折叠；RevokeSerialHex 与 Revoke(cert) 均无损，导出后与 CLI 数值一致；旧 int64 视图限制明确 |
+| DER 扩展 | 读取已有扩展后迁移 DER、已知/自定义 OID、critical 保留、错误 OID/DER；签名前添加、签名后拒绝修改；最终证书验签成功 |
+| 信任路径 | 显式 CA 文件/目录与临时默认信任源、受信/不受信链、关闭后调用；不得隐式信任输入根，不依赖公网或宿主机根证书偶然状态 |
+| SM2 压缩输入 | 两种 C2/C3 顺序、压缩点 → DER → 解密、既有未压缩输出；无效前缀、截断、非曲线点/无穷远点、篡改认证失败；经铜锁原生验证 |
+| PKCS#12 改密 | 外部默认 PBES2/AES 与可用 3DES 导出；旧口令失败/新口令成功；空口令、错误口令、损坏输入；key/cert/CA、bag 顺序及 friendlyName/localKeyID/其他属性保持，不丢未知内容 |
+| RSA 签名格式 | SHA-256 的 PKCS#1 v1.5 / PSS 与 CLI 双向互验；签名长度等于模数字节数；统一 PSS 摘要/MGF1/salt 参数；不把首字节不是 0x30 当成失败 |
+| 分步签发示例 | NewCertificate → Set/Add → Sign，SAN/KU/SKID/AKID 等扩展可读回，签名可验证；不通过放开签名终态解决 |
+
+P12 不支持的算法或无法保留的结构须明确失败，不能自动加载 legacy 或退回有损重打包。
+随机签名/密文不做跨独立运行的逐字节相等断言；比较结构、内容、属性并双向验签/解密。
+涉及句柄生命周期与原生内存的改动须跑 race、正常/错误路径与 CLI 互操作。
+
+### `0.8.0` — PKCS#7
+
+- 附带/分离签名均与铜锁 CLI 双向互验，分离内容缺失或不匹配、损坏容器、错误密钥
+  和签名篡改必须失败；证书袋/CRL 现有行为回归。
+- EnvelopedData 双向加解密，覆盖错误接收者密钥和畸形输入；不能把非认证加密的
+  偶然解密成功当成完整性认证，按所选算法验证能够保证的错误条件。
+- 分别断言“签名有效”与“证书受信任”，未受信任的签名者不能因验签成功而被当成受信任。
+- 保持铜锁 8.4.0 发布基线，完成 build/vet/单元测试/CLI 对拍及生命周期 race 检查。
+
+### `0.9.0` 至 `1.0.0`
+
+- `0.9.0`：固定 8.4.0/8.5 版本独立构建、单元测试与 CLI 对拍，头文件、链接库、
+  CLI 必须同源；验证能力探测与真实调用一致，AES-SIV 空消息不能因升级而绕过认证。
+- `0.10.0`：PQC/KEM 原生能力探测、密钥编码往返、标准向量/互操作、参数不匹配、
+  生命周期与失败清理；8.4 编译不引用不存在的符号。
+- `0.11.0`：CMS 互操作、RFC 3161 请求/响应匹配与时间戳验证；HTTP 用受控本地服务，
+  验证失败不能降级成“成功解析即有效”。
+- `0.12.0`：TLS/NTLS 回环与 CLI 双向互操作，覆盖 SNI/ALPN、客户端认证、会话、
+  验证回调、取消/关闭及并发；复用既有 Listener 验收。
+- `1.0.0`：迁移示例可编译，公开签名/Options 对照与全量回归通过，再给出兼容性承诺。

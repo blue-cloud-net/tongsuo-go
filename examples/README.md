@@ -67,3 +67,12 @@ X25519 / X448（RFC 7748）的密钥生成、PEM（PKCS#8 / SPKI）往返、双�
 ```bash
 cd examples/ecdh && go run .
 ```
+
+## `0.6.0` 包级可运行示例
+
+以下 GoDoc 示例可通过 `go test ./sym ./asym ./ecdh ./keystore` 执行，使用与主库相同的铜锁环境：
+
+- [AES-OCB AEAD](../sym/extended_example_test.go)：密文与 tag 拼接、认证解密。
+- [PKCS#8](../asym/pkcs8_example_test.go)：显式 PBES2/PRF 的加密 DER 往返。
+- [EC 参数](../ecdh/parameters_example_test.go)：命名曲线参数 PEM 往返。
+- [统一密钥加载](../keystore/load_example_test.go)：同一 PEM 中读取私钥与公钥。
