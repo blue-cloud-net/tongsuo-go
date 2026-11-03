@@ -95,3 +95,8 @@ const (
 	SSL_R_BAD_LEGACY_VERSION   = 928 // legacy_version in ClientHello out of range
 	X509_R_CERT_VERIFY_FAILED  = 101 // X509_verify_cert failed
 )
+
+// ERR_clear_error 清空当前线程的错误队列。
+//
+// ERR_clear_error clears the current thread's error queue.
+func ERR_clear_error() { C.ERR_clear_error() }
