@@ -50,6 +50,21 @@ func TestRSASM3CLIInterop(t *testing.T) {
 		t.Fatalf("write public key: %v", err)
 	}
 
+	supported, err := SupportsRSASignatureDigest(priv, "sm3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !supported {
+		for _, extra := range [][]string{nil, {"-sigopt", "rsa_padding_mode:pss"}} {
+			args := append([]string{"dgst", "-sm3", "-sign", privPath, "-out", sigPath}, extra...)
+			args = append(args, dataPath)
+			if out, e := testutil.RunOpenSSLCombined(args, nil); e == nil {
+				t.Fatalf("provider probe disagrees with CLI: %s", out)
+			}
+		}
+		return
+	}
+
 	pssOpts := []string{"-sigopt", "rsa_padding_mode:pss", "-sigopt", "rsa_pss_saltlen:digest"}
 
 	t.Run("library-sign-cli-verify/PKCS1v15", func(t *testing.T) {

@@ -115,9 +115,11 @@ func digestForRSAHash(hash string) (*core.Digest, error) {
 
 // SignPKCS1v15 使用 RSA-PKCS#1 v1.5（RFC 8017）对 data 签名，摘要由 digest 指定。
 // digest 取 "sha1" / "sha224" / "sha256" / "sha384" / "sha512"，空串默认 SHA-256。
+// sm3 签名摘要依赖 provider；不可用时返回 ErrUnsupported，可用 SupportsRSASignatureDigest 预检。
 //
 // SignPKCS1v15 signs data with RSA-PKCS#1 v1.5 (RFC 8017) using the
 // digest selected by digest.
+// The sm3 signature digest depends on the provider; unavailable support returns ErrUnsupported. Probe with SupportsRSASignatureDigest.
 func SignPKCS1v15(priv PrivateKey, data []byte, digest string) ([]byte, error) {
 	md, err := digestForRSAHash(digest)
 	if err != nil {
@@ -127,13 +129,19 @@ func SignPKCS1v15(priv PrivateKey, data []byte, digest string) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("asym: rsa: SignPKCS1v15 requires an RSA key, got %s", priv.Algorithm())
 	}
+	if digest == "sm3" && !k.key.SupportsRSASignatureDigest(md) {
+		return nil, fmt.Errorf("asym: rsa: SM3 signatures unavailable in this Tongsuo provider: %w", ErrUnsupported)
+	}
+
 	return k.key.SignDigest(data, md)
 }
 
 // VerifyPKCS1v15 使用 RSA-PKCS#1 v1.5 验签。
 // digest 取值同 SignPKCS1v15。
+// sm3 签名摘要依赖 provider；不可用时返回 ErrUnsupported，可用 SupportsRSASignatureDigest 预检。
 //
 // VerifyPKCS1v15 checks an RSA-PKCS#1 v1.5 signature.
+// The sm3 signature digest depends on the provider; unavailable support returns ErrUnsupported. Probe with SupportsRSASignatureDigest.
 func VerifyPKCS1v15(pub PublicKey, data, sig []byte, digest string) error {
 	md, err := digestForRSAHash(digest)
 	if err != nil {
@@ -143,13 +151,19 @@ func VerifyPKCS1v15(pub PublicKey, data, sig []byte, digest string) error {
 	if !ok {
 		return fmt.Errorf("asym: rsa: VerifyPKCS1v15 requires an RSA key, got %s", pub.Algorithm())
 	}
+	if digest == "sm3" && !k.key.SupportsRSASignatureDigest(md) {
+		return fmt.Errorf("asym: rsa: SM3 signatures unavailable in this Tongsuo provider: %w", ErrUnsupported)
+	}
+
 	return k.key.VerifyDigest(data, sig, md)
 }
 
 // SignPSS 使用 RSA-PSS 签名。saltLen 取 PSS* 常量或正整数；digest 取值同 SignPKCS1v15。
+// sm3 签名摘要依赖 provider；不可用时返回 ErrUnsupported，可用 SupportsRSASignatureDigest 预检。
 //
 // SignPSS signs data with RSA-PSS (RFC 8017). saltLen accepts the PSS*
 // sentinels or a positive byte count.
+// The sm3 signature digest depends on the provider; unavailable support returns ErrUnsupported. Probe with SupportsRSASignatureDigest.
 func SignPSS(priv PrivateKey, data []byte, saltLen int, digest string) ([]byte, error) {
 	md, err := digestForRSAHash(digest)
 	if err != nil {
@@ -159,12 +173,18 @@ func SignPSS(priv PrivateKey, data []byte, saltLen int, digest string) ([]byte, 
 	if !ok {
 		return nil, fmt.Errorf("asym: rsa: SignPSS requires an RSA key, got %s", priv.Algorithm())
 	}
+	if digest == "sm3" && !k.key.SupportsRSASignatureDigest(md) {
+		return nil, fmt.Errorf("asym: rsa: SM3 signatures unavailable in this Tongsuo provider: %w", ErrUnsupported)
+	}
+
 	return k.key.SignDigestPSS(data, md, saltLen)
 }
 
 // VerifyPSS 使用 RSA-PSS 验签。hash 与 saltLen 必须与签名时一致。
+// sm3 签名摘要依赖 provider；不可用时返回 ErrUnsupported，可用 SupportsRSASignatureDigest 预检。
 //
 // VerifyPSS checks an RSA-PSS signature.
+// The sm3 signature digest depends on the provider; unavailable support returns ErrUnsupported. Probe with SupportsRSASignatureDigest.
 func VerifyPSS(pub PublicKey, data, sig []byte, saltLen int, digest string) error {
 	md, err := digestForRSAHash(digest)
 	if err != nil {
@@ -174,6 +194,10 @@ func VerifyPSS(pub PublicKey, data, sig []byte, saltLen int, digest string) erro
 	if !ok {
 		return fmt.Errorf("asym: rsa: VerifyPSS requires an RSA key, got %s", pub.Algorithm())
 	}
+	if digest == "sm3" && !k.key.SupportsRSASignatureDigest(md) {
+		return fmt.Errorf("asym: rsa: SM3 signatures unavailable in this Tongsuo provider: %w", ErrUnsupported)
+	}
+
 	return k.key.VerifyDigestPSS(data, sig, md, saltLen)
 }
 
@@ -244,4 +268,20 @@ func DecryptOAEP(priv PrivateKey, data []byte, digest string) ([]byte, error) {
 		return nil, err
 	}
 	return k.key.DecryptOAEP(data, md)
+}
+
+// SupportsRSASignatureDigest 探测当前 RSA provider 是否支持指定签名摘要。
+// 铜锁 8.4.0 不支持 SM3 签名（OAEP-SM3 不受此限制）；未知摘要或非 RSA 密钥返回错误。
+//
+// SupportsRSASignatureDigest probes the current RSA provider for a signature digest.
+// Tongsuo 8.4.0 cannot sign with SM3 (OAEP-SM3 is unaffected); unknown digests or non-RSA keys return errors.
+func SupportsRSASignatureDigest(key Key, hash string) (bool, error) {
+	if key == nil || key.Algorithm() != AlgRSA {
+		return false, fmt.Errorf("asym: RSA key required")
+	}
+	md, err := digestForRSAHash(hash)
+	if err != nil {
+		return false, err
+	}
+	return key.corePKey().SupportsRSASignatureDigest(md), nil
 }

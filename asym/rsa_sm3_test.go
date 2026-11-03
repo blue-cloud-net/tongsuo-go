@@ -2,6 +2,7 @@ package asym
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 )
 
@@ -16,6 +17,17 @@ func TestRSASM3PKCS1v15(t *testing.T) {
 	}
 	pub := priv.Public()
 	msg := []byte("rsa with sm3 digest")
+
+	supported, probeErr := SupportsRSASignatureDigest(priv, "sm3")
+	if probeErr != nil {
+		t.Fatal(probeErr)
+	}
+	if !supported {
+		if _, err := SignPKCS1v15(priv, msg, "sm3"); !errors.Is(err, ErrUnsupported) {
+			t.Fatalf("unavailable RSA-SM3 must return ErrUnsupported: %v", err)
+		}
+		return
+	}
 
 	sig, err := SignPKCS1v15(priv, msg, "sm3")
 	if err != nil {
@@ -45,6 +57,17 @@ func TestRSASM3PSS(t *testing.T) {
 	}
 	pub := priv.Public()
 	msg := []byte("rsa-pss with sm3")
+
+	supported, probeErr := SupportsRSASignatureDigest(priv, "sm3")
+	if probeErr != nil {
+		t.Fatal(probeErr)
+	}
+	if !supported {
+		if _, err := SignPSS(priv, msg, PSSSaltLenDigest, "sm3"); !errors.Is(err, ErrUnsupported) {
+			t.Fatalf("unavailable RSA-SM3 must return ErrUnsupported: %v", err)
+		}
+		return
+	}
 
 	sig, err := SignPSS(priv, msg, PSSSaltLenDigest, "sm3")
 	if err != nil {
