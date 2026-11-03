@@ -36,15 +36,27 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer alice.Close()
 	bob, err := newKey(p256)
 	if err != nil {
 		log.Fatal(err)
 	}
-	aliceShared, err := alice.ECDH(bob.Public())
+	defer bob.Close()
+	bobPub, err := bob.Public()
 	if err != nil {
 		log.Fatal(err)
 	}
-	bobShared, err := bob.ECDH(alice.Public())
+	defer bobPub.Close()
+	aliceShared, err := alice.ECDH(bobPub)
+	if err != nil {
+		log.Fatal(err)
+	}
+	alicePub, err := alice.Public()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer alicePub.Close()
+	bobShared, err := bob.ECDH(alicePub)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -62,7 +74,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	reloadedShared, err := reloaded.ECDH(bob.Public())
+	defer reloaded.Close()
+	reloadedShared, err := reloaded.ECDH(bobPub)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -134,15 +147,27 @@ func deriveOKP(curve *ecdh.Curve) error {
 	if err != nil {
 		return err
 	}
+	defer alice.Close()
 	bob, err := newKey(curve)
 	if err != nil {
 		return err
 	}
-	aliceShared, err := alice.ECDH(bob.Public())
+	defer bob.Close()
+	bobPub, err := bob.Public()
 	if err != nil {
 		return err
 	}
-	bobShared, err := bob.ECDH(alice.Public())
+	defer bobPub.Close()
+	aliceShared, err := alice.ECDH(bobPub)
+	if err != nil {
+		return err
+	}
+	alicePub, err := alice.Public()
+	if err != nil {
+		return err
+	}
+	defer alicePub.Close()
+	bobShared, err := bob.ECDH(alicePub)
 	if err != nil {
 		return err
 	}

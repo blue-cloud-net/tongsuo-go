@@ -205,11 +205,11 @@ func TestLoadKeyAllCurves(t *testing.T) {
 				t.Errorf("pub.Curve() = %v, want %s", got, name)
 			}
 			// 私钥派生的公钥应与独立加载的公钥曲线一致
-			if got := priv.Public().Curve().Name(); got != name {
-				t.Errorf("priv.Public().Curve() = %s, want %s", got, name)
+			if got := mustECDHPublic(t, priv).Curve().Name(); got != name {
+				t.Errorf("mustECDHPublic(t, priv).Curve() = %s, want %s", got, name)
 			}
 			// 公钥 PEM 与私钥派生结果应一致
-			derivedPEM, err := priv.Public().MarshalPEM()
+			derivedPEM, err := mustECDHPublic(t, priv).MarshalPEM()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -218,7 +218,7 @@ func TestLoadKeyAllCurves(t *testing.T) {
 				t.Fatal(err)
 			}
 			if !bytes.Equal(derivedPEM, loadedPEM) {
-				t.Error("priv.Public() 与 LoadPublicKey 结果不一致")
+				t.Error("mustECDHPublic(t, priv) 与 LoadPublicKey 结果不一致")
 			}
 		})
 	}
@@ -401,7 +401,7 @@ func TestSharedSecretSymmetry(t *testing.T) {
 			}
 			// 两次独立协商结果应不同（密钥随机）
 			carol, _ := genOnCurve(t, name)
-			ac, err := ecdh.SharedSecret(alice, carol.Public())
+			ac, err := ecdh.SharedSecret(alice, mustECDHPublic(t, carol))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -441,17 +441,17 @@ func TestSharedSecretMismatch(t *testing.T) {
 	x25519, _ := genOnCurve(t, "X25519")
 	x448, _ := genOnCurve(t, "X448")
 
-	if _, err := ecdh.SharedSecret(p256, p384.Public()); err == nil {
+	if _, err := ecdh.SharedSecret(p256, mustECDHPublic(t, p384)); err == nil {
 		t.Error("P-256 私钥 + P-384 公钥 应报错")
 	}
-	if _, err := ecdh.SharedSecret(x25519, x448.Public()); err == nil {
+	if _, err := ecdh.SharedSecret(x25519, mustECDHPublic(t, x448)); err == nil {
 		t.Error("X25519 私钥 + X448 公钥 应报错")
 	}
-	if _, err := ecdh.SharedSecret(p256, x25519.Public()); err == nil {
+	if _, err := ecdh.SharedSecret(p256, mustECDHPublic(t, x25519)); err == nil {
 		t.Error("EC 私钥 + OKP 公钥 应报错")
 	}
 	// nil 守卫
-	if _, err := ecdh.SharedSecret(nil, x25519.Public()); err == nil {
+	if _, err := ecdh.SharedSecret(nil, mustECDHPublic(t, x25519)); err == nil {
 		t.Error("SharedSecret(nil, pub) 应报错")
 	}
 	if _, err := ecdh.SharedSecret(x25519, nil); err == nil {
@@ -686,4 +686,18 @@ func TestLoadInvalidPEM(t *testing.T) {
 	if _, err := ecdh.LoadEncryptedPEM(ecdh.P256(), bogus, "pw"); err == nil {
 		t.Error("非法加密 PEM 应报错")
 	}
+}
+
+func mustECDHPublic(t *testing.T, key *ecdh.PrivateKey) *ecdh.PublicKey {
+	t.Helper()
+	pub, err := key.Public()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := pub.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return pub
 }
