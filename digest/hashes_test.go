@@ -48,7 +48,7 @@ func TestSumStandardVectors(t *testing.T) {
 // TestStreamMatchesSumAll 验证 7 种算法的流式结果与一次性结果一致（跨分组边界）。
 func TestStreamMatchesSumAll(t *testing.T) {
 	data := bytes.Repeat([]byte("tongsuo-go"), 20) // 200 字节，跨多个分组
-	for _, name := range Names() {
+	for _, name := range fixedNames() {
 		t.Run(name, func(t *testing.T) {
 			want := typedSum(name, data)
 
@@ -72,7 +72,7 @@ func TestStreamMatchesSumAll(t *testing.T) {
 
 // TestResetAll 验证 7 种算法 Reset 后可重新计算。
 func TestResetAll(t *testing.T) {
-	for _, name := range Names() {
+	for _, name := range fixedNames() {
 		t.Run(name, func(t *testing.T) {
 			h, err := New(name)
 			if err != nil {
@@ -96,7 +96,7 @@ func TestResetAll(t *testing.T) {
 
 // TestSumDoesNotMutateStateAll 验证调用 Sum 后仍可继续 Write。
 func TestSumDoesNotMutateStateAll(t *testing.T) {
-	for _, name := range Names() {
+	for _, name := range fixedNames() {
 		t.Run(name, func(t *testing.T) {
 			h, err := New(name)
 			if err != nil {
@@ -121,7 +121,7 @@ func TestSumDoesNotMutateStateAll(t *testing.T) {
 // TestIdempotentAll 验证 7 种算法对相同输入结果一致。
 func TestIdempotentAll(t *testing.T) {
 	data := []byte("same input, same output")
-	for _, name := range Names() {
+	for _, name := range fixedNames() {
 		t.Run(name, func(t *testing.T) {
 			a := typedSum(name, data)
 			b := typedSum(name, data)
@@ -134,7 +134,7 @@ func TestIdempotentAll(t *testing.T) {
 
 // TestDistinctInputsAll 验证 7 种算法对不同输入产生不同摘要。
 func TestDistinctInputsAll(t *testing.T) {
-	for _, name := range Names() {
+	for _, name := range fixedNames() {
 		t.Run(name, func(t *testing.T) {
 			a := typedSum(name, []byte("hello"))
 			b := typedSum(name, []byte("world"))

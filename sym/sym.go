@@ -27,8 +27,15 @@ var ErrUnsupported = errors.New("sym: unsupported")
 // Options carries by-name Encrypt/Decrypt parameters.
 type Options struct {
 	// Padding 取 "pkcs7"（默认）/ "zero" / "none"。
+	// 取值是否与算法名相容可用 Supports / Paddings 静态查询：分组模式
+	// （ECB / CBC）支持三者，流模式（CTR / OFB / CFB / ChaCha20 / XTS）
+	// 只接受""与 "none"，非法组合返回 ErrUnsupportedPadding。
 	//
-	// Padding is "pkcs7" (default) / "zero" / "none".
+	// Padding is "pkcs7" (default) / "zero" / "none". Use Supports or
+	// Paddings to query statically whether a value is valid for a given
+	// algorithm name: block modes (ECB / CBC) accept all three, stream
+	// modes (CTR / OFB / CFB / ChaCha20 / XTS) accept only "" and
+	// "none", and invalid combinations return ErrUnsupportedPadding.
 	Padding string
 	// AAD 是 AEAD 模式的 AAD（仅 GCM 模式使用）。
 	//
@@ -57,17 +64,29 @@ type algo struct {
 // stable order returned by Names().
 var algos = []algo{
 	{"AES-128-CBC", AES128KeySize, "CBC"},
+	{"AES-128-CFB", AES128KeySize, "CFB"},
 	{"AES-128-CTR", AES128KeySize, "CTR"},
 	{"AES-128-ECB", AES128KeySize, "ECB"},
 	{"AES-128-GCM", AES128KeySize, "GCM"},
+	{"AES-128-OFB", AES128KeySize, "OFB"},
 	{"AES-192-CBC", AES192KeySize, "CBC"},
+	{"AES-192-CFB", AES192KeySize, "CFB"},
 	{"AES-192-CTR", AES192KeySize, "CTR"},
 	{"AES-192-ECB", AES192KeySize, "ECB"},
 	{"AES-192-GCM", AES192KeySize, "GCM"},
+	{"AES-192-OFB", AES192KeySize, "OFB"},
 	{"AES-256-CBC", AES256KeySize, "CBC"},
+	{"AES-256-CFB", AES256KeySize, "CFB"},
 	{"AES-256-CTR", AES256KeySize, "CTR"},
 	{"AES-256-ECB", AES256KeySize, "ECB"},
 	{"AES-256-GCM", AES256KeySize, "GCM"},
+	{"AES-256-OFB", AES256KeySize, "OFB"},
+	{"DES-CBC", DESKeySize, "CBC"},
+	{"DES-ECB", DESKeySize, "ECB"},
+	{"DES-EDE-CBC", DESEDEKeySize, "CBC"},
+	{"DES-EDE-ECB", DESEDEKeySize, "ECB"},
+	{"DES-EDE3-CBC", DESEDE3KeySize, "CBC"},
+	{"DES-EDE3-ECB", DESEDE3KeySize, "ECB"},
 	{"SM4-CBC", SM4KeySize, "CBC"},
 	{"SM4-CCM", SM4KeySize, "CCM"},
 	{"SM4-CFB", SM4KeySize, "CFB"},
@@ -78,6 +97,27 @@ var algos = []algo{
 	{"SM4-XTS", SM4XTSKeySize, "XTS"},
 	{"ChaCha20", ChaCha20KeySize, "STREAM"},
 	{"ChaCha20-Poly1305", ChaCha20KeySize, "POLY1305"},
+	{"AES-128-CCM", 16, "CCM"},
+	{"AES-128-OCB", 16, "OCB"},
+	{"AES-128-SIV", 32, "SIV"},
+	{"AES-128-WRAP", 16, "WRAP"},
+	{"AES-128-WRAP-PAD", 16, "WRAP-PAD"},
+	{"AES-128-CBC-CTS", 16, "CBC-CTS"},
+	{"AES-128-XTS", 32, "XTS"},
+	{"AES-192-CCM", 24, "CCM"},
+	{"AES-192-OCB", 24, "OCB"},
+	{"AES-192-SIV", 48, "SIV"},
+	{"AES-192-WRAP", 24, "WRAP"},
+	{"AES-192-WRAP-PAD", 24, "WRAP-PAD"},
+	{"AES-192-CBC-CTS", 24, "CBC-CTS"},
+	{"AES-256-CCM", 32, "CCM"},
+	{"AES-256-OCB", 32, "OCB"},
+	{"AES-256-SIV", 64, "SIV"},
+	{"AES-256-WRAP", 32, "WRAP"},
+	{"AES-256-WRAP-PAD", 32, "WRAP-PAD"},
+	{"AES-256-CBC-CTS", 32, "CBC-CTS"},
+	{"AES-256-XTS", 64, "XTS"},
+	{"ZUC-128-EEA3", 16, "STREAM"},
 }
 
 // lookup 按算法名查找注册项；名称大小写不敏感。
@@ -115,10 +155,12 @@ func NewCipher(name string, key []byte) (cipher.Block, error) {
 	if err != nil {
 		return nil, err
 	}
+	name = a.name
+
 	switch mode {
-	case "GCM", "CCM", "POLY1305":
+	case "GCM", "CCM", "POLY1305", "OCB", "SIV":
 		return nil, fmt.Errorf("sym: %q: %w: cipher.Block is not applicable to AEAD modes", name, ErrUnsupported)
-	case "XTS", "STREAM":
+	case "XTS", "STREAM", "WRAP", "WRAP-PAD", "CBC-CTS":
 		return nil, fmt.Errorf("sym: %q: %w: cipher.Block is not applicable to mode %s", name, ErrUnsupported, mode)
 	}
 	if a.size > 0 && len(key) != a.size {
@@ -127,6 +169,12 @@ func NewCipher(name string, key []byte) (cipher.Block, error) {
 	switch {
 	case strings.HasPrefix(strings.ToUpper(name), "AES-"):
 		return NewAESCipher(key)
+	case strings.HasPrefix(strings.ToUpper(name), "DES-EDE3-"):
+		return newDESBlock(desEDE3, key)
+	case strings.HasPrefix(strings.ToUpper(name), "DES-EDE-"):
+		return newDESBlock(desEDE, key)
+	case strings.HasPrefix(strings.ToUpper(name), "DES-"):
+		return NewDESCipher(key)
 	case strings.HasPrefix(strings.ToUpper(name), "SM4-"):
 		return NewSM4Cipher(key)
 	}
@@ -143,6 +191,8 @@ func NewGCM(name string, key []byte) (cipher.AEAD, error) {
 	if err != nil {
 		return nil, err
 	}
+	name = a.name
+
 	if mode != "GCM" {
 		return nil, fmt.Errorf("sym: %q: %w: cipher.AEAD is GCM only", name, ErrUnsupported)
 	}
@@ -161,10 +211,12 @@ func NewGCM(name string, key []byte) (cipher.AEAD, error) {
 // NewAEAD 按算法名返回 AEAD 实现（cipher.AEAD）。
 // 支持 GCM（AES-128/192/256、SM4）、CCM（SM4）与 ChaCha20-Poly1305。
 // 未知算法名返回 ErrUnknownAlgorithm；非 AEAD 模式返回 ErrUnsupported。
+// 0.6.0 另支持 AES-CCM/OCB/SIV；SIV 为双密钥、默认 nonce 长度为 0，拒绝空消息。
 //
 // NewAEAD returns a cipher.AEAD by algorithm-mode name. It supports GCM
 // (AES-128/192/256, SM4), CCM (SM4) and ChaCha20-Poly1305. Unknown names
 // return ErrUnknownAlgorithm; non-AEAD modes return ErrUnsupported.
+// Version 0.6.0 also supports AES-CCM/OCB/SIV; SIV uses doubled keys and a zero default nonce size, rejecting empty messages.
 func NewAEAD(name string, key []byte) (cipher.AEAD, error) {
 	a, mode, err := lookup(name)
 	if err != nil {
@@ -177,7 +229,12 @@ func NewAEAD(name string, key []byte) (cipher.AEAD, error) {
 	case "GCM":
 		return NewGCM(name, key)
 	case "CCM":
+		if strings.HasPrefix(a.name, "AES-") {
+			return newExtendedAEAD(a, key)
+		}
 		return NewSM4CCM(key)
+	case "OCB", "SIV":
+		return newExtendedAEAD(a, key)
 	case "POLY1305":
 		return NewChaCha20Poly1305(key)
 	}
@@ -191,34 +248,61 @@ func NewAEAD(name string, key []byte) (cipher.AEAD, error) {
 //
 // Encrypt encrypts in one shot by algorithm-mode name.
 func Encrypt(name string, key, iv, data []byte, opts *Options) ([]byte, error) {
-	_, mode, err := lookup(name)
+	a, mode, err := lookup(name)
 	if err != nil {
 		return nil, err
 	}
+	name = a.name
+	if len(key) != a.size {
+		return nil, fmt.Errorf("sym: %s: %w", name, ErrInvalidKeyLength)
+	}
+
 	switch mode {
-	case "GCM", "CCM", "POLY1305":
+	case "GCM", "CCM", "POLY1305", "OCB", "SIV":
 		return nil, fmt.Errorf("sym: %q: %w: use EncryptAEAD", name, ErrUnsupported)
 	}
-	pad := "pkcs7"
-	if opts != nil && opts.Padding == "zero" {
-		pad = "zero"
-	} else if opts != nil && opts.Padding == "none" {
-		pad = "none"
+	pad := ""
+	if opts != nil {
+		pad = opts.Padding
+	}
+	pad, err = checkPadding(name, mode, pad)
+	if err != nil {
+		return nil, err
+	}
+
+	if extendedCipher(a) {
+		return cryptExtended(a, key, iv, data, true)
 	}
 
 	switch strings.ToUpper(name) {
 	case "AES-128-CBC", "AES-192-CBC", "AES-256-CBC":
-		return EncryptAESCBC(key, iv, data)
+		return aesCryptWithPad(key, iv, data, true, "cbc", pad)
 	case "AES-128-CTR", "AES-192-CTR", "AES-256-CTR":
 		return EncryptAESCTR(key, iv, data)
 	case "AES-128-ECB", "AES-192-ECB", "AES-256-ECB":
-		return EncryptAESECB(key, data)
+		return aesCryptWithPad(key, nil, data, true, "ecb", pad)
+	case "AES-128-OFB", "AES-192-OFB", "AES-256-OFB":
+		return EncryptAESOFB(key, iv, data)
+	case "AES-128-CFB", "AES-192-CFB", "AES-256-CFB":
+		return EncryptAESCFB(key, iv, data)
+	case "DES-ECB":
+		return desCryptWithPad(key, nil, data, true, desSingle, "ecb", pad)
+	case "DES-CBC":
+		return desCryptWithPad(key, iv, data, true, desSingle, "cbc", pad)
+	case "DES-EDE-ECB":
+		return desCryptWithPad(key, nil, data, true, desEDE, "ecb", pad)
+	case "DES-EDE-CBC":
+		return desCryptWithPad(key, iv, data, true, desEDE, "cbc", pad)
+	case "DES-EDE3-ECB":
+		return desCryptWithPad(key, nil, data, true, desEDE3, "ecb", pad)
+	case "DES-EDE3-CBC":
+		return desCryptWithPad(key, iv, data, true, desEDE3, "cbc", pad)
 	case "SM4-CBC":
-		return encryptSM4WithPad(key, iv, data, true, "cbc", pad)
+		return sm4CryptWithPad(key, iv, data, true, "cbc", pad)
 	case "SM4-CTR":
 		return EncryptSM4CTR(key, iv, data)
 	case "SM4-ECB":
-		return encryptSM4WithPad(key, iv, data, true, "ecb", pad)
+		return sm4CryptWithPad(key, nil, data, true, "ecb", pad)
 	case "SM4-OFB":
 		return EncryptSM4OFB(key, iv, data)
 	case "SM4-CFB":
@@ -236,33 +320,60 @@ func Encrypt(name string, key, iv, data []byte, opts *Options) ([]byte, error) {
 //
 // Decrypt decrypts in one shot by algorithm-mode name.
 func Decrypt(name string, key, iv, data []byte, opts *Options) ([]byte, error) {
-	_, mode, err := lookup(name)
+	a, mode, err := lookup(name)
 	if err != nil {
 		return nil, err
 	}
+	name = a.name
+	if len(key) != a.size {
+		return nil, fmt.Errorf("sym: %s: %w", name, ErrInvalidKeyLength)
+	}
+
 	switch mode {
-	case "GCM", "CCM", "POLY1305":
+	case "GCM", "CCM", "POLY1305", "OCB", "SIV":
 		return nil, fmt.Errorf("sym: %q: %w: use DecryptAEAD", name, ErrUnsupported)
 	}
-	pad := "pkcs7"
-	if opts != nil && opts.Padding == "zero" {
-		pad = "zero"
-	} else if opts != nil && opts.Padding == "none" {
-		pad = "none"
+	pad := ""
+	if opts != nil {
+		pad = opts.Padding
 	}
+	pad, err = checkPadding(name, mode, pad)
+	if err != nil {
+		return nil, err
+	}
+	if extendedCipher(a) {
+		return cryptExtended(a, key, iv, data, false)
+	}
+
 	switch strings.ToUpper(name) {
 	case "AES-128-CBC", "AES-192-CBC", "AES-256-CBC":
-		return DecryptAESCBC(key, iv, data)
+		return aesCryptWithPad(key, iv, data, false, "cbc", pad)
 	case "AES-128-CTR", "AES-192-CTR", "AES-256-CTR":
 		return DecryptAESCTR(key, iv, data)
 	case "AES-128-ECB", "AES-192-ECB", "AES-256-ECB":
-		return DecryptAESECB(key, data)
+		return aesCryptWithPad(key, nil, data, false, "ecb", pad)
+	case "AES-128-OFB", "AES-192-OFB", "AES-256-OFB":
+		return DecryptAESOFB(key, iv, data)
+	case "AES-128-CFB", "AES-192-CFB", "AES-256-CFB":
+		return DecryptAESCFB(key, iv, data)
+	case "DES-ECB":
+		return desCryptWithPad(key, nil, data, false, desSingle, "ecb", pad)
+	case "DES-CBC":
+		return desCryptWithPad(key, iv, data, false, desSingle, "cbc", pad)
+	case "DES-EDE-ECB":
+		return desCryptWithPad(key, nil, data, false, desEDE, "ecb", pad)
+	case "DES-EDE-CBC":
+		return desCryptWithPad(key, iv, data, false, desEDE, "cbc", pad)
+	case "DES-EDE3-ECB":
+		return desCryptWithPad(key, nil, data, false, desEDE3, "ecb", pad)
+	case "DES-EDE3-CBC":
+		return desCryptWithPad(key, iv, data, false, desEDE3, "cbc", pad)
 	case "SM4-CBC":
-		return encryptSM4WithPad(key, iv, data, false, "cbc", pad)
+		return sm4CryptWithPad(key, iv, data, false, "cbc", pad)
 	case "SM4-CTR":
 		return DecryptSM4CTR(key, iv, data)
 	case "SM4-ECB":
-		return encryptSM4WithPad(key, iv, data, false, "ecb", pad)
+		return sm4CryptWithPad(key, nil, data, false, "ecb", pad)
 	case "SM4-OFB":
 		return DecryptSM4OFB(key, iv, data)
 	case "SM4-CFB":
@@ -275,49 +386,122 @@ func Decrypt(name string, key, iv, data []byte, opts *Options) ([]byte, error) {
 	return nil, fmt.Errorf("sym: %q: %w", name, ErrUnsupported)
 }
 
-// encryptSM4WithPad 按 padding 选择 PKCS#7 / zero / none 的 SM4 ECB/CBC 路径。
+// checkPadding 校验「算法名 × 填充」组合，并返回归一后的填充名。
+// 未知填充名与不相容组合均返回包装 ErrUnsupportedPadding 的错误。
 //
-// encryptSM4WithPad selects PKCS#7 / zero / none padding for SM4 ECB/CBC.
-func encryptSM4WithPad(key, iv, data []byte, enc bool, mode, pad string) ([]byte, error) {
-	switch pad {
-	case "pkcs7":
-		return sm4CryptAll(key, iv, data, enc, mode)
-	case "zero":
-		return sm4CryptZero(key, iv, data, enc, mode)
-	case "none":
-		return sm4CryptNoPad(key, iv, data, enc, mode)
+// checkPadding validates the algorithm-name/padding combination and
+// returns the normalized padding. Both unknown padding names and
+// incompatible combinations return an error wrapping
+// ErrUnsupportedPadding.
+func checkPadding(name, mode, pad string) (string, error) {
+	norm, err := normalizePadding(pad)
+	if err != nil {
+		return "", fmt.Errorf("sym: %q: %w", name, err)
 	}
-	return nil, fmt.Errorf("sym: SM4 %s: unsupported padding %q", mode, pad)
+	allowed := paddingsForMode(mode)
+	if norm == "" {
+		// 空串：取该模式的默认值（分组模式 pkcs7，流模式 none）。
+		if len(allowed) > 0 {
+			if len(allowed) == 3 {
+				return PaddingPKCS7, nil
+			}
+			return allowed[0], nil
+		}
+		return PaddingNone, nil
+	}
+	for _, p := range allowed {
+		if p == norm {
+			return norm, nil
+		}
+	}
+	return "", fmt.Errorf("sym: %q: padding %q is not supported for mode %s: %w",
+		name, norm, mode, ErrUnsupportedPadding)
 }
 
-// sm4CryptNoPad 创建无填充（也不做 zero）的 SM4 上下文。
-func sm4CryptNoPad(key, iv, data []byte, enc bool, mode string) ([]byte, error) {
+// Supports 报告「算法名 × 填充」是否为合法组合，可在不提交数据的前提下做参数级
+// 校验。空串等价于 "pkcs7"。
+// 未知算法名返回 ErrUnknownAlgorithm；未知填充名与不相容组合返回 (false, nil)。
+// 返回 true 的取值与 Paddings 一致。
+//
+// Supports reports whether an algorithm-name/padding combination is
+// valid, so callers can validate parameters without submitting data. The
+// empty string means "pkcs7". An unknown algorithm name returns
+// ErrUnknownAlgorithm; an unknown padding name or an incompatible
+// combination returns (false, nil). The accepted values match Paddings.
+func Supports(name, padding string) (bool, error) {
+	a, _, err := lookup(name)
+	if err != nil {
+		return false, err
+	}
+	norm, err := normalizePadding(padding)
+	if err != nil {
+		return false, nil
+	}
+	if norm == "" {
+		// 空串表示「用默认值」，任何已知算法名都接受。
+		return true, nil
+	}
+	for _, p := range paddingsForMode(a.mode) {
+		if p == norm {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// Paddings 返回该算法名可用的填充方式（顺序稳定）。
+// 分组模式（ECB / CBC）返回 pkcs7 / zero / none；流模式（CTR / OFB / CFB /
+// ChaCha20）与 XTS 返回 none；AEAD 模式（GCM / CCM / ChaCha20-Poly1305）返回
+// 空切片——它们走 EncryptAEAD，不经过填充层。
+// 未知算法名返回 ErrUnknownAlgorithm。
+//
+// Paddings returns the padding modes available for the named algorithm
+// in a stable order. Block modes (ECB / CBC) return pkcs7 / zero / none;
+// stream modes (CTR / OFB / CFB / ChaCha20) and XTS return none; AEAD
+// modes (GCM / CCM / ChaCha20-Poly1305) return an empty slice because
+// they are driven through EncryptAEAD and never reach the padding layer.
+// An unknown name returns ErrUnknownAlgorithm.
+func Paddings(name string) ([]string, error) {
+	a, _, err := lookup(name)
+	if err != nil {
+		return nil, err
+	}
+	out := paddingsForMode(a.mode)
+	if out == nil {
+		return []string{}, nil
+	}
+	return out, nil
+}
+
+// sm4CryptWithPad 按填充方式驱动 SM4 分组成模式（ECB / CBC）的加解密。
+//
+// sm4CryptWithPad drives SM4 ECB / CBC with the requested padding.
+func sm4CryptWithPad(key, iv, data []byte, enc bool, mode, pad string) ([]byte, error) {
 	c := sm4Cipher(mode)
 	if c == nil {
 		return nil, fmt.Errorf("sym: SM4 unsupported mode %q", mode)
 	}
-	ctx, err := core.NewCipherCtx(c, key, iv, enc)
-	if err != nil {
-		return nil, err
+	if mode == "ecb" {
+		iv = nil
+	} else if len(iv) != BlockSize {
+		return nil, fmt.Errorf("sym: invalid iv size %d, want %d", len(iv), BlockSize)
 	}
-	defer ctx.Close()
-	if err := ctx.SetPadding(false); err != nil {
-		return nil, err
-	}
-	if enc {
-		return ctx.EncryptAll(data)
-	}
-	return ctx.DecryptAll(data)
+	return cryptPadded(c, key, iv, data, enc, pad, BlockSize)
 }
 
 // EncryptGCM 按算法名 GCM 加密，返回密文与认证标签。
 //
 // EncryptGCM encrypts in one shot with GCM by algorithm-mode name.
 func EncryptGCM(name string, key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, err error) {
-	_, mode, err := lookup(name)
+	a, mode, err := lookup(name)
 	if err != nil {
 		return nil, nil, err
 	}
+	name = a.name
+	if len(key) != a.size {
+		return nil, nil, fmt.Errorf("sym: %s: %w", name, ErrInvalidKeyLength)
+	}
+
 	if mode != "GCM" {
 		return nil, nil, fmt.Errorf("sym: %q: %w: EncryptGCM is for GCM only", name, ErrUnsupported)
 	}
@@ -335,6 +519,7 @@ func EncryptGCM(name string, key, nonce, plaintext, aad []byte) (ciphertext, tag
 // nonce 长度：GCM 为 12（也允许其它非空长度），CCM 为 7..13，
 // ChaCha20-Poly1305 固定 12；tag 长度固定为 TagSize（16）。
 // 未知算法名返回 ErrUnknownAlgorithm；非 AEAD 模式返回 ErrUnsupported。
+// 0.6.0 另支持 AES-CCM/OCB/SIV；SIV 空消息返回 ErrUnsupported，非空 nonce 作为最后一个 AAD 分量。
 //
 // 安全：nonce 必须在每个 (key, message) 对中唯一；复用会同时破坏
 // 机密性与真实性。
@@ -345,6 +530,7 @@ func EncryptGCM(name string, key, nonce, plaintext, aad []byte) (ciphertext, tag
 // non-empty lengths are tolerated), 7 to 13 for CCM, and exactly 12 for
 // ChaCha20-Poly1305; the tag is always TagSize (16) bytes. Unknown names
 // return ErrUnknownAlgorithm; non-AEAD modes return ErrUnsupported.
+// Version 0.6.0 also supports AES-CCM/OCB/SIV; empty SIV messages return ErrUnsupported and a nonempty SIV nonce is the last AAD component.
 //
 // Security: the nonce MUST be unique per (key, message) pair; reuse
 // breaks both confidentiality and authenticity.
@@ -360,7 +546,12 @@ func EncryptAEAD(name string, key, nonce, plaintext, aad []byte) (ciphertext, ta
 	case "GCM":
 		return EncryptGCM(name, key, nonce, plaintext, aad)
 	case "CCM":
+		if strings.HasPrefix(a.name, "AES-") {
+			return encryptExtendedAEAD(a, key, nonce, plaintext, aad)
+		}
 		return EncryptSM4CCM(key, nonce, plaintext, aad)
+	case "OCB", "SIV":
+		return encryptExtendedAEAD(a, key, nonce, plaintext, aad)
 	case "POLY1305":
 		return EncryptChaCha20Poly1305(key, nonce, plaintext, aad)
 	}
@@ -370,11 +561,13 @@ func EncryptAEAD(name string, key, nonce, plaintext, aad []byte) (ciphertext, ta
 // DecryptAEAD 按算法名 AEAD 解密。tag 或 aad 不匹配时返回错误；
 // 调用方须将任意非 nil 错误视为认证失败并丢弃返回的明文。
 // 支持的算法与参数要求同 EncryptAEAD。
+// 0.6.0 另支持 AES-CCM/OCB/SIV；SIV 空消息返回 ErrUnsupported，非空 nonce 作为最后一个 AAD 分量。
 //
 // DecryptAEAD verifies and decrypts with the named AEAD algorithm. A tag
 // or AAD mismatch yields an error; callers MUST treat any non-nil error
 // as an authentication failure and discard the returned plaintext. The
 // supported algorithms and parameter rules match EncryptAEAD.
+// Version 0.6.0 also supports AES-CCM/OCB/SIV; empty SIV messages return ErrUnsupported and a nonempty SIV nonce is the last AAD component.
 func DecryptAEAD(name string, key, nonce, ciphertext, tag, aad []byte) ([]byte, error) {
 	a, mode, err := lookup(name)
 	if err != nil {
@@ -387,7 +580,12 @@ func DecryptAEAD(name string, key, nonce, ciphertext, tag, aad []byte) ([]byte, 
 	case "GCM":
 		return DecryptGCM(name, key, nonce, ciphertext, tag, aad)
 	case "CCM":
+		if strings.HasPrefix(a.name, "AES-") {
+			return decryptExtendedAEAD(a, key, nonce, ciphertext, tag, aad)
+		}
 		return DecryptSM4CCM(key, nonce, ciphertext, tag, aad)
+	case "OCB", "SIV":
+		return decryptExtendedAEAD(a, key, nonce, ciphertext, tag, aad)
 	case "POLY1305":
 		return DecryptChaCha20Poly1305(key, nonce, ciphertext, tag, aad)
 	}
@@ -396,10 +594,15 @@ func DecryptAEAD(name string, key, nonce, ciphertext, tag, aad []byte) ([]byte, 
 
 // DecryptGCM 按算法名 GCM 解密。tag 校验失败时返回错误。
 func DecryptGCM(name string, key, nonce, ciphertext, tag, aad []byte) ([]byte, error) {
-	_, mode, err := lookup(name)
+	a, mode, err := lookup(name)
 	if err != nil {
 		return nil, err
 	}
+	name = a.name
+	if len(key) != a.size {
+		return nil, fmt.Errorf("sym: %s: %w", name, ErrInvalidKeyLength)
+	}
+
 	if mode != "GCM" {
 		return nil, fmt.Errorf("sym: %q: %w: DecryptGCM is for GCM only", name, ErrUnsupported)
 	}
@@ -431,6 +634,14 @@ func Available(name string) bool {
 	if err != nil {
 		return false
 	}
+	if extendedCipher(a) || a.mode == "CCM" || a.mode == "OCB" || a.mode == "SIV" {
+		c := core.FetchCipher(a.name)
+		if c == nil {
+			return false
+		}
+		defer c.Close()
+		return true
+	}
 	switch a.name {
 	case "SM4-XTS":
 		c := core.SM4XTS()
@@ -449,6 +660,25 @@ func Available(name string) bool {
 	if strings.HasPrefix(strings.ToUpper(a.name), "AES") {
 		c, err := aesCipher(make([]byte, a.size), strings.ToLower(a.mode))
 		return err == nil && c != nil
+	}
+	if strings.HasPrefix(strings.ToUpper(a.name), "DES") {
+		var kind desKind
+		switch {
+		case strings.HasPrefix(strings.ToUpper(a.name), "DES-EDE3-"):
+			kind = desEDE3
+		case strings.HasPrefix(strings.ToUpper(a.name), "DES-EDE-"):
+			kind = desEDE
+		default:
+			kind = desSingle
+		}
+		var c *core.Cipher
+		switch a.mode {
+		case "ECB":
+			c = desCipher(kind, "ecb")
+		case "CBC":
+			c = desCipher(kind, "cbc")
+		}
+		return c != nil
 	}
 	return sm4Cipher(strings.ToLower(a.mode)) != nil
 }

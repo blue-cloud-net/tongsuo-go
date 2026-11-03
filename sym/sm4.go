@@ -337,24 +337,13 @@ func DecryptSM4GCM(key, nonce, ciphertext, tag, aad []byte) ([]byte, error) {
 	return ctx.DecryptAll(ciphertext)
 }
 
-// sm4CryptZero 创建无填充的 SM4 上下文后调用底层 CryptAll。
+// sm4CryptZero 以零填充（padding = PaddingZero）驱动 SM4 ECB / CBC。
+// 加密时在尾部补 0x00 补足到分组整数倍；解密不做剥离。
+//
+// sm4CryptZero drives SM4 ECB / CBC with zero padding. Encryption appends
+// 0x00 up to a block boundary; decryption does not strip anything.
 func sm4CryptZero(key, iv, data []byte, enc bool, mode string) ([]byte, error) {
-	c := sm4Cipher(mode)
-	if c == nil {
-		return nil, fmt.Errorf("sym: SM4 unsupported mode %q", mode)
-	}
-	ctx, err := core.NewCipherCtx(c, key, iv, enc)
-	if err != nil {
-		return nil, err
-	}
-	defer ctx.Close()
-	if err := ctx.SetPadding(false); err != nil {
-		return nil, err
-	}
-	if enc {
-		return ctx.EncryptAll(data)
-	}
-	return ctx.DecryptAll(data)
+	return sm4CryptWithPad(key, iv, data, enc, mode, PaddingZero)
 }
 
 // SM4-CCM / SM4-XTS 的实现。

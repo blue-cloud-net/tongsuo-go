@@ -495,3 +495,49 @@ internal/testutil ← 仅被 *_test.go 使用
 
 **验收**：`go doc -all ./x509` 的签名级 `internal/` 泄漏仅剩 `CoreCertificate()` 一处；
 `internal/certaccess/certaccess_test.go` 必须包含「断言确实命中」的回归用例（P1001 教训）。
+
+## `0.6.0` 增量：参数、格式容器、OCSP 与算法探测
+
+本节列出本轮新增内部符号；公开层只经 core 调用，不直接依赖 native。
+
+### internal/core/
+
+- `func FetchCipher(name string) *Cipher` — FetchCipher 获取由调用方负责 Close 的算法描述符；缺失时返回 nil。
+- `func NewAEADCtx(c *Cipher, key, nonce, tag []byte, enc bool, siv bool) (*CipherCtx, error)` — NewAEADCtx 创建 OCB 或 SIV 上下文，解密时先设置 tag。
+- `func LoadOCSPRequestDER(data []byte) (*OCSPRequest, error)` — LoadOCSPRequestDER 解析请求；调用方负责 Close。
+- `func (*OCSPRequest).AddNonce(nonce []byte) error` — AddNonce 向请求复制 1..32 字节 nonce；已关闭请求返回错误。
+- `func (*OCSPResponse).CheckNonce(req *OCSPRequest) error` — CheckNonce 校验请求 nonce；缺失或不匹配均返回错误。
+- `func (*OCSPResponse).CheckRequest(req *OCSPRequest) (*CertStatus, error)` — CheckRequest 获取单证书请求的响应状态；不匹配与多证书请求返回错误。
+- `func MarshalECParameters(name string, explicit bool) ([]byte, error)` — MarshalECParameters 编码 EC 参数为 PEM。
+- `func LoadECParameters(data []byte) (string, error)` — LoadECParameters 校验 PEM 参数并返回命名曲线名。
+- `func (*PKey).Check(public bool) error` — Check 校验密钥；public 为 true 时只验证公钥。
+- `func (*PKey).SupportsRSASignatureDigest(md *Digest) bool` — SupportsRSASignatureDigest 探测 RSA provider 是否支持指定签名摘要。
+- `func CreatePKCS12WithOptions(pass, name string, key *PKey, cert *Certificate, ca []*Certificate, pbe string, iter int) (*PKCS12, error)` — CreatePKCS12WithOptions 使用指定 PBE 与迭代次数创建容器，调用方负责 Close。
+- `func (*PKey).MarshalPKCS8PEM(pass, cipher, prf string, version, iter int, encrypt bool) ([]byte, error)` — MarshalPKCS8PEM 使用显式 PBE 版本、PRF 与迭代次数编码私钥。
+- `func LoadRSAPublicKeyPKCS1PEM(data []byte) (*PKey, error)` — LoadRSAPublicKeyPKCS1PEM 加载 PKCS#1 公钥，调用方负责 Close。
+- `func (*PKey).MarshalRSAPublicKeyPKCS1PEM() ([]byte, error)` — MarshalRSAPublicKeyPKCS1PEM 导出 PKCS#1 公钥。
+- `func (*Certificate).AddTrust(purpose string, reject bool) error` — AddTrust 添加信任或拒绝用途；已关闭证书返回错误。
+- `func (*Certificate).ClearTrust(reject bool) error` — ClearTrust 清空信任或拒绝用途；已关闭证书返回错误。
+- `func (*Certificate).MarshalTrustedPEM() ([]byte, error)` — MarshalTrustedPEM 导出包含本地信任属性的 PEM；属性不在证书签名范围内。
+- `func LoadTrustedCertificatePEM(data []byte) (*Certificate, error)` — LoadTrustedCertificatePEM 加载普通或 TRUSTED CERTIFICATE PEM；调用方负责 Close。
+
+### internal/native/
+
+- `func EVP_CIPHER_CTX_set_flags(ctx unsafe.Pointer, flags int)` — EVP_CIPHER_CTX_set_flags 设置上下文标志。
+- `func ERR_clear_error()` — ERR_clear_error 清空当前线程的错误队列。
+- `func D2i_OCSP_REQUEST(data []byte) unsafe.Pointer` — D2i_OCSP_REQUEST 解析 DER 请求，返回拥有的指针。
+- `func OCSP_request_add1_nonce(req unsafe.Pointer, nonce []byte) bool` — OCSP_request_add1_nonce 复制 nonce 到请求。
+- `func OCSP_check_nonce(req, resp unsafe.Pointer) int` — OCSP_check_nonce 比较请求与响应的 nonce，返回原生状态码。
+- `func X_OCSP_request_get0_id(req unsafe.Pointer) unsafe.Pointer` — X_OCSP_request_get0_id 返回单证书请求中的借用 CertID，其他请求返回 nil。
+- `func X_EC_parameters_write(bio unsafe.Pointer, name string, explicit bool) bool` — X_EC_parameters_write 写出命名或显式曲线参数。
+- `func X_EC_parameters_read(bio unsafe.Pointer) string` — X_EC_parameters_read 读取并校验曲线参数，返回曲线名。
+- `func X_EVP_PKEY_check(key unsafe.Pointer, public bool) bool` — X_EVP_PKEY_check 验证公钥或完整密钥对。
+- `func X_PKCS12_create_options(pass, name string, pkey, cert unsafe.Pointer, ca []unsafe.Pointer, pbe, iter int) unsafe.Pointer` — X_PKCS12_create_options 使用显式 PBE 与迭代次数打包。
+- `func X_PKEY_write_pkcs8(bio, key unsafe.Pointer, pass, cipher, prf string, version, iter int, encrypt bool) bool` — X_PKEY_write_pkcs8 写出指定加密方案的 PKCS#8 PEM。
+- `func X_PEM_read_rsa_public(bio unsafe.Pointer) unsafe.Pointer` — X_PEM_read_rsa_public 加载 PKCS#1 公钥，返回拥有的 EVP_PKEY。
+- `func X_PEM_write_rsa_public(bio, key unsafe.Pointer) bool` — X_PEM_write_rsa_public 写出 PKCS#1 公钥。
+- `func X_X509_add_trust(cert unsafe.Pointer, purpose string, reject bool) bool` — X_X509_add_trust 添加信任或拒绝用途；对象按名称或点分 OID 解析。
+- `func X_X509_clear_trust(cert unsafe.Pointer, reject bool)` — X_X509_clear_trust 清空信任或拒绝用途。
+- `func PEM_write_bio_X509_AUX(bio, cert unsafe.Pointer) bool` — PEM_write_bio_X509_AUX 编码包含信任属性的证书。
+- `func PEM_read_bio_X509_AUX(bio unsafe.Pointer) unsafe.Pointer` — PEM_read_bio_X509_AUX 加载包含信任属性的证书，调用方拥有结果。
+- `CipherWrapAllow` — 显式启用 EVP 密钥包装；`ERR_clear_error()` 清理能力探测的线程错误队列。

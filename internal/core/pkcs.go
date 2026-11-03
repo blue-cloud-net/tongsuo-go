@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"runtime"
 	"unsafe"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
@@ -319,6 +320,61 @@ func (p *PKCS7) AddCertificate(c *Certificate) error {
 	return nil
 }
 
+// AddCRL 向 PKCS7 追加一个 CRL（对应 CLI `crl2pkcs7`）。
+// c 必须存活；失败返回包装 OpError 的错误。
+//
+// AddCRL appends a CRL to the SignedData container (the CLI `crl2pkcs7`
+// equivalent). c must be live; failures are wrapped as OpError.
+func (p *PKCS7) AddCRL(c *CRL) error {
+	if p == nil || p.handle == nil || p.handle.IsClosed() {
+		return fmt.Errorf("pkcs7: closed")
+	}
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return fmt.Errorf("pkcs7: invalid crl")
+	}
+	if !native.PKCS7_add_crl(p.handle.Ptr(), c.handle.Ptr()) {
+		return NewOpError("pkcs7: PKCS7_add_crl", native.PopError())
+	}
+	return nil
+}
+
+// CRLs 提取 PKCS7 中的 CRL（复制）。
+// 返回的每个 *CRL 拥有自己的 X509_CRL 引用，调用方需逐个 Close。
+// 容器没有 CRL 栈时返回 (nil, nil)。
+//
+// CRLs returns the CRLs embedded in the PKCS#7 container as fresh,
+// independent copies. Each returned *CRL owns its X509_CRL reference and
+// must be closed individually. A container without a CRL stack returns
+// (nil, nil).
+func (p *PKCS7) CRLs() ([]*CRL, error) {
+	if p == nil || p.handle == nil || p.handle.IsClosed() {
+		return nil, fmt.Errorf("pkcs7: closed")
+	}
+	sk := native.PKCS7_get0_crls(p.handle.Ptr())
+	if sk == nil {
+		return nil, nil
+	}
+	count := native.X509_sk_X509_CRL_num(sk)
+	out := make([]*CRL, 0, count)
+	for i := 0; i < count; i++ {
+		x := native.X509_sk_X509_CRL_value(sk, i)
+		if x == nil {
+			continue
+		}
+		// 以 DER 往返取得独立副本，避免与容器共享所有权。
+		der, ok := native.I2d_X509_CRL(x)
+		if !ok || len(der) == 0 {
+			continue
+		}
+		dup := native.D2i_X509_CRL(der)
+		if dup == nil {
+			continue
+		}
+		out = append(out, &CRL{handle: NewHandle(dup, true, native.X509_CRL_free)})
+	}
+	return out, nil
+}
+
 // LoadPKCS7DER 从 DER 加载 PKCS7。
 // 返回的 *PKCS7 拥有底层句柄，使用完毕须调用 Close 释放；失败时返回包装为 OpError 的错误。
 //
@@ -396,4 +452,34 @@ func (p *PKCS7) Close() error {
 		return nil
 	}
 	return p.handle.Close()
+}
+
+// CreatePKCS12WithOptions 使用指定 PBE 与迭代次数创建容器，调用方负责 Close。
+//
+// CreatePKCS12WithOptions creates a container with explicit PBE and iterations; callers must Close it.
+func CreatePKCS12WithOptions(pass, name string, key *PKey, cert *Certificate, ca []*Certificate, pbe string, iter int) (*PKCS12, error) {
+	defer runtime.KeepAlive(key)
+	defer runtime.KeepAlive(cert)
+	defer runtime.KeepAlive(ca)
+	if key == nil || key.handle == nil || key.handle.IsClosed() {
+		return nil, fmt.Errorf("pkcs12: invalid private key")
+	}
+	if cert == nil || cert.handle == nil || cert.handle.IsClosed() {
+		return nil, fmt.Errorf("pkcs12: invalid certificate")
+	}
+	caPtrs := make([]unsafe.Pointer, 0, len(ca))
+	for _, c := range ca {
+		if c != nil && c.handle != nil && !c.handle.IsClosed() {
+			caPtrs = append(caPtrs, c.handle.Ptr())
+		}
+	}
+	nid := native.OBJ_txt2nid(pbe)
+	if nid <= 0 || iter <= 0 {
+		return nil, fmt.Errorf("pkcs12: invalid PBE or iterations")
+	}
+	p := native.X_PKCS12_create_options(pass, name, key.handle.Ptr(), cert.handle.Ptr(), caPtrs, nid, iter)
+	if p == nil {
+		return nil, NewOpError("pkcs12: PKCS12_create", native.PopError())
+	}
+	return &PKCS12{handle: NewHandle(p, true, native.PKCS12_free)}, nil
 }

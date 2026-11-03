@@ -168,6 +168,22 @@ func PKCS7_get0_certificates(p7 unsafe.Pointer) unsafe.Pointer {
 	return unsafe.Pointer(C.X_PKCS7_get0_certificates((*C.PKCS7)(p7)))
 }
 
+// PKCS7_add_crl 向 SignedData 追加一个 CRL（对应 CLI `crl2pkcs7`）。
+//
+// PKCS7_add_crl appends a CRL to the SignedData container (the CLI
+// crl2pkcs7 equivalent). The caller retains ownership of crl.
+func PKCS7_add_crl(p7, crl unsafe.Pointer) bool {
+	return C.X_PKCS7_add_crl((*C.PKCS7)(p7), (*C.X509_CRL)(crl)) > 0
+}
+
+// PKCS7_get0_crls 返回 SignedData 的 CRL 栈（内部指针，勿释放）。
+//
+// PKCS7_get0_crls returns the internal CRL stack of a SignedData PKCS7.
+// The pointer is owned by p7 and must NOT be freed.
+func PKCS7_get0_crls(p7 unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X_PKCS7_get0_crls((*C.PKCS7)(p7)))
+}
+
 // I2d_PKCS7 将 PKCS7 编码为 DER。
 // I2d_PKCS7 serializes p7 to DER. Returns (bytes, true) on success or
 // (nil, false) when the encoder reports a non-positive length.
@@ -202,4 +218,33 @@ func D2i_PKCS7(der []byte) unsafe.Pointer {
 	C.memcpy(buf, unsafe.Pointer(&der[0]), C.size_t(len(der)))
 	p := (*C.uchar)(buf)
 	return unsafe.Pointer(C.d2i_PKCS7(nil, &p, C.long(len(der))))
+}
+
+// X_PKCS12_create_options 使用显式 PBE 与迭代次数打包。
+//
+// X_PKCS12_create_options packs with explicit PBE and iteration settings.
+func X_PKCS12_create_options(pass, name string, pkey, cert unsafe.Pointer, ca []unsafe.Pointer, pbe, iter int) unsafe.Pointer {
+	cPass := C.CString(pass)
+	defer C.free(unsafe.Pointer(cPass))
+	var cName *C.char
+	if name != "" {
+		cName = C.CString(name)
+		defer C.free(unsafe.Pointer(cName))
+	}
+	var caPtr unsafe.Pointer
+	if len(ca) > 0 {
+		size := C.size_t(len(ca)) * C.size_t(unsafe.Sizeof((*C.X509)(nil)))
+		buf := C.malloc(size)
+		if buf == nil {
+			return nil
+		}
+		defer C.free(buf)
+		arr := (*[1 << 28]*C.X509)(buf)
+		for i, x := range ca {
+			arr[i] = (*C.X509)(x)
+		}
+		caPtr = buf
+	}
+	return unsafe.Pointer(C.X_PKCS12_create_options(cPass, cName, (*C.EVP_PKEY)(pkey),
+		(*C.X509)(cert), (*unsafe.Pointer)(caPtr), C.int(len(ca)), C.int(pbe), C.int(iter)))
 }

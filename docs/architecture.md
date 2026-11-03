@@ -90,6 +90,9 @@ graph TD
   asym --> core
   ecdh --> core
   ecdh --> asym
+  keystore --> asym
+  keystore --> meta
+  keystore --> pkcs12
   keystore --> core
   x509 --> core
   x509 --> asym
@@ -258,6 +261,7 @@ tongsuo-go/
 ├── digest/                    # 【原语】摘要
 │   ├── digest.go              # 按名分发：Names / New / Sum / SumReader / Size / BlockSize
 │   ├── hashes.go              # 类型化：NewSM3 / SumSM3 / NewSHA256 / SumSHA256 …
+│   ├── extended.go            # 0.6.0 扩展摘要：SHA3 / SHAKE / KECCAK / SHA-512-224·256 / Available
 │   └── forms.go               # 形态入口：SumSource / SumFile / SumTo / SumReaderTo
 ├── mac/                       # 【原语】消息认证码
 │   ├── mac.go                 # 按名分发（EVP_MAC 14 种）：Names / New / Sum / SumReader
@@ -271,8 +275,11 @@ tongsuo-go/
 ├── rand/                      # 【原语】安全随机数
 │   └── rand.go                # Read / Bytes / Reader
 ├── sym/                       # 【原语】对称加密 + 对称密钥对象
-│   ├── sym.go                 # 按名分发：Names / NewCipher / NewGCM / NewAEAD / Encrypt / Decrypt
+│   ├── sym.go                 # 按名分发：Names / NewCipher / NewGCM / NewAEAD / Encrypt / Decrypt / Supports / Paddings
 │   ├── aes.go  sm4.go         # 类型化入口：EncryptAESCBC / EncryptSM4ECB / SM4-CCM / SM4-XTS …
+│   ├── extended.go            # AES-CCM/OCB/SIV/XTS/WRAP/CBC-CTS 与 ZUC；一次性 provider 编排
+│   ├── des.go                 # DES / DES-EDE / DES-EDE3（单 DES 以 K‖K‖K 走 DES-EDE3）
+│   ├── padding.go             # 填充矩阵：PaddingPKCS7/Zero/None / cryptPadded / ErrUnsupportedPadding
 │   ├── chacha20.go            # ChaCha20 / ChaCha20-Poly1305
 │   ├── forms.go               # 形态入口：EncryptSource / DecryptSource（流式）
 │   └── key.go                 # SymmetricKey / AESKey / SM4Key / GenerateSymmetricKey
@@ -283,11 +290,15 @@ tongsuo-go/
 │   ├── sign.go  encrypt.go    # Sign / Verify / Encrypt / Decrypt + 算法特定入口
 │   ├── register.go            # CorePKey() 契约（供 internal/keyaccess 反查）
 │   ├── params.go              # KeyParams
+│   ├── pkcs8.go  check.go      # PKCS#8 PBE/PRF/PEM/DER、PKCS#1 公钥与密钥检查
+│   ├── signature.go           # 签名 DER ↔ 裸 r‖s：SignatureParts / SignatureDER / FormatSignature
 │   └── forms.go               # 形态入口：LoadPrivateKeySource / MarshalPrivateKeyTo …
 ├── ecdh/                      # 【密钥】密钥协商
-│   └── ecdh.go                # Curve / LoadPrivateKey / LoadPublicKey / SharedSecret
+│   ├── ecdh.go                # Curve / LoadPrivateKey / LoadPublicKey / SharedSecret
+│   └── parameters.go          # 命名/显式参数 PEM、文件与参数驱动 asym 密钥生成
 ├── keystore/                  # 【密钥】元数据、存储与轮转
 │   ├── handle.go              # Handle / NewHandle / MarshalJSON
+│   ├── load.go                # 本地 PEM/DER/PKCS#12 多密钥加载，依赖 asym + meta + pkcs12
 │   └── store.go               # Store / MemoryStore / Rotate / History
 ├── x509/                      # 【PKI】证书 + CSR + CRL + OCSP + 链验证（单包）
 │   ├── x509.go                # Certificate / Extension / CreateCertificate / CreateSelfSigned
@@ -297,6 +308,8 @@ tongsuo-go/
 │   ├── certpol.go             # CertificatePolicy / UserNotice / AddCertificatePolicies
 │   ├── certpol_der.go         # certificatePolicies 的 DER 编解码（纯 Go，cgo-free）
 │   ├── ocsp.go                # Request / Response / CreateOCSPRequest / ParseOCSPResponse
+│   ├── ocsp_http.go           # HTTP POST、nonce 与请求 CertID 校验
+│   ├── trust.go  load.go      # AUX 信任属性与本地证书/CRL 多对象加载
 │   ├── issue.go               # IssueCertificateFromRequest / IssueOptions
 │   ├── store.go               # Store / VerifyError / ChainVerify
 │   ├── forms.go               # 形态入口：MarshalFormat / LoadCertificateSource / MarshalCSRTo
@@ -308,7 +321,7 @@ tongsuo-go/
 ├── jwk/                       # 【格式】JWK ↔ PEM / JSON
 ├── pkcs/                      # 【容器】
 │   ├── pkcs7/                 # PKCS#7（Build / Extract / MarshalPEM）
-│   └── pkcs12/                # PKCS#12（Pack / Parse / ChangePassword）
+│   └── pkcs12/                # PKCS#12（Pack / Parse / ChangePassword；options.go = PBE/iter/口令）
 ├── xml/                       # 【格式族】预留命名空间
 │   └── rsa/                   # .NET RSAKeyValue XML 序列化
 │
@@ -364,11 +377,27 @@ tongsuo-go/
 > 依赖方向单向：算法原语包只依赖 `internal/core`；`ecdh → asym`；`x509 → asym`；
 > `tls` / `jwk` / `pkcs12` → `x509` + `asym`。
 > `0.5.0` 起新增一条**叶子边**：`digest` / `mac` / `sym` / `kdf` / `asym` / `x509`
-> → `meta`（`meta` 只依赖 `internal/core`，提供 `Source` / `Sink` / `Encoding` /
+> → `meta`，`0.6.0` 增加 `keystore → meta`（`meta` 只依赖 `internal/core`，提供 `Source` / `Sink` / `Encoding` /
 > `Format` / `Passphrase` 形态词汇）。该边单向、无环，不得反向（`meta` 不得
 > import 任何原语包），也不得经 `meta` 间接触达 `internal/native`。
 > 原 `key/` 的统合职责已拆分：
 > 非对称抽象 → `asym`、对称抽象 → `sym`、元数据与轮转 → `keystore`、KDF → `kdf`。
+
+---
+
+### `0.6.0` 增量的边界
+
+- 包数保持 16；`keystore → asym/meta/pkcs12` 的加载依赖单向无环，PKCS#8/PKCS#1
+  与密钥检查归 `asym`，不新增 `key` 或格式统合包。
+- AES 扩展与 ZUC 复用 `core.FetchCipher → native.EVP_CIPHER_Fetch`；原生参数在
+  `internal/native` 构造，API 层不接触 C/unsafe。上下文先释放，再释放 fetch 描述符。
+- `binding_params.go` / `binding_pkcs8.go` / `binding_trust.go` /
+  `binding_ocsp_nonce.go` 分别封装参数、密钥格式、信任属性与 nonce；核心层的
+  `params.go` / `pkcs8.go` / `trust.go` / `ocsp_nonce.go` 管理生命周期与错误。
+- HTTP 在 API 层使用标准库 `net/http`；只传 DER，限制大小、超时且拒绝重定向。
+  `FetchOCSP` 不隐式信任响应，签名与时间校验由调用方完成；资源 Close 责任见 GoDoc。
+- 8.4.0 为本版唯一验证基线，8.5 兼容见 `roadmap.md` §2.2。SIV 空消息明确拒绝；
+  RSA-SM3 签名按 provider 能力报错，不回退其他密码实现。
 
 ---
 

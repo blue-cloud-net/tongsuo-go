@@ -27,6 +27,12 @@ int X_EVP_Digest(const EVP_MD *md, const unsigned char *data, size_t count,
                  unsigned char *md_out, unsigned int *size);
 
 /*
+ * X_EVP_DigestFinalXOF：以指定长度完成可扩展输出摘要（SHAKE128 / SHAKE256）。
+ * 输出长度由调用方通过 outlen 给出，而非固定为摘要默认长度。
+ */
+int X_EVP_DigestFinalXOF(EVP_MD_CTX *ctx, unsigned char *out, size_t outlen);
+
+/*
  * X_EVP_PKEY_Q_keygen_sm2：生成 SM2 密钥对。
  * EVP_PKEY_Q_keygen 为可变参数函数，经 C 包装以规避 cgo 限制。
  */
@@ -212,6 +218,19 @@ void X_X509_STORE_CTX_set0_untrusted(X509_STORE_CTX *ctx, void *sk);
 int X_sk_X509_REVOKED_num(const void *sk);
 void *X_sk_X509_REVOKED_value(const void *sk, int i);       /* X509_REVOKED* */
 
+/*
+ * STACK_OF(X509_CRL) 访问（供 PKCS#7 的 crl2pkcs7 / 提取 CRL 使用）。
+ */
+int X_sk_X509_CRL_num(const void *sk);
+void *X_sk_X509_CRL_value(const void *sk, int i);           /* X509_CRL* */
+
+/*
+ * PKCS#7 的 CRL 支持：向 SignedData 追加 CRL（crl2pkcs7），
+ * 以及取出其中的 CRL 栈。
+ */
+int X_PKCS7_add_crl(PKCS7 *p7, X509_CRL *crl);
+void *X_PKCS7_get0_crls(const PKCS7 *p7);                  /* STACK_OF(X509_CRL)* */
+
 /* CRL 吊销原因枚举释放 */
 void X_ASN1_ENUMERATED_free(void *a);
 
@@ -274,6 +293,8 @@ int X_PEM_write_bio_RSAPrivateKey(BIO *bp, RSA *rsa);
  */
 PKCS12 *X_PKCS12_create(const char *pass, const char *name, EVP_PKEY *pkey,
                         X509 *cert, void **ca, int ca_len);
+PKCS12 *X_PKCS12_create_options(const char *pass, const char *name, EVP_PKEY *pkey,
+ X509 *cert, void **ca, int ca_len, int pbe, int iter);
 int X_PKCS12_parse(PKCS12 *p12, const char *pass, EVP_PKEY **pkey,
                    X509 **cert, void **ca);
 void *X_PKCS7_get0_certificates(PKCS7 *p7); /* STACK_OF(X509)* 内部指针，勿释放 */

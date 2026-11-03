@@ -11,7 +11,7 @@
 构建、测试与运行前必须自行安装铜锁（见[环境要求](#环境要求)）。
 
 - **模块路径**：`github.com/blue-cloud-net/tongsuo-go`
-- **底层依赖**：铜锁 (Tongsuo) **8.4.0+**（Apache-2.0）
+- **底层依赖**：铜锁 (Tongsuo) **8.4.0** 基线（Apache-2.0）；8.5 兼容排期至 `0.7.0`
 - **参考设计**：[blue-cloud-net/tongsuo-csharp](https://github.com/blue-cloud-net/tongsuo-csharp)
 - **定位**：全新独立实现，与官方 [tongsuo-project/tongsuo-go-sdk](https://github.com/tongsuo-project/tongsuo-go-sdk) 并存
 - **CI/CD**：GitHub Actions（[`.github/workflows/`](.github/workflows/)）— lint + 跨平台测试 + tag 自动发版
@@ -31,20 +31,23 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 - 🔑 **SM3 哈希算法**（GB/T 32905-2016，`digest`）：`hash.Hash` 接口 + 定长 `SumSM3` + 按名 `Sum("SM3", d)`
 - 🔒 **SM4 对称加密**（GB/T 32907，`sym`）：ECB / CBC / CTR / OFB / CFB / GCM（AEAD），以及 SM4-CCM 与 SM4-XTS
 - 🧮 **消息认证码**（`mac`）：14 种 `EVP_MAC` 算法 —— HMAC-SM3 / MD5 / SHA1 / SHA224 / SHA256 / SHA384 / SHA512、CMAC、GMAC、KMAC-128/256、SipHash、Poly1305、EIA3
-- 🔗 **更多哈希**（`digest`）：MD5、SHA1、SHA224、SHA256、SHA384、SHA512（`hash.Hash` + `Sum`）
-- 🔄 **AES 对称加密**（`sym`）：128 / 192 / 256 位的 ECB / CBC / CTR / GCM（`cipher.Block` + `cipher.AEAD`）
-- 🌊 **流密码**（`sym`）：ChaCha20、ChaCha20-Poly1305
+- 🔗 **更多哈希**（`digest`）：MD5、SHA1、SHA224、SHA256、SHA384、SHA512、SHA-256/192、SHA-512/224、SHA-512/256、SHA3-224/256/384/512、KECCAK-224/256/384/512 与 SHAKE128/256（`hash.Hash` + `Sum`，SHAKE 的 `SumSHAKE*` 需显式输出长度）
+- 🔄 **AES 对称加密**（`sym`）：128 / 192 / 256 位的 ECB / CBC / CTR / OFB / CFB / GCM / CCM / OCB / SIV / WRAP / WRAP-PAD / CBC-CTS，以及 128/256 位 XTS（`cipher.Block` + `cipher.AEAD`）
+- 🗝️ **DES / 3DES 兼容**（`sym`）：DES / DES-EDE（2 密钥）/ DES-EDE3 的 ECB / CBC —— 仅用于兼容存量数据。单 DES 以 `K‖K‖K` 走 DES-EDE3 实现，全程不加载 legacy provider
+- 🧾 **填充矩阵**（`sym`）：`Supports(name, padding)` / `Paddings(name)` 在不提交数据的前提下回答「该算法 × 该填充是否合法」；非法组合返回 `ErrUnsupportedPadding`，不再静默退化
+- ✍️ **签名格式与 RSA 摘要**（`asym`）：SM2 / ECDSA 的 DER ↔ 裸 `r‖s` 互转（`SignatureParts` / `SignatureDER` / `FormatSignature`）；RSA-OAEP 接受 `sm3`；RSA-SM3 签名先用 `SupportsRSASignatureDigest` 探测，8.4.0 不支持时返回 `ErrUnsupported`
+- 🌊 **流密码**（`sym`）：ChaCha20、ChaCha20-Poly1305、ZUC-128-EEA3（原生 5 字节 IV）
 - 🧬 **密钥派生**（`kdf`）：10 种 KDF —— HKDF / PBKDF2 / scrypt / SSKDF / TLS1-PRF / TLS13-KDF / KBKDF / X942KDF / X963KDF / HMAC-DRBG-KDF，均含类型化入口与按名分发 `Derive`
 - 🧰 **CLI 式形态入口**：`meta` 提供 `Source`（bytes / reader / 文件 / stdin）、`Sink`（含 raw / hex / base64 编码）、`Format`（PEM / DER）与 `Passphrase`（`pass:` / `env:` / `file:` / `fd:` / `stdin:`）；各原语包提供 `SumSource` / `SumTo` / `EncryptSource` / `DeriveTo` / `MarshalPrivateKeyTo` / `LoadCertificateSource` 等一行式入口
 - 🗂️ **算法与 provider 枚举**（`meta`）：`Digests` / `Ciphers` / `MACs` / `KDFs` / `Signatures` / `KeyExchanges` / `KEMs` / `TLSGroups` / `Providers` / `SeedingSource`
 - 📝 **Ed25519 / Ed448 签名算法**（RFC 8032，`asym`）：纯 EdDSA（无预哈希），32B / 57B 原始种子与公钥字节可与 Go 标准库、WireGuard 互操作；通过 `X509_sign_ctx` 路径支持证书 / CSR / CRL 签发
 - 🤝 **X25519 / X448 ECDH 密钥交换**（RFC 7748，`ecdh`）：32 / 56 字节共享密钥派生，可与 Go `crypto/ecdh`、WireGuard 互操作
-- 🤝 **曲线 ECDH**（`ecdh`）：NIST P-256 / P-384 / P-521（X9.63）、OKP 曲线 X25519 / X448（RFC 7748）与 secp256k1；PEM（PKCS#8 / SPKI）往返与共享密钥派生，语义对齐 Go 标准库 `crypto/ecdh`
+- 🤝 **曲线 ECDH**（`ecdh`）：NIST P-256 / P-384 / P-521（X9.63）、OKP 曲线 X25519 / X448（RFC 7748）与 secp256k1；PEM（PKCS#8 / SPKI）往返与共享密钥派生，语义对齐 Go 标准库 `crypto/ecdh`；命名/显式 EC 参数 PEM 文件读写与参数驱动密钥生成
 - 🎲 **安全随机数**（`rand`）：基于铜锁 `RAND_bytes`
-- 🗄️ **密钥存储与轮转**（`keystore`）：密钥元数据、内存 / 自定义 Store、版本轮转与历史
-- 📜 **X.509 证书管理**（`x509`）：证书 / CSR / CRL / OCSP 解析与签发、一行自签证书（`CreateSelfSigned`）、分步签发 CRL（`CRLBuilder`）、CA 签发证书（SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448）、按 NID 或名字添加任意 X.509 v3 扩展（`AddExtension` / `AddExtensionByName` / `AddExtensions`）、按 CSR 签发（`IssueCertificateFromRequest`）、主机名 / IP / 邮箱校验（`VerifyHostname` / `CheckEmail`）、subject / issuer 名字 hash（`SubjectHash` / `IssuerHash`）与链验证（可用 `Store.SetTime` 指定验证时刻）
+- 🗄️ **密钥存储与轮转**（`keystore`）：密钥元数据、内存 / 自定义 Store、版本轮转与历史；`Load` / `LoadAllFromReader` 自动识别本地 PEM 多对象、DER 与 PKCS#12
+- 📜 **X.509 证书管理**（`x509`）：证书 / CSR / CRL / OCSP 解析与签发、一行自签证书（`CreateSelfSigned`）、分步签发 CRL（`CRLBuilder`）、CA 签发证书（SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448）、按 NID 或名字添加任意 X.509 v3 扩展（`AddExtension` / `AddExtensionByName` / `AddExtensions`）、按 CSR 签发（`IssueCertificateFromRequest`）、主机名 / IP / 邮箱校验（`VerifyHostname` / `CheckEmail`）、subject / issuer 名字 hash（`SubjectHash` / `IssuerHash`）与链验证（可用 `Store.SetTime` 指定验证时刻）；OCSP HTTP/nonce、trusted PEM 用途属性与证书/CRL 统一加载
 - 🌐 **TLS / NTLS 传输层**（`tls`）：客户端 / 服务端封装，支持国密 NTLS 双证书（签名证书 + 加密证书）；`tls.NewListener` 返回 Accept 内即完成握手的 `net.Listener`
-- 📦 **容器与格式**：PKCS#7（`pkcs/pkcs7`）、PKCS#12（`pkcs/pkcs12`）、JWK（`jwk`）、ASN.1 DER 查看（`asn1`）、.NET 风格 RSA XML（`xml/rsa`）
+- 📦 **容器与格式**：PKCS#7 证书/CRL（`pkcs/pkcs7`）、带 PBE/迭代选项的 PKCS#12（`pkcs/pkcs12`）、PKCS#8 PBE/PRF/PEM/DER 与 RSA PKCS#1 公钥（`asym`）、OKP/oct JWK（`jwk`）、PEM 切分（`meta`）、ASN.1 DER 查看（`asn1`）、.NET 风格 RSA XML（`xml/rsa`）
 - 🧪 **标准向量测试**：每个算法包覆盖国标标准向量、往返、边界与错误路径，并与 openssl CLI 双向交叉验证
 
 ## 范围与非目标
@@ -65,11 +68,7 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 
 ### `0.6.0` 计划提供（尚未发布）
 
-- `sym`：AES-OFB / CFB（CFB128），以及 DES / DES-EDE（2 密钥）/ DES-EDE3 的 ECB / CBC
-- `sym`：公布 `Options.Padding` 支持矩阵并提供 `Supports` / `Paddings` 查询——非法组合改为
-  显式报错，不再静默退化为 PKCS#7
-- `asym`：签名在 DER 与裸 `r‖s` 之间互转
-- `asym`：RSA 摘要接受 `sm3`（PKCS#1 v1.5 / PSS / OAEP）
+- `0.6.0` 实现已完成并按铜锁 8.4.0 验证；AES-SIV 拒绝空消息。铜锁 8.5 兼容、GCM-SIV、EdDSA 上下文签名与 RSA-SM3 签名可运行支持归 `0.7.0`
 
 完整规划与「不做」清单（含理由与重开条件）见 [docs/roadmap.md](docs/roadmap.md) §2 与 §4。
 
@@ -136,6 +135,24 @@ go get github.com/blue-cloud-net/tongsuo-go
 然后在代码中按需导入子包（见下文"代码调用示例"）。
 
 ## 代码调用示例
+
+### AES-OCB（`0.6.0`）
+
+以下片段位于返回 error 的函数内，需导入 `sym`；示例只加密一条消息，生产环境同一密钥下不得复用 nonce。
+
+```go
+key := make([]byte, 16)
+aead, err := sym.NewAESOCB(key)
+if err != nil {
+    return err
+}
+nonce := make([]byte, aead.NonceSize())
+sealed := aead.Seal(nil, nonce, []byte("message"), []byte("header"))
+plain, err := aead.Open(nil, nonce, sealed, []byte("header"))
+_ = plain
+return err
+```
+
 
 ### SM3 哈希
 

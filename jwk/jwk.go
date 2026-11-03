@@ -49,6 +49,9 @@ type Key struct {
 	Crv string `json:"crv,omitempty"`
 	X   string `json:"x,omitempty"`
 	Y   string `json:"y,omitempty"`
+
+	// OKP（RFC 8037：x 为公钥原始字节，d 为种子）与对称密钥（RFC 7518 §6.4）
+	K string `json:"k,omitempty"`
 }
 
 // marshalCore 将底层核心密钥导出为 JWK（包内辅助）。
@@ -138,6 +141,9 @@ func MarshalKey(k asym.Key) (*Key, error) {
 	if k == nil {
 		return nil, fmt.Errorf("jwk: nil key")
 	}
+	if _, ok := okpCrvByAlg(k.Algorithm()); ok {
+		return marshalOKP(k)
+	}
 	pk, ok := keyaccess.PKey(k)
 	if !ok || pk == nil {
 		return nil, fmt.Errorf("jwk: unsupported key type %T", k)
@@ -154,7 +160,7 @@ func Parse(data []byte) (*Key, error) {
 		return nil, fmt.Errorf("jwk: invalid JSON: %w", err)
 	}
 	switch k.Kty {
-	case "RSA", "EC":
+	case "RSA", "EC", "OKP", "oct":
 		return &k, nil
 	default:
 		return nil, fmt.Errorf("jwk: unsupported kty %q", k.Kty)
@@ -183,6 +189,18 @@ func (k *Key) IsPrivate() bool {
 func (k *Key) ToPEM() ([]byte, error) {
 	if !k.IsPrivate() {
 		return k.ToPublicPEM()
+	}
+	if k.Kty == "OKP" {
+		key, err := k.ToOKPKey()
+		if err != nil {
+			return nil, err
+		}
+		priv, ok := key.(asym.PrivateKey)
+		if !ok {
+			return nil, fmt.Errorf("jwk: OKP key without private material")
+		}
+		defer asym.Close(priv)
+		return priv.MarshalPrivateKeyPEM()
 	}
 	var der []byte
 	var err error
@@ -213,6 +231,22 @@ func (k *Key) ToPEM() ([]byte, error) {
 //
 // ToPublicPEM exports the JWK public components as a SubjectPublicKeyInfo PEM block ("PUBLIC KEY"). It returns an error if base64url decoding fails or the curve is not recognized.
 func (k *Key) ToPublicPEM() ([]byte, error) {
+	if k.Kty == "OKP" {
+		key, err := k.ToOKPKey()
+		if err != nil {
+			return nil, err
+		}
+		pub, ok := key.(asym.PublicKey)
+		if !ok {
+			if priv, isPriv := key.(asym.PrivateKey); isPriv {
+				defer asym.Close(priv)
+				return priv.Public().MarshalPublicKeyPEM()
+			}
+			return nil, fmt.Errorf("jwk: OKP key without public material")
+		}
+		defer asym.Close(pub)
+		return pub.MarshalPublicKeyPEM()
+	}
 	var pub any
 	switch k.Kty {
 	case "RSA":

@@ -17,39 +17,49 @@ import (
 // (ECB / CBC) always split evenly inside a chunk.
 const streamChunk = 64 << 10
 
-// streamCipher 返回按名分发可用的流式描述符。
+// streamCipher 返回按名分发可用的流式描述符与其实际使用的密钥。
 // 仅接受无填充的分组模式（ECB / CBC）与流模式（CTR / OFB / CFB / ChaCha20）；
 // AEAD 模式（GCM / CCM / ChaCha20-Poly1305）与 XTS 需要一次性持有全部数据，
-// 返回 ErrUnsupported。
+// 返回 ErrUnsupported。返回的密钥可能与入参不同：单 DES 会展开为 K‖K‖K。
 //
 // streamCipher returns the descriptor usable for streaming under the
-// given name. Only unpadded block modes (ECB / CBC) and stream modes
-// (CTR / OFB / CFB / ChaCha20) qualify; the AEAD modes (GCM / CCM /
-// ChaCha20-Poly1305) and XTS need the whole input at once and return
-// ErrUnsupported.
-func streamCipher(name string, a algo, key []byte) (*core.Cipher, error) {
+// given name together with the key actually fed to it. Only unpadded
+// block modes (ECB / CBC) and stream modes (CTR / OFB / CFB / ChaCha20)
+// qualify; the AEAD modes (GCM / CCM / ChaCha20-Poly1305) and XTS need
+// the whole input at once and return ErrUnsupported. The returned key
+// may differ from the argument: single DES is expanded to K‖K‖K.
+func streamCipher(name string, a algo, key []byte) (*core.Cipher, []byte, error) {
 	switch a.mode {
-	case "GCM", "CCM", "POLY1305", "XTS":
-		return nil, fmt.Errorf("sym: %q: %w: streaming is not supported for this mode", name, ErrUnsupported)
+	case "GCM", "CCM", "POLY1305", "XTS", "OCB", "SIV", "WRAP", "WRAP-PAD", "CBC-CTS":
+		return nil, nil, fmt.Errorf("sym: %q: %w: streaming is not supported for this mode", name, ErrUnsupported)
 	}
 	if len(key) != a.size {
-		return nil, fmt.Errorf("sym: %q: %w: got %d bytes, want %d",
+		return nil, nil, fmt.Errorf("sym: %q: %w: got %d bytes, want %d",
 			name, ErrInvalidKeyLength, len(key), a.size)
 	}
 	upper := strings.ToUpper(strings.TrimSpace(name))
 	switch {
 	case strings.HasPrefix(upper, "AES"):
-		return aesCipher(key, strings.ToLower(a.mode))
+		c, err := aesCipher(key, strings.ToLower(a.mode))
+		return c, key, err
+	case strings.HasPrefix(upper, "DES-EDE3-"):
+		return desCipher(desEDE3, strings.ToLower(a.mode)), key, nil
+	case strings.HasPrefix(upper, "DES-EDE-"):
+		return desCipher(desEDE, strings.ToLower(a.mode)), key, nil
+	case strings.HasPrefix(upper, "DES-"):
+		return desCipher(desSingle, strings.ToLower(a.mode)), effectiveDESKey(desSingle, key), nil
 	case strings.HasPrefix(upper, "SM4"):
 		c := sm4Cipher(strings.ToLower(a.mode))
 		if c == nil {
-			return nil, fmt.Errorf("sym: %q: %w", name, ErrUnsupported)
+			return nil, nil, fmt.Errorf("sym: %q: %w", name, ErrUnsupported)
 		}
-		return c, nil
+		return c, key, nil
+	case a.name == "ZUC-128-EEA3":
+		return nil, nil, fmt.Errorf("sym: %q: %w: use Encrypt/Decrypt", name, ErrUnsupported)
 	case a.mode == "STREAM":
-		return core.ChaCha20(), nil
+		return core.ChaCha20(), key, nil
 	}
-	return nil, fmt.Errorf("sym: %q: %w", name, ErrUnknownAlgorithm)
+	return nil, nil, fmt.Errorf("sym: %q: %w", name, ErrUnknownAlgorithm)
 }
 
 // cryptSource 是 EncryptSource / DecryptSource 的共同实现：
@@ -65,11 +75,11 @@ func cryptSource(name string, key, iv []byte, src *meta.Source, sink *meta.Sink,
 	if err != nil {
 		return err
 	}
-	c, err := streamCipher(name, a, key)
+	c, effKey, err := streamCipher(name, a, key)
 	if err != nil {
 		return err
 	}
-	ctx, err := core.NewCipherCtx(c, key, iv, enc)
+	ctx, err := core.NewCipherCtx(c, effKey, iv, enc)
 	if err != nil {
 		return err
 	}

@@ -214,14 +214,22 @@
 - 🆕 `func SumReaderTo(name string, r io.Reader, sink *meta.Sink) error` — 直接持
   有 `io.Reader` 时的等价入口
 
-**规划中（`0.6.0`）**
+**函数｜扩展摘要（`0.6.0` 新增）**
 
-| 符号 | 说明 | 前置（需新增 `internal/native` 绑定） |
-|---|---|---|
-| 🧭 `SHA512_224` / `SHA512_256` | 截断变体（按名 + 类型化入口） | `EVP_sha512_224` / `EVP_sha512_256` |
-| 🧭 `SHA3_224` / `SHA3_256` / `SHA3_384` / `SHA3_512` | SHA-3 四档 | `EVP_sha3_*` |
-| 🧭 `SHAKE128` / `SHAKE256` | 可扩展输出（需输出长度参数） | `EVP_shake128` / `EVP_shake256` |
-| 🧭 `KECCAK224` / `KECCAK256` / `KECCAK384` / `KECCAK512`、`SHA256_192` | 铜锁扩展摘要 | `EVP_keccak_*` 等 |
+注册表从 7 项扩到 20 项（顺序稳定）：`SM3`、`MD5`、`SHA1`、`SHA224`、`SHA256`、
+`SHA384`、`SHA512`、`SHA256-192`、`SHA512-224`、`SHA512-256`、`SHA3-224/256/384/512`、
+`SHAKE128/256`、`KECCAK-224/256/384/512`。
+
+- 🆕 尺寸常量：`SHA256_192Size`、`SHA512_224Size`、`SHA512_256Size`、`SHA3_*Size` /
+  `SHA3_*BlockSize`、`KECCAK*Size` / `KECCAK*BlockSize`、`SHAKE128Size` / `SHAKE256Size`
+- 🆕 类型化入口：`SumSHA256_192` / `NewSHA256_192`、`SumSHA512_224` / `NewSHA512_224`、
+  `SumSHA512_256` / `NewSHA512_256`、`SumSHA3_224/256/384/512` 与对应 `New*`、
+  `SumKECCAK224/256/384/512` 与对应 `New*`
+- 🆕 `func SumSHAKE128(data []byte, outLen int) ([]byte, error)` / 🆕 `func SumSHAKE256(data []byte, outLen int) ([]byte, error)`
+  — XOF 必须显式给出输出长度；`Sum("SHAKE128", …)` / `New("SHAKE128")` 返回 `ErrXOFNeedsLength`
+- 🆕 `func Available(name string) bool` — 运行时能力探测；典型差异：铜锁 8.4.0（OpenSSL 3.0.3 底座）
+  不提供 `KECCAK-*` 与 `SHA256-192`（走 `EVP_MD_fetch`），此时对应入口返回 `ErrUnsupported`
+- 🆕 `var ErrUnsupported` / 🆕 `var ErrXOFNeedsLength` — 哨兵错误
 
 **破坏性变更**
 
@@ -471,20 +479,43 @@
   没有 SM4-XTS（走 `EVP_CIPHER_fetch`），此时 `EncryptSM4XTS` 返回
   「unavailable in this build」
 
+**函数｜新增模式与填充矩阵（`0.6.0` 新增）**
+
+- 🆕 `AES-{128,192,256}-{OFB,CFB}` 名字（CFB 为 CFB128）
+- 🆕 `func EncryptAESOFB(key, iv, data []byte) ([]byte, error)` / 🆕 `func DecryptAESOFB(key, iv, data []byte) ([]byte, error)` — OFB 加解密为同一运算
+- 🆕 `func EncryptAESCFB(key, iv, data []byte) ([]byte, error)` / 🆕 `func DecryptAESCFB(key, iv, data []byte) ([]byte, error)` — CFB128，iv 为 `BlockSize`
+- 🆕 `DESKeySize = 8`、`DESEDEKeySize = 16`、`DESEDE3KeySize = 24`、`DESBlockSize = 8`
+- 🆕 `DES-{ECB,CBC}`、`DES-EDE-{ECB,CBC}`（2 密钥）、`DES-EDE3-{ECB,CBC}` 名字；🆕 `func EncryptDES{ECB,CBC}` / `DecryptDES{ECB,CBC}` / `EncryptDESEDE{ECB,CBC}` / `DecryptDESEDE{ECB,CBC}` / `EncryptDESEDE3{ECB,CBC}` / `DecryptDESEDE3{ECB,CBC}` / `NewDESCipher`
+  - 单 DES 以 `K‖K‖K` 驱动 DES-EDE3 实现，输出与真单 DES 逐字节相同；**不加载 legacy provider**（见 [roadmap.md](roadmap.md) §4 第 10 条）
+- 🆕 `PaddingPKCS7` / `PaddingZero` / `PaddingNone`；🆕 `var ErrUnsupportedPadding`
+- 🆕 `func Supports(name, padding string) (bool, error)` — 静态判定「算法名 × 填充」是否合法（未知名返回 `ErrUnknownAlgorithm`，未知填充名返回 `(false, nil)`）
+- 🆕 `func Paddings(name string) ([]string, error)` — 分组模式返回 `pkcs7/zero/none`，流模式与 XTS 返回 `none`，AEAD 返回空切片
+
+**函数｜AES 扩展与 ZUC（`0.6.0` 新增）**
+
+- `AES-{128,192,256}-{CCM,OCB,SIV,WRAP,WRAP-PAD,CBC-CTS}`、`AES-{128,256}-XTS`、`ZUC-128-EEA3` 登记于 `Names`，共 55 项；`Available` 探测本地 provider。
+- `func NewAESCCM(key []byte) (cipher.AEAD, error)` / `NewAESOCB` / `NewAESSIV` — 亦可用 `NewAEAD`。
+- `func EncryptAESCCM(key, nonce, plaintext, aad []byte) ([]byte, []byte, error)` / `EncryptAESOCB` / `EncryptAESSIV`
+- `func DecryptAESCCM(key, nonce, ciphertext, tag, aad []byte) ([]byte, error)` / `DecryptAESOCB` / `DecryptAESSIV`
+- `func EncryptAESXTS(key, iv, data []byte) ([]byte, error)` / `DecryptAESXTS`；`EncryptAESWrap` / `DecryptAESWrap`；`EncryptAESWrapPad` / `DecryptAESWrapPad`；`EncryptAESCBCCTS` / `DecryptAESCBCCTS`。
+- `func EncryptZUC(key, iv, data []byte) ([]byte, error)` / `DecryptZUC` — 16 字节 key、5 字节原生 EEA3 IV。
+- `cipher.AEAD` 的 `NonceSize` / `Overhead` / `Seal` / `Open` 行为沿用现有模式；`Seal` 失败返回 nil，`Open` 失败不返回部分明文。
+- CCM/OCB 的 AEAD `NonceSize` 为 12；一次性 CCM 接受 7..13 字节、OCB 为 1..15。
+  SIV 使用 32/48/64 字节双密钥，AEAD 的 `NonceSize` 为 0（确定性），一次性入口将非空 nonce 作为最后一个 AAD 分量；8.4.0 上拒绝空消息并返回 `ErrUnsupported`。
+  XTS 使用 32/64 字节双密钥，支持不少于 16 字节的数据；CBC-CTS 默认 CS1。
+  WRAP/WRAP-PAD 的 nil IV 使用 RFC 3394/5649 标准值，后两者校验包装完整性；其余非 AEAD 模式不提供消息认证。
+- 新增模式的填充：XTS/WRAP/WRAP-PAD/CBC-CTS/ZUC 仅 `none`；CCM/OCB/SIV 无外部填充。
+  `EncryptSource`/`DecryptSource` 对上述一次性模式返回 `ErrUnsupported`。
+
 **规划中**
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
-| 🧭 AES-OFB / CFB（CFB128）：`EncryptAESOFB` / `DecryptAESOFB` / `EncryptAESCFB` / `DecryptAESCFB` | `0.6.0` | `EVP_aes_{128,192,256}_{ofb,cfb128}` |
-| 🧭 AES-CCM / XTS / OCB / SIV / WRAP / CBC-CTS | `0.6.0` | `EVP_aes_*_{ccm,xts,ocb,siv,…}` |
-| 🧭 AES-GCM-SIV | `0.7.0` | 铜锁 8.5 兼容及新版 provider |
-| 🧭 DES / DES-EDE（2 密钥）/ DES-EDE3 × ECB / CBC：`EncryptDES{ECB,CBC}` / `DecryptDES{ECB,CBC}` / `EncryptDESEDE{ECB,CBC}` / `DecryptDESEDE{ECB,CBC}` / `EncryptDESEDE3{ECB,CBC}` / `DecryptDESEDE3{ECB,CBC}` / `NewDESCipher` | `0.6.0` | `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}` |
-| 🧭 `func Supports(name, padding string) (bool, error)` / `func Paddings(name string) ([]string, error)` / `PaddingPKCS7` / `PaddingZero` / `PaddingNone` / `ErrUnsupportedPadding` | `0.6.0` | 无 |
-| 🧭 ZUC-128-EEA3 | `0.6.0` | `EVP_zuc` |
+| 🧭 AES-GCM-SIV | `0.7.0` | 铜锁 8.5 兼容与新版 provider |
 
 > **DES 的实现方式与安全口径**：单 DES 在铜锁中只注册在 legacy provider，本库不加载 legacy（见
 > [roadmap.md](roadmap.md) §4 第 10 条），改以 `K‖K‖K`（三份相同密钥）驱动 DES-EDE3 实现——
-> 两者输出逐字节相同。对外仍以 `DES-ECB` / `DES-CBC` 命名，GoDoc 须写明这是等价变换。
+> 两者输出逐字节相同。对外仍以 `DES-ECB` / `DES-CBC` 命名，GoDoc 已写明这是等价变换。
 > DES 的 56-bit 密钥已可穷举，**仅用于兼容既有数据**，不建议用于新协议。
 
 **破坏性变更**
@@ -550,7 +581,7 @@
 - ♻️ `func SignPSS(priv PrivateKey, data []byte, saltLen int, hash string) ([]byte, error)` / ♻️ `func VerifyPSS(pub PublicKey, data, sig []byte, saltLen int, hash string) error` — 原 RSA 方法
 - ♻️ `func EncryptPKCS1v15(pub PublicKey, data []byte) ([]byte, error)` / ♻️ `func DecryptPKCS1v15(priv PrivateKey, data []byte) ([]byte, error)` — 原 `crypto/rsa` 同名函数
 - ♻️ `func EncryptOAEP(pub PublicKey, data []byte, hash string) ([]byte, error)` / ♻️ `func DecryptOAEP(priv PrivateKey, data []byte, hash string) ([]byte, error)` — 原 `crypto/rsa` 同名函数；**参数由 `md *core.Digest` 改为 `hash string`（修复 E1-2）**
-- `hash` 参数的取值范围：`""`（默认 SHA-256）/ `"sha1"` / `"sha224"` / `"sha256"` / `"sha384"` / `"sha512"`。`0.6.0` 计划为 OAEP 增加 `"sm3"`（摘要同时用于 MGF1）；PKCS#1 v1.5 / PSS 的 SM3 签名可运行支持归 `0.7.0`，见下方规划。
+- `hash` 参数的取值范围（`0.6.0` 起含 `sm3`）：`""`（默认 SHA-256）/ `"sha1"` / `"sha224"` / `"sha256"` / `"sha384"` / `"sha512"` / `"sm3"`。`sm3` 适用于 PKCS#1 v1.5、PSS 与 OAEP（OAEP 的摘要同时用作 MGF1 哈希）。
 
 **函数｜SM2 类型化入口（迁移自 `crypto/sm2`）**
 
@@ -595,14 +626,30 @@
   — 未加密 → PKCS#8 PEM；带口令 → 加密 PEM，结果按 `sink` 编码写出
 - 🆕 `func MarshalPublicKeyTo(pub PublicKey, sink *meta.Sink) error` — SPKI PEM 写出
 
+**函数｜签名表示转换与 RSA-SM3（`0.6.0` 新增）**
+
+- 🆕 `func SignatureParts(sig []byte) (r, s []byte, err error)` — DER `SEQUENCE{INTEGER r, INTEGER s}` → 两个大端分量（最小长度，不补齐）
+- 🆕 `func SignatureDER(r, s []byte) ([]byte, error)` — 两个分量 → 最短形式 DER
+- 🆕 `func FormatSignature(sig []byte, from, to string, width int) ([]byte, error)` — `der` ↔ `raw`；`width` 为每分量字节数（SM2 / P-256 = 32，P-384 = 48，P-521 = 66），从 der 转出时必填，从 raw 转出时可传 0 自动推断
+- 适用范围：**仅 SM2 与 ECDSA**；RSA 签名本身即裸字节串，Ed25519 / Ed448 恒为定长裸签名，三者不适用
+- `SignPKCS1v15` / `VerifyPKCS1v15` / `SignPSS` / `VerifyPSS` / `EncryptOAEP` / `DecryptOAEP` 的 `hash` 参数新增 `"sm3"`
+
+**函数｜密钥格式与检查（`0.6.0` 新增）**
+
+- `type PKCS8Options struct { Encrypt bool; Version int; Cipher, PRF string; Iterations int; Passphrase string }`
+- `func MarshalPKCS8(priv PrivateKey, format meta.Format, opts *PKCS8Options) ([]byte, error)`
+- `func LoadPKCS8(data []byte, format meta.Format, encrypted bool, pass string) (PrivateKey, error)`
+- `func MarshalRSAPublicKeyPKCS1PEM(pub PublicKey) ([]byte, error)` / `func LoadRSAPublicKeyPKCS1PEM(data []byte) (PublicKey, error)`
+- `func Check(priv PrivateKey) error` / `func PublicCheck(pub PublicKey) error`
+- `func SupportsRSASignatureDigest(key Key, hash string) (bool, error)` — 铜锁 8.4.0 的 RSA-SM3 签名不可用，签/验返回 `ErrUnsupported`；OAEP-SM3 可用。签名可运行支持随 8.5 兼容移至 `0.7.0`。
+- PKCS#8 Version 选择 PBE 方案：1 为 PBE-SHA1-3DES；2 为 PBES2（默认 AES-256-CBC / hmacWithSHA256 / 2048 次迭代），可选 AES-128/192/256-CBC 与 HMAC-SHA1/224/256/384/512。
+  它不改变 ASN.1 PrivateKeyInfo 的版本。私钥结果由调用方 `asym.Close`；源密钥与口令缓冲由调用方清零。
+
 **规划中**
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
-| 🧭 签名 DER ↔ 裸 `r‖s`：`func SignatureParts(sig []byte) (r, s []byte, err error)` / `func SignatureDER(r, s []byte) ([]byte, error)` / `func FormatSignature(sig []byte, from, to string, width int) ([]byte, error)` | `0.6.0` | 无（纯 Go DER 编解码） |
-| 🧭 RSA-OAEP 摘要补 `sm3`：`EncryptOAEP` / `DecryptOAEP` 的 `hash` 参数接受 `"sm3"` | `0.6.0` | 无（`EVP_sm3` 已绑定） |
-| 🧭 RSA-SM3 签名：`SignPKCS1v15` / `VerifyPKCS1v15` / `SignPSS` / `VerifyPSS` 的 SM3 签名可运行支持 | `0.7.0` | 铜锁 8.5 兼容及 RSA provider 的 SM3 签名支持；8.4.0 不支持 |
-| 🧭 ED25519ph / ED25519ctx / ED448ph | `0.7.0` | 铜锁 8.5 兼容；`EVP_DigestSignInit_ex` 的 `instance` / `context-string` 参数 |
+| 🧭 ED25519ph / ED25519ctx / ED448ph | `0.7.0` | 铜锁 8.5 兼容；`instance` / `context-string` 参数 |
 | 🧭 ML-DSA-44 / 65 / 87 | `0.7.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
 | 🧭 SLH-DSA 12 变体 | `0.7.0` | 同上 |
 | 🧭 `func Encapsulate` / `func Decapsulate`（KEM） | `0.7.0` | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
@@ -671,12 +718,18 @@
 
 > 与 `asym` 的分工：**生成在 `asym`（`asym.GenerateKey(asym.AlgX25519, nil)`），协商在 `ecdh`**。`ecdh.LoadPrivateKey` / `LoadPublicKey` 负责把 `asym` 密钥对象转成 `ecdh` 对象；也可用 PEM 往返完成同样的事（`asym` 侧导出 → `ecdh.LoadPrivateKeyPEM`）。
 
+**函数｜参数文件（`0.6.0` 新增）**
+
+- `func MarshalParametersPEM(c *Curve, explicit bool) ([]byte, error)`
+- `func LoadParametersPEM(data []byte) (*Curve, error)` / `func LoadParametersFile(path string) (*Curve, error)`
+- `func GenerateKeyFromParameters(data []byte) (asym.PrivateKey, error)` — 复用 `asym` 生成，调用方用 `asym.Close` 释放。
+- `func (c *Curve) Check() error` — 命名/显式参数均支持；支持 P-256/384/521 与 secp256k1，X25519/X448 无 EC 参数文件。
+
 **规划中**
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
 | 🧭 SM2DH 密钥协商（`CurveByName("SM2DH")`） | `0.7.0` | 铜锁已启用（`key-exchange-algorithms`）；`EVP_PKEY_derive*` 已绑定，需补 SM2 派生参数 |
-| 🧭 曲线参数文件读写（`ecparam -param_out`） | `0.6.0` | 无需新绑定（走现有 EC 参数序列化） |
 
 **破坏性变更**
 
@@ -739,6 +792,14 @@
 - `key.PEM` / `key.ParsePEM` → `asym.PEM` / `asym.ParsePEM`
 
 ---
+
+**函数｜本地统一加载（`0.6.0` 新增）**
+
+- `func Load(uri string) (asym.Key, error)` / `func LoadAll(uri string) ([]asym.Key, error)`
+- `func LoadWithPassphrase(uri string, pass *meta.Passphrase) (asym.Key, error)`
+- `func LoadFromReader(r io.Reader) (asym.Key, error)` / `func LoadAllFromReader(r io.Reader, pass *meta.Passphrase) ([]asym.Key, error)`
+- 只接受本地路径、file URI、`-`（stdin）；自动识别 PEM 多对象、PKCS#8/PKCS#1/SEC1/SPKI DER、PKCS#12；PEM 证书/CRL 忽略，未知块报错；单对象入口遇多密钥报错。
+  失败不返回部分密钥，成功结果由调用方逐个 `asym.Close`。
 
 ## 10. `x509` — 证书 / CSR / CRL / OCSP 与链验证
 
@@ -947,14 +1008,21 @@
 - 🆕 `func MarshalCertificateTo(c *Certificate, sink *meta.Sink, format meta.Format) error`
 - 🆕 `func MarshalCSRTo(r *CertificateRequest, sink *meta.Sink, format meta.Format) error`
 
+**函数｜OCSP、信任属性与加载（`0.6.0` 新增）**
+
+- `func CreateOCSPRequestWithNonce(cert, issuer *Certificate, hash string, nonce []byte) ([]byte, error)` — nil nonce 随机生成 32 字节，非 nil 须 1..32 字节。
+- `func FetchOCSP(url string, req []byte, timeout time.Duration) (*Response, error)` — HTTP POST、4 MiB 限制、不跟随重定向、零 timeout 为 10 秒；匹配请求 CertID 与 nonce。仍须 `Verify` 并检查状态/时间；返回响应与其 `ResponderCerts` 均由调用方 `Close`。
+- `func (r *Response) CheckNonce(req []byte) error` — 请求包含 nonce 时，响应缺失或不匹配均报错；不验证响应签名。
+- `func LoadTrustedCertificatePEM(data []byte) (*Certificate, error)` / `func (c *Certificate) MarshalTrustedPEM() ([]byte, error)`
+- `func (c *Certificate) AddTrust(purpose string) error` / `AddReject` / `ClearTrust() error` / `ClearReject() error` — 用途为 OpenSSL 名称或点分 OID；AUX 属性不属于签名内容，普通 PEM/DER 不包含这些属性。
+- `func LoadFromURI(uri string) ([]*Certificate, []*CRL, error)` / `func LoadFromReader(r io.Reader) ([]*Certificate, []*CRL, error)` — 本地 PEM 多对象/单 DER，忽略密钥块，错误时释放全部部分结果；成功由调用方逐个 `Close`。
+- `ToCertificateRequest`、`SubjectHash`、`Store.SetTime`/`ChainVerify` 与任意扩展入口为既有能力，不引入重复签名。
+
 **规划中**
 
 | 符号 | 目标版本 | 前置 |
 |---|---|---|
-| 🧭 `func FetchOCSP(url string, req []byte, timeout time.Duration) (*Response, error)` | `0.6.0` | 无（标准库 `net/http` 实现） |
-| 🧭 OCSP 请求 / 响应 nonce | `0.6.0` | 新增 `OCSP_REQUEST_add1_nonce` 等绑定 |
 | 🧭 `ca` 式数据库化签发 / 吊销 / 续期 | 待定形态 | 需先定「内存模型 vs 文件系统绑定」 |
-| 🧭 `-x509toreq`（证书 → CSR）、信任属性、`subject_hash` | `0.6.0` | 无需新绑定 |
 
 **破坏性变更**
 
@@ -1090,12 +1158,18 @@ cgo-free 的只读 DER 解析与转储；`Parse` 对深度设上限（`maxDERDep
 - ♻️ `func (k *Key) ToPEM() ([]byte, error)` — 转换为私钥 PEM（PKCS#8）
 - ♻️ `func (k *Key) ToPublicPEM() ([]byte, error)` — 转换为公钥 PEM（SPKI）
 
-**规划中（`0.6.0`）**
+**函数｜OKP 与对称密钥（`0.6.0` 新增）**
 
-| 符号 | 说明 |
-|---|---|
-| 🧭 OKP 支持（`Kty: "OKP"`，Ed25519 / Ed448 / X25519 / X448） | 需 `asym` 提供 `Ed25519` / `X25519` 的曲线标识 |
-| 🧭 对称密钥（`Kty: "oct"`） | 需 `sym.SymmetricKey` 的 base64url 导出 |
+- 🆕 `CrvEd25519` / `CrvEd448` / `CrvX25519` / `CrvX448` — OKP 的 JWK crv 常量
+- 🆕 `type Key` 新增 `K string`（`Kty: "oct"` 的密钥字节）；`Kty` 接受 `"OKP"` / `"oct"`
+- 🆕 `func MarshalSymmetric(k sym.SymmetricKey) (*Key, error)` — 对称密钥 → `Kty: "oct"` JWK
+- 🆕 `func (k *Key) ToOKPKey() (asym.Key, error)` — OKP JWK → `asym` 密钥（有 `d` 为私钥，否则公钥；`x` 与种子不一致时报错）
+- 🆕 `func (k *Key) ToSymmetricKey() (sym.SymmetricKey, error)` — `oct` JWK → 对称密钥（`alg` 缺省时按长度推断）
+- `MarshalKey` / `ToPEM` / `ToPublicPEM` 支持 OKP：PEM 路径走 `asym` 序列化，覆盖标准库不支持的 Ed448 / X448
+
+**规划中**
+
+_（本包已无待实现项）_
 
 **破坏性变更**
 
@@ -1116,12 +1190,16 @@ cgo-free 的只读 DER 解析与转储；`Parse` 对深度设上限（`maxDERDep
 - `func MarshalPEM(der []byte) []byte` — DER → PEM
 - `func Extract(data []byte) ([]*tx509.Certificate, error)` — 从 PKCS#7（DER 或 PEM）提取证书
 
+**函数｜CRL 支持（`0.6.0` 新增）**
+
+- 🆕 `func FromCRL(crls []*tx509.CRL) ([]byte, error)` — 把 CRL 列表打包为 PKCS#7 SignedData（无签名者），对应 `crl2pkcs7` 的 CRL 侧
+- 🆕 `func ExtractCRLs(data []byte) ([]*tx509.CRL, error)` — 从 PKCS#7（DER 或 PEM）提取 CRL；容器无 CRL 时返回空切片
+
 **规划中**
 
 | 符号 | 目标版本 | 前置 |
 |---|---|---|
 | 🧭 `pkcs7.Sign` / `Verify` / `Encrypt` / `Decrypt` | `0.7.0` | 新增 `PKCS7_sign` / `PKCS7_encrypt` 等绑定 |
-| 🧭 `pkcs7.FromCRL` / `ExtractCRLs`（`crl2pkcs7`） | `0.6.0` | 无需新绑定 |
 | 🧭 CMS 族（`cms` 命令） | `0.8.0` | 新增 `CMS_*` 绑定 |
 
 ---
@@ -1139,13 +1217,16 @@ cgo-free 的只读 DER 解析与转储；`Parse` 对深度设上限（`maxDERDep
 - ♻️ `func Parse(data []byte, password string) (*Bundle, error)` — 解析
 - ♻️ `func ChangePassword(data []byte, oldPass, newPass string) ([]byte, error)` — 更换口令
 
-> 无 PBE 算法 / 迭代次数 / 友好名数组选项（使用铜锁默认 PBE）。
+> 既有 `Pack` 保持兼容 PBE；新增 `PackWithOptions` 默认 AES-256-CBC。
 
-**规划中**
+**`0.6.0` 新增配置入口**
 
-| 符号 | 目标版本 | 前置 |
-|---|---|---|
-| 🧭 `Options{ PBE, Iterations, FriendlyName, ReadPass, WritePass }` | `0.6.0` | `X_PKCS12_create` shim 扩展（`PKCS12_create` 已接受 PBE/iter 参数） |
+- `type Options struct { PBE string; Iterations int; FriendlyName, ReadPass, WritePass string }`
+- `func PackWithOptions(cert *x509.Certificate, key PrivateKey, ca []*x509.Certificate, opts *Options) ([]byte, error)`
+- `func ParseWithOptions(data []byte, opts *Options) (*Bundle, error)`
+- `func ChangePasswordWithOptions(data []byte, opts *Options) ([]byte, error)`
+- PBE：AES-128/192/256-CBC 或 PBE-SHA1-3DES；默认 AES-256-CBC、2048 次加密/MAC 迭代。
+  ReadPass 读取输入，WritePass 保护输出；两者不表示同一容器内分设加密/MAC 口令。
 
 **破坏性变更**
 

@@ -12,6 +12,11 @@ int X_EVP_Digest(const EVP_MD *md, const unsigned char *data, size_t count,
     return EVP_Digest(data, count, md_out, size, md, NULL);
 }
 
+int X_EVP_DigestFinalXOF(EVP_MD_CTX *ctx, unsigned char *out, size_t outlen)
+{
+    return EVP_DigestFinalXOF(ctx, out, outlen);
+}
+
 EVP_PKEY *X_EVP_PKEY_Q_keygen_sm2(void)
 {
     return EVP_PKEY_Q_keygen(NULL, NULL, "SM2");
@@ -720,6 +725,34 @@ int X_sk_X509_REVOKED_num(const void *sk)
     return sk_X509_REVOKED_num((const STACK_OF(X509_REVOKED) *)sk);
 }
 
+int X_sk_X509_CRL_num(const void *sk)
+{
+    return sk_X509_CRL_num((const STACK_OF(X509_CRL) *)sk);
+}
+
+void *X_sk_X509_CRL_value(const void *sk, int i)
+{
+    return sk_X509_CRL_value((const STACK_OF(X509_CRL) *)sk, i);
+}
+
+int X_PKCS7_add_crl(PKCS7 *p7, X509_CRL *crl)
+{
+    return PKCS7_add_crl(p7, crl);
+}
+
+/*
+ * 铜锁 / OpenSSL 3.x 没有 PKCS7_get0_crls 访问器，只能经 PKCS7_SIGNED 的
+ * crl 栈（`[1] IMPLICIT`）读取。仅当类型为 signed 且结构完整时返回非空。
+ */
+void *X_PKCS7_get0_crls(const PKCS7 *p7)
+{
+    if (p7 == NULL || !PKCS7_type_is_signed((PKCS7 *)p7))
+        return NULL;
+    if (p7->d.sign == NULL)
+        return NULL;
+    return (void *)p7->d.sign->crl;
+}
+
 void *X_sk_X509_REVOKED_value(const void *sk, int i)
 {
     return sk_X509_REVOKED_value((const STACK_OF(X509_REVOKED) *)sk, i);
@@ -919,8 +952,8 @@ int X_PEM_write_bio_RSAPrivateKey(BIO *bp, RSA *rsa)
     return PEM_write_bio_RSAPrivateKey(bp, rsa, NULL, NULL, 0, NULL, NULL);
 }
 
-PKCS12 *X_PKCS12_create(const char *pass, const char *name, EVP_PKEY *pkey,
-                        X509 *cert, void **ca, int ca_len)
+PKCS12 *X_PKCS12_create_options(const char *pass, const char *name, EVP_PKEY *pkey,
+                        X509 *cert, void **ca, int ca_len, int pbe, int iter)
 {
     STACK_OF(X509) *ca_sk = NULL;
     if (ca_len > 0) {
@@ -938,13 +971,17 @@ PKCS12 *X_PKCS12_create(const char *pass, const char *name, EVP_PKEY *pkey,
         }
     }
     PKCS12 *p12 = PKCS12_create(pass, name, pkey, cert, ca_sk,
-                                NID_pbe_WithSHA1And3_Key_TripleDES_CBC,
-                                NID_pbe_WithSHA1And3_Key_TripleDES_CBC,
-                                2048, 2048, 0);
+                                pbe, pbe, iter, iter, 0);
     if (ca_sk != NULL)
         sk_X509_free(ca_sk); /* 栈元素为借用指针，仅释放数组 */
     return p12;
 }
+PKCS12 *X_PKCS12_create(const char *pass, const char *name, EVP_PKEY *pkey,
+ X509 *cert, void **ca, int ca_len) {
+ return X_PKCS12_create_options(pass,name,pkey,cert,ca,ca_len,
+ NID_pbe_WithSHA1And3_Key_TripleDES_CBC,2048);
+}
+
 
 int X_PKCS12_parse(PKCS12 *p12, const char *pass, EVP_PKEY **pkey,
                    X509 **cert, void **ca)
