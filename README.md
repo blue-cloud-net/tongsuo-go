@@ -12,7 +12,7 @@ Tongsuo source, headers or binaries are included, so you must install Tongsuo yo
 building, testing or running (see [Requirements](#requirements)).
 
 - **Module path**: `github.com/blue-cloud-net/tongsuo-go`
-- **Native dependency**: Tongsuo **8.4.0** baseline (Apache-2.0); 8.5 compatibility is scheduled for `0.9.0`
+- **Native dependency**: Tongsuo **8.4.0** baseline (Apache-2.0); 8.5 compatibility is scheduled for `0.8.0`
 - **Reference design**: [blue-cloud-net/tongsuo-csharp](https://github.com/blue-cloud-net/tongsuo-csharp)
 - **Positioning**: a brand-new independent implementation, coexisting with the official [tongsuo-project/tongsuo-go-sdk](https://github.com/tongsuo-project/tongsuo-go-sdk)
 - **CI/CD**: GitHub Actions ([`.github/workflows/`](.github/workflows/)) — lint + cross-platform tests + automatic releases on tag
@@ -76,10 +76,9 @@ itself, and the Tongsuo installation is a build prerequisite (see [Requirements]
 `0.6.0` is the current implementation baseline (finalized on 2026-11-03); Tongsuo 8.4.0 is the validation baseline and AES-SIV rejects empty messages.
 The following releases are planned capabilities, not currently available features:
 
-- `0.7.0`: reliability and data integrity, including handle release, parser limits, full serial numbers, DER extensions, trust paths, compressed SM2 input and PKCS#12 password-change interop
-- `0.8.0`: PKCS#7 signing, verification, encryption and decryption
-- `0.9.0` / `0.10.0`: Tongsuo 8.5 compatibility and classical algorithm extensions / PQC
-- `0.11.0` / `0.12.0` / `1.0.0`: CMS and RFC 3161 timestamps / TLS capabilities / public API convergence and stability
+- `0.7.0`: reliability, data integrity and PKCS containers: handle release, parser limits, full serial numbers, DER extensions, trust paths, compressed SM2 input, lossless password changes for complex PKCS#12 containers, and PKCS#7 signing, verification, encryption and decryption
+- `0.8.0` / `0.9.0`: Tongsuo 8.5 compatibility and classical algorithm extensions / PQC
+- `0.10.0` / `0.11.0` / `1.0.0`: CMS and RFC 3161 timestamps / TLS capabilities / public API convergence and stability
 
 See [docs/requirements.md](docs/requirements.md) for functional requirements, technical decisions and acceptance criteria.
 

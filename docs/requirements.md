@@ -17,12 +17,12 @@
 | I-03 | 填充支持矩阵 | `Supports` / `Paddings` 已在 `0.6.0` 实现 | 已实现，随实际升级关闭 |
 | I-04 | AES 静默忽略 Padding | `0.6.0` 已统一应用 Padding，非法组合返回 `ErrUnsupportedPadding` | 已修复，随实际升级关闭 |
 | I-05 | ECIES | 暂无指定互通对象，不自行定义容器；HPKE/JWE 也尚未封装 | 暂缓；有具体互通格式或标准协议需求再立项 |
-| I-06 | RSA-SM3 | OAEP-SM3 与签名摘要能力探测已在 `0.6.0` 实现；8.4 RSA provider 不支持 SM3 签名 | 签名可运行支持归 `0.9.0`，以固定版本原生能力验证为准 |
+| I-06 | RSA-SM3 | OAEP-SM3 与签名摘要能力探测已在 `0.6.0` 实现；8.4 RSA provider 不支持 SM3 签名 | 签名可运行支持归 `0.8.0`，以固定版本原生能力验证为准 |
 | I-07 | 签名 DER/raw 互转 | `SignatureParts` / `SignatureDER` / `FormatSignature` 已实现，转换明确给出分量宽度，仅适用 SM2/ECDSA | `0.6.0` 已实现 |
 | I-08 | RSA 签名应改成 DER | 需求依据错误；RSA-PSS/PKCS#1 v1.5 的签名是模数长度字节串，不是 r/s DER | 不改变格式；`0.7.0` 补说明与双向互验 |
-| I-09 | ECDH 无公开 Close | 原生副本已有独立生命周期，仍缺公开释放入口 | `0.7.0`：公私钥幂等 Close、关闭后使用检查 |
+| I-09 | ECDH 无公开 Close | 原生副本已有独立生命周期，仍缺公开释放入口 | `0.7.0`：公私钥幂等 Close，Public 改为独立副本与 error，关闭后使用检查 |
 | I-10 | SM2 压缩点密文 | 裸格式互转保留原 C1，当前压缩点转 DER 明确报错，未发现所述“重建时丢失 C1”路径 | `0.7.0`：经铜锁解码和校验，支持压缩输入转换/解密；不增压缩输出 |
-| I-11 | PKCS#7 签名/加密 | `0.6.0` 已有证书/CRL 容器，仍缺 signerInfo 与 EnvelopedData 流程 | `0.8.0`：Sign / Verify / Encrypt / Decrypt |
+| I-11 | PKCS#7 签名/加密 | `0.6.0` 已有证书/CRL 容器，仍缺 signerInfo 与 EnvelopedData 流程 | `0.7.0`：Sign / Verify / Encrypt / Decrypt；默认验证信任，按 8.4 原生算法范围交付 |
 | I-12 | OKP/oct JWK | `0.6.0` 已实现 Ed25519/Ed448/X25519/X448 OKP 与 oct 导入导出 | 已实现，随实际升级关闭 |
 | I-13 | XML 仅 RSA | 包文档已明确 .NET RSAKeyValue，范围符合设计 | 维持仅 RSA，不另创 EC/SM2 XML |
 | I-14 | RSA PKCS#1 公钥 | `0.6.0` 已有显式导出/加载入口，不要求通用 SPKI 加载器接受所有标签 | 已实现，按显式入口迁移 |
@@ -33,7 +33,7 @@
 | I-19 | DER 扩展写入 | core 已有 DER 扩展基础，公开 API 仍以配置串为主；Data 与 Value 含义不同 | `0.7.0`：公开按已知/自定义 OID 写入 DER，不反解任意配置串 |
 | I-20 | 只能按证书吊销 | 缺按完整序列号入口，且现有 Revoke(cert) 也经 int64 中转 | `0.7.0`：RevokeSerialHex；现有 Revoke 同步修复截断 |
 | I-21 | 便捷签发无法再加扩展 | 立即签名、之后不可变是既有设计；NewCertificate + Set/Add + Sign 已可满足需求 | `0.7.0`：补推荐示例与入口说明，不放开签名后修改 |
-| I-22 | 外部 P12 改密 | 原生诊断中默认导出容器改密失败，显式 3DES/SHA-1 组合成功；“所有外部容器一律失败”不成立。WithOptions 重打包不是无损修复 | `0.7.0`：safe/bag 层重加密，保留内容与属性，不依赖升级 8.5 解决 |
+| I-22 | 外部 P12 改密 | 原生诊断中默认导出容器改密失败，显式 3DES/SHA-1 组合成功；“所有外部容器一律失败”不成立。WithOptions 重打包不是无损修复 | `0.7.0`：两个改密入口均保留复杂 safe/bag 内容，覆盖多私钥与嵌套，不依赖升级 8.5 解决 |
 
 ## 2. 实现与验收边界
 
@@ -42,13 +42,30 @@
   I-19 保留原始扩展 DER 和 critical/OID，仍禁止签名后编辑。
 - **原生能力**：SM2 点展开与 P12 重加密均通过 native → core → API；不手写替代
   密码算法，不引入第三方依赖，不自动加载 legacy provider。
-- **无损改密**：保留 key/cert/CA、bag 顺序及属性，明确拒绝不能支持的容器/算法，
-  不用解析后的单 key/cert Bundle 重打包冒充无损操作。显式 WithOptions 的重编码语义
-  与兼容入口的无损改密分别说明。
+- **无损改密**：ChangePassword 与 ChangePasswordWithOptions 均保留多私钥、证书链、
+  CRL、其他可保留 bag、嵌套层级、safe/bag 顺序及全部属性，不经单 key/cert Bundle
+  重打包。普通入口保留算法/派生/MAC 策略；WithOptions 应用编码参数。空 FriendlyName
+  保留名称，非空仅在单密钥身份明确时改名，多密钥时拒绝歧义。先验证 MAC，无法处理
+  的算法/保护方式或结构明确失败；详细默认值见路线图 §2.1。
 - **互通验收**：随机签名、加密容器以双向验证/解密及结构语义比较为准，不能要求随机
   产物逐字节相等；确定性转换与原始 DER 迁移使用逐字节断言。
 - **格式纠偏**：RSA 签名输出格式见 [RFC 8017 §8](https://www.rfc-editor.org/rfc/rfc8017.html#section-8)；
   默认信任路径见 [OpenSSL X509_STORE 文档](https://docs.openssl.org/3.0/man3/X509_STORE_add_cert/)。
+
+### 2.1 0.7.0 兼容取舍与容器边界（尚未实现）
+
+- **I-09/I-15**：ECDH Public() 改为 (*PublicKey, error)，公私钥与源 asym 密钥独立
+  释放；Close 对 nil、零值和重复调用幂等，可失败操作在关闭后报错。此签名变化需迁移。
+- **I-16**：ParseWithLimits 的限额均为正数，节点数包含根，深度沿用构造类型层数；
+  ErrDepthLimit/ErrNodeLimit 可经 errors.Is 识别，原 Parse 的 128 层行为与错误文本保留。
+- **I-11**：原 0.8 范围合入 0.7；Sign 默认 SHA-256 与附带内容，Encrypt 默认
+  AES-256-CBC、多 RSA 接收者；输出 DER，Verify/Decrypt 接受 DER/PKCS7 PEM，二进制
+  内容不转换换行。Verify 默认要求显式信任存储并验证全部签名者，仅显式 SignatureOnly
+  跳过链验证，结果明确 TrustVerified=false，失败不返回内容。8.4.0 验收 RSA/ECDSA
+  签名与 RSA 接收者加密；SM2 及其他不支持组合明确失败。CMS 留给调整后的 0.10。
+- **I-22**：多私钥、多 safe 和嵌套 safeContentsBag 为必须成功项；无 MAC、不同
+  MAC/加密口令、签名保护及其他未支持算法/结构明确拒绝。比较改密前后的内容与属性
+  结构，不要求随机盐/IV 或加密后的整个 DER 相同。
 
 ## 3. CRL 与完整序列号：职责判断与排期
 
@@ -86,10 +103,10 @@ SDK 不负责恢复遗失证书、签发数据库、全局序列号分配、持�
 2. 大整数设置、PEM/DER 往返、CRL 两种吊销入口、条目读回、`IsRevoked` 与
    `RevocationCheck` 全程不经过 `int64`。两条超范围但不同的序列号不得误匹配；
    同一序列号的不同 hex 大小写或前导零表示按整数值匹配。
-3. 新写入入口拒绝 nil、零、负数及超出签发长度边界的值；hex 入口拒绝空串及非法
-   字符。按 [RFC 5280 §4.1.2.2](https://www.rfc-editor.org/rfc/rfc5280.html#section-4.1.2.2)
-   的正整数与 20 octets 边界验收，并覆盖 DER 符号补零。读取外部非合规序列号时
-   保留完整整数或明确报错，不截断、不取绝对值，不用 0/-1 冒充成功结果。
+3. 新写入入口拒绝 nil、零、负数及超出签发长度边界的值；旧 int64 写入口也统一拒绝
+   零和负数。hex 入口拒绝空串及非法字符。按 [RFC 5280 §4.1.2.2](https://www.rfc-editor.org/rfc/rfc5280.html#section-4.1.2.2)
+   的正整数与 20 octets 边界验收；DER INTEGER 内容长度包含必要的符号补零。
+   读取外部非合规序列号时保留完整整数或明确报错，不截断、不取绝对值，不用 0/-1 冒充成功结果。
 4. 输入 `*big.Int` 在调用时复制，返回值为独立对象；修改输入/返回值不得改变已写入
    的证书或 CRL。`IssueOptions.SerialBigInt != nil` 且旧 `Serial != 0` 时拒绝歧义，
    nil 则保留旧选项路径；设置证书序列号仍遵守签名后不可变。

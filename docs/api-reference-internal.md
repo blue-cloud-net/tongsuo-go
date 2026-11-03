@@ -452,7 +452,9 @@ internal/testutil ← 仅被 *_test.go 使用
 - `type corePKeyer interface { CorePKey() *core.PKey }`（非导出）— 形状契约；由 `asym` 的非导出密钥类型隐式满足
 - `func PKey(v any) (*core.PKey, bool)` — 反查 `v` 背后的原生句柄；`v` 为 nil / 非本库密钥类型 / 未实现契约时返回 `(nil, false)`
 
-**消费方（6 个）**：`ecdh`、`x509`、`tls`、`jwk`、`keystore`、`pkcs/pkcs12`
+**当前消费方（6 个）**：`ecdh`、`x509`、`tls`、`jwk`、`keystore`、`pkcs/pkcs12`
+
+**0.7.0 规划新增白名单**：`pkcs/pkcs7`，签名/解密经桥接复制私钥句柄；当前尚未使用。
 
 **契约要求（`asym` 侧）**
 
@@ -464,7 +466,7 @@ internal/testutil ← 仅被 *_test.go 使用
 **验收**
 
 - `go doc -all ./asym` 输出中**不得**出现 `CorePKey`
-- `grep -rln "internal/keyaccess" --include=*.go .` 只应命中 `internal/keyaccess/` 与上述 6 个消费方
+- `grep -rln "internal/keyaccess" --include=*.go .` 当前只应命中 `internal/keyaccess/` 与上述 6 个消费方；0.7 实施后另允许 `pkcs/pkcs7`
 
 ---
 
@@ -547,12 +549,11 @@ internal/testutil ← 仅被 *_test.go 使用
 
 | 目标版本 | core/native 工作 | 边界 |
 |---|---|---|
-| `0.7.0` | 复用 ECDH/CSR Close；补完整 CRL 序列号读写、OID/DER 扩展、信任路径、SM2 点校验、P12 safe/bag 重加密 | 保留副本所有权、签名终态及容器属性；不暴露原生类型 |
-| `0.8.0` | PKCS#7 签名/验签/加密/解密及分离内容处理 | 实施时同步 keyaccess 消费方白名单；证书继续走 certaccess |
-| `0.9.0` | 8.5 兼容、上下文签验、RSA-SM3 原生能力验证、SM2DH 参数 | 8.4 编译保护与运行时探测 |
-| `0.10.0` | PQC 密钥/签验/序列化与 KEM | 不可用能力明确报错 |
-| `0.11.0` | CMS / TS | 复用容器基础设施 |
-| `0.12.0` | TLS 配置、状态与回调绑定 | 生命周期与并发验收先于 1.0 稳定版 |
+| `0.7.0` | ECDH/CSR Close 与独立 Public 副本；完整序列号、OID/DER 扩展、信任路径、SM2 点校验、复杂 P12 两入口无损改密；P7 签验/加解密与分离内容 | 保留副本所有权、签名终态、嵌套与属性；P7 私钥走已规划 keyaccess 白名单，证书走 certaccess；结果显式释放，不暴露原生类型 |
+| `0.8.0` | 8.5 兼容、上下文签验、RSA-SM3 原生能力验证、SM2DH 参数 | 8.4 编译保护与运行时探测 |
+| `0.9.0` | PQC 密钥/签验/序列化与 KEM | 不可用能力明确报错 |
+| `0.10.0` | CMS / TS | 复用容器基础设施 |
+| `0.11.0` | TLS 配置、状态与回调绑定 | 生命周期与并发验收先于 1.0 稳定版 |
 
 具体 C 接口与版本以 [roadmap.md](roadmap.md) §3 为准；此处不预先登记尚未实现的
 完整内部函数签名。

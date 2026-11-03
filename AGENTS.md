@@ -293,8 +293,8 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 - **公开签名中不得出现 `internal/` 类型**（重构后的硬约束）
   - ❌ 反例：`func EncryptOAEP(pub asym.PublicKey, data []byte, md *core.Digest)`
   - ❌ 反例：`func (k *PrivateKey) Key() *core.PKey`
-- 跨包取原生句柄**只允许**经两个桥接包：密钥走 `internal/keyaccess`（消费方限 `ecdh` / `x509` / `tls` / `jwk` / `keystore` / `pkcs/pkcs12`），证书走 `internal/certaccess`（消费方限 `tls` / `pkcs/pkcs7` / `pkcs/pkcs12` 与 `x509` 包内的 `ocsp`）
-  - 注：`keystore` 是实施期新增的第 6 个 keyaccess 消费方（`marshalKeyPEM` 取句柄做 PEM 序列化），原白名单只列了 5 个
+- 跨包取原生句柄**只允许**经两个桥接包：密钥走 `internal/keyaccess`（消费方限 `ecdh` / `x509` / `tls` / `jwk` / `keystore` / `pkcs/pkcs12`，另允许 `0.7.0` 实施的 `pkcs/pkcs7`），证书走 `internal/certaccess`（消费方限 `tls` / `pkcs/pkcs7` / `pkcs/pkcs12` 与 `x509` 包内的 `ocsp`）
+  - 注：当前 keyaccess 有 6 个消费方；`pkcs/pkcs7` 是 `0.7.0` 的第 7 个规划消费方，签名/解密须复制私钥句柄，当前尚未使用；细则见 `docs/architecture.md` §3.3
   - ❌ 反例：在 `internal/core` 里写「类型开关」反查公开类型（会成环，`internal/core` 不能 import `asym`）
   - ✅ 正例：`asym` 在**非导出**具体类型上实现 `CorePKey() *core.PKey`，`keyaccess.PKey(v)` 结构化断言取得；取到后必须 `EVP_PKEY_dup`
 - `unsafe` 仅限绑定层与核心层，作用域尽量小；**不得**在 Go 与 C 之间直接传 Go 指针

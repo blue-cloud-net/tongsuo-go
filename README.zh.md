@@ -11,7 +11,7 @@
 构建、测试与运行前必须自行安装铜锁（见[环境要求](#环境要求)）。
 
 - **模块路径**：`github.com/blue-cloud-net/tongsuo-go`
-- **底层依赖**：铜锁 (Tongsuo) **8.4.0** 基线（Apache-2.0）；8.5 兼容排期至 `0.9.0`
+- **底层依赖**：铜锁 (Tongsuo) **8.4.0** 基线（Apache-2.0）；8.5 兼容排期至 `0.8.0`
 - **参考设计**：[blue-cloud-net/tongsuo-csharp](https://github.com/blue-cloud-net/tongsuo-csharp)
 - **定位**：全新独立实现，与官方 [tongsuo-project/tongsuo-go-sdk](https://github.com/tongsuo-project/tongsuo-go-sdk) 并存
 - **CI/CD**：GitHub Actions（[`.github/workflows/`](.github/workflows/)）— lint + 跨平台测试 + tag 自动发版
@@ -71,10 +71,9 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 `0.6.0` 为当前实现基线（2026-11-03 定版）；以铜锁 8.4.0 为验证基线，AES-SIV 拒绝空消息。
 以下版本均为规划，不表示功能已可用：
 
-- `0.7.0`：可靠性与数据完整性，含句柄释放、解析限额、完整序列号、DER 扩展、信任路径、SM2 压缩输入与 PKCS#12 改密互通
-- `0.8.0`：PKCS#7 签名、验签、加密与解密
-- `0.9.0` / `0.10.0`：铜锁 8.5 兼容与经典算法扩展 / PQC
-- `0.11.0` / `0.12.0` / `1.0.0`：CMS 与 RFC 3161 时间戳 / TLS 能力完善 / 公开 API 收敛与稳定
+- `0.7.0`：可靠性、数据完整性与 PKCS 容器，含句柄释放、解析限额、完整序列号、DER 扩展、信任路径、SM2 压缩输入、复杂 PKCS#12 容器无损改密，以及 PKCS#7 签名、验签、加密与解密
+- `0.8.0` / `0.9.0`：铜锁 8.5 兼容与经典算法扩展 / PQC
+- `0.10.0` / `0.11.0` / `1.0.0`：CMS 与 RFC 3161 时间戳 / TLS 能力完善 / 公开 API 收敛与稳定
 
 功能需求、技术判断与验收边界见 [docs/requirements.md](docs/requirements.md)。
 

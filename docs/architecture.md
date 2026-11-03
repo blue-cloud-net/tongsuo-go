@@ -180,7 +180,9 @@ API 层内部存在必须先拿到 `*core.PKey` 才能工作的场景（如 `ecd
   并做类型断言：**无注册表、无 `init()` 顺序依赖、无全局状态**；`asym` 也不需要 import 它
 - **为何优于反向注册表**：无全局可变状态、无 `init()` 顺序依赖、无并发写入，且契约由类型系统
   隐式校验——改签名会在断言处立刻暴露
-- 消费方：`ecdh`、`x509`、`tls`、`jwk`、`keystore`、`pkcs/pkcs12`；拿到句柄后**必须**用
+- 当前消费方：`ecdh`、`x509`、`tls`、`jwk`、`keystore`、`pkcs/pkcs12`；
+  `0.7.0` 规划允许新增 `pkcs/pkcs7` 消费方，签名/解密经该桥接取私钥，不增设桥接。
+  拿到句柄后**必须**用
   `EVP_PKEY_dup` 复制，保证两侧生命周期独立（否则 `asym` 侧 `Close()` 后消费方即为悬垂指针）
 - 验收：`go doc -all ./asym` 输出中不得出现 `CorePKey`；`internal/` 路径规则保证外部模块无法 import
 - **已接受的残余瑕疵**：外部包可写匿名接口断言 `k.(interface{ CorePKey() *core.PKey })` 并调用
@@ -396,27 +398,34 @@ tongsuo-go/
   `params.go` / `pkcs8.go` / `trust.go` / `ocsp_nonce.go` 管理生命周期与错误。
 - HTTP 在 API 层使用标准库 `net/http`；只传 DER，限制大小、超时且拒绝重定向。
   `FetchOCSP` 不隐式信任响应，签名与时间校验由调用方完成；资源 Close 责任见 GoDoc。
-- 8.4.0 为本版唯一验证基线，8.5 兼容见 `roadmap.md` §2.3。SIV 空消息明确拒绝；
+- 8.4.0 为本版唯一验证基线，8.5 兼容见 `roadmap.md` §2.2。SIV 空消息明确拒绝；
   RSA-SM3 签名按 provider 能力报错，不回退其他密码实现。
 
 ### `0.7.0` 及以后的架构约束（规划，尚未实现）
 
-- `0.7.0` 的 ECDH/CSR 释放复用 core 句柄；EC 点解码、完整序列号、按 OID 的
+- `0.7.0` 的 ECDH/CSR 释放复用 core 句柄；ECDH Public 改为独立句柄与 error，
+  公私钥及源 asym 密钥独立释放。EC 点解码、完整序列号、按 OID 的
   DER 扩展、信任路径和 PKCS#12 safe/bag 操作仍按 API → core → native 单向调用。
-  `asn1` 限额保持纯 Go；所有新公开签名不得暴露 internal 或原生类型。
+  `asn1` 限额保持纯 Go、正数限额与可识别错误，保留 Parse 的 128 层行为；
+  所有新公开签名不得暴露 internal 或原生类型。
 - 完整序列号以标准库 `*big.Int` 增补证书读写、CSR 签发、按序列号吊销与 CRL 条目
   读取入口；保留 `RevokedEntry.SerialHex` / `RevokeSerialHex` 适配，底层 ASN.1 INTEGER
   转换仍由 native → core 封装。`Revoke(cert)`、`IsRevoked` 与 `RevocationCheck`
   不再经 int64 中转；旧 Serial 仅保留为受限兼容视图。输入与返回的大整数独立复制，
-  不暴露可修改的原生状态。I-23/I-24 不引入签发数据库或持久化工作流。
+  不暴露可修改的原生状态；旧 int64 写入口统一拒绝零/负数，写入 DER INTEGER 内容
+  含符号补零不超过 20 octets。I-23/I-24 不引入签发数据库或持久化工作流。
 - DER 扩展的 Data 是原始扩展值，Value 是配置串，不保证二者可逆；签名后不可变。
   默认信任路径是铜锁配置，不能替代平台原生信任库承诺，也不能隐式信任输入链根。
-- `0.8.0` 的 PKCS#7 明确区分签名验证与证书信任；涉及私钥时，按架构规范增补
-  `internal/keyaccess` 的 pkcs7 消费方白名单后再实施，保留副本及所有权约束。
-- `0.9.0` 起新增能力在保留 8.4 构建兼容的前提下，通过编译保护和运行时探测隔离
-  8.5 接口；PQC 归 `0.10.0`，不能让旧基线引用不存在的原生符号。
-- `0.11.0` 的新顶级 `ts` 包与 x509 平级，实施时再更新包计数与依赖图；当前包数
-  保持 16。`0.12.0` 先完成 TLS 能力，`1.0.0` 再集中稳定公开 API。
+- `0.7.0` 的 PKCS#12 两个改密入口均遍历复杂 safe/bag，多私钥与嵌套不经 Bundle
+  重打包，内容/顺序/属性完整保留；先验 MAC，失败无输出且释放临时资源。
+- `0.7.0` 的 PKCS#7 默认验证全部签名者与显式信任存储；SignatureOnly 是显式选择，
+  不能把仅验签结果标为受信任。私钥经 keyaccess 取句柄并复制，证书继续走 certaccess；
+  返回证书由 SignedData.Close 幂等释放。8.4 基线限 RSA/ECDSA 签名与 RSA 接收者加密，
+  不支持的 SM2/其他组合明确失败。完整 Options 和默认值见公开 API 清单。
+- `0.8.0` 起新增能力在保留 8.4 构建兼容的前提下，通过编译保护和运行时探测隔离
+  8.5 接口；PQC 归 `0.9.0`，不能让旧基线引用不存在的原生符号。
+- `0.10.0` 的新顶级 `ts` 包与 x509 平级，实施时再更新包计数与依赖图；当前包数
+  保持 16。`0.11.0` 先完成 TLS 能力，`1.0.0` 再集中稳定公开 API。
 
 具体排期见 [roadmap.md](roadmap.md) §2；功能需求与验收边界见
 [requirements.md](requirements.md)。本节不表示目录或 API 已新增。
