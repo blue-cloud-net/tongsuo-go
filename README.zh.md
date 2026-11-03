@@ -11,7 +11,7 @@
 构建、测试与运行前必须自行安装铜锁（见[环境要求](#环境要求)）。
 
 - **模块路径**：`github.com/blue-cloud-net/tongsuo-go`
-- **底层依赖**：铜锁 (Tongsuo) **8.4.0** 基线（Apache-2.0）；8.5 兼容排期至 `0.7.0`
+- **底层依赖**：铜锁 (Tongsuo) **8.4.0** 基线（Apache-2.0）；8.5 兼容排期至 `0.9.0`
 - **参考设计**：[blue-cloud-net/tongsuo-csharp](https://github.com/blue-cloud-net/tongsuo-csharp)
 - **定位**：全新独立实现，与官方 [tongsuo-project/tongsuo-go-sdk](https://github.com/tongsuo-project/tongsuo-go-sdk) 并存
 - **CI/CD**：GitHub Actions（[`.github/workflows/`](.github/workflows/)）— lint + 跨平台测试 + tag 自动发版
@@ -61,14 +61,22 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
   而 IEEE 1363a、ISO 18033-2、ANSI X9.63 各自规定了不同的头部与 KDF，自造容器无法与
   openssl CLI 逐字节对拍。国密场景请用 `asym.Encrypt`（SM2 加密，输出
   C1‖C3‖C2 / C1‖C2‖C3 / DER）。标准化的替代路径是 RFC 9180 **HPKE**（铜锁 8.5 起原生提供）
-  与 JWE `ECDH-ES`（RFC 7518）。
+  与 JWE `ECDH-ES`（RFC 7518）。本库尚未封装这些替代协议；有明确互通对象或标准协议需求时重新立项，不承诺版本。
 - **加载 legacy provider** —— 本库从不加载它：那会让 RC4 / RC5 / DESX 在整个进程内可用。
   单 DES 改以 `K‖K‖K` 走 DES-EDE3 等价实现（输出逐字节相同，且无 provider 副作用）。
 - **在新协议中使用 DES / 3DES** —— 56-bit DES 已被穷举，这些入口仅用于读写既有数据。
 
-### `0.6.0` 计划提供（尚未发布）
+### 实现基线与后续排期
 
-- `0.6.0` 实现已完成并按铜锁 8.4.0 验证；AES-SIV 拒绝空消息。铜锁 8.5 兼容、GCM-SIV、EdDSA 上下文签名与 RSA-SM3 签名可运行支持归 `0.7.0`
+`0.6.0` 实现已完成，尚未发布；以铜锁 8.4.0 为验证基线，AES-SIV 拒绝空消息。
+以下版本均为规划，不表示功能已可用：
+
+- `0.7.0`：下游可靠性与数据完整性，含句柄释放、解析限额、完整序列号、DER 扩展、信任路径、SM2 压缩输入与 PKCS#12 改密互通
+- `0.8.0`：PKCS#7 签名、验签、加密与解密
+- `0.9.0` / `0.10.0`：铜锁 8.5 兼容与经典算法扩展 / PQC
+- `0.11.0` / `0.12.0` / `1.0.0`：CMS 与 RFC 3161 时间戳 / TLS 能力完善 / 公开 API 收敛与稳定
+
+下游 22 项需求的复核结论见 [docs/downstream-requirements.md](docs/downstream-requirements.md)。
 
 完整规划与「不做」清单（含理由与重开条件）见 [docs/roadmap.md](docs/roadmap.md) §2 与 §4。
 

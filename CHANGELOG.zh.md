@@ -47,7 +47,7 @@
 - `asym`：RSA-OAEP 的摘要参数接受 `"sm3"`；新增
   `SupportsRSASignatureDigest(key, hash)` 原生能力探测。铜锁 8.4.0 的 RSA
   provider 不支持 SM3 签名，PKCS#1 v1.5 / PSS 签验在该基线上返回
-  `ErrUnsupported`；可运行签名支持随铜锁 8.5 兼容归 `0.7.0`。
+  `ErrUnsupported`；可运行签名支持随铜锁 8.5 兼容归 `0.9.0`。
 - `internal/native`：新增 `EVP_aes_{128,192,256}_{ofb,cfb128}` 与
   `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}`。
 - `jwk`：新增 OKP（RFC 8037：Ed25519 / Ed448 / X25519 / X448）与对称密钥
@@ -114,7 +114,7 @@
 ### 已知限制
 
 - 本版以铜锁 8.4.0 验证；8.5 兼容、GCM-SIV、EdDSA 上下文签名与 RSA-SM3
-  签名可运行支持排至 `0.7.0`。AES-SIV 在 8.4.0 上拒绝空消息并返回
+  签名可运行支持排至 `0.9.0`。AES-SIV 在 8.4.0 上拒绝空消息并返回
   `ErrUnsupported`，防止旧 provider 的空消息认证绕过；KECCAK-*、SHA-256/192、
   SM4-XTS 按既有运行时探测报告不可用。
 

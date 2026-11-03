@@ -9,7 +9,7 @@
 > 4. 类型给出导出字段；未导出字段以「（内部字段）」表示其存在；
 > 5. 本文描述的是**重构后的目标形态**：`crypto/` 整目录与 `key/` 已被 `digest` / `mac` / `sym` / `asym` / `ecdh` / `kdf` / `rand` / `keystore` 取代；`csr` / `crl` / `ocsp` **未拆**，全部留在 `x509`。
 >
-> **范围**：**16 个包**。生成基线：`0.5.0`（2026-10-27 发布）。
+> **范围**：**16 个包**。实现基线：`0.6.0`（实现完成，尚未发 tag）；未来目标均以 🧭 标注。
 > **版本归属**：本文件不负责版本分配，哪个 🧭 符号落在哪个版本见 [roadmap.md](roadmap.md) §2。
 >
 > **状态标记**：
@@ -344,7 +344,7 @@
 
 **规划中（后续版本）**
 
-> 完整范围与版本拆分见 [roadmap.md](roadmap.md) §2.1。
+> 下列 KDF 是未分配版本的候选，不列入本轮已确认的交付范围；已排期能力见 [roadmap.md](roadmap.md) §2。
 
 | 符号 | 前置（需新增 `internal/native` 绑定） |
 |---|---|
@@ -511,7 +511,7 @@
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
-| 🧭 AES-GCM-SIV | `0.7.0` | 铜锁 8.5 兼容与新版 provider |
+| 🧭 AES-GCM-SIV | `0.9.0` | 铜锁 8.5 兼容与新版 provider |
 
 > **DES 的实现方式与安全口径**：单 DES 在铜锁中只注册在 legacy provider，本库不加载 legacy（见
 > [roadmap.md](roadmap.md) §4 第 10 条），改以 `K‖K‖K`（三份相同密钥）驱动 DES-EDE3 实现——
@@ -641,7 +641,7 @@
 - `func LoadPKCS8(data []byte, format meta.Format, encrypted bool, pass string) (PrivateKey, error)`
 - `func MarshalRSAPublicKeyPKCS1PEM(pub PublicKey) ([]byte, error)` / `func LoadRSAPublicKeyPKCS1PEM(data []byte) (PublicKey, error)`
 - `func Check(priv PrivateKey) error` / `func PublicCheck(pub PublicKey) error`
-- `func SupportsRSASignatureDigest(key Key, hash string) (bool, error)` — 铜锁 8.4.0 的 RSA-SM3 签名不可用，签/验返回 `ErrUnsupported`；OAEP-SM3 可用。签名可运行支持随 8.5 兼容移至 `0.7.0`。
+- `func SupportsRSASignatureDigest(key Key, hash string) (bool, error)` — 铜锁 8.4.0 的 RSA-SM3 签名不可用，签/验返回 `ErrUnsupported`；OAEP-SM3 可用。签名可运行支持随 8.5 兼容移至 `0.9.0`，以原生能力验证为准。
 - PKCS#8 Version 选择 PBE 方案：1 为 PBE-SHA1-3DES；2 为 PBES2（默认 AES-256-CBC / hmacWithSHA256 / 2048 次迭代），可选 AES-128/192/256-CBC 与 HMAC-SHA1/224/256/384/512。
   它不改变 ASN.1 PrivateKeyInfo 的版本。私钥结果由调用方 `asym.Close`；源密钥与口令缓冲由调用方清零。
 
@@ -649,10 +649,13 @@
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
-| 🧭 ED25519ph / ED25519ctx / ED448ph | `0.7.0` | 铜锁 8.5 兼容；`instance` / `context-string` 参数 |
-| 🧭 ML-DSA-44 / 65 / 87 | `0.7.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
-| 🧭 SLH-DSA 12 变体 | `0.7.0` | 同上 |
-| 🧭 `func Encapsulate` / `func Decapsulate`（KEM） | `0.7.0` | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
+| 🧭 现有 `Format` / `DecryptWithOrder` 接受 SM2 压缩 C1 输入 | `0.7.0` | 经 core 调用铜锁点解码与校验；不增加压缩输出 |
+| 🧭 RSA 签名格式说明与双向互验 | `0.7.0` | 保持模数长度字节串，不能改成 SM2/ECDSA DER |
+| 🧭 现有 PKCS#1 v1.5 / PSS 的 SM3 签名可运行支持 | `0.9.0` | `SupportsRSASignatureDigest` 已在 `0.6.0` 实现；验证固定版本 RSA provider |
+| 🧭 ED25519ph / ED25519ctx / ED448ph | `0.9.0` | 铜锁 8.5 兼容；`instance` / `context-string` 参数 |
+| 🧭 ML-DSA-44 / 65 / 87 | `0.10.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
+| 🧭 SLH-DSA 12 变体 | `0.10.0` | 同上 |
+| 🧭 `func Encapsulate` / `func Decapsulate`（KEM） | `0.10.0` | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
 
 > 明确不做：DSA、DH、EC-ElGamal、Paillier（见 `docs/cli-comparison.md` §9）。
 
@@ -729,7 +732,9 @@
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
-| 🧭 SM2DH 密钥协商（`CurveByName("SM2DH")`） | `0.7.0` | 铜锁已启用（`key-exchange-algorithms`）；`EVP_PKEY_derive*` 已绑定，需补 SM2 派生参数 |
+| 🧭 `func (k *PrivateKey) Close() error` / `func (k *PublicKey) Close() error` | `0.7.0` | 复用 core Close；幂等，关闭副本不影响原 asym 密钥 |
+| 🧭 `func DeriveSharedSecret(priv asym.PrivateKey, pub asym.PublicKey) ([]byte, error)` | `0.9.0` | 复用现有桥接及 derive，失败释放临时副本 |
+| 🧭 SM2DH 密钥协商（`CurveByName("SM2DH")`） | `0.9.0` | 铜锁已启用（`key-exchange-algorithms`）；`EVP_PKEY_derive*` 已绑定，需补 SM2 派生参数 |
 
 **破坏性变更**
 
@@ -1022,7 +1027,15 @@
 
 | 符号 | 目标版本 | 前置 |
 |---|---|---|
-| 🧭 `ca` 式数据库化签发 / 吊销 / 续期 | 待定形态 | 需先定「内存模型 vs 文件系统绑定」 |
+| 🧭 `func (r *CertificateRequest) Close() error` | `0.7.0` | 复用 core Close；幂等，关闭后可失败操作返回错误 |
+| 🧭 `RevokedEntry.SerialHex string` | `0.7.0` | 无损读取完整 ASN.1 INTEGER；旧 `Serial int64` 保留为受限兼容视图 |
+| 🧭 `func (b *CRLBuilder) RevokeSerialHex(serial string, at time.Time, reason RevocationReason) error` | `0.7.0` | 完整序列号写入；现有 `Revoke(cert)` 同步摆脱 int64 中转 |
+| 🧭 `func (c *Certificate) AddExtensionDER(oid string, critical bool, der []byte) error` | `0.7.0` | 按已知/自定义 OID 写入原始扩展值，保持签名后不可变 |
+| 🧭 `func (s *Store) SetDefaultPaths() error` | `0.7.0` | `X509_STORE_set_default_paths`；铜锁默认路径不等于平台原生信任库 |
+| 🧭 `func (s *Store) LoadLocations(caFile, caDir string) error` | `0.7.0` | `X509_STORE_load_locations`；不隐式信任输入链根 |
+| 🧭 带扩展的分步证书签发示例与入口说明 | `0.7.0` | 复用 `NewCertificate` → Set/Add → Sign，不新增重复便捷入口 |
+| 🧭 CRL 配置式签发与应用级组合入口 | `1.0.0` | 复用现有内存构建流程，与公开面收敛一并设计 |
+| 🧭 `ca` 式数据库化签发 / 吊销 / 续期 | 暂缓，不承诺版本 | 文件系统状态机不列入容器/协议里程碑 |
 
 **破坏性变更**
 
@@ -1094,16 +1107,20 @@
     底层 `net.ErrClosed`
   - 🆕 `func (l *Listener) Addr() net.Addr` — 委托底层监听器（`Close` 后仍可用）
 
-**规划中（传输深度归 `1.0.0`）**
+**规划中（传输深度归 `0.12.0`，公开面收敛归 `1.0.0`）**
 
 > 前置：均需在 `internal/native` 新增绑定（见 [roadmap.md](roadmap.md) §3）。
 
 | 符号 | 说明 | 版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|---|
-| 🧭 `Config.NextProtos []string` | ALPN（对应 `-alpn`） | `1.0.0` | `SSL_CTX_set_alpn_protos` / `SSL_get0_alpn_selected` |
-| 🧭 会话复用 / 票据 | `Config.SessionCache`、`Conn.SessionState()` | `1.0.0` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
-| 🧭 `Config.ClientAuth` + `Config.ClientCAs` | 客户端证书认证（服务端） | `1.0.0` | `SSL_CTX_set_client_CA_list` / `SSL_CTX_set_verify` 回调 |
-| 🧭 `Config.GetCertificate func(*ClientHelloInfo)` | 服务端 SNI 多证书（对应 `-sign_cert2` / `-enc_cert2`） | `1.0.0` | `SSL_CTX_set_tlsext_servername_callback` |
+| 🧭 `Config.NextProtos []string` | ALPN（对应 `-alpn`） | `0.12.0` | `SSL_CTX_set_alpn_protos` / `SSL_get0_alpn_selected` |
+| 🧭 会话复用 / 票据 | `Config.SessionCache`、`Conn.SessionState()` | `0.12.0` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
+| 🧭 `Config.ClientAuth` + `Config.ClientCAs` | 客户端证书认证（服务端） | `0.12.0` | `SSL_CTX_set_client_CA_list` / `SSL_CTX_set_verify` 回调 |
+| 🧭 `Config.GetCertificate func(*ClientHelloInfo)` / `GetConfigForClient` | 服务端 SNI 多证书（对应 `-sign_cert2` / `-enc_cert2`） | `0.12.0` | SNI 回调与配置生命周期 |
+| 🧭 `Config.VerifyPeerCertificate` / `VerifyConnection` | 自定义证书校验回调 | `0.12.0` | 验证回调绑定 |
+| 🧭 `Options` / `Modes`、完整 `ConnectionState`、`VerifyHostname` / `UnderlyingConn`、错误码常量 | 配置与连接状态 | `0.12.0` | 配置/状态绑定 |
+| 🧭 `Config.DHParameters` / `Config.ECDHCurve`、`HostnameOptions` | 握手参数与主机名校验 flags | `0.12.0` | 参数加载和校验绑定 |
+| 🧭 `ListenAndServeTLS` / `ServeTLS`、OCSP stapling、keylog、HTTP 集成 | 复用现有 `NewListener` | `0.12.0` | TLS 绑定与标准库集成 |
 
 **破坏性变更**
 
@@ -1133,13 +1150,20 @@ cgo-free 的只读 DER 解析与转储；`Parse` 对深度设上限（`maxDERDep
 - `func Parse(der []byte) (*Node, error)` — 解析完整 DER（拒绝空输入、截断、非法长度、不定长与尾部多余字节）
 - `func Dump(n *Node) string` — 生成带缩进的文本视图
 
+**规划中（`0.7.0`）**
+
+| 符号 | 目标版本 | 边界 |
+|---|---|---|
+| 🧭 `func ParseWithLimits(der []byte, maxDepth, maxNodes int) (*Node, error)` | `0.7.0` | 可配置深度和节点数限额；保留现有 Parse 的固定 128 层保护和行为 |
+| 🧭 可识别的深度/节点数超限错误 | `0.7.0` | 调用方可区分限额拒绝与 DER 格式错误 |
+
 ---
 
 ## 13. `jwk` — JWK（RFC 7517）
 
 ✅ **已有**｜旧包：`jwk`
 
-仅支持 **RSA / EC**；不支持 OKP（Ed25519 / X25519 等）与对称密钥。本版去除 `*core.PKey` 参数（修复 E1-7）。
+支持 **RSA / EC / OKP / oct**；OKP 与对称密钥入口已在 `0.6.0` 实现，见下文。`0.3.0` 已去除 `*core.PKey` 参数（修复 E1-7）。
 
 **类型**
 
@@ -1199,8 +1223,17 @@ _（本包已无待实现项）_
 
 | 符号 | 目标版本 | 前置 |
 |---|---|---|
-| 🧭 `pkcs7.Sign` / `Verify` / `Encrypt` / `Decrypt` | `0.7.0` | 新增 `PKCS7_sign` / `PKCS7_encrypt` 等绑定 |
-| 🧭 CMS 族（`cms` 命令） | `0.8.0` | 新增 `CMS_*` 绑定 |
+| 🧭 `pkcs7.Sign` / `Verify` / `Encrypt` / `Decrypt` | `0.8.0` | 新增 `PKCS7_sign` / `PKCS7_encrypt` 等绑定 |
+| 🧭 CMS 族（`cms` 命令） | `0.11.0` | 新增 `CMS_*` 绑定 |
+
+`0.8.0` 覆盖附带/分离签名和 EnvelopedData，明确区分签名有效与签名证书受信任；
+与铜锁 CLI 双向互通。CMS 扩展归 `0.11.0`，不把两者视为同一容器格式。
+
+**规划中｜新顶级包 `ts`（`0.11.0`，尚不存在）**
+
+- 🧭 RFC 3161 时间戳请求/响应与 HTTP 传输；需新增 `TS_*` 绑定并复用 CMS 基础设施。
+- 实施时同步包索引、依赖图与逐符号 API；当前公开包数仍为 16。
+
 
 ---
 
@@ -1227,6 +1260,14 @@ _（本包已无待实现项）_
 - `func ChangePasswordWithOptions(data []byte, opts *Options) ([]byte, error)`
 - PBE：AES-128/192/256-CBC 或 PBE-SHA1-3DES；默认 AES-256-CBC、2048 次加密/MAC 迭代。
   ReadPass 读取输入，WritePass 保护输出；两者不表示同一容器内分设加密/MAC 口令。
+- 当前 `ChangePasswordWithOptions` 通过 Parse + Pack 重打包，不承诺保留任意 safe/bag 与属性。
+
+**规划中（`0.7.0`）**
+
+| 符号/行为 | 目标版本 | 边界 |
+|---|---|---|
+| 🧭 现有 `ChangePassword` 的外部容器互通与无损改密 | `0.7.0` | safe/bag 层重加密，保留密钥、证书链及属性；覆盖默认 PBES2/AES 与可用 3DES，不自动加载 legacy provider |
+
 
 **破坏性变更**
 

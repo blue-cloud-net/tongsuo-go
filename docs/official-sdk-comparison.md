@@ -3,7 +3,10 @@
 > **`0.6.0` 实施更新**：下文采集时的基线表保留原口径；AES 扩展/ZUC、EC 参数、
 > PKCS#8/12 配置、PKCS#7 CRL、JWK OKP/oct、本地多对象加载、OCSP HTTP/nonce 与
 > 证书信任属性已在 8.4.0 基线上实现，当前逐符号事实见 [api-reference.md](api-reference.md)。
-> 铜锁 8.5 兼容、GCM-SIV、EdDSA 上下文签名与 RSA-SM3 签名可运行支持归 `0.7.0`。
+> 铜锁 8.5 兼容、GCM-SIV、EdDSA 上下文签名与 RSA-SM3 签名可运行支持归 `0.9.0`。
+> 后续按“0.7 可靠性 → 0.8 PKCS#7 → 0.9 兼容/经典算法 → 0.10 PQC →
+> 0.11 CMS/时间戳 → 0.12 TLS → 1.0 公开面稳定”交付；下游逐条结论见
+> [downstream-requirements.md](downstream-requirements.md)。以下采集基线不代表未来能力已实现。
 
 > 本文件回答：**与官方 [Tongsuo-Project/tongsuo-go-sdk](https://github.com/Tongsuo-Project/tongsuo-go-sdk) 相比，本仓库还有哪些能力没有对齐？是否要把对侧分阶段补齐？**
 >
@@ -212,7 +215,7 @@
 
 > 本节**只列能力 + 优先级**。每个 PR 自行设计「涉及文件 / 验收方式」，按 §10 的验证与维护约定走。
 >
-> 本节**只列能力与优先级，不带版本号**。版本归属以 [roadmap.md](roadmap.md) §2 为准：包结构重构已于 `0.3.0` 落地，本节的能力补全自 `0.5.0` 起，其中传输深度（Phase 3 / Phase 4 的 TLS 项）归 `1.0.0`。
+> 本节**只列能力与优先级，不带版本号**。版本归属以 [roadmap.md](roadmap.md) §2 为准：包结构重构已于 `0.3.0` 落地，本节的能力补全自 `0.5.0` 起，其中传输深度（Phase 3 / Phase 4 的 TLS 项）归 `0.12.0`，公开面收敛归 `1.0.0`。
 
 ### Phase 1 — 基础设施小件（风险低、价值高、几乎不动 native shim）
 

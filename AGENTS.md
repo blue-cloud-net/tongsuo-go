@@ -262,7 +262,8 @@ docs/testing-guide.md         # 测试组织、各算法必测用例、向量来
 docs/bilingual-doc-guide.md   # 双语 GoDoc 段式规则与检查清单
 docs/api-reference.md         # 公开 API 清单（重构后 16 包，三态标记）
 docs/api-reference-internal.md# 内部 API 清单（internal/* 五个包）
-docs/roadmap.md                 # 版本路线图（0.5.0–1.0.0：范围 / 前置绑定 / 不做）
+docs/roadmap.md                 # 版本路线图（0.7.0–1.0.0：范围 / 前置绑定 / 不做）
+docs/downstream-requirements.md # Toolbit 22 项需求复核、纠偏与交付边界
 docs/cli-comparison.md        # 铜锁 CLI 与本库能力对比（能力级）
 docs/official-sdk-comparison.md # 与官方 SDK 对比
 docs/release-guide.md         # 发版操作手册（前置 / 重排 / 验证 / tag / 回退）
@@ -642,7 +643,8 @@ go test -count=1 ./...    # 必须 ok（无铜锁环境则如实说明未能运�
 | 双语注释规则 | `docs/bilingual-doc-guide.md` |
 | 三层边界与目录 | `docs/architecture.md` §2 / §3 / §5 |
 | 生命周期与所有权 | `docs/architecture.md` §7 / §8 |
-| **版本路线图（0.5.0–1.0.0：范围 / 前置绑定 / 不做）** | `docs/roadmap.md` |
+| **版本路线图（0.7.0–1.0.0：范围 / 前置绑定 / 不做）** | `docs/roadmap.md` |
+| 下游 22 项需求复核与排期依据 | `docs/downstream-requirements.md` |
 | **公开 API 逐符号清单（三态）** | `docs/api-reference.md` |
 | **内部 API 清单（`internal/*`）** | `docs/api-reference-internal.md` |
 | 各算法必测用例 | `docs/testing-guide.md` §3～§7 |

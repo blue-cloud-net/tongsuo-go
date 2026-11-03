@@ -396,8 +396,27 @@ tongsuo-go/
   `params.go` / `pkcs8.go` / `trust.go` / `ocsp_nonce.go` 管理生命周期与错误。
 - HTTP 在 API 层使用标准库 `net/http`；只传 DER，限制大小、超时且拒绝重定向。
   `FetchOCSP` 不隐式信任响应，签名与时间校验由调用方完成；资源 Close 责任见 GoDoc。
-- 8.4.0 为本版唯一验证基线，8.5 兼容见 `roadmap.md` §2.2。SIV 空消息明确拒绝；
+- 8.4.0 为本版唯一验证基线，8.5 兼容见 `roadmap.md` §2.3。SIV 空消息明确拒绝；
   RSA-SM3 签名按 provider 能力报错，不回退其他密码实现。
+
+### `0.7.0` 及以后的架构约束（规划，尚未实现）
+
+- `0.7.0` 的 ECDH/CSR 释放复用 core 句柄；EC 点解码、完整序列号、按 OID 的
+  DER 扩展、信任路径和 PKCS#12 safe/bag 操作仍按 API → core → native 单向调用。
+  `asn1` 限额保持纯 Go；所有新公开签名不得暴露 internal 或原生类型。
+- `RevokedEntry.SerialHex` 与 `RevokeSerialHex` 贯通完整序列号，现有证书吊销路径
+  不再经 int64 中转；旧 Serial 仅保留为受限兼容视图。
+- DER 扩展的 Data 是原始扩展值，Value 是配置串，不保证二者可逆；签名后不可变。
+  默认信任路径是铜锁配置，不能替代平台原生信任库承诺，也不能隐式信任输入链根。
+- `0.8.0` 的 PKCS#7 明确区分签名验证与证书信任；涉及私钥时，按架构规范增补
+  `internal/keyaccess` 的 pkcs7 消费方白名单后再实施，保留副本及所有权约束。
+- `0.9.0` 起新增能力在保留 8.4 构建兼容的前提下，通过编译保护和运行时探测隔离
+  8.5 接口；PQC 归 `0.10.0`，不能让旧基线引用不存在的原生符号。
+- `0.11.0` 的新顶级 `ts` 包与 x509 平级，实施时再更新包计数与依赖图；当前包数
+  保持 16。`0.12.0` 先完成 TLS 能力，`1.0.0` 再集中稳定公开 API。
+
+具体排期见 [roadmap.md](roadmap.md) §2；下游依据见
+[downstream-requirements.md](downstream-requirements.md)。本节不表示目录或 API 已新增。
 
 ---
 
@@ -498,6 +517,6 @@ go build ./...
 - [参考项目（C# 封装）](https://github.com/blue-cloud-net/tongsuo-csharp)
 - [官方 Go SDK](https://github.com/tongsuo-project/tongsuo-go-sdk)
 - [与官方 SDK 的功能对比与对齐路线图](official-sdk-comparison.md)
-- [版本路线图（`0.5.0` 及以后）](roadmap.md)
+- [版本路线图（`0.7.0` 至 `1.0.0`）](roadmap.md)
 - [开发规范](development-guide.md) · [测试规范](testing-guide.md)
 - [公开 API 清单](api-reference.md) · [内部 API 清单](api-reference-internal.md)

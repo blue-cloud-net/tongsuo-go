@@ -1,18 +1,16 @@
-# 版本路线图（`0.6.0` 及以后）
+# 版本路线图（`0.7.0` 至 `1.0.0`）
 
-> **用途**：本文件是本仓库**唯一的版本归属来源**——某个能力落在哪个 `0.x` 版本，以本文件 §2 为准。
+> **用途**：本文件是本仓库**唯一的版本归属来源**。未来能力的目标版本以 §2 为准；
+> 逐符号目标形态见 [api-reference.md](api-reference.md) 的 🧭 行，实施前置见 §3。
 >
-> **口径**：
-> 1. **只写未做的事**。`0.5.0`（2026-10-27 发布）及其之前已发布的能力不在本文范围内，
->    `0.6.0` 已完成实现、尚未发 tag；其符号清单见 [api-reference.md](api-reference.md)，其变更记录见 [CHANGELOG.md](../CHANGELOG.md)；
-> 2. 本文件**不重复**能力级判定与优先级。缺口编号与「本库现状」列见
->    [cli-comparison.md](cli-comparison.md)（对铜锁 CLI）、[official-sdk-comparison.md](official-sdk-comparison.md)（对官方 SDK）、
->    逐条待实现 API 见 [cli-comparison-todo.md](cli-comparison-todo.md)；
-> 3. 逐符号的**目标 API 形态**以 [api-reference.md](api-reference.md) 的 🧭 行为准；
->    若该行标注的版本与本文件 §2 冲突，以本文件为准并回改 api-reference；
-> 4. 「需新增 cgo 绑定」是实施前置条件，统一列在 §3，§2 各表以「前置」列引用。
+> **基线**：`0.6.0` 已完成实现、尚未发 tag，以 `feat/v0.6.0` 工作树为准；
+> `dev` 的 `0.5.0` 基线不能用于判定 `0.6.0` 的能力。现有实现及行为变化见
+> [公开 API 清单](api-reference.md) 与 [CHANGELOG](../CHANGELOG.md#060---tbd)。
+> `0.6.0` 以铜锁 8.4.0 验证；后续规划不等于已经实现或验证。
 >
-> **基线**：`0.5.0`（2026-10-27 发布）——16 个顶级包形态不变，`meta` 新增形态词汇（`Source` / `Sink` / `Encoding` / `Format` / `Passphrase`），见 [architecture.md](architecture.md) §2 / §3。
+> **需求来源**：Toolbit 的 22 项下游需求处置见
+> [下游需求复核台账](downstream-requirements.md)；CLI 与官方 SDK 的缺口编号分别见
+> [cli-comparison.md](cli-comparison.md)、[official-sdk-comparison.md](official-sdk-comparison.md)。
 
 ---
 
@@ -20,111 +18,132 @@
 
 | 版本 | 主题 | 关键内容 | 破坏性 |
 |------|------|----------|--------|
-| `0.6.0` | **算法覆盖主体 + 格式容器** | SHA-512/224·256、SHA3、SHAKE、KECCAK、SHA-256/192；AES 扩展模式（OFB/CFB/CCM/XTS/OCB/SIV/WRAP/CBC-CTS）与 ZUC；`x509` 的 `-x509toreq`、OCSP HTTP 与 nonce；`jwk` 的 OKP/oct；`crl2pkcs7`；PKCS#12 PBE/iter；DES / DES-EDE / DES-EDE3 兼容入口；`sym` padding 支持矩阵与非法组合校验；签名 DER ↔ 裸 `r‖s`；RSA-OAEP 摘要补 `sm3`（签名能力待 `0.7.0`） | 部分（按名分发入口收敛） |
-| `0.7.0` | **铜锁 8.5 兼容 + 容器协议 + PQC** | 铜锁 8.5 兼容矩阵、GCM-SIV、EdDSA 上下文签名、RSA-SM3 签名； `pkcs7` 签名/验签/加密/解密族；ML-DSA-44/65/87、SLH-DSA 12 变体、KEM（`-encap`/`-decap`）；SM2DH 密钥协商；通用 KEX 适配点 | 否 |
-| `0.8.0` | **协议族与 CA 形态** | CMS 族、RFC 3161 `ts`；`ca` 工作流（形态待定，见 §4） | 否 |
-| `1.0.0` | **传输深度 + 公开面收敛** | 服务端 SNI 选证书、ALPN、会话复用与票据、客户端证书认证、`Options`/`Modes`、完整 `ConnectionState`、自定义证书校验回调、DH/ECDHE 曲线配置、`net.Listener` 与 HTTP 集成；§6.E 的 E2/E3 公开面收敛（破坏性，需迁移指南） | **是** |
+| `0.7.0` | **下游可靠性与数据完整性** | 显式释放、解析限额、完整序列号、DER 扩展、信任路径、SM2 压缩输入、PKCS#12 改密互通 | 以增补为主；错误结果修复需说明迁移 |
+| `0.8.0` | **PKCS#7 容器** | 签名 / 验签 / 加密 / 解密，附带与分离签名、SignedData、EnvelopedData | 否 |
+| `0.9.0` | **铜锁 8.5 兼容与经典算法扩展** | 8.4/8.5 矩阵、RSA-SM3 签名、GCM-SIV、EdDSA 上下文/预哈希、SM2DH、通用 KEX | 否 |
+| `0.10.0` | **PQC** | ML-DSA、SLH-DSA、原生 KEM，密钥生命周期与序列化、能力探测 | 否 |
+| `0.11.0` | **CMS 与时间戳** | CMS 扩展、独立顶级包 `ts` 的 RFC 3161 能力 | 否 |
+| `0.12.0` | **TLS 能力完善** | SNI、ALPN、双向认证、会话复用/票据、校验回调、连接状态、曲线配置与 HTTP 集成 | 否 |
+| `1.0.0` | **公开 API 收敛与稳定** | 统一 Options、应用级组合入口、CRL 配置式签发、迁移指南与兼容性承诺 | **是** |
 
-> **节奏原则**：`0.x` 阶段只做**能力增补**（加符号、加算法），不动既有公开面；`1.0.0` 集中做
-> **破坏性收敛**，让 API 一次性稳定。这样 `0.x` 期间下游可以只按需升级补丁版本。
->
-> **例外（安全 / 一致性修复）**：当既有行为会**静默产出错误结果**（例如签名后仍可改字段，
-> 导致签名与证书内容不符）时，允许在 `0.x` 做破坏性收紧——但**必须**在同一版本的
-> [CHANGELOG](../CHANGELOG.md) 中单列 `BREAKING` 段，写明新语义与迁移方式。
-> 先例：`0.4.0` 把 `x509` 的 `Sign` / `CertificateRequest.Sign` 收紧为**单向终态**。
+**节奏原则**：先解决下游可靠性，再交付容器，随后扩充原生版本和算法；各版本按
+验收条件交付，不承诺日历日期。`0.x` 优先增补 API，`1.0.0` 集中收敛公开面。
+安全或一致性修复若改变既有行为，必须在实际交付版本的双语 CHANGELOG 中写明
+`BREAKING` 与迁移方式；纯排期调整不新增 CHANGELOG 条目。
+
+**兼容原则**：`0.7.0`、`0.8.0` 保持铜锁 **8.4.0** 发布基线。`0.9.0` 增加固定
+8.5 版本构建与运行验证，保留 8.4 构建兼容；新能力须通过编译保护与运行时探测报告
+支持情况，不以 master、替代密码实现或自动加载 legacy provider 兜底。
 
 ---
 
 ## 2. 分版本范围
 
-### 2.1 `0.6.0` — 实现完成，待发版
+### 2.1 `0.7.0` — 下游可靠性与数据完整性
 
-本版以 **铜锁 8.4.0** 为构建、单元测试与 CLI 对拍基线。已实现范围不再作为待办
-重复列出，完整功能与行为变化见 [CHANGELOG](../CHANGELOG.md#060---tbd) 与
-[公开 API 清单](api-reference.md)。尚未发 tag，版本日期保持 `TBD`。
+| 领域 | 交付内容与边界 | 下游需求 | 前置（§3） |
+|------|----------------|----------|-------------|
+| 生命周期 | ECDH 公私钥与 CSR 公开幂等 `Close()`；关闭 ECDH 副本不影响原 `asym` 密钥，关闭后可失败操作返回错误 | I-09 / I-15 | 复用 core 句柄关闭与 `EVP_PKEY_dup` |
+| `asn1` | `ParseWithLimits` 与可识别的深度/节点数超限错误；保留 `Parse` 的固定 128 层保护和既有行为 | I-16 | 无（纯 Go） |
+| `x509` 序列号 | 新增 `RevokedEntry.SerialHex`、`CRLBuilder.RevokeSerialHex`；旧 `Serial int64` 保留为受限兼容视图。现有 `Revoke(cert)` 改走完整序列号，不得再经 `int64` 截断；读写至少覆盖 20 字节 | I-18 / I-20 | 完整 ASN.1 INTEGER 读写 |
+| `x509` 扩展 | 公开按 OID 写入 DER 的入口，支持已知和自定义 OID；`Data` 保留原始扩展值，不还原任意配置串，不放开签名后修改 | I-19 | 按 OID 构造 DER 扩展 |
+| `x509` 信任路径 | `Store.SetDefaultPaths`、`LoadLocations`；默认路径属于铜锁配置，不等同于各平台原生信任库，不隐式信任输入链的自签根 | I-17 | 默认路径与 CA 文件/目录加载 |
+| `asym` SM2 | 经 native → core → API 解码、校验压缩 C1，支持转换与解密；保持既有输出形式，不新增压缩输出选项 | I-10 | EC 点解码与校验 |
+| `pkcs/pkcs12` | safe/bag 层重加密，保留密钥、证书链与属性；覆盖外部默认 PBES2/AES 和可用 3DES 容器，不用丢失属性的解析后重打包兜底 | I-22 | PKCS#12 safe/bag 重加密 |
+| 文档与互通 | 说明 RSA 签名为模数长度字节串并补双向互验；补带扩展的分步签发示例，保留签名后不可变约束 | I-08 / I-21 | 无 |
 
-- AES 扩展模式、ZUC、EC 参数、信任属性、OCSP HTTP/nonce、PKCS#8/12 配置与
-  本地多对象加载均已落地；PKCS#8、PKCS#1 公钥及密钥检查归 `asym`，统一密钥
-  加载归 `keystore`，证书/CRL 加载归 `x509`，不增加统合 `key` 包。
-- `ToCertificateRequest`、`SubjectHash`、`Store.SetTime`/`ChainVerify` 和任意扩展入口
-  为既有能力，直接复用；`AddExtensions` 保留既有 `...Extension` 签名。
-- 铜锁 8.4.0 无 GCM-SIV 与 EdDSA 上下文签名，且 RSA provider 不接受 SM3 签名
-  摘要；这些可运行能力与 **铜锁 8.5 兼容工作一并移至 `0.7.0`**。
-  `0.6.0` 的 OAEP-SM3 可运行；SM3 签名先用 `SupportsRSASignatureDigest` 探测，
-  不可用时返回 `ErrUnsupported`，不加载替代 provider 或改写签名算法。
-- AES-SIV 在 8.4.0 上拒绝空消息（返回 `ErrUnsupported`），避免旧 provider 的
-  空消息认证路径；AES-192-XTS 不存在；CBC-CTS 默认 CS1；ZUC-EEA3 使用
-  原生 5 字节 IV。OCSP HTTP 返回后仍须验证签名与时间有效性。
-- HKDF 的既有 8.4 CLI 差异仍按原测试策略处理；KECCAK-*、SHA-256/192、SM4-XTS
-  在 8.4 缺失时按既有能力探测返回不可用，不借用 8.5 库使测试变绿。
+RSA 的签名格式符合 [RFC 8017 §8](https://www.rfc-editor.org/rfc/rfc8017.html#section-8)，
+不改成 SM2/ECDSA 的 `SEQUENCE { r, s }`。`0.6.0` 的 PKCS#12
+`ChangePasswordWithOptions` 是解析后重打包，不代表已经完成 I-22 的无损改密。
+实现必须明确报告不支持的容器/算法，不能静默丢失 bag 或属性。
 
-### 2.2 `0.7.0` — 铜锁 8.5 兼容、容器协议与 PQC
+### 2.2 `0.8.0` — PKCS#7 容器
 
 | 领域 | 内容 | 对应缺口 | 前置（§3） |
 |------|------|----------|-------------|
-| 兼容性 | 铜锁 8.5 兼容实现与验证：以 8.4.0 / 8.5.0 分别构建、单元测试和 CLI 对拍；master 仅作前瞻验证，不能代替版本验收 | 用户调整 | 独立安装的铜锁版本，显式指定头文件、链接库与 CLI |
-| `sym` | AES-GCM-SIV；评估 AES-SIV 空消息在新 provider 的支持边界 | §6.A 15 | 新版 provider；新增能力探测与标准向量 |
-| `asym` | ED25519ph / ED25519ctx / ED448ph 上下文签名；RSA-PKCS#1 v1.5 / PSS 的 SM3 签名可运行支持 | 下游需求 | `instance` / `context-string` 参数与 RSA provider 摘要支持 |
-| `pkcs/pkcs7` | 签名 / 验签 / 加密 / 解密族（`Sign` / `Verify` / `Encrypt` / `Decrypt`） | §6.A 32、§6.B B12 | PKCS#7 签名族 |
-| `asym` | ML-DSA-44 / 65 / 87；SLH-DSA 12 变体 | — | 需新增 `EVP_PKEY` 解封装路径（铜锁已启用 `signature-algorithms`） |
-| `asym` | KEM：`Encapsulate` / `Decapsulate`（`-encap` / `-decap`） | — | KEM |
-| `ecdh` | SM2DH 密钥协商（`CurveByName("SM2DH")`） | §6.A 29 | 铜锁已启用 `key-exchange-algorithms`；`EVP_PKEY_derive*` 已绑定，需补 SM2 派生参数 |
-| `ecdh` | 通用 KEX 适配点（`DeriveSharedSecret(priv, pub)`） | §6.B B4 | 无 |
+| `pkcs/pkcs7` | `Sign` / `Verify`：带 signerInfo 的 SignedData，附带与分离签名，明确区分签名有效与证书受信任 | I-11、§6.A 32 / §6.B B12 | PKCS#7 签名族 |
+| `pkcs/pkcs7` | `Encrypt` / `Decrypt`：EnvelopedData，覆盖错误密钥与篡改检测，不宣称非认证加密可检测所有篡改 | I-11、§6.A 32 | PKCS#7 加密族 |
 
-### 2.3 `0.8.0` — 协议族与 CA 形态
+复用现有证书袋与 CRL 容器能力；CMS 扩展留给 `0.11.0`，不以一个模糊的
+“CMS/PKCS#7”格式参数混同两阶段的交付。算法支持以铜锁原生能力和互通验收为准。
+
+### 2.3 `0.9.0` — 铜锁 8.5 兼容与经典算法扩展
+
+| 领域 | 内容 | 前置（§3） |
+|------|------|-------------|
+| 兼容性 | 固定 8.4.0 / 8.5 版本分别构建、运行单元测试与 CLI 对拍；头文件、链接库与 CLI 必须对应，master 仅作前瞻验证 | 独立安装与 CI 矩阵 |
+| `sym` | AES-GCM-SIV；评估新 provider 的 AES-SIV 空消息边界，旧基线仍明确拒绝 | 新版 provider、能力探测与标准向量 |
+| `asym` | ED25519ph / ED25519ctx / ED448ph；RSA-PKCS#1 v1.5 / PSS 的 SM3 签名可运行支持（I-06） | 上下文签名、RSA provider 摘要支持 |
+| `ecdh` | SM2DH（§6.A 29），通用 `DeriveSharedSecret` KEX 适配点（§6.B B4） | SM2 派生参数 |
+
+`0.6.0` 的 OAEP-SM3 和 `SupportsRSASignatureDigest` 已存在，不重复开发；
+签名可运行支持以固定版本原生验证为准，不能将 OAEP 支持等同于签名支持。
+
+### 2.4 `0.10.0` — PQC
+
+| 领域 | 内容 | 前置（§3） |
+|------|------|-------------|
+| `asym` 签名 | ML-DSA-44 / 65 / 87、SLH-DSA 12 变体 | PQC 密钥生成、签验与序列化路径 |
+| `asym` KEM | 原生 `Encapsulate` / `Decapsulate` | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
+
+本版独立验收密钥生命周期、编码往返、算法/参数不匹配和能力探测；8.4 构建不能
+引用不存在的符号，不可用能力明确报错，不引入第三方算法替代实现。
+
+### 2.5 `0.11.0` — CMS 与时间戳
 
 | 领域 | 内容 | 对应缺口 | 前置（§3） |
 |------|------|----------|-------------|
-| `pkcs/pkcs7` | CMS 族（`cms` 命令） | §6.A 5 | CMS / TS |
-| 新包 `ts` | RFC 3161 时间戳（`ts` 命令）：ASN.1 结构 + HTTP 传输 | §6.A 53 | CMS / TS |
-| `x509` | CRL 应用级签发入口（配置驱动） | §6.A 6、§6.B B9 | 无（`CRLBuilder` 已在 `0.3.0` 具备） |
-| `x509` | `ca` 式签发 / 吊销 / 续期工作流 | §6.A 2 | **形态待定**，见 §4 第 2 条 |
+| `pkcs/pkcs7` | CMS 族（`cms` 命令），复用 `0.8.0` 容器基础设施 | §6.A 5 | CMS |
+| 新顶级包 `ts` | RFC 3161：ASN.1 请求/响应与 HTTP 传输 | §6.A 53 | CMS / TS |
 
-> `ts` 的体量与 `x509` 相当，建议作为独立顶级包 `ts`，与 `x509` 平级而非塞进 `x509`。
+`ts` 与 `x509` 平级，实施时同步包索引与依赖图；当前仍为 16 个公开包。
+数据库化、文件系统绑定的 CA 工作流不属于本版，继续按 §4 暂缓。
 
-### 2.4 `1.0.0` — 传输深度与公开面收敛
-
-> 本版是**集中做破坏性收敛**的版本，需配迁移指南（`BREAKING` 段写法参照 `0.4.0` 与 `0.3.0`）。
-
-**传输深度（`tls`）**
+### 2.6 `0.12.0` — TLS 能力完善
 
 | 能力 | 对应缺口 | 前置（§3） |
 |------|----------|-------------|
-| 服务端 SNI 多证书（`Config.GetCertificate func(*ClientHelloInfo) (*Certificate, error)` / `GetConfigForClient`） | §6.B A1 | TLS 深度 |
-| ALPN（`Config.NextProtos` + `Conn.NegotiatedProtocol()`） | §6.B A2 | TLS 深度 |
-| 会话复用（`Config.SessionCache` + `DialSession` / `Conn.SessionState()`） | §6.B A3 | TLS 深度 |
-| 会话票据（`Config.SessionTicketKey` 或 `TicketKeyManager`） | §6.B A4 | TLS 深度 |
-| 客户端证书认证（`Config.ClientAuth` + `Config.ClientCAs`） | §6.B A8 | TLS 深度 |
-| 自定义证书校验回调（`Config.VerifyPeerCertificate` / `VerifyConnection`） | §6.B A5 | TLS 深度 |
-| `Options` / `Modes` 开关（`NoCompression` / `CipherServerPreference` / …） | §6.B A6 | 无 |
-| 完整 `ConnectionState` + `VerifyHostname` / `UnderlyingConn` + 错误码常量表 | §6.B A10 | 无 |
-| DH 参数加载与 ECDHE 曲线配置（`Config.DHParameters` / `Config.ECDHCurve`） | §6.B B3、A7 | 无（DH **参数**加载，非 DH 密钥交换，见 §4 第 3 条） |
-| 握手上下文增强（`HostnameOptions`：`CheckEmail` / `NoWildcards` / `AlwaysCheckSubject`） | §6.B B5 | 需 `X509_check_email` 等 flags |
-| `ListenAndServeTLS` / `ServeTLS`；OCSP stapling；keylog；HTTP 集成 | §6.A 9 / 43 | 无 |
+| 服务端 SNI 多证书：`GetCertificate` / `GetConfigForClient` | §6.B A1 | TLS 深度 |
+| ALPN：`Config.NextProtos` 与协商协议读取 | §6.B A2 | TLS 深度 |
+| 会话复用与票据：缓存、会话状态、票据密钥管理 | §6.B A3 / A4 | TLS 深度 |
+| 客户端证书认证：`ClientAuth` / `ClientCAs` | §6.B A8 | TLS 深度 |
+| 自定义证书校验回调：`VerifyPeerCertificate` / `VerifyConnection` | §6.B A5 | TLS 深度 |
+| `Options` / `Modes`、完整 `ConnectionState`、`VerifyHostname` / `UnderlyingConn`、错误码常量 | §6.B A6 / A10 | 配置与状态绑定 |
+| DH 参数加载、ECDHE 曲线配置 | §6.B B3 / A7 | TLS 参数绑定；不新增独立 DH 密钥交换算法 |
+| `HostnameOptions`：邮箱与主机名校验 flags | §6.B B5 | 主机名校验 flags |
+| `ListenAndServeTLS` / `ServeTLS`、OCSP stapling、keylog、HTTP 集成 | §6.A 9 / 43 | TLS 深度与标准库集成 |
 
-**公开面收敛（破坏性）**
+复用已有 `NewListener`，不重复实现；TLS / NTLS 回环、互操作与关闭/并发测试先于
+`1.0.0` 完成，避免稳定版同时承接大量首次实现的传输功能。
 
-- **E2 原语级公开面**：把按名分发入口的签名收敛为统一的 `Options` 结构体（消除 `0.5.0`–`0.6.0`
-  逐步加参数造成的签名膨胀）
-- **E3 多步组装面**：把需要调用方自己串联多步的流程（如自签证书 + CSR 链）收成应用级函数
-- 两项都需同步：迁移对照表、`CHANGELOG` 的 `BREAKING` 段、`docs/` 全套规范
+### 2.7 `1.0.0` — 公开 API 收敛与稳定
+
+- **E2 原语公开面**：统一按名分发的 Options，集中处理公开签名收敛。
+- **E3 应用级组合**：复用已有内存签发流程，补应用级组合与 CRL 配置式签发入口
+  （§6.A 6 / §6.B B9）；不承接文件系统 CA 数据库。
+- 给出迁移对照、双语 CHANGELOG 的 `BREAKING` 与兼容性承诺，完成全量回归；
+  不以新增大批算法/协议作为本版交付前提。
 
 ---
 
-## 3. 实施前置：需新增的 cgo 绑定
+## 3. 实施前置：需新增或扩展的 cgo 绑定
 
-> 每项标注目标版本；**未列版本的项即其所属版本对应表中的「前置」**。已在 `0.3.0` 落地的绑定单列于文末。
+以下均为未来实施前置，不表示已绑定；纯 Go 限额与现有句柄 Close 复用不新增 cgo。
 
-| 家族 | 需要的 C 接口 | 服务对象 | 目标版本 |
-|------|--------------|----------|----------|
-| 上下文签名 | `EVP_DigestSignInit_ex` 的 `instance` / `context-string` 参数 | `asym` 的 ED25519ph / ctx / ED448ph | `0.7.0` |
-| KEM | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` | `asym` | `0.7.0` |
-| PQC | ML-DSA / SLH-DSA 的 `EVP_PKEY` 解封装路径（铜锁已启用 `signature-algorithms`） | `asym` | `0.7.0` |
-| SM2DH | `EVP_PKEY_derive*` 的 SM2 派生参数（已绑定，需泛化） | `ecdh` | `0.7.0` |
-| PKCS#7 签名族 | `PKCS7_sign` / `PKCS7_verify` / `PKCS7_encrypt` / `PKCS7_decrypt`（`PKCS7_set_type` 已绑定） | `pkcs/pkcs7` | `0.7.0` |
-| CMS / TS | `CMS_*` / `TS_*` | `pkcs/pkcs7`（CMS）、`ts` | `0.8.0` |
-| TLS 深度 | `SSL_CTX_set_alpn_protos` / `SSL_get0_alpn_selected`、`SSL_SESSION_*`、`SSL_CTX_set_tlsext_servername_callback`、`SSL_CTX_set_client_CA_list` | `tls` | `1.0.0` |
-| 主机名校验 flags | `X509_check_host` 的 flags 扩展 / `X509_check_email` 等 | `tls` 的 `HostnameOptions` | `1.0.0` |
+| 家族 | 需要的 C 接口或扩展 | 服务对象 | 目标版本 |
+|------|--------------------|----------|----------|
+| 完整序列号 | ASN.1 INTEGER / BIGNUM 无损转换、`X509_REVOKED_set_serialNumber`，复用已有证书序列号读取 | `x509` CRL 读写 | `0.7.0` |
+| DER 扩展 | `OBJ_txt2obj`、`X509_EXTENSION_create_by_OBJ` 与对应释放；复用已有扩展提交路径 | `x509` | `0.7.0` |
+| 信任路径 | `X509_STORE_set_default_paths` / `X509_STORE_load_locations` | `x509.Store` | `0.7.0` |
+| SM2 压缩点 | `EC_POINT_oct2point`、`EC_POINT_is_on_curve` / `EC_POINT_is_at_infinity`、仿射坐标读取 | `asym` 经 `core` 校验与展开 | `0.7.0` |
+| PKCS#12 改密 | `PKCS12_unpack_authsafes` / `unpack_p7data` / `unpack_p7encdata`、safe/bag 重加密与打包、MAC 校验及重建 | `pkcs/pkcs12` | `0.7.0` |
+| PKCS#7 签名/加密族 | `PKCS7_sign` / `PKCS7_verify` / `PKCS7_encrypt` / `PKCS7_decrypt`，按需补分离内容与选项绑定 | `pkcs/pkcs7` | `0.8.0` |
+| 上下文签名 | `EVP_DigestSignInit_ex` 的 `instance` / `context-string` 参数及验签对应路径 | `asym` | `0.9.0` |
+| SM2DH | `EVP_PKEY_derive*` 的 SM2 派生参数（已绑定基础调用，需泛化） | `ecdh` | `0.9.0` |
+| PQC / KEM | 原生 PQC 密钥、签验、序列化路径；`EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` | `asym` | `0.10.0` |
+| CMS / TS | `CMS_*` / `TS_*` | `pkcs/pkcs7`、`ts` | `0.11.0` |
+| TLS 深度 | ALPN、`SSL_SESSION_*`、SNI/验证回调、客户端 CA、票据、stapling/keylog、配置与状态绑定 | `tls` | `0.12.0` |
+| 主机名校验 flags | `X509_check_host` 的 flags 扩展 / `X509_check_email` 等 | `tls.HostnameOptions` | `0.12.0` |
 
 **已落地的相关绑定**（列此便于对照，避免重复规划）：
 
@@ -154,16 +173,17 @@ DER 值构造扩展，绕开 OpenSSL 的扩展配置语法）、`X509_CRL_add_ex
 
 | # | 项 | 处置 | 理由 |
 |---|----|------|------|
-| 1 | `engine`（provider 的前身机制） | 不做 | 已被 provider 机制取代 |
-| 2 | `ca` 式数据库化 CA 工作流 | **暂缓**（列在 `0.8.0` 但形态未定） | 本质是文件系统状态机，与本库内存模型冲突；需先定「内存模型 vs 文件系统绑定」。若最终定为文件系统形态，则整体移出本库 |
-| 3 | DSA / DH **密钥交换算法** | 不做 | 非国密目标场景。但**为 TLS 握手加载 DH 参数**（`Config.DHParameters`）与算法本身无关，仍在 `1.0.0` 做 |
-| 4 | EC-ElGamal / Paillier（同态） | 不做 | 非国密目标场景 |
-| 5 | 需重编铜锁方可验证的六项 | 不做（标注保留） | 本机构建未启用，无法验证：白盒 SM4（`wbsm4` / `wbsm4kdf`）、Bulletproofs、SM2 门限签名/解密（`sm2_threshold`）、SDF 密码设备接口、SMTC 模块管理（`mod`）、Delegated Credential（`decred`）。见 [cli-comparison.md](cli-comparison.md) §6.D |
-| 6 | 把 `internal/core` 的类型提升为公开句柄 | 不做 | 与「公开签名不得出现 `internal/` 类型」的硬约束冲突。跨包取句柄走 `internal/keyaccess` / `internal/certaccess`，见 [architecture.md](architecture.md) §3.3 |
-| 7 | 公开 BIO 桥接、原生 `HMAC_CTX`、`NID` 常量表 | 不做 | 与 Go 惯例封装的目标冲突；理由见 [official-sdk-comparison.md](official-sdk-comparison.md) §9 |
-| 8 | `crypto/*` deprecated 转发包 | 不做 | 转发层会让公开面收敛永远做不完；`0.3.0` 已一次性完成破坏性迁移 |
-| 9 | ECIES（ECDH + KDF + AEAD 的组合封装） | **本版不做（不写死）** | 「ECIES」这一名称本身**没有唯一的容器标准**：SEC1 §5.1 只定义了 KDF 与 XOR 加密，未定义消息格式；IEEE 1363a、ISO 18033-2、ANSI X9.63 的头部字段与 KDF 参数各不相同。自造容器既无外部事实可对拍（本库的验收口径是「与 openssl CLI 逐字节一致」），也只会产出一个「仅本库互通」的私有格式。**标准化的替代路径已有两条**：① RFC 9180 **HPKE**——铜锁 8.5 系起提供 `OSSL_HPKE_*` 原生 API（`OSSL_HPKE_MODE_BASE/PSK/AUTH/PSKAUTH`，KEM 覆盖 P-256/384/521），且 RFC 附录 A 附有测试向量可逐字节对拍；本库当前基线铜锁 8.4.0（OpenSSL 3.0.3 底座，见 `sym/sym.go` 的 `Available` 说明）**不含** HPKE（HPKE 系 OpenSSL 3.2 引入），实施前须以 `OSSL_HPKE_CTX_new` 实测确认；② JWE 的 **`ECDH-ES`**（RFC 7518）——本库 `jwk` 包已具备相关基础。国密场景的等价能力是 `asym.Encrypt`（SM2 加密，输出 C1‖C3‖C2 / C1‖C2‖C3 / DER）。**重开条件**：铜锁基线升至 8.5 后评估封装 HPKE，或下游明确要求 JWE `ECDH-ES` |
-| 10 | 在库内加载 legacy provider（以获得单 DES / RC4 / DESX） | 不做 | legacy provider 只在**动态库**中（`legacy.so`，靠 `OPENSSL_MODULES` 或安装前缀定位），加载路径随部署环境变化；更关键的是 `OSSL_PROVIDER_load` 作用于**整个进程**的默认库上下文，一旦加载，同进程内所有 OpenSSL 使用者都能取用 RC4 / RC5 / DESX / CAST / MD4 等弱算法——为兼容一个 56-bit 已被穷举的算法而拉低全进程的密码学基线，与本库的安全取向相反，且与将来的 FIPS provider 模式冲突。单 DES 已由 §2.1 的 `K‖K‖K` 等价实现覆盖；legacy provider 仅作**测试基准**（`openssl enc -des-cbc -provider legacy -provider default`）用于验证等价性 |
+| 1 | `engine` | 不做 | 已被 provider 机制取代 |
+| 2 | 数据库化、文件系统绑定的 CA 工作流 | **暂缓，不承诺版本** | 本质是持久化状态机；继续复用既有内存签发流程，不以 `OpenCA` / index.txt 工作流作为协议版本交付条件 |
+| 3 | DSA / 独立 DH 密钥交换算法 | 不做 | 非国密目标场景；TLS 的 DH 参数加载仍归 `0.12.0` |
+| 4 | EC-ElGamal / Paillier | 不做 | 非国密目标场景 |
+| 5 | 需重编铜锁方可验证的六项 | 不做（标注保留） | 白盒 SM4、Bulletproofs、SM2 门限、SDF、SMTC、Delegated Credential；见 CLI 对比 §6.D |
+| 6 | 提升 `internal/core` 原生句柄为公开类型 | 不做 | 跨包取句柄须走现有桥接，公开签名不得出现 internal 类型 |
+| 7 | 公开 BIO、原生 HMAC_CTX、NID 常量表 | 不做 | 维持 Go 惯例封装；见官方 SDK 对比 §9 |
+| 8 | `crypto/*` deprecated 转发包 | 不做 | `0.3.0` 已完成迁移，不重新扩大公开面 |
+| 9 | ECIES / 私有混合加密容器 | **暂缓，不承诺版本** | 下游尚无指定互通格式；不自行定义容器。出现明确互通对象或 HPKE/JWE 等标准协议需求后重新立项；原生 HPKE 可用不等于本库已封装 |
+| 10 | 库内自动加载 legacy provider | 不做 | 保持默认原生能力边界；单 DES 已在 `0.6.0` 以 `K‖K‖K` 驱动 DES-EDE3 等价实现，仅用于存量数据兼容 |
+| 11 | EC/SM2 自定义 XML 格式 | 不做 | `xml/rsa` 只处理 .NET RSAKeyValue；不另创 ECKeyValue 格式（I-13） |
 
 ---
 
@@ -204,6 +224,7 @@ DER 值构造扩展，绕开 OpenSSL 的扩展配置语法）、`X509_CRL_add_ex
 | 公开 API 逐符号清单（含 🧭 规划中形态） | [api-reference.md](api-reference.md) |
 | 内部 API 清单（`internal/*`） | [api-reference-internal.md](api-reference-internal.md) |
 | 分层、目录、依赖方向、桥接设计 | [architecture.md](architecture.md) |
+| 下游 22 项需求复核与处置 | [downstream-requirements.md](downstream-requirements.md) |
 | 与铜锁 CLI 的能力对比（缺口编号来源） | [cli-comparison.md](cli-comparison.md) |
 | 待实现 API 逐条清单 | [cli-comparison-todo.md](cli-comparison-todo.md) |
 | 与官方 SDK 的能力对比 | [official-sdk-comparison.md](official-sdk-comparison.md) |

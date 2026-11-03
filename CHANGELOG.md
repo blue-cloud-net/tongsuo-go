@@ -52,7 +52,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - `asym`: RSA-OAEP accepts `"sm3"`; added the native capability probe
   `SupportsRSASignatureDigest(key, hash)`. Tongsuo 8.4.0's RSA provider
   cannot sign with SM3, so PKCS#1 v1.5 / PSS signing and verification return
-  `ErrUnsupported` on that baseline. Runnable signatures belong to `0.7.0`
+  `ErrUnsupported` on that baseline. Runnable signatures belong to `0.9.0`
   alongside Tongsuo 8.5 compatibility.
 - `internal/native`: added `EVP_aes_{128,192,256}_{ofb,cfb128}` and
   `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}`.
@@ -139,7 +139,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 - This version is verified on Tongsuo 8.4.0. Tongsuo 8.5 compatibility,
   GCM-SIV, EdDSA context signatures and runnable RSA-SM3 signatures belong
-  to `0.7.0`. AES-SIV rejects empty messages with `ErrUnsupported` on 8.4.0
+  to `0.9.0`. AES-SIV rejects empty messages with `ErrUnsupported` on 8.4.0
   to avoid its old provider's empty-message authentication path. KECCAK-*,
   SHA-256/192 and SM4-XTS retain their runtime unavailable results.
 

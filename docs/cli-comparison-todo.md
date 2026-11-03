@@ -10,6 +10,11 @@
 >
 > **范围**：**14 个子命令 / 100 条 API**。不含 ⚠️ 部分对齐项、不含 §9「明确不实现」项、不含无对应子命令的扩展算法（PQC 等）——三者见附录 B。
 
+> **排期更新**：本清单保留采集时的候选 API，不表示它们仍全部待实现或承诺交付。
+> `0.6.0` 的已实现符号以 [api-reference.md](api-reference.md) 为准；PKCS#7 基础流程
+> 归 `0.8.0`，CMS/ts 归 `0.11.0`，会话/TLS 归 `0.12.0`，文件系统 CA 继续暂缓。
+> 下游新增的可靠性需求归 `0.7.0`，逐项见 [需求复核台账](downstream-requirements.md)。
+
 ---
 
 ## 0. 范围总览
@@ -83,7 +88,7 @@
 - **§6.A**：2 ｜ **优先级**：P1 ｜ **归属包**：`x509`（现有）｜ **API 数**：12
 - **现状**：有 `x509.CreateCertificate` + `CRL` + `Store`（纯内存对象），但**无状态化工作流**（index.txt / serial / crlnumber）。
 - **对齐 CLI**：`tongsuo ca -batch -config x.cnf`、`-gencrl`、`-revoke`、`-renew`
-- **前置决策**：本库为内存对象模型，`ca` 本质是「文件系统 + 策略」，**需先定形态**（内存 CA 结构体 vs 目录绑定）。
+- **排期决策**：数据库化、文件系统绑定的 CA 工作流继续暂缓，不承诺版本。以下保留为历史候选，不构成交付承诺；既有内存签发流程直接复用，CRL 配置式签发归 `1.0.0`。
 
 - [ ] `x509.OpenCA(dir string, opts *CAOptions) (*CA, error)` — 打开或初始化 CA 目录；输入：目录路径 → 输出：`*CA`
 - [ ] `x509.NewCA(opts *CAOptions) (*CA, error)` — 纯内存 CA（不落盘）
@@ -103,11 +108,11 @@
 ## 4. `cms` — CMS 签名 / 验签 / 加密 / 解密
 
 - **§6.A**：5 ｜ **优先级**：P2 ｜ **归属包**：`pkcs/pkcs7`（现有，CMS 与 PKCS#7 同源 RFC 5652）｜ **API 数**：8
-- **现状**：`pkcs/pkcs7` 只有证书袋 `Build`/`Extract`/`MarshalPEM`。
+- **现状**：`0.6.0` 已有证书/CRL 容器；`0.8.0` 规划 PKCS#7 基础签名/加密，`0.11.0` 再扩展 CMS。
 - **对齐 CLI**：`cms -sign` / `-verify` / `-encrypt` / `-decrypt` / `-digest_create` / `-digest_verify`
-- **前置**：`internal/native` 需新增 `CMS_*` 绑定。
+- **前置**：`0.8.0` 先新增 `PKCS7_*` 基础流程绑定；`0.11.0` 再新增 `CMS_*`，不能把两者混作一种格式。以下签名为候选，最终目标形态见公开 API 清单。
 
-- [ ] `pkcs7.Sign(data []byte, opts *SignOptions) ([]byte, error)` — 生成签名/封装数据；输入：明文 + 签名证书与私钥 → 输出：CMS/PKCS#7 DER
+- [ ] `pkcs7.Sign(data []byte, opts *SignOptions) ([]byte, error)` — 生成签名/封装数据；输入：明文 + 签名证书与私钥 → 输出：PKCS#7 DER（`0.8.0`）；CMS 扩展另归 `0.11.0`
 - [ ] `pkcs7.Verify(data []byte, opts *VerifyOptions) (*SignedData, error)` — 验签并返回签名者信息
 - [ ] `pkcs7.Encrypt(data []byte, opts *EncryptOptions) ([]byte, error)` — 信封加密（多接收者）
 - [ ] `pkcs7.Decrypt(data []byte, opts *DecryptOptions) ([]byte, error)` — 信封解密
@@ -284,7 +289,7 @@
 
 | 包 | 承载 | 理由 |
 |---|---|---|
-| `ts`（顶层，`0.8.0`） | `ts` | RFC 3161 协议栈，含 ASN.1 结构与 HTTP 传输，体量与 `x509` 相当 |
+| `ts`（顶层，`0.11.0`） | `ts` | RFC 3161 协议栈，含 ASN.1 结构与 HTTP 传输，体量与 `x509` 相当 |
 
 **归入既有包的 7 项**：`ca` → `x509`；`ecparam` → `ecdh`；`pkeyparam`、`storeutl` → `asym`
 （`storeutl` 另有 `x509` 部分）；`sess_id` → `tls`；`cms`、`crl2pkcs7` → `pkcs/pkcs7`。
@@ -303,4 +308,4 @@
 2. **20 项 §9「明确不实现」**：`engine`、`fipsinstall`、`rsautl`、`s_time`、`speed`、`rehash`、`nseq`、`spkac`、`passwd`、`prime`、`dsaparam`、`gendsa`、`dsa`、`dhparam`、`srp`、`cmp`、`smime`、`help`、`ECIES`、库内加载 legacy provider。
 3. **无对应子命令的扩展算法**（本次以子命令为维度，故不含）：ML-KEM（含 5 个混合组）、ML-DSA-44/65/87、SLH-DSA 12 变体（§6.D D1–D4）。
 4. **横切项**（不单独设 API，随上述各项落地）：默认 stdin/stdout（§6.C C1/C2）、文件读写（C3）、统一 `Format` 维度（C4）、hex/base64/hexdump 助手（C5/C6）、口令来源抽象（C8）。
-5. **下游需求（非 CLI 缺口）**：DES / DES-EDE / DES-EDE3 兼容入口、`sym` 的 `Options.Padding` 支持矩阵与非法组合校验、签名 DER ↔ 裸 `r‖s` 互转、RSA 摘要补 `sm3` —— 这几项来自下游使用场景而非铜锁 CLI 的缺失子命令，故不按本文件的子命令维度展开；其排期与目标 API 形态见 [roadmap.md](roadmap.md) §2.1 与 [api-reference.md](api-reference.md) 的「规划中」小节（目标版本均为 `0.6.0`）。
+5. **下游需求（非 CLI 缺口）**：AES-OFB/CFB、DES 家族、padding 矩阵、签名 DER/raw、OAEP-SM3、OKP/oct 与 PKCS#1 公钥已在 `0.6.0` 实现；剩余可靠性归 `0.7.0`，PKCS#7 基础流程归 `0.8.0`，RSA-SM3 签名可运行支持归 `0.9.0`。全部 I-01 至 I-22 的纠偏、暂缓和验收边界见 [downstream-requirements.md](downstream-requirements.md)，不再笼统标注为“均归 0.6”。

@@ -541,3 +541,18 @@ internal/testutil ← 仅被 *_test.go 使用
 - `func PEM_write_bio_X509_AUX(bio, cert unsafe.Pointer) bool` — PEM_write_bio_X509_AUX 编码包含信任属性的证书。
 - `func PEM_read_bio_X509_AUX(bio unsafe.Pointer) unsafe.Pointer` — PEM_read_bio_X509_AUX 加载包含信任属性的证书，调用方拥有结果。
 - `CipherWrapAllow` — 显式启用 EVP 密钥包装；`ERR_clear_error()` 清理能力探测的线程错误队列。
+
+
+## 后续实施前置（规划，不属于已有符号清单）
+
+| 目标版本 | core/native 工作 | 边界 |
+|---|---|---|
+| `0.7.0` | 复用 ECDH/CSR Close；补完整 CRL 序列号读写、OID/DER 扩展、信任路径、SM2 点校验、P12 safe/bag 重加密 | 保留副本所有权、签名终态及容器属性；不暴露原生类型 |
+| `0.8.0` | PKCS#7 签名/验签/加密/解密及分离内容处理 | 实施时同步 keyaccess 消费方白名单；证书继续走 certaccess |
+| `0.9.0` | 8.5 兼容、上下文签验、RSA-SM3 原生能力验证、SM2DH 参数 | 8.4 编译保护与运行时探测 |
+| `0.10.0` | PQC 密钥/签验/序列化与 KEM | 不可用能力明确报错 |
+| `0.11.0` | CMS / TS | 复用容器基础设施 |
+| `0.12.0` | TLS 配置、状态与回调绑定 | 生命周期与并发验收先于 1.0 稳定版 |
+
+具体 C 接口与版本以 [roadmap.md](roadmap.md) §3 为准；此处不预先登记尚未实现的
+完整内部函数签名。
