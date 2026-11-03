@@ -68,7 +68,7 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 
 ### 实现基线与后续排期
 
-`0.6.0` 实现已完成，尚未发布；以铜锁 8.4.0 为验证基线，AES-SIV 拒绝空消息。
+`0.6.0` 为当前实现基线（2026-11-03 定版）；以铜锁 8.4.0 为验证基线，AES-SIV 拒绝空消息。
 以下版本均为规划，不表示功能已可用：
 
 - `0.7.0`：下游可靠性与数据完整性，含句柄释放、解析限额、完整序列号、DER 扩展、信任路径、SM2 压缩输入与 PKCS#12 改密互通
@@ -368,7 +368,7 @@ API 层（16 个顶级包）          ← 对外高层 API，仅此层可被外�
 - **并发模型**：不同句柄可并行使用；单句柄需调用方串行化
 - **内部实现隐藏**：`internal/` 受 Go `internal` 机制保护，外部不可导入；公开签名中不出现 `internal/` 类型
 
-详细设计与依赖方向见 [docs/architecture.md](docs/architecture.md)，`0.5.0` 及以后的版本规划见 [docs/roadmap.md](docs/roadmap.md)。
+详细设计与依赖方向见 [docs/architecture.md](docs/architecture.md)，`0.7.0`–`1.0.0` 的版本规划见 [docs/roadmap.md](docs/roadmap.md)。
 
 ## 协议
 

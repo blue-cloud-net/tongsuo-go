@@ -22,7 +22,7 @@
 
 ---
 
-## [0.6.0] - TBD
+## [0.6.0] - 2026-11-03
 
 ### 新增功能
 
@@ -75,6 +75,7 @@
   55 项。SIV 使用双密钥，AEAD 的 nonce 长度为 0；一次性入口可用 nonce 作为
   最后一个 AAD 分量。CBC-CTS 默认 CS1；WRAP 的 nil IV 使用标准值；
   ZUC 原生 IV 为 5 字节（COUNT 大端 4 字节 + bearer/direction 字节）。
+  WRAP-PAD 的输出缓冲保留原生 cipher 所需的完整额外分组空间。
 - `ecdh`：命名/显式 EC 参数的 `MarshalParametersPEM` / `LoadParametersPEM` /
   `LoadParametersFile`、`Curve.Check` 与返回 `asym.PrivateKey` 的
   `GenerateKeyFromParameters`；支持 P-256/384/521 与 secp256k1。
@@ -108,8 +109,16 @@
 ### Bug 修复
 
 - `internal/native`：空载荷 update 保留非空数据指针，防止 CCM 将空消息误当成
-  总长度控制而不生成/校验 tag；cipher 输出缓冲为 WRAP-PAD 保留完整额外分组空间。
+  总长度控制而不生成/校验 tag，包含既有 SM4-CCM 路径。
 - `pkcs/pkcs12`：解析后的临时原生 key/cert/CA 句柄以及包装失败时的部分结果均显式释放。
+
+### BREAKING / 迁移
+
+- AES-CBC / ECB 现在真正应用显式指定的 `zero` / `none` 填充。旧版本忽略这些
+  选项时生成的密文，仍须按当时实际使用的 `pkcs7` 解密。提交数据前可用
+  `Supports` / `Paddings` 校验组合；未知或不相容的填充现在明确失败。
+- `*Zero` 加密现在会为未对齐输入补零；解密仍保留尾部零字节，需要精确还原时
+  应保存原始明文长度。
 
 ### 已知限制
 
@@ -120,8 +129,11 @@
 
 - DES / DES-EDE / DES-EDE3 **仅用于兼容既有数据**：单 DES 只有 56 位有效密钥
   且已可被穷举，2 密钥 3DES 约 80 位。不得用于新协议。
-- 不提供 `ECIES`：请使用 `asym.Encrypt`（SM2），或标准化的替代方案
-  （RFC 9180 HPKE、JWE `ECDH-ES`）。见 `docs/roadmap.md` §4。
+- 外部 PBES2/AES PKCS#12 容器可能能够 Parse，却无法用 `ChangePassword` 改密。
+  `ChangePasswordWithOptions` 会解析并重打包已支持的密钥/证书集合，不保留任意
+  bag 和属性；无损互通改密排至 `0.7.0`。
+- 不提供 `ECIES`；本库已有 `asym.Encrypt`（SM2）。HPKE 与 JWE `ECDH-ES` 是
+  标准化替代方案，但本库尚未封装。见 `docs/roadmap.md` §4。
 
 ---
 

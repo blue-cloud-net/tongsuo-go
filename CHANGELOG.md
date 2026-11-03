@@ -24,7 +24,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-## [0.6.0] - TBD
+## [0.6.0] - 2026-11-03
 
 ### Added
 
@@ -84,6 +84,8 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   zero; the one-shot API accepts a nonce as the last AAD component. CBC-CTS
   defaults to CS1; nil WRAP IV selects the standard value; ZUC's native IV
   is 5 bytes (4-byte big-endian COUNT plus bearer/direction).
+  WRAP-PAD output buffers reserve the full extra block space required by
+  the native cipher.
 - `ecdh`: named/explicit EC parameter `MarshalParametersPEM` /
   `LoadParametersPEM` / `LoadParametersFile`, `Curve.Check` and
   `GenerateKeyFromParameters` returning `asym.PrivateKey`; P-256/384/521 and
@@ -130,10 +132,19 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 - `internal/native`: zero-length payload updates keep non-null data pointers,
   preventing CCM from interpreting empty messages as length controls without
-  generating/checking a tag; cipher output buffers reserve the extra full
-  blocks needed by WRAP-PAD.
+  generating/checking a tag, including the existing SM4-CCM path.
 - `pkcs/pkcs12`: temporary native key/cert/CA handles and partial results on
   wrapping failure are released explicitly.
+
+### BREAKING / Migration
+
+- AES-CBC / ECB now honour explicitly requested `zero` / `none` padding.
+  Ciphertext created by older versions that ignored those options must still
+  be decrypted using the padding actually used (`pkcs7`). Use `Supports` /
+  `Paddings` to validate combinations before submitting data; unknown or
+  incompatible padding names now fail explicitly.
+- `*Zero` encryption now pads unaligned input. Zero-padding decryption keeps
+  trailing zero bytes; preserve the original plaintext length when needed.
 
 ### Known limitations
 
@@ -146,8 +157,13 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - DES / DES-EDE / DES-EDE3 exist **for legacy data only**: single DES has
   a 56-bit effective key and is brute-forceable, two-key 3DES about 80
   bits. Do not use them in new protocols.
-- `ECIES` is not provided; use `asym.Encrypt` (SM2) or the standardised
-  replacements (RFC 9180 HPKE, JWE `ECDH-ES`). See `docs/roadmap.md` §4.
+- External PBES2/AES PKCS#12 containers may parse successfully but fail in
+  `ChangePassword`. `ChangePasswordWithOptions` parses and repacks the
+  supported key/certificate bundle and does not preserve arbitrary bags or
+  attributes; lossless interop is scheduled for `0.7.0`.
+- `ECIES` is not provided. SM2 encryption is available through `asym.Encrypt`;
+  HPKE and JWE `ECDH-ES` are standard alternatives that this library does
+  not yet wrap. See `docs/roadmap.md` §4.
 
 ---
 

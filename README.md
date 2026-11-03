@@ -73,7 +73,7 @@ itself, and the Tongsuo installation is a build prerequisite (see [Requirements]
 
 ### Implementation baseline and future releases
 
-`0.6.0` implementation is complete but not yet released; Tongsuo 8.4.0 is the validation baseline and AES-SIV rejects empty messages.
+`0.6.0` is the current implementation baseline (finalized on 2026-11-03); Tongsuo 8.4.0 is the validation baseline and AES-SIV rejects empty messages.
 The following releases are planned capabilities, not currently available features:
 
 - `0.7.0`: downstream reliability and data integrity, including handle release, parser limits, full serial numbers, DER extensions, trust paths, compressed SM2 input and PKCS#12 password-change interop
@@ -372,7 +372,7 @@ Binding layer (internal/native/)   ← cgo + inline C shim; maps directly to Ton
 - **Concurrency model**: distinct handles can be used in parallel; a single handle must be serialized by its caller
 - **Internal implementation is hidden**: `internal/` is protected by Go's `internal` mechanism and cannot be imported from outside; no `internal/` type appears in a public signature
 
-See [docs/architecture.md](docs/architecture.md) for the detailed design and the dependency graph, and [docs/roadmap.md](docs/roadmap.md) for the `0.5.0`+ version plan.
+See [docs/architecture.md](docs/architecture.md) for the detailed design and the dependency graph, and [docs/roadmap.md](docs/roadmap.md) for the `0.7.0`–`1.0.0` version plan.
 
 ## License
 
