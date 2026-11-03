@@ -44,10 +44,10 @@
   （DER 拆分量）、`SignatureDER`（分量拼 DER）与 `FormatSignature`
   （der/raw 互转，需显式给每分量宽度）。适用于 SM2 与 ECDSA，并与 openssl
   CLI 交叉验证。
-- `asym`：`SignPKCS1v15` / `VerifyPKCS1v15` / `SignPSS` / `VerifyPSS` /
-  `EncryptOAEP` / `DecryptOAEP` 的摘要参数接受 `"sm3"`，即
-  RSA-PKCS1v15-SM3、RSA-PSS-SM3 与 RSA-OAEP-SM3，并与
-  `openssl dgst -sm3` 双向互验。
+- `asym`：RSA-OAEP 的摘要参数接受 `"sm3"`；新增
+  `SupportsRSASignatureDigest(key, hash)` 原生能力探测。铜锁 8.4.0 的 RSA
+  provider 不支持 SM3 签名，PKCS#1 v1.5 / PSS 签验在该基线上返回
+  `ErrUnsupported`；可运行签名支持随铜锁 8.5 兼容归 `0.7.0`。
 - `internal/native`：新增 `EVP_aes_{128,192,256}_{ofb,cfb128}` 与
   `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}`。
 - `jwk`：新增 OKP（RFC 8037：Ed25519 / Ed448 / X25519 / X448）与对称密钥
@@ -70,6 +70,30 @@
 - `internal/core`：新增对应描述符与 `Digest.XOFOneShot`；KECCAK-* 与
   SHA-256/192 经 `EVP_MD_fetch` 取得（8.4 无静态取函数）并在进程内缓存。
 
+- `sym`：AES-CCM / OCB / SIV / WRAP / WRAP-PAD / CBC-CTS（128/192/256 位）、
+  AES-XTS（128/256 位）与 ZUC-128-EEA3，含类型化入口及按名分发；`Names` 共
+  55 项。SIV 使用双密钥，AEAD 的 nonce 长度为 0；一次性入口可用 nonce 作为
+  最后一个 AAD 分量。CBC-CTS 默认 CS1；WRAP 的 nil IV 使用标准值；
+  ZUC 原生 IV 为 5 字节（COUNT 大端 4 字节 + bearer/direction 字节）。
+- `ecdh`：命名/显式 EC 参数的 `MarshalParametersPEM` / `LoadParametersPEM` /
+  `LoadParametersFile`、`Curve.Check` 与返回 `asym.PrivateKey` 的
+  `GenerateKeyFromParameters`；支持 P-256/384/521 与 secp256k1。
+- `asym`：`PKCS8Options` / `MarshalPKCS8` / `LoadPKCS8`，支持 PEM/DER、PBE
+  v1（PBE-SHA1-3DES）/ v2（PBES2）、AES-CBC 与 HMAC-SHA1/224/256/384/512 PRF、
+  显式迭代与空口令加密；新增 RSA PKCS#1 公钥读写、`Check` / `PublicCheck`。
+- `pkcs/pkcs12`：`Options`、`PackWithOptions` / `ParseWithOptions` /
+  `ChangePasswordWithOptions`，支持 AES-CBC 或 PBE-SHA1-3DES、加密/MAC 迭代、
+  友好名和独立输入/输出口令；既有 `Pack` 的兼容 PBE 保持不变。
+- `x509`：`FetchOCSP` 发送 HTTP POST、匹配请求 CertID、校验 nonce，限制 4 MiB、
+  不跟随重定向、可设置超时；`CreateOCSPRequestWithNonce` 与 `Response.CheckNonce`。
+  响应仍须验签并校验状态/时间；`AddTrust` / `AddReject` / `ClearTrust` / `ClearReject`、
+  `MarshalTrustedPEM` / `LoadTrustedCertificatePEM` 保留证书本地 AUX 信任属性。
+- `keystore`：本地路径、file URI、stdin 与 reader 的统一密钥加载，自动识别 PEM
+  多对象、DER 与 PKCS#12，支持口令；单密钥入口拒绝多密钥，失败不返回部分结果。
+  `x509.LoadFromURI` / `LoadFromReader` 提供证书/CRL 的对应入口。
+- `meta`：`SplitPEM` / `SplitPEMByType` / `DecodePEMFirst` / `EncodePEM` 公开
+  PEM 切分与编码；`pkcs/pkcs7`：`FromCRL` / `ExtractCRLs` 支持 CRL 容器。
+
 ### 行为变化与重构
 
 - `sym`：`Options.Padding` 对**所有**分组模式生效。`0.5.0` 及之前它只被
@@ -81,7 +105,18 @@
   `none` 行为完全相同且拒绝未对齐输入，现在会在尾部补 `0x00` 补足到分组整数倍。
   解密仍不剥离零填充，需要精确明文长度时由调用方按已知长度截断。
 
+### Bug 修复
+
+- `internal/native`：空载荷 update 保留非空数据指针，防止 CCM 将空消息误当成
+  总长度控制而不生成/校验 tag；cipher 输出缓冲为 WRAP-PAD 保留完整额外分组空间。
+- `pkcs/pkcs12`：解析后的临时原生 key/cert/CA 句柄以及包装失败时的部分结果均显式释放。
+
 ### 已知限制
+
+- 本版以铜锁 8.4.0 验证；8.5 兼容、GCM-SIV、EdDSA 上下文签名与 RSA-SM3
+  签名可运行支持排至 `0.7.0`。AES-SIV 在 8.4.0 上拒绝空消息并返回
+  `ErrUnsupported`，防止旧 provider 的空消息认证绕过；KECCAK-*、SHA-256/192、
+  SM4-XTS 按既有运行时探测报告不可用。
 
 - DES / DES-EDE / DES-EDE3 **仅用于兼容既有数据**：单 DES 只有 56 位有效密钥
   且已可被穷举，2 密钥 3DES 约 80 位。不得用于新协议。

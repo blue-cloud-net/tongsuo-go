@@ -464,3 +464,31 @@ go test -fuzz FuzzRoundTrip ./sym
 - `mac/*_tongsuocli_test.go`：`openssl mac -macopt …`
 - `sym/*_tongsuocli_test.go`：`openssl enc -<alg>`
 - `kdf/kdf_tongsuocli_test.go`：`openssl kdf -kdfopt … <ALG>`
+
+## `0.6.0` 增量验收（铜锁 8.4.0）
+
+- `sym/extended_test.go`：RFC 3394 WRAP、RFC 5297 SIV、RFC 7253 OCB 空消息、
+  ZUC 零向量、NIST CAVS 11.0 AES-128/256-XTS（含密文窃取）、OpenSSL 官方 AES-256-CCM 16 字节 tag 向量；全部新模式 × 密钥长度 × 输入长度往返；认证 tag/AAD/nonce/密文
+  篡改；WRAP 完整性；SIV 空消息拒绝；CCM 空载荷必须生成并校验 tag。
+  模糊种子为 `FuzzAESWrapPadRoundTrip`，基准为 `BenchmarkAESOCB`。
+- `ecdh/parameters*_test.go`：P-256/384/521/secp256k1 命名/显式参数逐字节 CLI 对拍，
+  文件入口、参数驱动生成、坏输入与不支持曲线。
+- `asym/pkcs8*_test.go`：PBE v1/v2、PRF、迭代、空/错误口令、PEM/DER；RSA PKCS#1
+  公钥与 `Check`/`PublicCheck`；PKCS#8 双向 CLI 转换后私钥 DER 一致。
+  RSA-SM3 签名不在 8.4.0 可用集：原生能力为 false 时必须断言 `ErrUnsupported`，
+  CLI 同时必须失败；不能以 t.Skip 掩盖不一致。OAEP-SM3 必须往返通过。
+- `pkcs/pkcs12/options*_test.go`：全部 PBE 选择、独立读/写口令、改密；CLI 输出
+  必须包含指定 PBE、迭代次数与 friendlyName，避免参数静默失效。
+- `keystore/load_test.go`、`x509/extended_test.go`：PEM 多对象/DER/PKCS#12 自动识别，
+  本地 file URI，未知块与部分结果清理；trusted PEM 往返不改变签名 DER，加载保持签名终态。
+- `x509/extended_tongsuocli_test.go`：离线 OCSP responder 只读取 `-reqin`，不附加
+  `-cert` 重新生成请求；HTTP 成功、nonce 一致/缺失/不匹配、响应签名与信任属性对拍。
+  默认测试覆盖 HTTP 状态、Content-Type、限长、超时与错误 DER。
+- AES-CCM/OCB/SIV/XTS 不由 `openssl enc` 提供；其标准向量与错误路径由单元测试覆盖，
+  CLI 对拍覆盖 `enc` 可用的 WRAP/WRAP-PAD/CBC-CTS/ZUC。既有 8.4 缺失算法与 HKDF
+  差异保持原能力探测/降级策略，不修改期望向量。
+
+显式设置 `TONGSUO_HOME=/opt/tongsuo-8.4.0`、对应 `CGO_CFLAGS` / `CGO_LDFLAGS` /
+`LD_LIBRARY_PATH` 与 `TONGSUO_OPENSSL_BIN`，不要跟随可能指向 master 的 `/opt/tongsuo`。
+完成 `go build ./...`、`go vet ./...`、`go test -count=1 ./...`、
+`go test -tags tongsuocli -count=1 ./...`，涉及句柄生命周期的本版还需 `go test -race ./...`。

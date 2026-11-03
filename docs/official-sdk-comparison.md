@@ -1,5 +1,10 @@
 # 官方 tongsuo-go-sdk 与本库功能对比
 
+> **`0.6.0` 实施更新**：下文采集时的基线表保留原口径；AES 扩展/ZUC、EC 参数、
+> PKCS#8/12 配置、PKCS#7 CRL、JWK OKP/oct、本地多对象加载、OCSP HTTP/nonce 与
+> 证书信任属性已在 8.4.0 基线上实现，当前逐符号事实见 [api-reference.md](api-reference.md)。
+> 铜锁 8.5 兼容、GCM-SIV、EdDSA 上下文签名与 RSA-SM3 签名可运行支持归 `0.7.0`。
+
 > 本文件回答：**与官方 [Tongsuo-Project/tongsuo-go-sdk](https://github.com/Tongsuo-Project/tongsuo-go-sdk) 相比，本仓库还有哪些能力没有对齐？是否要把对侧分阶段补齐？**
 >
 > 口径：**只对齐「能力」，不对齐「命名」**——本库以 Go 惯例 API（`hash.Hash` / `cipher.Block` / `cipher.AEAD` / `Config` 字段 / `(T, error)` 返回）面向使用者，而官方 SDK 几乎是 [`gost`](https://github.com/gostc/go) 的 Tongsuo fork、把 `SSL_CTX`/`SSL` 的 OpenSSL 原生配置 1:1 暴露出去，命名上无必要一一对应。

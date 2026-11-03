@@ -49,10 +49,11 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   (components to DER) and `FormatSignature` (der/raw with an explicit
   per-component width). Applies to SM2 and ECDSA, verified against the
   openssl CLI.
-- `asym`: `SignPKCS1v15` / `VerifyPKCS1v15` / `SignPSS` / `VerifyPSS` /
-  `EncryptOAEP` / `DecryptOAEP` accept `"sm3"` as the digest, giving
-  RSA-PKCS1v15-SM3, RSA-PSS-SM3 and RSA-OAEP-SM3, cross-validated against
-  `openssl dgst -sm3` in both directions.
+- `asym`: RSA-OAEP accepts `"sm3"`; added the native capability probe
+  `SupportsRSASignatureDigest(key, hash)`. Tongsuo 8.4.0's RSA provider
+  cannot sign with SM3, so PKCS#1 v1.5 / PSS signing and verification return
+  `ErrUnsupported` on that baseline. Runnable signatures belong to `0.7.0`
+  alongside Tongsuo 8.5 compatibility.
 - `internal/native`: added `EVP_aes_{128,192,256}_{ofb,cfb128}` and
   `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}`.
 - `jwk`: added OKP (RFC 8037: Ed25519 / Ed448 / X25519 / X448) and
@@ -77,6 +78,39 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   KECCAK-* and SHA-256/192 are fetched through `EVP_MD_fetch` (no static
   accessor on 8.4) and cached for the process lifetime.
 
+- `sym`: AES-CCM / OCB / SIV / WRAP / WRAP-PAD / CBC-CTS (128/192/256-bit),
+  AES-XTS (128/256-bit) and ZUC-128-EEA3, with typed and by-name entries;
+  `Names` now has 55 entries. SIV uses doubled keys and an AEAD nonce size of
+  zero; the one-shot API accepts a nonce as the last AAD component. CBC-CTS
+  defaults to CS1; nil WRAP IV selects the standard value; ZUC's native IV
+  is 5 bytes (4-byte big-endian COUNT plus bearer/direction).
+- `ecdh`: named/explicit EC parameter `MarshalParametersPEM` /
+  `LoadParametersPEM` / `LoadParametersFile`, `Curve.Check` and
+  `GenerateKeyFromParameters` returning `asym.PrivateKey`; P-256/384/521 and
+  secp256k1 are supported.
+- `asym`: `PKCS8Options` / `MarshalPKCS8` / `LoadPKCS8` support PEM/DER,
+  PBE v1 (PBE-SHA1-3DES) / v2 (PBES2), AES-CBC, HMAC-SHA1/224/256/384/512
+  PRFs, explicit iterations and encryption with empty passwords; added RSA
+  PKCS#1 public-key I/O, `Check` and `PublicCheck`.
+- `pkcs/pkcs12`: `Options`, `PackWithOptions` / `ParseWithOptions` /
+  `ChangePasswordWithOptions` support AES-CBC or PBE-SHA1-3DES,
+  encryption/MAC iterations, friendly names and separate input/output
+  passwords; the existing `Pack` retains its compatibility PBE.
+- `x509`: `FetchOCSP` posts over HTTP, matches the request CertID and
+  verifies its nonce, with a 4 MiB limit, no redirects and configurable
+  timeout; added `CreateOCSPRequestWithNonce` and `Response.CheckNonce`.
+  Callers must still verify the signature and status/time validity.
+  `AddTrust` / `AddReject` / `ClearTrust` / `ClearReject`, `MarshalTrustedPEM`
+  and `LoadTrustedCertificatePEM` preserve local certificate AUX attributes.
+- `keystore`: unified key loading from local paths, file URIs, stdin and
+  readers, detecting multiple PEM objects, DER and PKCS#12 with password
+  support. Single-key entries reject multiple keys; failures return no
+  partial results. `x509.LoadFromURI` / `LoadFromReader` provide equivalent
+  certificate/CRL loading.
+- `meta`: `SplitPEM` / `SplitPEMByType` / `DecodePEMFirst` / `EncodePEM`
+  expose PEM splitting and encoding; `pkcs/pkcs7`: `FromCRL` / `ExtractCRLs`
+  add CRL containers.
+
 ### Changed
 
 - `sym`: `Options.Padding` now takes effect for **every** block mode. Up
@@ -92,7 +126,22 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
   Decryption still does not strip zero padding, so callers needing the
   exact plaintext length must truncate using a known size.
 
+### Fixed
+
+- `internal/native`: zero-length payload updates keep non-null data pointers,
+  preventing CCM from interpreting empty messages as length controls without
+  generating/checking a tag; cipher output buffers reserve the extra full
+  blocks needed by WRAP-PAD.
+- `pkcs/pkcs12`: temporary native key/cert/CA handles and partial results on
+  wrapping failure are released explicitly.
+
 ### Known limitations
+
+- This version is verified on Tongsuo 8.4.0. Tongsuo 8.5 compatibility,
+  GCM-SIV, EdDSA context signatures and runnable RSA-SM3 signatures belong
+  to `0.7.0`. AES-SIV rejects empty messages with `ErrUnsupported` on 8.4.0
+  to avoid its old provider's empty-message authentication path. KECCAK-*,
+  SHA-256/192 and SM4-XTS retain their runtime unavailable results.
 
 - DES / DES-EDE / DES-EDE3 exist **for legacy data only**: single DES has
   a 56-bit effective key and is brute-forceable, two-key 3DES about 80

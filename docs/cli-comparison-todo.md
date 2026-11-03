@@ -156,11 +156,11 @@
 - **对齐 CLI**：`ecparam -list_curves` / `-genkey` / `-param_enc` / `-conv_form` / `-check`
 
 - [ ] `ecdh.ListCurves() []string` — 命名曲线枚举（含 `SM2`、`secp256k1`、brainpool 族）
-- [ ] `ecdh.MarshalParametersPEM(c *Curve, explicit bool) ([]byte, error)` — 输出参数文件（`explicit` 对应 `-param_enc explicit`）
-- [ ] `ecdh.LoadParametersPEM(paramPEM []byte) (*Curve, error)` — 读取参数文件
-- [ ] `ecdh.LoadParametersFile(path string) (*Curve, error)` — 文件入口
-- [ ] `ecdh.GenerateKeyFromParameters(paramPEM []byte) (*PrivateKey, error)` — 由参数文件生成密钥
-- [ ] `(*Curve).Check() error` — 参数合法性校验（等价 `-check`）
+- [x] `ecdh.MarshalParametersPEM(c *Curve, explicit bool) ([]byte, error)` — 输出参数文件（`explicit` 对应 `-param_enc explicit`）
+- [x] `ecdh.LoadParametersPEM(paramPEM []byte) (*Curve, error)` — 读取参数文件
+- [x] `ecdh.LoadParametersFile(path string) (*Curve, error)` — 文件入口
+- [x] `ecdh.GenerateKeyFromParameters(paramPEM []byte) (asym.PrivateKey, error)` — 由参数文件生成密钥
+- [x] `(*Curve).Check() error` — 参数合法性校验（等价 `-check`）
 - [ ] `ecdh.PointForm` 常量 + `ecdh.MarshalPublicPEMForm(c *Curve, pub *PublicKey, form PointForm) ([]byte, error)` — 点形式控制（`compressed` / `uncompressed` / `hybrid`）
 
 ---
@@ -250,12 +250,12 @@
 - **对齐 CLI**：`storeutl -certs -crls file:c.pem`、`storeutl file:k.p12`
 - **URI 语法**：`file:path`、`file:path#<n>`（等价 `-r <n>`），裸路径视同 `file:`。
 
-- [ ] `key.Load(uri string) (Key, error)` — 统一加载单个密钥；自动识别 PKCS#8 / PKCS#1 / SEC1 / SPKI / PKCS#12
-- [ ] `key.LoadAll(uri string) ([]Key, error)` — 多对象（多 PEM 块、PKCS#12 bundle）
-- [ ] `key.LoadFromReader(r io.Reader) (Key, error)` — 流式入口（stdin 场景）
-- [ ] `key.LoadWithPassphrase(uri string, pass Passphrase) (Key, error)` — 口令来源抽象（依赖 §6.C C8）
-- [ ] `x509.LoadFromURI(uri string) (certs []*Certificate, crls []*CRL, err error)` — 证书与 CRL 统一加载
-- [ ] `x509.LoadFromReader(r io.Reader) ([]*Certificate, []*CRL, error)` — 流式入口
+- [x] `keystore.Load(uri string) (asym.Key, error)` — 统一加载单个密钥；自动识别 PKCS#8 / PKCS#1 / SEC1 / SPKI / PKCS#12
+- [x] `keystore.LoadAll(uri string) ([]asym.Key, error)` — 多对象（多 PEM 块、PKCS#12 bundle）
+- [x] `keystore.LoadFromReader(r io.Reader) (asym.Key, error)` — 流式入口（stdin 场景）
+- [x] `keystore.LoadWithPassphrase(uri string, pass *meta.Passphrase) (asym.Key, error)` — 口令来源抽象（依赖 §6.C C8）
+- [x] `x509.LoadFromURI(uri string) (certs []*Certificate, crls []*CRL, err error)` — 证书与 CRL 统一加载
+- [x] `x509.LoadFromReader(r io.Reader) ([]*Certificate, []*CRL, error)` — 流式入口
 
 ---
 
