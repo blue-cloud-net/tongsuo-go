@@ -362,21 +362,22 @@ func EVP_DecryptUpdate(ctx unsafe.Pointer, out, in []byte, outl *int) bool {
 
 func cipherUpdate(ctx unsafe.Pointer, out, in []byte, outl *int, enc bool) bool {
 	var l C.int
+	var op, ip *C.uchar
+	if len(out) > 0 {
+		op = (*C.uchar)(unsafe.Pointer(&out[0]))
+	}
+	if len(in) > 0 {
+		ip = (*C.uchar)(unsafe.Pointer(&in[0]))
+	} else if len(out) > 0 {
+		// CCM distinguishes a zero-length payload from the nil/nil length control.
+		var dummy C.uchar
+		ip = &dummy
+	}
 	var ok bool
-	if len(in) == 0 || len(out) == 0 {
-		if enc {
-			ok = C.EVP_EncryptUpdate((*C.EVP_CIPHER_CTX)(ctx), nil, &l, nil, 0) == 1
-		} else {
-			ok = C.EVP_DecryptUpdate((*C.EVP_CIPHER_CTX)(ctx), nil, &l, nil, 0) == 1
-		}
-	} else if enc {
-		ok = C.EVP_EncryptUpdate((*C.EVP_CIPHER_CTX)(ctx),
-			(*C.uchar)(unsafe.Pointer(&out[0])), &l,
-			(*C.uchar)(unsafe.Pointer(&in[0])), C.int(len(in))) == 1
+	if enc {
+		ok = C.EVP_EncryptUpdate((*C.EVP_CIPHER_CTX)(ctx), op, &l, ip, C.int(len(in))) == 1
 	} else {
-		ok = C.EVP_DecryptUpdate((*C.EVP_CIPHER_CTX)(ctx),
-			(*C.uchar)(unsafe.Pointer(&out[0])), &l,
-			(*C.uchar)(unsafe.Pointer(&in[0])), C.int(len(in))) == 1
+		ok = C.EVP_DecryptUpdate((*C.EVP_CIPHER_CTX)(ctx), op, &l, ip, C.int(len(in))) == 1
 	}
 	if outl != nil {
 		*outl = int(l)
@@ -444,3 +445,15 @@ func cipherFinal(ctx unsafe.Pointer, out []byte, outl *int, enc bool) bool {
 	}
 	return ok
 }
+
+// EVP_CIPHER_CTX_set_flags 设置上下文标志。
+//
+// EVP_CIPHER_CTX_set_flags sets cipher context flags.
+func EVP_CIPHER_CTX_set_flags(ctx unsafe.Pointer, flags int) {
+	C.EVP_CIPHER_CTX_set_flags((*C.EVP_CIPHER_CTX)(ctx), C.int(flags))
+}
+
+// CipherWrapAllow 允许显式使用密钥包装算法。
+//
+// CipherWrapAllow enables explicit key wrapping.
+const CipherWrapAllow = int(C.EVP_CIPHER_CTX_FLAG_WRAP_ALLOW)

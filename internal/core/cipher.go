@@ -403,6 +403,7 @@ func NewCipherCtx(c *Cipher, key, iv []byte, enc bool) (*CipherCtx, error) {
 		return nil, NewOpError("cipher: EVP_CIPHER_CTX_new", native.PopError())
 	}
 	h := NewHandle(ctx, true, native.EVP_CIPHER_CTX_free)
+	native.EVP_CIPHER_CTX_set_flags(ctx, native.CipherWrapAllow)
 	encv := native.Decrypt
 	if enc {
 		encv = native.Encrypt
@@ -452,7 +453,7 @@ func (c *CipherCtx) Update(in []byte) ([]byte, error) {
 	if c.handle.IsClosed() {
 		return nil, fmt.Errorf("cipher: context closed")
 	}
-	out := make([]byte, len(in)+c.cipher.BlockSize())
+	out := make([]byte, len(in)+2*c.cipher.BlockSize())
 	var outl int
 	var ok bool
 	if c.enc {
@@ -633,6 +634,7 @@ func NewGcmCtx(c *Cipher, key, nonce []byte, enc bool) (*CipherCtx, error) {
 		return nil, NewOpError("cipher: EVP_CIPHER_CTX_new", native.PopError())
 	}
 	h := NewHandle(ctx, true, native.EVP_CIPHER_CTX_free)
+	native.EVP_CIPHER_CTX_set_flags(ctx, native.CipherWrapAllow)
 	encv := native.Decrypt
 	if enc {
 		encv = native.Encrypt
@@ -725,6 +727,7 @@ func NewCCMCtx(c *Cipher, key, nonce []byte, plaintextLen, tagLen int, enc bool)
 		return nil, NewOpError("cipher: EVP_CIPHER_CTX_new", native.PopError())
 	}
 	h := NewHandle(ctx, true, native.EVP_CIPHER_CTX_free)
+	native.EVP_CIPHER_CTX_set_flags(ctx, native.CipherWrapAllow)
 	encv := native.Decrypt
 	if enc {
 		encv = native.Encrypt
