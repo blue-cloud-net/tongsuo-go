@@ -125,7 +125,29 @@ func Parse(data []byte, password string) (*Bundle, error) {
 	if err != nil {
 		return nil, err
 	}
+	if key != nil {
+		defer key.Close()
+	}
+	if cert != nil {
+		defer cert.Close()
+	}
+	for _, c := range ca {
+		defer c.Close()
+	}
+
 	b := &Bundle{}
+	success := false
+	defer func() {
+		if !success {
+			asym.Close(b.PrivateKey)
+			if b.Certificate != nil {
+				b.Certificate.Close()
+			}
+			for _, c := range b.CACerts {
+				c.Close()
+			}
+		}
+	}()
 	if key != nil {
 		wrapped, werr := keyaccess.WrapPrivateKey(key)
 		if werr != nil {
@@ -147,6 +169,7 @@ func Parse(data []byte, password string) (*Bundle, error) {
 		}
 		b.CACerts = append(b.CACerts, wrapped)
 	}
+	success = true
 	return b, nil
 }
 
@@ -163,5 +186,52 @@ func ChangePassword(data []byte, oldPass, newPass string) ([]byte, error) {
 	if err := p12.ChangePassword(oldPass, newPass); err != nil {
 		return nil, err
 	}
+	return p12.MarshalDER()
+}
+
+// PackWithOptions 使用 PBE、迭代次数、友好名称与写入口令打包 PKCS#12。
+// nil 选项默认 AES-256-CBC、2048 次迭代与空口令；失败返回错误。
+//
+// PackWithOptions packs PKCS#12 using PBE, iterations, friendly name and write password.
+// Nil options select AES-256-CBC, 2048 iterations and an empty password; failures return errors.
+func PackWithOptions(cert *x509.Certificate, key PrivateKey, ca []*x509.Certificate, opts *Options) ([]byte, error) {
+	o, err := normalizeOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+	if cert == nil {
+		return nil, fmt.Errorf("pkcs12: nil certificate")
+	}
+	if key == nil {
+		return nil, fmt.Errorf("pkcs12: nil private key")
+	}
+	keyCore, ok := keyaccess.PKey(key)
+	if !ok || keyCore == nil {
+		return nil, fmt.Errorf("pkcs12: unsupported private key type %T", key)
+	}
+	keyCore, err = keyCore.Dup()
+	if err != nil {
+		return nil, err
+	}
+	defer keyCore.Close()
+	ccerts := make([]*core.Certificate, 0, len(ca))
+	for _, c := range ca {
+		if c != nil {
+			h, err := coreCertOf(c)
+			if err != nil {
+				return nil, err
+			}
+			ccerts = append(ccerts, h)
+		}
+	}
+	certCore, err := coreCertOf(cert)
+	if err != nil {
+		return nil, err
+	}
+	p12, err := core.CreatePKCS12WithOptions(o.WritePass, o.FriendlyName, keyCore, certCore, ccerts, o.PBE, o.Iterations)
+	if err != nil {
+		return nil, err
+	}
+	defer p12.Close()
 	return p12.MarshalDER()
 }
