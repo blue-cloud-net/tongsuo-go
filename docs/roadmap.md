@@ -20,8 +20,8 @@
 
 | 版本 | 主题 | 关键内容 | 破坏性 |
 |------|------|----------|--------|
-| `0.6.0` | **算法覆盖主体 + 格式容器** | SHA-512/224·256、SHA3、SHAKE、KECCAK、SHA-256/192；AES 扩展模式（OFB/CFB/OCB/SIV/WRAP/…）与 ZUC；上下文签名（ED25519ph/ctx）；`x509` 的 `-x509toreq`、OCSP HTTP 与 nonce；`jwk` 的 OKP/oct；`crl2pkcs7`；PKCS#12 PBE/iter；DES / DES-EDE / DES-EDE3 兼容入口；`sym` padding 支持矩阵与非法组合校验；签名 DER ↔ 裸 `r‖s`；RSA 摘要补 `sm3` | 部分（按名分发入口收敛） |
-| `0.7.0` | **容器协议 + PQC** | `pkcs7` 签名/验签/加密/解密族；ML-DSA-44/65/87、SLH-DSA 12 变体、KEM（`-encap`/`-decap`）；SM2DH 密钥协商；通用 KEX 适配点 | 否 |
+| `0.6.0` | **算法覆盖主体 + 格式容器** | SHA-512/224·256、SHA3、SHAKE、KECCAK、SHA-256/192；AES 扩展模式（OFB/CFB/OCB/SIV/WRAP/…）与 ZUC；`x509` 的 `-x509toreq`、OCSP HTTP 与 nonce；`jwk` 的 OKP/oct；`crl2pkcs7`；PKCS#12 PBE/iter；DES / DES-EDE / DES-EDE3 兼容入口；`sym` padding 支持矩阵与非法组合校验；签名 DER ↔ 裸 `r‖s`；RSA-OAEP 摘要补 `sm3` | 部分（按名分发入口收敛） |
+| `0.7.0` | **铜锁 8.5 兼容 + 容器协议 + PQC** | 铜锁 8.5 兼容矩阵、AES-GCM-SIV、EdDSA 上下文签名、RSA-SM3 签名；`pkcs7` 签名/验签/加密/解密族；ML-DSA-44/65/87、SLH-DSA 12 变体、KEM（`-encap`/`-decap`）；SM2DH 密钥协商；通用 KEX 适配点 | 否 |
 | `0.8.0` | **协议族与 CA 形态** | CMS 族、RFC 3161 `ts`；`ca` 工作流（形态待定，见 §4）；`storeutl` 统一加载器 | 否 |
 | `1.0.0` | **传输深度 + 公开面收敛** | 服务端 SNI 选证书、ALPN、会话复用与票据、客户端证书认证、`Options`/`Modes`、完整 `ConnectionState`、自定义证书校验回调、DH/ECDHE 曲线配置、`net.Listener` 与 HTTP 集成；§6.E 的 E2/E3 公开面收敛（破坏性，需迁移指南） | **是** |
 
@@ -42,12 +42,11 @@
 | 领域 | 内容 | 对应缺口 | 前置（§3） |
 |------|------|----------|-------------|
 | `digest` | SHA-512/224、SHA-512/256、SHA3-224/256/384/512、SHAKE128/256（需输出长度参数）、KECCAK-224/256/384/512、SHA-256/192 | §6.A 8 | 算法枚举（`EVP_sha3_*` / `EVP_shake_*` / `EVP_keccak_*`） |
-| `sym` | AES-OFB / CFB / CCM / XTS / OCB / SIV / GCM-SIV / WRAP / CBC-CTS；ZUC-128-EEA3 | §6.A 15 | AES 扩展模式（OFB / CFB 取 `EVP_aes_{128,192,256}_{ofb,cfb128}`，CFB 为全字节反馈即 CFB128）、流密码（ZUC） |
+| `sym` | AES-OFB / CFB / CCM / XTS / OCB / SIV / WRAP / CBC-CTS；ZUC-128-EEA3 | §6.A 15 | AES 扩展模式（OFB / CFB 取 `EVP_aes_{128,192,256}_{ofb,cfb128}`，CFB 为全字节反馈即 CFB128）、流密码（ZUC） |
 | `sym` | DES / DES-EDE（2 密钥）/ DES-EDE3 × ECB / CBC —— 单 DES 以 `K‖K‖K` 走 DES-EDE3 等价实现，**仅用于兼容存量数据** | —（下游需求） | `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}` |
 | `sym` | 公布 `Options.Padding` 支持矩阵：新增 `Supports` / `Paddings` 查询入口，非法组合返回 `ErrUnsupportedPadding`（AES-CBC / ECB 由「静默忽略」改为「真正生效」） | —（下游需求） | 无 |
 | `asym` | 签名 DER ↔ 裸 `r‖s`：`SignatureParts` / `SignatureDER` / `FormatSignature` | —（下游需求） | 无（纯 Go DER 编解码） |
-| `asym` | RSA 摘要补 `sm3`（PKCS#1 v1.5 / PSS / OAEP） | —（下游需求） | 无（`EVP_sm3` 已绑定） |
-| `asym` | 上下文签名：ED25519ph / ED25519ctx / ED448ph（`EVP_DigestSignInit_ex` 的 `context-string`） | — | 上下文签名 |
+| `asym` | RSA-OAEP 摘要补 `sm3` | —（下游需求） | 无（`EVP_sm3` 已绑定） |
 | `ecdh` | 曲线参数文件读写（`ecparam -param_out`） | §6.A 14 | 无（走现有 EC 参数序列化） |
 | `x509` | `-x509toreq`（证书 → CSR）、信任属性、`subject_hash`、`-attime` 链输出 | §6.A 54 / 56 | 无 |
 | `x509` | OCSP HTTP 客户端 `FetchOCSP`；OCSP 请求 / 响应 nonce | §6.A 28、§6.B B13 | OCSP nonce |
@@ -59,6 +58,11 @@
 | `pkcs/pkcs12` | PKCS#1 公钥（`-RSAPublicKey_in/out`）、`-check` / `-pubcheck` | §6.A 41 / 34 | 无 |
 | 格式 | PEM 公开切分（`SplitPEM`） | §6.B B1 | 无 |
 | 形态 | 统一加载器（覆盖 `storeutl` 的使用场景） | §6.A 52 | 无 |
+
+**版本边界**：`0.6.0` 以铜锁 8.4.0 为基线。铜锁 8.5 兼容、AES-GCM-SIV、
+EdDSA 上下文签名与 RSA-SM3 签名可运行支持归 `0.7.0`；RSA-OAEP-SM3 仍归
+`0.6.0`。铜锁 8.4.0 的 RSA provider 不支持 SM3 签名，不能将 OAEP 的支持
+等同于签名能力。
 
 **已知限制（沿用）**：铜锁 8.4 的 HKDF 实现与 `kdf` 命令行输出存在差异
 （`kdf/kdf_tongsuocli_test.go` 记录过该 known bug），本版维持既有的降级断言策略，不改期望值。
@@ -76,10 +80,13 @@
    （EDE 三步在 `K1 = K2 = K3` 时退化为单个 DES）。对外仍以 `DES-ECB` / `DES-CBC` 命名，
    文档须写明这是等价变换；单 DES 的 56-bit 密钥已可穷举，仅用于兼容既有数据。
 
-### 2.2 `0.7.0` — 容器协议与 PQC
+### 2.2 `0.7.0` — 铜锁 8.5 兼容、容器协议与 PQC
 
 | 领域 | 内容 | 对应缺口 | 前置（§3） |
 |------|------|----------|-------------|
+| 兼容性 | 铜锁 8.5 兼容实现与验证：分别使用 8.4.0 / 8.5.0 构建、运行单元测试与 CLI 对拍；master 仅作前瞻验证 | — | 独立指定各版本的头文件、链接库与 CLI |
+| `sym` | AES-GCM-SIV；评估 AES-SIV 空消息在新 provider 的支持边界 | §6.A 15 | 新版 provider、能力探测与标准向量 |
+| `asym` | ED25519ph / ED25519ctx / ED448ph 上下文签名；RSA-PKCS#1 v1.5 / PSS 的 SM3 签名可运行支持 | —（下游需求） | 上下文签名、RSA provider 的 SM3 签名支持 |
 | `pkcs/pkcs7` | 签名 / 验签 / 加密 / 解密族（`Sign` / `Verify` / `Encrypt` / `Decrypt`） | §6.A 32、§6.B B12 | PKCS#7 签名族 |
 | `asym` | ML-DSA-44 / 65 / 87；SLH-DSA 12 变体 | — | 需新增 `EVP_PKEY` 解封装路径（铜锁已启用 `signature-algorithms`） |
 | `asym` | KEM：`Encapsulate` / `Decapsulate`（`-encap` / `-decap`） | — | KEM |
@@ -136,7 +143,7 @@
 | AES 扩展模式 | `EVP_aes_*_{ofb,cfb,ccm,xts,ocb,siv,wrap,cbc-cts}` | `sym` | `0.6.0` |
 | DES | `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}`（default provider 已提供，**无需 legacy**） | `sym` | `0.6.0` |
 | ZUC | `EVP_zuc` | `sym` | `0.6.0` |
-| 上下文签名 | `EVP_DigestSignInit_ex` 的 `context-string` 选项 | `asym` 的 ED25519ph / ctx | `0.6.0` |
+| 上下文签名 | `EVP_DigestSignInit_ex` 的 `instance` / `context-string` 参数 | `asym` 的 ED25519ph / ctx / ED448ph | `0.7.0` |
 | OCSP nonce | `OCSP_REQUEST_add1_nonce` / `OCSP_check_nonce` | `x509` | `0.6.0` |
 | PKCS#12 | `X_PKCS12_create` shim 扩展（`PKCS12_create` 已接受 PBE / iter 参数） | `pkcs/pkcs12` | `0.6.0` |
 | KEM | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` | `asym` | `0.7.0` |

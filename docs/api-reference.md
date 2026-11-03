@@ -476,7 +476,8 @@
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
 | 🧭 AES-OFB / CFB（CFB128）：`EncryptAESOFB` / `DecryptAESOFB` / `EncryptAESCFB` / `DecryptAESCFB` | `0.6.0` | `EVP_aes_{128,192,256}_{ofb,cfb128}` |
-| 🧭 AES-CCM / XTS / OCB / SIV / GCM-SIV / WRAP / CBC-CTS | `0.6.0` | `EVP_aes_*_{ccm,xts,ocb,siv,…}` |
+| 🧭 AES-CCM / XTS / OCB / SIV / WRAP / CBC-CTS | `0.6.0` | `EVP_aes_*_{ccm,xts,ocb,siv,…}` |
+| 🧭 AES-GCM-SIV | `0.7.0` | 铜锁 8.5 兼容及新版 provider |
 | 🧭 DES / DES-EDE（2 密钥）/ DES-EDE3 × ECB / CBC：`EncryptDES{ECB,CBC}` / `DecryptDES{ECB,CBC}` / `EncryptDESEDE{ECB,CBC}` / `DecryptDESEDE{ECB,CBC}` / `EncryptDESEDE3{ECB,CBC}` / `DecryptDESEDE3{ECB,CBC}` / `NewDESCipher` | `0.6.0` | `EVP_des_ede3_{ecb,cbc}` / `EVP_des_ede_{ecb,cbc}` |
 | 🧭 `func Supports(name, padding string) (bool, error)` / `func Paddings(name string) ([]string, error)` / `PaddingPKCS7` / `PaddingZero` / `PaddingNone` / `ErrUnsupportedPadding` | `0.6.0` | 无 |
 | 🧭 ZUC-128-EEA3 | `0.6.0` | `EVP_zuc` |
@@ -549,7 +550,7 @@
 - ♻️ `func SignPSS(priv PrivateKey, data []byte, saltLen int, hash string) ([]byte, error)` / ♻️ `func VerifyPSS(pub PublicKey, data, sig []byte, saltLen int, hash string) error` — 原 RSA 方法
 - ♻️ `func EncryptPKCS1v15(pub PublicKey, data []byte) ([]byte, error)` / ♻️ `func DecryptPKCS1v15(priv PrivateKey, data []byte) ([]byte, error)` — 原 `crypto/rsa` 同名函数
 - ♻️ `func EncryptOAEP(pub PublicKey, data []byte, hash string) ([]byte, error)` / ♻️ `func DecryptOAEP(priv PrivateKey, data []byte, hash string) ([]byte, error)` — 原 `crypto/rsa` 同名函数；**参数由 `md *core.Digest` 改为 `hash string`（修复 E1-2）**
-- `hash` 参数的取值范围（`0.6.0` 起含 `sm3`）：`""`（默认 SHA-256）/ `"sha1"` / `"sha224"` / `"sha256"` / `"sha384"` / `"sha512"` / `"sm3"`。`sm3` 适用于 PKCS#1 v1.5、PSS 与 OAEP（OAEP 的摘要同时用作 MGF1 哈希）。
+- `hash` 参数的取值范围：`""`（默认 SHA-256）/ `"sha1"` / `"sha224"` / `"sha256"` / `"sha384"` / `"sha512"`。`0.6.0` 计划为 OAEP 增加 `"sm3"`（摘要同时用于 MGF1）；PKCS#1 v1.5 / PSS 的 SM3 签名可运行支持归 `0.7.0`，见下方规划。
 
 **函数｜SM2 类型化入口（迁移自 `crypto/sm2`）**
 
@@ -599,8 +600,9 @@
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
 | 🧭 签名 DER ↔ 裸 `r‖s`：`func SignatureParts(sig []byte) (r, s []byte, err error)` / `func SignatureDER(r, s []byte) ([]byte, error)` / `func FormatSignature(sig []byte, from, to string, width int) ([]byte, error)` | `0.6.0` | 无（纯 Go DER 编解码） |
-| 🧭 RSA 摘要补 `sm3`：`SignPKCS1v15` / `VerifyPKCS1v15` / `SignPSS` / `VerifyPSS` / `EncryptOAEP` / `DecryptOAEP` 的 `hash` 参数接受 `"sm3"` | `0.6.0` | 无（`EVP_sm3` 已绑定） |
-| 🧭 ED25519ph / ED25519ctx / ED448ph | `0.6.0` | `EVP_DigestSignInit_ex` 的 `context-string` 选项 |
+| 🧭 RSA-OAEP 摘要补 `sm3`：`EncryptOAEP` / `DecryptOAEP` 的 `hash` 参数接受 `"sm3"` | `0.6.0` | 无（`EVP_sm3` 已绑定） |
+| 🧭 RSA-SM3 签名：`SignPKCS1v15` / `VerifyPKCS1v15` / `SignPSS` / `VerifyPSS` 的 SM3 签名可运行支持 | `0.7.0` | 铜锁 8.5 兼容及 RSA provider 的 SM3 签名支持；8.4.0 不支持 |
+| 🧭 ED25519ph / ED25519ctx / ED448ph | `0.7.0` | 铜锁 8.5 兼容；`EVP_DigestSignInit_ex` 的 `instance` / `context-string` 参数 |
 | 🧭 ML-DSA-44 / 65 / 87 | `0.7.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
 | 🧭 SLH-DSA 12 变体 | `0.7.0` | 同上 |
 | 🧭 `func Encapsulate` / `func Decapsulate`（KEM） | `0.7.0` | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
