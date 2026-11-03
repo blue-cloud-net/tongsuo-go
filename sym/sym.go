@@ -97,6 +97,27 @@ var algos = []algo{
 	{"SM4-XTS", SM4XTSKeySize, "XTS"},
 	{"ChaCha20", ChaCha20KeySize, "STREAM"},
 	{"ChaCha20-Poly1305", ChaCha20KeySize, "POLY1305"},
+	{"AES-128-CCM", 16, "CCM"},
+	{"AES-128-OCB", 16, "OCB"},
+	{"AES-128-SIV", 32, "SIV"},
+	{"AES-128-WRAP", 16, "WRAP"},
+	{"AES-128-WRAP-PAD", 16, "WRAP-PAD"},
+	{"AES-128-CBC-CTS", 16, "CBC-CTS"},
+	{"AES-128-XTS", 32, "XTS"},
+	{"AES-192-CCM", 24, "CCM"},
+	{"AES-192-OCB", 24, "OCB"},
+	{"AES-192-SIV", 48, "SIV"},
+	{"AES-192-WRAP", 24, "WRAP"},
+	{"AES-192-WRAP-PAD", 24, "WRAP-PAD"},
+	{"AES-192-CBC-CTS", 24, "CBC-CTS"},
+	{"AES-256-CCM", 32, "CCM"},
+	{"AES-256-OCB", 32, "OCB"},
+	{"AES-256-SIV", 64, "SIV"},
+	{"AES-256-WRAP", 32, "WRAP"},
+	{"AES-256-WRAP-PAD", 32, "WRAP-PAD"},
+	{"AES-256-CBC-CTS", 32, "CBC-CTS"},
+	{"AES-256-XTS", 64, "XTS"},
+	{"ZUC-128-EEA3", 16, "STREAM"},
 }
 
 // lookup 按算法名查找注册项；名称大小写不敏感。
@@ -134,10 +155,12 @@ func NewCipher(name string, key []byte) (cipher.Block, error) {
 	if err != nil {
 		return nil, err
 	}
+	name = a.name
+
 	switch mode {
-	case "GCM", "CCM", "POLY1305":
+	case "GCM", "CCM", "POLY1305", "OCB", "SIV":
 		return nil, fmt.Errorf("sym: %q: %w: cipher.Block is not applicable to AEAD modes", name, ErrUnsupported)
-	case "XTS", "STREAM":
+	case "XTS", "STREAM", "WRAP", "WRAP-PAD", "CBC-CTS":
 		return nil, fmt.Errorf("sym: %q: %w: cipher.Block is not applicable to mode %s", name, ErrUnsupported, mode)
 	}
 	if a.size > 0 && len(key) != a.size {
@@ -168,6 +191,8 @@ func NewGCM(name string, key []byte) (cipher.AEAD, error) {
 	if err != nil {
 		return nil, err
 	}
+	name = a.name
+
 	if mode != "GCM" {
 		return nil, fmt.Errorf("sym: %q: %w: cipher.AEAD is GCM only", name, ErrUnsupported)
 	}
@@ -186,10 +211,12 @@ func NewGCM(name string, key []byte) (cipher.AEAD, error) {
 // NewAEAD 按算法名返回 AEAD 实现（cipher.AEAD）。
 // 支持 GCM（AES-128/192/256、SM4）、CCM（SM4）与 ChaCha20-Poly1305。
 // 未知算法名返回 ErrUnknownAlgorithm；非 AEAD 模式返回 ErrUnsupported。
+// 0.6.0 另支持 AES-CCM/OCB/SIV；SIV 为双密钥、默认 nonce 长度为 0，拒绝空消息。
 //
 // NewAEAD returns a cipher.AEAD by algorithm-mode name. It supports GCM
 // (AES-128/192/256, SM4), CCM (SM4) and ChaCha20-Poly1305. Unknown names
 // return ErrUnknownAlgorithm; non-AEAD modes return ErrUnsupported.
+// Version 0.6.0 also supports AES-CCM/OCB/SIV; SIV uses doubled keys and a zero default nonce size, rejecting empty messages.
 func NewAEAD(name string, key []byte) (cipher.AEAD, error) {
 	a, mode, err := lookup(name)
 	if err != nil {
@@ -202,7 +229,12 @@ func NewAEAD(name string, key []byte) (cipher.AEAD, error) {
 	case "GCM":
 		return NewGCM(name, key)
 	case "CCM":
+		if strings.HasPrefix(a.name, "AES-") {
+			return newExtendedAEAD(a, key)
+		}
 		return NewSM4CCM(key)
+	case "OCB", "SIV":
+		return newExtendedAEAD(a, key)
 	case "POLY1305":
 		return NewChaCha20Poly1305(key)
 	}
@@ -216,12 +248,17 @@ func NewAEAD(name string, key []byte) (cipher.AEAD, error) {
 //
 // Encrypt encrypts in one shot by algorithm-mode name.
 func Encrypt(name string, key, iv, data []byte, opts *Options) ([]byte, error) {
-	_, mode, err := lookup(name)
+	a, mode, err := lookup(name)
 	if err != nil {
 		return nil, err
 	}
+	name = a.name
+	if len(key) != a.size {
+		return nil, fmt.Errorf("sym: %s: %w", name, ErrInvalidKeyLength)
+	}
+
 	switch mode {
-	case "GCM", "CCM", "POLY1305":
+	case "GCM", "CCM", "POLY1305", "OCB", "SIV":
 		return nil, fmt.Errorf("sym: %q: %w: use EncryptAEAD", name, ErrUnsupported)
 	}
 	pad := ""
@@ -231,6 +268,10 @@ func Encrypt(name string, key, iv, data []byte, opts *Options) ([]byte, error) {
 	pad, err = checkPadding(name, mode, pad)
 	if err != nil {
 		return nil, err
+	}
+
+	if extendedCipher(a) {
+		return cryptExtended(a, key, iv, data, true)
 	}
 
 	switch strings.ToUpper(name) {
@@ -279,12 +320,17 @@ func Encrypt(name string, key, iv, data []byte, opts *Options) ([]byte, error) {
 //
 // Decrypt decrypts in one shot by algorithm-mode name.
 func Decrypt(name string, key, iv, data []byte, opts *Options) ([]byte, error) {
-	_, mode, err := lookup(name)
+	a, mode, err := lookup(name)
 	if err != nil {
 		return nil, err
 	}
+	name = a.name
+	if len(key) != a.size {
+		return nil, fmt.Errorf("sym: %s: %w", name, ErrInvalidKeyLength)
+	}
+
 	switch mode {
-	case "GCM", "CCM", "POLY1305":
+	case "GCM", "CCM", "POLY1305", "OCB", "SIV":
 		return nil, fmt.Errorf("sym: %q: %w: use DecryptAEAD", name, ErrUnsupported)
 	}
 	pad := ""
@@ -295,6 +341,10 @@ func Decrypt(name string, key, iv, data []byte, opts *Options) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if extendedCipher(a) {
+		return cryptExtended(a, key, iv, data, false)
+	}
+
 	switch strings.ToUpper(name) {
 	case "AES-128-CBC", "AES-192-CBC", "AES-256-CBC":
 		return aesCryptWithPad(key, iv, data, false, "cbc", pad)
@@ -443,10 +493,15 @@ func sm4CryptWithPad(key, iv, data []byte, enc bool, mode, pad string) ([]byte, 
 //
 // EncryptGCM encrypts in one shot with GCM by algorithm-mode name.
 func EncryptGCM(name string, key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, err error) {
-	_, mode, err := lookup(name)
+	a, mode, err := lookup(name)
 	if err != nil {
 		return nil, nil, err
 	}
+	name = a.name
+	if len(key) != a.size {
+		return nil, nil, fmt.Errorf("sym: %s: %w", name, ErrInvalidKeyLength)
+	}
+
 	if mode != "GCM" {
 		return nil, nil, fmt.Errorf("sym: %q: %w: EncryptGCM is for GCM only", name, ErrUnsupported)
 	}
@@ -464,6 +519,7 @@ func EncryptGCM(name string, key, nonce, plaintext, aad []byte) (ciphertext, tag
 // nonce 长度：GCM 为 12（也允许其它非空长度），CCM 为 7..13，
 // ChaCha20-Poly1305 固定 12；tag 长度固定为 TagSize（16）。
 // 未知算法名返回 ErrUnknownAlgorithm；非 AEAD 模式返回 ErrUnsupported。
+// 0.6.0 另支持 AES-CCM/OCB/SIV；SIV 空消息返回 ErrUnsupported，非空 nonce 作为最后一个 AAD 分量。
 //
 // 安全：nonce 必须在每个 (key, message) 对中唯一；复用会同时破坏
 // 机密性与真实性。
@@ -474,6 +530,7 @@ func EncryptGCM(name string, key, nonce, plaintext, aad []byte) (ciphertext, tag
 // non-empty lengths are tolerated), 7 to 13 for CCM, and exactly 12 for
 // ChaCha20-Poly1305; the tag is always TagSize (16) bytes. Unknown names
 // return ErrUnknownAlgorithm; non-AEAD modes return ErrUnsupported.
+// Version 0.6.0 also supports AES-CCM/OCB/SIV; empty SIV messages return ErrUnsupported and a nonempty SIV nonce is the last AAD component.
 //
 // Security: the nonce MUST be unique per (key, message) pair; reuse
 // breaks both confidentiality and authenticity.
@@ -489,7 +546,12 @@ func EncryptAEAD(name string, key, nonce, plaintext, aad []byte) (ciphertext, ta
 	case "GCM":
 		return EncryptGCM(name, key, nonce, plaintext, aad)
 	case "CCM":
+		if strings.HasPrefix(a.name, "AES-") {
+			return encryptExtendedAEAD(a, key, nonce, plaintext, aad)
+		}
 		return EncryptSM4CCM(key, nonce, plaintext, aad)
+	case "OCB", "SIV":
+		return encryptExtendedAEAD(a, key, nonce, plaintext, aad)
 	case "POLY1305":
 		return EncryptChaCha20Poly1305(key, nonce, plaintext, aad)
 	}
@@ -499,11 +561,13 @@ func EncryptAEAD(name string, key, nonce, plaintext, aad []byte) (ciphertext, ta
 // DecryptAEAD 按算法名 AEAD 解密。tag 或 aad 不匹配时返回错误；
 // 调用方须将任意非 nil 错误视为认证失败并丢弃返回的明文。
 // 支持的算法与参数要求同 EncryptAEAD。
+// 0.6.0 另支持 AES-CCM/OCB/SIV；SIV 空消息返回 ErrUnsupported，非空 nonce 作为最后一个 AAD 分量。
 //
 // DecryptAEAD verifies and decrypts with the named AEAD algorithm. A tag
 // or AAD mismatch yields an error; callers MUST treat any non-nil error
 // as an authentication failure and discard the returned plaintext. The
 // supported algorithms and parameter rules match EncryptAEAD.
+// Version 0.6.0 also supports AES-CCM/OCB/SIV; empty SIV messages return ErrUnsupported and a nonempty SIV nonce is the last AAD component.
 func DecryptAEAD(name string, key, nonce, ciphertext, tag, aad []byte) ([]byte, error) {
 	a, mode, err := lookup(name)
 	if err != nil {
@@ -516,7 +580,12 @@ func DecryptAEAD(name string, key, nonce, ciphertext, tag, aad []byte) ([]byte, 
 	case "GCM":
 		return DecryptGCM(name, key, nonce, ciphertext, tag, aad)
 	case "CCM":
+		if strings.HasPrefix(a.name, "AES-") {
+			return decryptExtendedAEAD(a, key, nonce, ciphertext, tag, aad)
+		}
 		return DecryptSM4CCM(key, nonce, ciphertext, tag, aad)
+	case "OCB", "SIV":
+		return decryptExtendedAEAD(a, key, nonce, ciphertext, tag, aad)
 	case "POLY1305":
 		return DecryptChaCha20Poly1305(key, nonce, ciphertext, tag, aad)
 	}
@@ -525,10 +594,15 @@ func DecryptAEAD(name string, key, nonce, ciphertext, tag, aad []byte) ([]byte, 
 
 // DecryptGCM 按算法名 GCM 解密。tag 校验失败时返回错误。
 func DecryptGCM(name string, key, nonce, ciphertext, tag, aad []byte) ([]byte, error) {
-	_, mode, err := lookup(name)
+	a, mode, err := lookup(name)
 	if err != nil {
 		return nil, err
 	}
+	name = a.name
+	if len(key) != a.size {
+		return nil, fmt.Errorf("sym: %s: %w", name, ErrInvalidKeyLength)
+	}
+
 	if mode != "GCM" {
 		return nil, fmt.Errorf("sym: %q: %w: DecryptGCM is for GCM only", name, ErrUnsupported)
 	}
@@ -559,6 +633,14 @@ func Available(name string) bool {
 	a, _, err := lookup(name)
 	if err != nil {
 		return false
+	}
+	if extendedCipher(a) || a.mode == "CCM" || a.mode == "OCB" || a.mode == "SIV" {
+		c := core.FetchCipher(a.name)
+		if c == nil {
+			return false
+		}
+		defer c.Close()
+		return true
 	}
 	switch a.name {
 	case "SM4-XTS":

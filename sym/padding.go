@@ -132,7 +132,7 @@ func paddingsForMode(mode string) []string {
 	switch mode {
 	case "ECB", "CBC":
 		return []string{PaddingPKCS7, PaddingZero, PaddingNone}
-	case "CTR", "OFB", "CFB", "XTS", "STREAM":
+	case "CTR", "OFB", "CFB", "XTS", "STREAM", "WRAP", "WRAP-PAD", "CBC-CTS":
 		return []string{PaddingNone}
 	}
 	return nil
