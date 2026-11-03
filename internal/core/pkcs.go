@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"runtime"
 	"unsafe"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
@@ -451,4 +452,34 @@ func (p *PKCS7) Close() error {
 		return nil
 	}
 	return p.handle.Close()
+}
+
+// CreatePKCS12WithOptions 使用指定 PBE 与迭代次数创建容器，调用方负责 Close。
+//
+// CreatePKCS12WithOptions creates a container with explicit PBE and iterations; callers must Close it.
+func CreatePKCS12WithOptions(pass, name string, key *PKey, cert *Certificate, ca []*Certificate, pbe string, iter int) (*PKCS12, error) {
+	defer runtime.KeepAlive(key)
+	defer runtime.KeepAlive(cert)
+	defer runtime.KeepAlive(ca)
+	if key == nil || key.handle == nil || key.handle.IsClosed() {
+		return nil, fmt.Errorf("pkcs12: invalid private key")
+	}
+	if cert == nil || cert.handle == nil || cert.handle.IsClosed() {
+		return nil, fmt.Errorf("pkcs12: invalid certificate")
+	}
+	caPtrs := make([]unsafe.Pointer, 0, len(ca))
+	for _, c := range ca {
+		if c != nil && c.handle != nil && !c.handle.IsClosed() {
+			caPtrs = append(caPtrs, c.handle.Ptr())
+		}
+	}
+	nid := native.OBJ_txt2nid(pbe)
+	if nid <= 0 || iter <= 0 {
+		return nil, fmt.Errorf("pkcs12: invalid PBE or iterations")
+	}
+	p := native.X_PKCS12_create_options(pass, name, key.handle.Ptr(), cert.handle.Ptr(), caPtrs, nid, iter)
+	if p == nil {
+		return nil, NewOpError("pkcs12: PKCS12_create", native.PopError())
+	}
+	return &PKCS12{handle: NewHandle(p, true, native.PKCS12_free)}, nil
 }

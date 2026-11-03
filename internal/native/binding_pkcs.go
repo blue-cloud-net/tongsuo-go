@@ -219,3 +219,32 @@ func D2i_PKCS7(der []byte) unsafe.Pointer {
 	p := (*C.uchar)(buf)
 	return unsafe.Pointer(C.d2i_PKCS7(nil, &p, C.long(len(der))))
 }
+
+// X_PKCS12_create_options 使用显式 PBE 与迭代次数打包。
+//
+// X_PKCS12_create_options packs with explicit PBE and iteration settings.
+func X_PKCS12_create_options(pass, name string, pkey, cert unsafe.Pointer, ca []unsafe.Pointer, pbe, iter int) unsafe.Pointer {
+	cPass := C.CString(pass)
+	defer C.free(unsafe.Pointer(cPass))
+	var cName *C.char
+	if name != "" {
+		cName = C.CString(name)
+		defer C.free(unsafe.Pointer(cName))
+	}
+	var caPtr unsafe.Pointer
+	if len(ca) > 0 {
+		size := C.size_t(len(ca)) * C.size_t(unsafe.Sizeof((*C.X509)(nil)))
+		buf := C.malloc(size)
+		if buf == nil {
+			return nil
+		}
+		defer C.free(buf)
+		arr := (*[1 << 28]*C.X509)(buf)
+		for i, x := range ca {
+			arr[i] = (*C.X509)(x)
+		}
+		caPtr = buf
+	}
+	return unsafe.Pointer(C.X_PKCS12_create_options(cPass, cName, (*C.EVP_PKEY)(pkey),
+		(*C.X509)(cert), (*unsafe.Pointer)(caPtr), C.int(len(ca)), C.int(pbe), C.int(iter)))
+}
