@@ -5,7 +5,7 @@
 >
 > **基线**：`0.7.0` 已实现、待发布，以铜锁 8.4.0 验证；§2.1 保留本版范围与验收结果，
 > §2.2 起为后续规划。当前实现及迁移见 [公开 API 清单](api-reference.md) 与
-> [CHANGELOG](../CHANGELOG.md#070---tbd)；未发布状态以 TBD 表示，不等同已发 tag。
+> [CHANGELOG](../CHANGELOG.md#070---2026-11-04)；发布状态以版本标签为准。
 >
 > **相关文档**：功能需求的复核与验收边界见
 > [功能需求复核记录](requirements.md)；CLI 与官方 SDK 的缺口编号分别见
@@ -116,7 +116,7 @@ RSA 的签名格式符合 [RFC 8017 §8](https://www.rfc-editor.org/rfc/rfc8017.
 | 6 | PKCS#7 加解密、示例及全量回归 | 多接收者、CLI 双向互通、build/vet/test/race 与 Linux static 通过 |
 
 六批能力已实现，双语 GoDoc、API/架构/测试文档与示例已同步；双语 CHANGELOG 维护
-`0.7.0 - TBD`。8.4.0 的 build/vet、默认/CLI/race 全量测试与 Linux static 标签构建
+`0.7.0 - 2026-11-04`。8.4.0 的 build/vet、默认/CLI/race 全量测试与 Linux static 标签构建
 通过；六个独立示例模块已检查。复杂 P12 原生成功/失败路径通过 ASan/LSan 检查。
 
 ### 2.2 `0.8.0` — 铜锁 8.5 兼容与经典算法扩展
