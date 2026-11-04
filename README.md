@@ -78,8 +78,19 @@ itself, and the Tongsuo installation is a build prerequisite (see [Requirements]
 
 The following releases are planned capabilities, not currently available features:
 
-- `0.8.0` / `0.9.0`: Tongsuo 8.5 compatibility and classical algorithm extensions / PQC
-- `0.10.0` / `0.11.0` / `1.0.0`: CMS and RFC 3161 timestamps / TLS capabilities / public API convergence and stability
+- `0.8.0`: Tongsuo 8.5 compatibility and classical algorithm extensions
+- `0.9.0`: TLS / NTLS handshakes and authentication, mixed-protocol listeners, SNI, ALPN, verification policies, connection state and client/server examples
+- `0.10.0`: RFC 8998 ShangMi TLS 1.3, structured handshake diagnostics, optional detailed trace and keylog
+- `0.11.0`: Session resumption, caches, import/export, ticket controls and key rotation
+- `0.12.0`: HTTP/1.1 client/server integration and OCSP stapling
+- `0.13.0` / `0.14.0`: PQC / CMS and RFC 3161 timestamps
+- `1.0.0`: Public API convergence and stability
+
+The transport releases deliver SDK APIs and runnable examples for downstream handshake tests similar to `s_client` / `s_server`.
+RFC 8998 uses a single signing credential set over TLS 1.3; NTLS uses signing and encryption certificates.
+Existing SDK entry-point behavior is preserved; explicit policies will support no verification, reporting verification failures while continuing, and aborting on verification failure. Handshake examples default to reporting failures while continuing and expose the verification result separately.
+
+STARTTLS, external PSK, 0-RTT and active renegotiation remain deferred without a target version.
 
 See [docs/requirements.md](docs/requirements.md) for functional requirements, technical decisions and acceptance criteria.
 

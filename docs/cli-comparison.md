@@ -4,8 +4,9 @@
 > PKCS#8/12 配置、PKCS#7 CRL、JWK OKP/oct、本地多对象加载、OCSP HTTP/nonce 与
 > 证书信任属性已在 8.4.0 基线上实现，当前逐符号事实见 [api-reference.md](api-reference.md)。
 > 铜锁 8.5 兼容、GCM-SIV、EdDSA 上下文签名与 RSA-SM3 签名可运行支持归 `0.8.0`。
-> 后续按“0.7 可靠性与 PKCS 容器 → 0.8 兼容/经典算法 → 0.9 PQC →
-> 0.10 CMS/时间戳 → 0.11 TLS → 1.0 公开面稳定”交付；功能需求逐条结论见
+> 后续按“0.7 可靠性与 PKCS 容器 → 0.8 兼容/经典算法 → 0.9 TLS/NTLS 握手与认证 →
+> 0.10 RFC 8998/诊断 → 0.11 会话/票据 → 0.12 HTTP/1.1/stapling → 0.13 PQC →
+> 0.14 CMS/时间戳 → 1.0 公开面稳定”交付；功能需求逐条结论见
 > [requirements.md](requirements.md)。以下采集基线不代表未来能力已实现。
 
 > 本文件回答：**与铜锁自带的命令行（`tongsuo`，即铜锁发行版中的 `openssl` 程序）相比，本仓库还有哪些能力没有覆盖？**
@@ -15,12 +16,18 @@
 > 报告**不写代码改动、不给新 API 签名**；所有「本库现状」结论均可在源码中校验。
 >
 > **包名口径**：本文件的「本库现状」列使用**重构前**包名（`crypto/*` / `key` / `ocsp`）——那是采集时的真实状态。重构后的 16 包名与逐符号签名见 [api-reference.md](api-reference.md)，迁移对照见 [api-reference.md](api-reference.md) §0.1。
-> 公开面收敛（§6.E 的 12 项内部类型泄露 E1）已在 `0.3.0` 全部落实；剩余的 E2 / E3 见 [roadmap.md](roadmap.md) §2.6。
+> 公开面收敛（§6.E 的 12 项内部类型泄露 E1）已在 `0.3.0` 全部落实；剩余的 E2 / E3 见 [roadmap.md](roadmap.md) §2.9。
 
 > **0.7.0 实施更新**：可靠性与 PKCS 容器已落地，包括复杂 P12 两入口无损改密、
 > PKCS#7 Sign/Verify/Encrypt/Decrypt、完整序列号/CRL、DER 扩展、信任路径和压缩 SM2
 > 输入。签验/信封对拍使用 smime；下文历史 pkcs7 -sign/-encrypt 写法不是实际 CLI
-> 选项。当前接口与算法边界见公开 API 清单，CMS 仍归 0.10.0。
+> 选项。当前接口与算法边界见公开 API 清单，CMS 归 `0.14.0`。
+
+> **传输排期（规划）**：交付 SDK API + 可运行客户端/服务端示例，供下游自行构建
+> `s_client` / `s_server` 式测试，不新增正式 CLI。TLS/NTLS 混合端口、SNI/ALPN、
+> 三种显式验证策略归 `0.9.0`；RFC 8998 单套签名凭证区别于 NTLS 双证书，严格模式、
+> 结构化事件、trace/keylog 归 `0.10.0`。会话与 HTTP/stapling 分别归 `0.11.0`、
+> `0.12.0`；套件可枚举不代表已完成 RFC 8998 验收，以下历史采集表保持原口径。
 
 ---
 
@@ -545,11 +552,15 @@
 | 可靠性与数据完整性（见 [需求台账](requirements.md)） | `0.7.0` |
 | Phase 4 的 PKCS#7 签名/验签/加密/解密（8.4 原生范围，默认验信任） | `0.7.0` |
 | 铜锁 8.5 兼容、经典算法扩展与 Phase 3 的 SM2DH / 通用 KEX | `0.8.0` |
-| Phase 3 的 PQC / KEM | `0.9.0` |
-| Phase 4 的 CMS / ts | `0.10.0` |
-| Phase 5 的 TLS 能力完善 | `0.11.0` |
+| Phase 5 的 TLS / NTLS 握手与认证、混合端口、配置与状态 | `0.9.0` |
+| §6.D D11 / D12 的 RFC 8998 严格配置与 Phase 5 的完整握手诊断 | `0.10.0` |
+| Phase 5 的会话复用、票据与 `sess_id` | `0.11.0` |
+| Phase 5 的 HTTP/1.1 与 OCSP stapling | `0.12.0` |
+| Phase 3 的 PQC / KEM | `0.13.0` |
+| Phase 4 的 CMS / ts | `0.14.0` |
 | §6.E 的 E2/E3 公开面收敛及 CRL 配置式签发 | `1.0.0` |
 | 数据库化、文件系统绑定的 CA 工作流 | 暂缓，不承诺版本 |
+| STARTTLS、外部 PSK、0-RTT、主动重协商 | 暂缓，不承诺版本 |
 
 ---
 

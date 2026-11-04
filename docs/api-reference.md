@@ -653,9 +653,9 @@
 | 🆕 RSA 签名格式说明与双向互验 | `0.7.0` | 保持模数长度字节串，不能改成 SM2/ECDSA DER |
 | 🧭 现有 PKCS#1 v1.5 / PSS 的 SM3 签名可运行支持 | `0.8.0` | `SupportsRSASignatureDigest` 已在 `0.6.0` 实现；验证固定版本 RSA provider |
 | 🧭 ED25519ph / ED25519ctx / ED448ph | `0.8.0` | 铜锁 8.5 兼容；`instance` / `context-string` 参数 |
-| 🧭 ML-DSA-44 / 65 / 87 | `0.9.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
-| 🧭 SLH-DSA 12 变体 | `0.9.0` | 同上 |
-| 🧭 `func Encapsulate` / `func Decapsulate`（KEM） | `0.9.0` | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
+| 🧭 ML-DSA-44 / 65 / 87 | `0.13.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
+| 🧭 SLH-DSA 12 变体 | `0.13.0` | 同上 |
+| 🧭 `func Encapsulate` / `func Decapsulate`（KEM） | `0.13.0` | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
 
 > 明确不做：DSA、DH、EC-ElGamal、Paillier（见 `docs/cli-comparison.md` §9）。
 
@@ -1121,20 +1121,34 @@
     底层 `net.ErrClosed`
   - 🆕 `func (l *Listener) Addr() net.Addr` — 委托底层监听器（`Close` 后仍可用）
 
-**规划中（传输深度归 `0.11.0`，公开面收敛归 `1.0.0`）**
+**规划中（传输能力分四版交付，公开面收敛归 `1.0.0`）**
 
-> 前置：均需在 `internal/native` 新增绑定（见 [roadmap.md](roadmap.md) §3）。
+> 下列均未实现；涉及原生能力的条目需在 `internal/native` 新增/扩展绑定，经 core
+> 管理生命周期（见 [roadmap.md](roadmap.md) §3）。交付 SDK API + 可运行客户端/服务端
+> 示例，下游自行集成握手测试，不新增正式 CLI 产品；候选 API 名称不代表签名已冻结。
 
-| 符号 | 说明 | 版本 | 前置（需新增 `internal/native` 绑定） |
+| 符号 / 能力 | 说明 | 版本 | 实施前置 |
 |---|---|---|---|
-| 🧭 `Config.NextProtos []string` | ALPN（对应 `-alpn`） | `0.11.0` | `SSL_CTX_set_alpn_protos` / `SSL_get0_alpn_selected` |
+| 🧭 显式协议模式与完整凭证链 | TLS、NTLS、服务端同端口混合接入；TLS 单套凭证及 NTLS 签名/加密双证书链；旧 `NTLS` 字段兼容 | `0.9.0` | 原生混合模式、证书链及配置校验 |
+| 🧭 已连接 TCP 的客户端包装入口 | 下游独立控制拨号与 `HandshakeContext`；保留现有服务端与 Listener 握手语义 | `0.9.0` | core SSL 构造与句柄所有权 |
+| 🧭 `Config.NextProtos []string` | ALPN（对应 `-alpn`）与协商结果 | `0.9.0` | 客户端协议配置、服务端选择回调与状态读取 |
+| 🧭 `Config.ClientAuth` + `Config.ClientCAs` | 请求/要求客户端证书与验证失败处理分别表达，NTLS 套件凭证要求仍生效 | `0.9.0` | 客户端 CA、原生验证模式与回调 |
+| 🧭 `Config.GetCertificate` / `GetConfigForClient` | 服务端 SNI 多证书；NTLS 切换完整双证书身份 | `0.9.0` | SNI 回调与配置生命周期 |
+| 🧭 显式验证策略、`Config.VerifyPeerCertificate` / `VerifyConnection` | 不验证、记录失败后继续、验证失败终止；保留旧入口实际行为，自定义回调错误始终终止 | `0.9.0` | 验证回调、失败记录与结果状态 |
+| 🧭 `Options` / `Modes`、`ConnectionState`、`VerifyHostname` / `UnderlyingConn`、错误码常量 | 配置与连接状态；SNI/验证名称分别配置，未验证/通过/失败与握手完成分别表达 | `0.9.0` | 配置/状态绑定与原生错误采集 |
+| 🧭 `Config.DHParameters`、组/曲线与签名算法、`HostnameOptions` | 严格参数配置、邮箱/主机名 flags 与 IP 校验；不新增独立 DH 算法 | `0.9.0` | 参数加载、组/签名算法和名称校验绑定 |
+| 🧭 RFC 8998 严格配置 | TLS 1.3 单套签名凭证，两个 SM4 套件、curveSM2、sm2sig_sm3 与证书约束，区别于 NTLS 双证书 | `0.10.0` | 原生严格模式及配置/状态验证 |
+| 🧭 结构化握手诊断 | 状态、消息、Alert 与证书验证事件；失败握手仍保留已发生的信息 | `0.10.0` | 消息/状态/验证回调及数据复制 |
+| 🧭 详细 trace / keylog | 可选输出、默认关闭；TLS / NTLS / RFC 8998 分别验收，缺少原生能力明确报错 | `0.10.0` | `SSL_trace`、keylog 回调与输出错误传播 |
 | 🧭 会话复用 / 票据 | `Config.SessionCache`、`Conn.SessionState()` | `0.11.0` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
-| 🧭 `Config.ClientAuth` + `Config.ClientCAs` | 客户端证书认证（服务端） | `0.11.0` | `SSL_CTX_set_client_CA_list` / `SSL_CTX_set_verify` 回调 |
-| 🧭 `Config.GetCertificate func(*ClientHelloInfo)` / `GetConfigForClient` | 服务端 SNI 多证书（对应 `-sign_cert2` / `-enc_cert2`） | `0.11.0` | SNI 回调与配置生命周期 |
-| 🧭 `Config.VerifyPeerCertificate` / `VerifyConnection` | 自定义证书校验回调 | `0.11.0` | 验证回调绑定 |
-| 🧭 `Options` / `Modes`、完整 `ConnectionState`、`VerifyHostname` / `UnderlyingConn`、错误码常量 | 配置与连接状态 | `0.11.0` | 配置/状态绑定 |
-| 🧭 `Config.DHParameters` / `Config.ECDHCurve`、`HostnameOptions` | 握手参数与主机名校验 flags | `0.11.0` | 参数加载和校验绑定 |
-| 🧭 `ListenAndServeTLS` / `ServeTLS`、OCSP stapling、keylog、HTTP 集成 | 复用现有 `NewListener` | `0.11.0` | TLS 绑定与标准库集成 |
+| 🧭 会话导入导出、票据控制与密钥轮换 | 处理 TLS 1.3 握手后票据；缓存按协议、服务/客户端身份和验证配置隔离 | `0.11.0` | 新会话回调、序列化、票据与实际复用状态 |
+| 🧭 `ListenAndServeTLS` / `ServeTLS`、HTTP/1.1 客户端/服务端集成 | 复用现有 `NewListener`；不承诺 HTTP/2 集成 | `0.12.0` | 标准库 HTTP 集成 |
+| 🧭 OCSP stapling | 配置、请求与读取 staple；提供响应有效性与证书状态验证示例 | `0.12.0` | status 回调与 OCSP 响应绑定 |
+
+示例默认“验证并记录失败后继续”，另提供严格验证与完全不验证选项；连接成功不能
+代替证书可信。RFC 8998 的版本、套件、组、签名、证书及 SM2 ID 验收条件见
+[路线图 §2.4](roadmap.md#24-0100--rfc-8998-与完整握手诊断规划)。
+STARTTLS、外部 PSK、0-RTT、主动重协商继续暂缓，不归入以上四版。
 
 **破坏性变更**
 
@@ -1243,7 +1257,7 @@ _（本包已无待实现项）_
 | 🆕 `Decrypt(data []byte, opts *DecryptOptions) ([]byte, error)` | `0.7.0` | RecipientCert/RecipientKey，失败无输出 |
 | 🆕 `SignOptions` / `VerifyOptions` / `EncryptOptions` / `DecryptOptions` | `0.7.0` | 证书用 x509.Certificate，私钥用 asym.PrivateKey，Roots 用 x509.Store；不暴露 internal 类型 |
 | 🆕 `SignedData` 与幂等 `Close() error` | `0.7.0` | Content、Signers、TrustVerified；返回证书资源归结果持有者释放 |
-| 🧭 CMS 族（`cms` 命令） | `0.10.0` | 新增 `CMS_*` 绑定 |
+| 🧭 CMS 族（`cms` 命令） | `0.14.0` | 新增 `CMS_*` 绑定 |
 
 `0.7.0` 覆盖附带/分离签名和多接收者 EnvelopedData。Verify 默认要求显式 Roots，
 验证全部签名者及其信任；SignatureOnly=true 时仍验签，结果 TrustVerified=false。
@@ -1251,9 +1265,9 @@ SignedData.Signers 为签名者证书；验证失败不返回内容，Close 幂�
 Verify/Decrypt 接受 DER/PKCS7 PEM，二进制输入不做换行转换；分离内容缺失与空内容
 必须可区分。8.4.0 必须支持 RSA/ECDSA 签名与 RSA 接收者加密，SM2 和其他不支持的
 组合明确报错；非认证加密不承诺检测全部篡改。CLI 双向互通使用 smime -sign/-verify
-和 -encrypt/-decrypt；CMS 扩展归 `0.10.0`，不混同为同一格式。
+和 -encrypt/-decrypt；CMS 扩展归 `0.14.0`，不混同为同一格式。
 
-**规划中｜新顶级包 `ts`（`0.10.0`，尚不存在）**
+**规划中｜新顶级包 `ts`（`0.14.0`，尚不存在）**
 
 - 🧭 RFC 3161 时间戳请求/响应与 HTTP 传输；需新增 `TS_*` 绑定并复用 CMS 基础设施。
 - 实施时同步包索引、依赖图与逐符号 API；当前公开包数仍为 16。
