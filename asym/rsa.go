@@ -114,11 +114,13 @@ func digestForRSAHash(hash string) (*core.Digest, error) {
 }
 
 // SignPKCS1v15 使用 RSA-PKCS#1 v1.5（RFC 8017）对 data 签名，摘要由 digest 指定。
+// 返回模数字节长度的签名字节串，不是 SM2/ECDSA 的 r/s DER；验签须使用相同摘要。
 // digest 取 "sha1" / "sha224" / "sha256" / "sha384" / "sha512"，空串默认 SHA-256。
 // sm3 签名摘要依赖 provider；不可用时返回 ErrUnsupported，可用 SupportsRSASignatureDigest 预检。
 //
 // SignPKCS1v15 signs data with RSA-PKCS#1 v1.5 (RFC 8017) using the
-// digest selected by digest.
+// digest selected by digest. The signature is a modulus-length octet string,
+// not SM2/ECDSA r/s DER; use the same digest for verification.
 // The sm3 signature digest depends on the provider; unavailable support returns ErrUnsupported. Probe with SupportsRSASignatureDigest.
 func SignPKCS1v15(priv PrivateKey, data []byte, digest string) ([]byte, error) {
 	md, err := digestForRSAHash(digest)
@@ -159,10 +161,12 @@ func VerifyPKCS1v15(pub PublicKey, data, sig []byte, digest string) error {
 }
 
 // SignPSS 使用 RSA-PSS 签名。saltLen 取 PSS* 常量或正整数；digest 取值同 SignPKCS1v15。
+// 返回模数字节长度的签名字节串，不是 SM2/ECDSA 的 r/s DER；摘要/MGF1/salt 须与验签一致。
 // sm3 签名摘要依赖 provider；不可用时返回 ErrUnsupported，可用 SupportsRSASignatureDigest 预检。
 //
 // SignPSS signs data with RSA-PSS (RFC 8017). saltLen accepts the PSS*
-// sentinels or a positive byte count.
+// sentinels or a positive byte count. The signature is a modulus-length octet
+// string, not SM2/ECDSA r/s DER; align digest/MGF1/salt with verification.
 // The sm3 signature digest depends on the provider; unavailable support returns ErrUnsupported. Probe with SupportsRSASignatureDigest.
 func SignPSS(priv PrivateKey, data []byte, saltLen int, digest string) ([]byte, error) {
 	md, err := digestForRSAHash(digest)

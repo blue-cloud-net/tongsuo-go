@@ -129,7 +129,7 @@ API 层（16 个顶级包：meta / digest / mac / sym / asym / ecdh / kdf / rand
 
 - `crypto/` 整目录与 `key/` 已在 `0.3.0` 的包结构重构中**取消**；当前 16 包形态与依赖方向见 `docs/architecture.md` §2 / §3
 - API 层内部依赖：算法原语包只依赖 `internal/core`；`ecdh → asym`；`x509 → asym`；
-  `tls` / `jwk` / `pkcs12` → `x509` + `asym`；`0.6.0` 的统一加载器新增
+  `tls` / `jwk` / `pkcs7` / `pkcs12` → `x509` + `asym`；`0.6.0` 的统一加载器新增
   `keystore → asym` + `pkcs/pkcs12`（单向，无环）
 - **唯一例外（`0.5.0` 起）**：`digest` / `mac` / `sym` / `kdf` / `asym` / `x509`
   → `meta`；`0.6.0` 新增 `keystore → meta`（统一加载的口令参数）。`meta` 是形态词汇的**叶子包**（只依赖 `internal/core`），提供
@@ -194,6 +194,7 @@ x509/               # 证书 + CSR + CRL + OCSP + 链验证（单包；原 x509 
 ├── load.go         # 本地证书/CRL 多对象加载
 ├── store.go        # Store / VerifyError / ChainVerify
 ├── forms.go        # MarshalFormat / LoadCertificateSource / MarshalCertificateTo / MarshalCSRTo
+├── reliability.go  # 完整序列号、DER 扩展、信任路径
 └── helpers.go      # convertEntries / convertExtensions（内部辅助）
 
 tls/                # TLS / NTLS 传输层
@@ -205,7 +206,7 @@ tls/                # TLS / NTLS 传输层
 
 asn1/               # DER viewer（纯 Go，cgo-free）
 jwk/                # JWK ↔ PEM（RFC 7517）
-pkcs/pkcs7/         # PKCS#7（Build / Extract / MarshalPEM）
+pkcs/pkcs7/         # PKCS#7（证书/CRL、Sign / Verify / Encrypt / Decrypt）
 pkcs/pkcs12/        # PKCS#12（Pack / Parse / ChangePassword；options.go = PBE/iter/读写口令）
 xml/doc.go          # 格式族预留命名空间
 xml/rsa/            # .NET RSAKeyValue XML 序列化
@@ -231,6 +232,10 @@ internal/native/               # 绑定层：cgo + shim
 ├── binding_ssl.go             # SSL_CTX / SSL / TLS 会话
 ├── binding_x509.go            # X509 / X509_CRL / X509_STORE / PEM / DER 系列
 ├── binding_pkcs.go            # PKCS#7 / PKCS#12 系列
+├── binding_pkcs7_ops.go       # PKCS#7 签验、信封与空内容处理
+├── binding_reliability.go     # 完整序列号、DER 扩展、信任路径、SM2 点与 P12 改密
+├── pkcs12_reencrypt.c         # 无损复杂 safe/bag 重加密
+├── pkcs7_ops.c                # PKCS#7 签验与信封 shim
 ├── binding_ocsp.go            # OCSP_REQ / OCSP_RES 系列
 ├── binding_error.go           # ERR_get_error / 错误码
 └── binding_version.go         # OpenSSL_version / Tongsuo_version_num
@@ -243,6 +248,7 @@ internal/core/                 # 核心层：句柄包装 + 生命周期 + 错�
 ├── hmac.go  kdf.go            # HMAC 包装 / KDF（HKDF / PBKDF2 / Argon2ID）
 ├── pkey.go  pkey_id.go        # PKey 包装 / 默认 ID
 ├── pkcs.go  ocsp.go           # PKCS#7 与 PKCS#12 / OCSP 自适应 CertID 匹配
+├── pkcs7_ops.go  reliability.go # PKCS 容器编排、完整序列号与可靠性增量
 ├── x509.go  ssl.go            # X509 证书 / CRL / Store / SSL 会话（Close 幂等）
 ├── rand.go  zero.go           # RandomBytes 包装 / 清零辅助
 └── waitfd_linux.go  waitfd_darwin.go   # epoll / kqueue 等待 fd 可读
@@ -263,7 +269,7 @@ docs/bilingual-doc-guide.md   # 双语 GoDoc 段式规则与检查清单
 docs/api-reference.md         # 公开 API 清单（重构后 16 包，三态标记）
 docs/api-reference-internal.md# 内部 API 清单（internal/* 五个包）
 docs/roadmap.md                 # 版本路线图（0.7.0–1.0.0：范围 / 前置绑定 / 不做）
-docs/downstream-requirements.md # Toolbit 22 项需求复核、纠偏与交付边界
+docs/requirements.md # 功能需求复核、技术判断与交付边界
 docs/cli-comparison.md        # 铜锁 CLI 与本库能力对比（能力级）
 docs/official-sdk-comparison.md # 与官方 SDK 对比
 docs/release-guide.md         # 发版操作手册（前置 / 重排 / 验证 / tag / 回退）
@@ -293,8 +299,8 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 - **公开签名中不得出现 `internal/` 类型**（重构后的硬约束）
   - ❌ 反例：`func EncryptOAEP(pub asym.PublicKey, data []byte, md *core.Digest)`
   - ❌ 反例：`func (k *PrivateKey) Key() *core.PKey`
-- 跨包取原生句柄**只允许**经两个桥接包：密钥走 `internal/keyaccess`（消费方限 `ecdh` / `x509` / `tls` / `jwk` / `keystore` / `pkcs/pkcs12`），证书走 `internal/certaccess`（消费方限 `tls` / `pkcs/pkcs7` / `pkcs/pkcs12` 与 `x509` 包内的 `ocsp`）
-  - 注：`keystore` 是实施期新增的第 6 个 keyaccess 消费方（`marshalKeyPEM` 取句柄做 PEM 序列化），原白名单只列了 5 个
+- 跨包取原生句柄**只允许**经两个桥接包：密钥走 `internal/keyaccess`（消费方限 `ecdh` / `x509` / `tls` / `jwk` / `keystore` / `pkcs/pkcs12` / `pkcs/pkcs7`），证书走 `internal/certaccess`（消费方限 `tls` / `pkcs/pkcs7` / `pkcs/pkcs12` 与 `x509` 包内的 `ocsp`）
+  - 注：当前 keyaccess 有 7 个消费方；`pkcs/pkcs7` 是 `0.7.0` 新增的第 7 个消费方，签名/解密须复制私钥句柄；细则见 `docs/architecture.md` §3.3
   - ❌ 反例：在 `internal/core` 里写「类型开关」反查公开类型（会成环，`internal/core` 不能 import `asym`）
   - ✅ 正例：`asym` 在**非导出**具体类型上实现 `CorePKey() *core.PKey`，`keyaccess.PKey(v)` 结构化断言取得；取到后必须 `EVP_PKEY_dup`
 - `unsafe` 仅限绑定层与核心层，作用域尽量小；**不得**在 Go 与 C 之间直接传 Go 指针
@@ -538,6 +544,8 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 - 双语正文同样遵循「术语保留英文」约定
 - 本文件（`AGENTS.md`）与上述文档**同源**：若规范变更，先改 `docs/` 细则，
   再更新本文件的摘要与指针，避免两处规则打架
+- 功能需求仅记录本库的缺口、技术判断、排期与验收边界，不记录需求来源、使用方身份、
+  外部代码路径或业务侧限制；详见 `docs/requirements.md` §4
 - 不要在没有明确要求时改动 `docs/issues/` 下的历史审计报告、CHANGELOG 的既有版本段
   - ❌ 反例：顺手「订正」`docs/issues/` 下旧报告的结论
 
@@ -644,7 +652,7 @@ go test -count=1 ./...    # 必须 ok（无铜锁环境则如实说明未能运�
 | 三层边界与目录 | `docs/architecture.md` §2 / §3 / §5 |
 | 生命周期与所有权 | `docs/architecture.md` §7 / §8 |
 | **版本路线图（0.7.0–1.0.0：范围 / 前置绑定 / 不做）** | `docs/roadmap.md` |
-| 下游 22 项需求复核与排期依据 | `docs/downstream-requirements.md` |
+| 功能需求复核与排期依据 | `docs/requirements.md` |
 | **公开 API 逐符号清单（三态）** | `docs/api-reference.md` |
 | **内部 API 清单（`internal/*`）** | `docs/api-reference-internal.md` |
 | 各算法必测用例 | `docs/testing-guide.md` §3～§7 |

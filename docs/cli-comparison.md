@@ -3,10 +3,10 @@
 > **`0.6.0` 实施更新**：下文采集时的基线表保留原口径；AES 扩展/ZUC、EC 参数、
 > PKCS#8/12 配置、PKCS#7 CRL、JWK OKP/oct、本地多对象加载、OCSP HTTP/nonce 与
 > 证书信任属性已在 8.4.0 基线上实现，当前逐符号事实见 [api-reference.md](api-reference.md)。
-> 铜锁 8.5 兼容、GCM-SIV、EdDSA 上下文签名与 RSA-SM3 签名可运行支持归 `0.9.0`。
-> 后续按“0.7 可靠性 → 0.8 PKCS#7 → 0.9 兼容/经典算法 → 0.10 PQC →
-> 0.11 CMS/时间戳 → 0.12 TLS → 1.0 公开面稳定”交付；下游逐条结论见
-> [downstream-requirements.md](downstream-requirements.md)。以下采集基线不代表未来能力已实现。
+> 铜锁 8.5 兼容、GCM-SIV、EdDSA 上下文签名与 RSA-SM3 签名可运行支持归 `0.8.0`。
+> 后续按“0.7 可靠性与 PKCS 容器 → 0.8 兼容/经典算法 → 0.9 PQC →
+> 0.10 CMS/时间戳 → 0.11 TLS → 1.0 公开面稳定”交付；功能需求逐条结论见
+> [requirements.md](requirements.md)。以下采集基线不代表未来能力已实现。
 
 > 本文件回答：**与铜锁自带的命令行（`tongsuo`，即铜锁发行版中的 `openssl` 程序）相比，本仓库还有哪些能力没有覆盖？**
 >
@@ -15,7 +15,12 @@
 > 报告**不写代码改动、不给新 API 签名**；所有「本库现状」结论均可在源码中校验。
 >
 > **包名口径**：本文件的「本库现状」列使用**重构前**包名（`crypto/*` / `key` / `ocsp`）——那是采集时的真实状态。重构后的 16 包名与逐符号签名见 [api-reference.md](api-reference.md)，迁移对照见 [api-reference.md](api-reference.md) §0.1。
-> 公开面收敛（§6.E 的 12 项内部类型泄露 E1）已在 `0.3.0` 全部落实；剩余的 E2 / E3 见 [roadmap.md](roadmap.md) §2.7。
+> 公开面收敛（§6.E 的 12 项内部类型泄露 E1）已在 `0.3.0` 全部落实；剩余的 E2 / E3 见 [roadmap.md](roadmap.md) §2.6。
+
+> **0.7.0 实施更新**：可靠性与 PKCS 容器已落地，包括复杂 P12 两入口无损改密、
+> PKCS#7 Sign/Verify/Encrypt/Decrypt、完整序列号/CRL、DER 扩展、信任路径和压缩 SM2
+> 输入。签验/信封对拍使用 smime；下文历史 pkcs7 -sign/-encrypt 写法不是实际 CLI
+> 选项。当前接口与算法边界见公开 API 清单，CMS 仍归 0.10.0。
 
 ---
 
@@ -537,12 +542,12 @@
 |---|---|
 | Phase 1 采集型小件 + Phase 2 输入输出形态 | `0.5.0` |
 | Phase 2 收尾 + Phase 3 算法覆盖主体 + Phase 4 的格式容器部分 | `0.6.0` |
-| 下游可靠性与数据完整性（见 [需求台账](downstream-requirements.md)） | `0.7.0` |
-| Phase 4 的 PKCS#7 签名/验签/加密/解密 | `0.8.0` |
-| 铜锁 8.5 兼容、经典算法扩展与 Phase 3 的 SM2DH / 通用 KEX | `0.9.0` |
-| Phase 3 的 PQC / KEM | `0.10.0` |
-| Phase 4 的 CMS / ts | `0.11.0` |
-| Phase 5 的 TLS 能力完善 | `0.12.0` |
+| 可靠性与数据完整性（见 [需求台账](requirements.md)） | `0.7.0` |
+| Phase 4 的 PKCS#7 签名/验签/加密/解密（8.4 原生范围，默认验信任） | `0.7.0` |
+| 铜锁 8.5 兼容、经典算法扩展与 Phase 3 的 SM2DH / 通用 KEX | `0.8.0` |
+| Phase 3 的 PQC / KEM | `0.9.0` |
+| Phase 4 的 CMS / ts | `0.10.0` |
+| Phase 5 的 TLS 能力完善 | `0.11.0` |
 | §6.E 的 E2/E3 公开面收敛及 CRL 配置式签发 | `1.0.0` |
 | 数据库化、文件系统绑定的 CA 工作流 | 暂缓，不承诺版本 |
 

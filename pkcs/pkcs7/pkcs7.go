@@ -28,6 +28,9 @@ import (
 // mention an internal/ type), so cross-package handle access goes through the
 // bridge package. A failure returns an error.
 func coreCertOf(c *tx509.Certificate) (*core.Certificate, error) {
+	if c == nil {
+		return nil, fmt.Errorf("pkcs7: nil certificate")
+	}
 	h, ok := certaccess.Certificate(c)
 	if !ok || h == nil {
 		return nil, fmt.Errorf("pkcs7: certificate handle unavailable")

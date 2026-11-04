@@ -3,7 +3,9 @@ package core
 import (
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"net"
+	"runtime"
 	"time"
 	"unicode/utf8"
 	"unsafe"
@@ -376,15 +378,7 @@ func (c *Certificate) SetVersion(version int) error {
 //
 // Must be invoked before Sign. Errors from the underlying OpenSSL call
 // are wrapped as OpError.
-func (c *Certificate) SetSerial(serial int64) error {
-	if err := c.ensureMutable("set serial"); err != nil {
-		return err
-	}
-	if !native.X509_set_serial_int(c.handle.Ptr(), serial) {
-		return NewOpError("x509: X509_set_serialNumber", native.PopError())
-	}
-	return nil
-}
+func (c *Certificate) SetSerial(serial int64) error { return c.SetSerialBigInt(big.NewInt(serial)) }
 
 // SetIssuer 设置证书的签发者名字。
 //
@@ -2910,6 +2904,10 @@ var crlReasonNames = map[int]string{
 // unspecified); Reason is the matching long name (for example
 // "keyCompromise"), or the empty string when the code is unmapped.
 type RevokedEntry struct {
+	// SerialHex 为完整带符号的十六进制序列号。
+	//
+	// SerialHex is the complete signed hexadecimal serial.
+	SerialHex      string
 	Serial         int64
 	RevocationDate time.Time
 	ReasonCode     int    // -1 表示未指定
@@ -3127,6 +3125,17 @@ func (c *CRL) SetNumber(n int64) error {
 // A nil or closed CRL returns the error "x509: CRL closed". Errors are
 // wrapped as OpError.
 func (c *CRL) AddRevokedEntry(serial int64, at time.Time, reason int) error {
+	return c.AddRevokedSerial(big.NewInt(serial), at, reason)
+}
+
+// AddRevokedSerial 复制完整序列号追加吊销条目；失败释放临时原生资源。
+//
+// AddRevokedSerial copies a full serial into a revocation entry, freeing temporaries on failure.
+func (c *CRL) AddRevokedSerial(serial *big.Int, at time.Time, reason int) error {
+	defer runtime.KeepAlive(c)
+	if err := ValidateSerial(serial); err != nil {
+		return err
+	}
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return fmt.Errorf("x509: CRL closed")
 	}
@@ -3134,7 +3143,7 @@ func (c *CRL) AddRevokedEntry(serial int64, at time.Time, reason int) error {
 	if rev == nil {
 		return NewOpError("x509: X509_REVOKED_new", native.PopError())
 	}
-	if !native.X509_REVOKED_set_serial_int(rev, serial) {
+	if !native.X_X509_REVOKED_set_serial_hex(rev, serial.Text(16)) {
 		native.X509_REVOKED_free(rev)
 		return NewOpError("x509: X509_REVOKED_set_serialNumber", native.PopError())
 	}
@@ -3468,6 +3477,7 @@ func (c *CRL) NextUpdate() time.Time {
 // revoked entries. Each entry contains the serial number, revocation
 // date, reason code and human-readable reason name.
 func (c *CRL) RevokedEntries() []RevokedEntry {
+	defer runtime.KeepAlive(c)
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return nil
 	}
@@ -3485,6 +3495,7 @@ func (c *CRL) RevokedEntries() []RevokedEntry {
 		code := native.X509_REVOKED_crl_reason(rev)
 		entry := RevokedEntry{
 			Serial:         native.X509_REVOKED_get0_serialNumber(rev),
+			SerialHex:      native.X_X509_REVOKED_serial_hex(rev),
 			RevocationDate: time.Unix(native.X509_REVOKED_get0_revocationDate(rev), 0).UTC(),
 			ReasonCode:     code,
 			Reason:         crlReasonNames[code],
@@ -3675,10 +3686,15 @@ func (c *CRL) Close() error {
 // live, non-closed *Certificate; nil or closed CRLs in the slice are
 // silently skipped.
 func RevocationCheck(cert *Certificate, crls []*CRL) error {
+	defer runtime.KeepAlive(cert)
+	defer runtime.KeepAlive(crls)
 	if cert == nil || cert.handle == nil || cert.handle.IsClosed() {
 		return fmt.Errorf("x509: invalid certificate")
 	}
-	serial := cert.Serial()
+	serial, err := cert.SerialBigInt()
+	if err != nil {
+		return err
+	}
 	certIssuer := native.X509_get_issuer_name(cert.handle.Ptr())
 	for _, crl := range crls {
 		if crl == nil || crl.handle == nil || crl.handle.IsClosed() {
@@ -3689,14 +3705,18 @@ func RevocationCheck(cert *Certificate, crls []*CRL) error {
 			continue // 签发者不匹配
 		}
 		for _, e := range crl.RevokedEntries() {
-			if e.Serial != serial {
+			entry, ok := new(big.Int).SetString(e.SerialHex, 16)
+			if !ok {
+				return fmt.Errorf("x509: invalid revoked serial")
+			}
+			if entry.Cmp(serial) != 0 {
 				continue
 			}
 			reason := e.Reason
 			if reason == "" {
 				reason = "unspecified"
 			}
-			return fmt.Errorf("x509: certificate with serial %d is revoked (reason: %s)",
+			return fmt.Errorf("x509: certificate with serial %s is revoked (reason: %s)",
 				serial, reason)
 		}
 	}

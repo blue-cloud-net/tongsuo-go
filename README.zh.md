@@ -11,7 +11,7 @@
 构建、测试与运行前必须自行安装铜锁（见[环境要求](#环境要求)）。
 
 - **模块路径**：`github.com/blue-cloud-net/tongsuo-go`
-- **底层依赖**：铜锁 (Tongsuo) **8.4.0** 基线（Apache-2.0）；8.5 兼容排期至 `0.9.0`
+- **底层依赖**：铜锁 (Tongsuo) **8.4.0** 基线（Apache-2.0）；8.5 兼容排期至 `0.8.0`
 - **参考设计**：[blue-cloud-net/tongsuo-csharp](https://github.com/blue-cloud-net/tongsuo-csharp)
 - **定位**：全新独立实现，与官方 [tongsuo-project/tongsuo-go-sdk](https://github.com/tongsuo-project/tongsuo-go-sdk) 并存
 - **CI/CD**：GitHub Actions（[`.github/workflows/`](.github/workflows/)）— lint + 跨平台测试 + tag 自动发版
@@ -47,7 +47,7 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 - 🗄️ **密钥存储与轮转**（`keystore`）：密钥元数据、内存 / 自定义 Store、版本轮转与历史；`Load` / `LoadAllFromReader` 自动识别本地 PEM 多对象、DER 与 PKCS#12
 - 📜 **X.509 证书管理**（`x509`）：证书 / CSR / CRL / OCSP 解析与签发、一行自签证书（`CreateSelfSigned`）、分步签发 CRL（`CRLBuilder`）、CA 签发证书（SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448）、按 NID 或名字添加任意 X.509 v3 扩展（`AddExtension` / `AddExtensionByName` / `AddExtensions`）、按 CSR 签发（`IssueCertificateFromRequest`）、主机名 / IP / 邮箱校验（`VerifyHostname` / `CheckEmail`）、subject / issuer 名字 hash（`SubjectHash` / `IssuerHash`）与链验证（可用 `Store.SetTime` 指定验证时刻）；OCSP HTTP/nonce、trusted PEM 用途属性与证书/CRL 统一加载
 - 🌐 **TLS / NTLS 传输层**（`tls`）：客户端 / 服务端封装，支持国密 NTLS 双证书（签名证书 + 加密证书）；`tls.NewListener` 返回 Accept 内即完成握手的 `net.Listener`
-- 📦 **容器与格式**：PKCS#7 证书/CRL（`pkcs/pkcs7`）、带 PBE/迭代选项的 PKCS#12（`pkcs/pkcs12`）、PKCS#8 PBE/PRF/PEM/DER 与 RSA PKCS#1 公钥（`asym`）、OKP/oct JWK（`jwk`）、PEM 切分（`meta`）、ASN.1 DER 查看（`asn1`）、.NET 风格 RSA XML（`xml/rsa`）
+- 📦 **容器与格式**：PKCS#7 证书/CRL、签验与信封（`pkcs/pkcs7`）、带 PBE/迭代选项及复杂容器无损改密的 PKCS#12（`pkcs/pkcs12`）、PKCS#8 PBE/PRF/PEM/DER 与 RSA PKCS#1 公钥（`asym`）、OKP/oct JWK（`jwk`）、PEM 切分（`meta`）、带可配置限额的 ASN.1 DER 查看（`asn1`）、.NET 风格 RSA XML（`xml/rsa`）
 - 🧪 **标准向量测试**：每个算法包覆盖国标标准向量、往返、边界与错误路径，并与 openssl CLI 双向交叉验证
 
 ## 范围与非目标
@@ -68,15 +68,15 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 
 ### 实现基线与后续排期
 
-`0.6.0` 为当前实现基线（2026-11-03 定版）；以铜锁 8.4.0 为验证基线，AES-SIV 拒绝空消息。
+`0.7.0` 已实现、待发布；仍以铜锁 8.4.0 为验证基线，AES-SIV 拒绝空消息。
+`0.7.0`：可靠性、数据完整性与 PKCS 容器，含句柄释放、解析限额、完整序列号、DER 扩展、信任路径、SM2 压缩输入、复杂 PKCS#12 容器无损改密，以及 PKCS#7 签名、验签、加密与解密。
+
 以下版本均为规划，不表示功能已可用：
 
-- `0.7.0`：下游可靠性与数据完整性，含句柄释放、解析限额、完整序列号、DER 扩展、信任路径、SM2 压缩输入与 PKCS#12 改密互通
-- `0.8.0`：PKCS#7 签名、验签、加密与解密
-- `0.9.0` / `0.10.0`：铜锁 8.5 兼容与经典算法扩展 / PQC
-- `0.11.0` / `0.12.0` / `1.0.0`：CMS 与 RFC 3161 时间戳 / TLS 能力完善 / 公开 API 收敛与稳定
+- `0.8.0` / `0.9.0`：铜锁 8.5 兼容与经典算法扩展 / PQC
+- `0.10.0` / `0.11.0` / `1.0.0`：CMS 与 RFC 3161 时间戳 / TLS 能力完善 / 公开 API 收敛与稳定
 
-下游 22 项需求的复核结论见 [docs/downstream-requirements.md](docs/downstream-requirements.md)。
+功能需求、技术判断与验收边界见 [docs/requirements.md](docs/requirements.md)。
 
 完整规划与「不做」清单（含理由与重开条件）见 [docs/roadmap.md](docs/roadmap.md) §2 与 §4。
 
@@ -143,6 +143,22 @@ go get github.com/blue-cloud-net/tongsuo-go
 然后在代码中按需导入子包（见下文"代码调用示例"）。
 
 ## 代码调用示例
+
+### PKCS#7 签名（`0.7.0`）
+
+给定签名证书 `cert`、对应私钥 `key` 及已显式添加信任锚的 `roots`：
+
+```go
+signed, err := pkcs7.Sign(data, &pkcs7.SignOptions{SignerCert: cert, SignerKey: key})
+if err != nil { panic(err) }
+verified, err := pkcs7.Verify(signed, &pkcs7.VerifyOptions{Roots: roots})
+if err != nil { panic(err) }
+defer verified.Close()
+```
+
+Verify 默认验证全部签名者及其信任。显式 SignatureOnly 跳过证书链验证，返回 TrustVerified=false。支持 RSA/ECDSA 签名及 RSA 接收者加密；CBC 信封不提供完整性认证。
+
+ECDH 迁移：改用 `pub, err := priv.Public()`，处理错误并 `defer pub.Close()`；公钥副本独立持有句柄。完整序列号使用 `SerialBigInt` / `SetSerialBigInt`，旧 int64 写入口统一拒绝零/负数。分步 DER 扩展签发与 PKCS#7 用法见[可运行示例](examples/README.md)。
 
 ### AES-OCB（`0.6.0`）
 

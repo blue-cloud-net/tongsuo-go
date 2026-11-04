@@ -170,11 +170,12 @@ type sm2Cipher struct {
 }
 
 // Format 在 SM2 密文格式间转换。from/to 取值："der"、"c1c3c2"、"c1c2c3"。
+// 压缩 C1 经铜锁校验，转 DER 时展开；既有输出形式保持原样。
 //
 // Format converts an SM2 ciphertext between representations. from and to
 // must be one of "der", "c1c3c2", or "c1c2c3". When from == to a copy
-// of ct is returned. Conversions involving "der" require an uncompressed
-// C1 point.
+// of ct is returned. Compressed raw C1 points are validated and expanded
+// through Tongsuo when coordinates are required for DER.
 func Format(ct []byte, from, to string) ([]byte, error) {
 	if from == to {
 		return append([]byte{}, ct...), nil
@@ -224,10 +225,11 @@ func EncryptWithOrder(pub PublicKey, data []byte, order string) ([]byte, error) 
 }
 
 // DecryptWithOrder 解密指定顺序的裸格式 SM2 密文。
+// 支持经铜锁解码与校验的压缩 C1 输入。
 //
 // DecryptWithOrder decrypts a raw-format SM2 ciphertext in the given order.
-// order must be "c1c3c2" (the default when empty) or "c1c2c3"; C1 must
-// be an uncompressed point.
+// order must be "c1c3c2" (the default when empty) or "c1c2c3"; C1 may
+// be a validated compressed or uncompressed point.
 func DecryptWithOrder(priv PrivateKey, data []byte, order string) ([]byte, error) {
 	if order == "" {
 		order = "c1c3c2"
@@ -270,7 +272,12 @@ func parseSM2DER(ct []byte) (*sm2Cipher, error) {
 
 func buildSM2DER(c *sm2Cipher) ([]byte, error) {
 	if c.x == nil || c.y == nil {
-		return nil, fmt.Errorf("asym: sm2: cannot convert compressed C1 to DER")
+		expanded, err := core.ExpandSM2Point(c.c1)
+		if err != nil {
+			return nil, err
+		}
+		c.x = expanded[1:33]
+		c.y = expanded[33:65]
 	}
 	d, err := asn1.Marshal(struct {
 		X    *big.Int
@@ -312,6 +319,14 @@ func parseSM2Raw(ct []byte, hashFirst bool) (*sm2Cipher, error) {
 		return nil, fmt.Errorf("asym: sm2: ciphertext too short for C1+C3")
 	}
 	c := &sm2Cipher{c1: append([]byte{}, ct[:n]...)}
+	if n == sm2C1CompressedLen {
+		expanded, err := core.ExpandSM2Point(c.c1)
+		if err != nil {
+			return nil, err
+		}
+		c.x = expanded[1:33]
+		c.y = expanded[33:65]
+	}
 	if hashFirst {
 		c.hash = append([]byte{}, ct[n:n+32]...)
 		c.c2 = append([]byte{}, ct[n+32:]...)

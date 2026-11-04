@@ -441,6 +441,7 @@ func (k *PKey) Close() error {
 // already been closed it returns an error, and the returned *PKey must
 // be Closed by its new owner.
 func (k *PKey) Dup() (*PKey, error) {
+	defer runtime.KeepAlive(k)
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil, NewOpError("pkey: EVP_PKEY_dup", 0)
 	}

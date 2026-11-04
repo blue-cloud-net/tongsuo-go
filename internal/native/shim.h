@@ -477,4 +477,14 @@ int X_EVP_KDF_kbkdf_r_supported(void);
  */
 int X_SSL_set_tlsext_host_name(SSL *ssl, const char *name);
 
+int X_X509_set_serial_hex(X509 *cert, const char *hex);
+int X_X509_REVOKED_set_serial_hex(X509_REVOKED *rev, const char *hex);
+char *X_X509_REVOKED_serial_hex(const X509_REVOKED *rev);
+int X_X509_add_ext_der(X509 *cert, const char *oid, int critical, const unsigned char *der, int len);
+int X_SM2_expand_point(const unsigned char *in, size_t len, unsigned char *out);
+PKCS12 *X_PKCS12_reencrypt(PKCS12 *input, const char *oldpass, const char *newpass, const char *pbe, int iter, const char *name);
+PKCS7 *X_PKCS7_sign(X509 *cert, EVP_PKEY *key, STACK_OF(X509) *extra, BIO *input, const char *digest, int detached);
+int X_PKCS7_verify(PKCS7 *p7, STACK_OF(X509) *extra, BIO *input, int supplied, BIO *out);
+PKCS7 *X_PKCS7_encrypt(STACK_OF(X509) *recipients, BIO *input, const char *name);
+int X_PKCS7_decrypt(PKCS7 *p7, EVP_PKEY *key, X509 *cert, BIO *out);
 #endif /* TONGSUO_GO_SHIM_H */

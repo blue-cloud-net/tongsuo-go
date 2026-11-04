@@ -21,6 +21,10 @@ import (
 // (-1 means unspecified), and Reason is the human-readable reason name
 // (for example "keyCompromise").
 type RevokedEntry struct {
+	// SerialHex 保存完整序列号，Serial 仅为受限兼容视图。
+	//
+	// SerialHex preserves the complete serial; Serial is a limited compatibility view.
+	SerialHex      string
 	Serial         int64     // 被吊销证书的序列号
 	RevocationDate time.Time // 吊销时间
 	ReasonCode     int       // 原因码（-1 表示未指定）
@@ -147,6 +151,7 @@ func (c *CRL) RevokedEntries() []RevokedEntry {
 	for _, e := range es {
 		out = append(out, RevokedEntry{
 			Serial:         e.Serial,
+			SerialHex:      e.SerialHex,
 			RevocationDate: e.RevocationDate,
 			ReasonCode:     e.ReasonCode,
 			Reason:         e.Reason,
@@ -211,12 +216,16 @@ func (c *CRL) IssuerText() string {
 //
 // IsRevoked reports whether cert is revoked by this CRL. Matching is performed by serial number only.
 func (c *CRL) IsRevoked(cert *Certificate) bool {
-	if cert == nil {
+	if c == nil || c.crl == nil || cert == nil {
 		return false
 	}
-	serial := cert.Serial()
-	for _, e := range c.RevokedEntries() {
-		if e.Serial == serial {
+	serial, err := cert.SerialBigInt()
+	if err != nil {
+		return false
+	}
+	for _, entry := range c.RevokedEntries() {
+		n, err := entry.SerialBigInt()
+		if err == nil && n.Cmp(serial) == 0 {
 			return true
 		}
 	}
@@ -627,7 +636,11 @@ func (b *CRLBuilder) Revoke(cert *Certificate, at time.Time, reason RevocationRe
 	if !validRevocationReason(reason) {
 		return fmt.Errorf("x509: invalid revocation reason %d", int(reason))
 	}
-	return b.crl.AddRevokedEntry(cert.Serial(), at, int(reason))
+	serial, err := cert.SerialBigInt()
+	if err != nil {
+		return err
+	}
+	return b.RevokeSerial(serial, at, reason)
 }
 
 // Sign 用签发者私钥签名并返回可导出的 CRL。

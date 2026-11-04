@@ -263,15 +263,44 @@ type PublicKey struct {
 
 // Public 返回对应的公钥（共享同一底层句柄）；因此对一侧执行的密码学操作
 // 在另一侧也可观察到。
+// 0.7.0 起改为独立句柄副本，关闭公钥、私钥或源 asym 密钥互不影响；调用方须 Close。
+// nil、已关闭密钥或复制失败返回错误，不可与 Close 并发调用。
 //
-// Public returns the public key associated with this private key, sharing
-// the same underlying handle; any cryptographic operation on one side is
-// therefore observable on the other.
-func (k *PrivateKey) Public() *PublicKey {
+// Public returns the public key associated with this private key.
+// Since 0.7.0 it returns an independently owned handle rather than the historical shared
+// view. Callers must Close it; closing either key or the source asym key is independent.
+// Nil, closed keys and copy failures return errors; do not race this call with Close.
+func (k *PrivateKey) Public() (*PublicKey, error) {
+	if k == nil || k.key == nil {
+		return nil, fmt.Errorf("ecdh: private key closed")
+	}
+	key, err := k.key.Dup()
+	if err != nil {
+		return nil, fmt.Errorf("ecdh: public: %w", err)
+	}
+	return &PublicKey{key: key}, nil
+}
+
+// Close 释放私钥句柄；nil、零值和重复调用幂等。调用方须先结束所有使用。
+//
+// Close releases the private key handle and is idempotent for nil, zero and closed keys.
+// Callers must finish all uses before closing.
+func (k *PrivateKey) Close() error {
 	if k == nil || k.key == nil {
 		return nil
 	}
-	return &PublicKey{key: k.key}
+	return k.key.Close()
+}
+
+// Close 释放公钥句柄；nil、零值和重复调用幂等，不影响生成它的私钥。
+//
+// Close releases the public key handle idempotently for nil, zero and closed keys,
+// without affecting the originating private key.
+func (k *PublicKey) Close() error {
+	if k == nil || k.key == nil {
+		return nil
+	}
+	return k.key.Close()
 }
 
 // Curve 返回该私钥所在的曲线；无法识别时返回 nil。

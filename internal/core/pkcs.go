@@ -204,21 +204,15 @@ func (p *PKCS12) Parse(pass string) (*PKey, *Certificate, []*Certificate, error)
 }
 
 // ChangePassword 修改 PKCS12 口令。
+// 保留原算法参数、复杂 safe/bag 与属性；先验证 MAC，失败不替换原句柄。
 //
 // ChangePassword re-encrypts the PKCS#12 container with a new password.
 //
-// oldPass must match the current password (otherwise the underlying
-// PKCS12_newpass call fails and the error is wrapped as OpError);
-// newPass becomes the new integrity / encryption password. The
-// container must be live; otherwise the call returns "pkcs12: closed".
+// oldPass must match the MAC and every encrypted safe/bag. New salt and IV
+// values are generated while preserving algorithms, parameters, attributes and nesting.
+// Failure leaves the original handle intact; no MAC or unsupported protection fails explicitly.
 func (p *PKCS12) ChangePassword(oldPass, newPass string) error {
-	if p == nil || p.handle == nil || p.handle.IsClosed() {
-		return fmt.Errorf("pkcs12: closed")
-	}
-	if !native.PKCS12_newpass(p.handle.Ptr(), oldPass, newPass) {
-		return NewOpError("pkcs12: PKCS12_newpass", native.PopError())
-	}
-	return nil
+	return p.ReencryptPassword(oldPass, newPass, "", 0, "")
 }
 
 // SetMAC 为 PKCS12 重新计算 MAC（SHA-256）。

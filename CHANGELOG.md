@@ -24,6 +24,31 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
+## [0.7.0] - 2026-11-04
+
+### Added
+
+- Idempotent `Close()` for ECDH public/private keys and `x509.CertificateRequest`; ECDH public handles are independent of private and source asym keys.
+- `asn1.ParseWithLimits`, positive depth/node budgets, `ErrDepthLimit` / `ErrNodeLimit`, and iterative traversal; existing `Parse` retains its 128-level behavior and error text.
+- Complete serial APIs: `SerialBigInt` / `SetSerialBigInt`, `IssueOptions.SerialBigInt`, `RevokedEntry.SerialHex` / `SerialBigInt`, and `CRLBuilder.RevokeSerial` / `RevokeSerialHex`. Inputs/results are independent copies; positive written serials fit 20 DER content octets including sign padding.
+- OID-based raw `x509.Certificate.AddExtensionDER` and `Store.SetDefaultPaths` / `LoadLocations`, preserving signed-object immutability and explicit trust boundaries.
+- PKCS#7 `Sign` / `Verify` / `Encrypt` / `Decrypt`, Options and `SignedData.Close`: attached/detached signatures, binary content and multiple RSA recipients; SHA-256 and AES-256-CBC defaults. Verify requires explicit Roots and verifies every signer by default.
+
+### Fixed
+
+- Certificate/CRL serialization, CSR issuance, `Revoke(cert)`, `IsRevoked` and `RevocationCheck` now preserve and compare complete serials, eliminating int64 overflow collisions. Old Serial remains a limited compatibility view.
+- Compressed SM2 C1 input is validated through Tongsuo for conversion and decryption in both C2/C3 orders, preserving existing output representations.
+- Both PKCS#12 password-change entries now operate on safes/bags, preserving multiple keys, safes, nesting, CRLs, custom attributes, content and ordering. The ordinary entry preserves algorithm/KDF/MAC settings; WithOptions applies PBE/iteration settings without lossy repacking.
+
+### BREAKING / Known limitations
+
+- **BREAKING**: `ecdh.PrivateKey.Public()` now returns `(*PublicKey, error)`. Migrate to `pub, err := priv.Public()`, handle errors and `defer pub.Close()`. Do not race either Close with active uses.
+- **BREAKING**: Existing int64 serial write entries reject zero/negative values; use BigInt for complete values. Added fields in `IssueOptions` / `RevokedEntry` require callers with unkeyed literals to migrate to keyed literals.
+- **BREAKING**: `ChangePasswordWithOptions` preserves unspecified names and additional content. Empty FriendlyName preserves names; nonempty renaming with multiple private keys fails as ambiguous. Missing MAC, distinct MAC/encryption passwords, signature protection and unsupported algorithms/structures are rejected; legacy providers are never loaded automatically.
+- PKCS#7 supports Tongsuo 8.4.0 RSA/ECDSA signing and RSA recipient encryption; SM2 and other unsupported combinations fail. Explicit SignatureOnly results retain TrustVerified=false. CBC envelopes do not authenticate integrity; default trust paths need not be native platform trust stores. RSA signatures remain modulus-length octet strings.
+
+---
+
 ## [0.6.0] - 2026-11-03
 
 ### Added
@@ -1014,7 +1039,8 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.3.0...v0.4.0

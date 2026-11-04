@@ -9,16 +9,16 @@
 > 4. 类型给出导出字段；未导出字段以「（内部字段）」表示其存在；
 > 5. 本文描述的是**重构后的目标形态**：`crypto/` 整目录与 `key/` 已被 `digest` / `mac` / `sym` / `asym` / `ecdh` / `kdf` / `rand` / `keystore` 取代；`csr` / `crl` / `ocsp` **未拆**，全部留在 `x509`。
 >
-> **范围**：**16 个包**。实现基线：`0.6.0`（2026-11-03 定版）；未来目标均以 🧭 标注。
+> **范围**：**16 个包**。实现基线：`0.7.0`（已实现，待发布）；未来目标均以 🧭 标注。
 > **版本归属**：本文件不负责版本分配，哪个 🧭 符号落在哪个版本见 [roadmap.md](roadmap.md) §2。
 >
 > **状态标记**：
-> - ✅ **已有** — 已实现（`0.6.0` 及之前；发布状态以版本标签为准）；
+> - ✅ **已有** — 已实现（`0.7.0` 及之前；发布状态以版本标签为准）；
 > - 🚧 **变更中** — 目标版本另标，尚不可用；
 > - 🧭 **规划中** — 仅表达**目标 API 形态**，尚不可用；**目标版本以 [roadmap.md](roadmap.md) §2 为准**，
 >   下表的版本列仅为速查，若与该文冲突以 roadmap 为准。
 >
-> 符号行前缀：`🆕` 新增（`0.3.0`、`0.5.0` 与 `0.6.0` 沿用；所在小节标题已注明版本） / `✨` `0.4.0` 新增 /
+> 符号行前缀：`🆕` 新增（`0.3.0`、`0.5.0`、`0.6.0` 与 `0.7.0` 沿用；所在小节标题已注明版本） / `✨` `0.4.0` 新增 /
 > `♻️` 迁移自其他包（附原名） / `🧭` 规划中。
 > `0.4.0` 与 `0.5.0` 的**行为变更**（非新增符号）写在对应行内，如 `Certificate.Sign` /
 > `CertificateRequest.Sign` 收紧为单向终态。
@@ -511,7 +511,7 @@
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
-| 🧭 AES-GCM-SIV | `0.9.0` | 铜锁 8.5 兼容与新版 provider |
+| 🧭 AES-GCM-SIV | `0.8.0` | 铜锁 8.5 兼容与新版 provider |
 
 > **DES 的实现方式与安全口径**：单 DES 在铜锁中只注册在 legacy provider，本库不加载 legacy（见
 > [roadmap.md](roadmap.md) §4 第 10 条），改以 `K‖K‖K`（三份相同密钥）驱动 DES-EDE3 实现——
@@ -641,7 +641,7 @@
 - `func LoadPKCS8(data []byte, format meta.Format, encrypted bool, pass string) (PrivateKey, error)`
 - `func MarshalRSAPublicKeyPKCS1PEM(pub PublicKey) ([]byte, error)` / `func LoadRSAPublicKeyPKCS1PEM(data []byte) (PublicKey, error)`
 - `func Check(priv PrivateKey) error` / `func PublicCheck(pub PublicKey) error`
-- `func SupportsRSASignatureDigest(key Key, hash string) (bool, error)` — 铜锁 8.4.0 的 RSA-SM3 签名不可用，签/验返回 `ErrUnsupported`；OAEP-SM3 可用。签名可运行支持随 8.5 兼容移至 `0.9.0`，以原生能力验证为准。
+- `func SupportsRSASignatureDigest(key Key, hash string) (bool, error)` — 铜锁 8.4.0 的 RSA-SM3 签名不可用，签/验返回 `ErrUnsupported`；OAEP-SM3 可用。签名可运行支持随 8.5 兼容移至 `0.8.0`，以原生能力验证为准。
 - PKCS#8 Version 选择 PBE 方案：1 为 PBE-SHA1-3DES；2 为 PBES2（默认 AES-256-CBC / hmacWithSHA256 / 2048 次迭代），可选 AES-128/192/256-CBC 与 HMAC-SHA1/224/256/384/512。
   它不改变 ASN.1 PrivateKeyInfo 的版本。私钥结果由调用方 `asym.Close`；源密钥与口令缓冲由调用方清零。
 
@@ -649,13 +649,13 @@
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
-| 🧭 现有 `Format` / `DecryptWithOrder` 接受 SM2 压缩 C1 输入 | `0.7.0` | 经 core 调用铜锁点解码与校验；不增加压缩输出 |
-| 🧭 RSA 签名格式说明与双向互验 | `0.7.0` | 保持模数长度字节串，不能改成 SM2/ECDSA DER |
-| 🧭 现有 PKCS#1 v1.5 / PSS 的 SM3 签名可运行支持 | `0.9.0` | `SupportsRSASignatureDigest` 已在 `0.6.0` 实现；验证固定版本 RSA provider |
-| 🧭 ED25519ph / ED25519ctx / ED448ph | `0.9.0` | 铜锁 8.5 兼容；`instance` / `context-string` 参数 |
-| 🧭 ML-DSA-44 / 65 / 87 | `0.10.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
-| 🧭 SLH-DSA 12 变体 | `0.10.0` | 同上 |
-| 🧭 `func Encapsulate` / `func Decapsulate`（KEM） | `0.10.0` | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
+| 🆕 现有 `Format` / `DecryptWithOrder` 已接受 SM2 压缩 C1 输入 | `0.7.0` | 经 core 调用铜锁点解码与校验；不增加压缩输出 |
+| 🆕 RSA 签名格式说明与双向互验 | `0.7.0` | 保持模数长度字节串，不能改成 SM2/ECDSA DER |
+| 🧭 现有 PKCS#1 v1.5 / PSS 的 SM3 签名可运行支持 | `0.8.0` | `SupportsRSASignatureDigest` 已在 `0.6.0` 实现；验证固定版本 RSA provider |
+| 🧭 ED25519ph / ED25519ctx / ED448ph | `0.8.0` | 铜锁 8.5 兼容；`instance` / `context-string` 参数 |
+| 🧭 ML-DSA-44 / 65 / 87 | `0.9.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
+| 🧭 SLH-DSA 12 变体 | `0.9.0` | 同上 |
+| 🧭 `func Encapsulate` / `func Decapsulate`（KEM） | `0.9.0` | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
 
 > 明确不做：DSA、DH、EC-ElGamal、Paillier（见 `docs/cli-comparison.md` §9）。
 
@@ -712,7 +712,7 @@
 
 - ♻️ `func (c *Curve) Name() string` — 曲线名（如 `"P-256"` / `"X25519"`）
 - ♻️ `func (k *PrivateKey) ECDH(peer *PublicKey) ([]byte, error)` — 派生共享密钥（方法形式）
-- ♻️ `func (k *PrivateKey) Public() *PublicKey` — 返回配对公钥
+- ♻️ `func (k *PrivateKey) Public() (*PublicKey, error)` — 返回独立持有的配对公钥，调用方 Close
 - ♻️ `func (k *PrivateKey) MarshalPEM() ([]byte, error)` — 导出私钥 PEM
 - ♻️ `func (k *PrivateKey) MarshalEncryptedPEM(pass string) ([]byte, error)` — 导出加密私钥 PEM
 - ♻️ `func (k *PublicKey) MarshalPEM() ([]byte, error)` — 导出 SPKI 公钥 PEM
@@ -728,13 +728,14 @@
 - `func GenerateKeyFromParameters(data []byte) (asym.PrivateKey, error)` — 复用 `asym` 生成，调用方用 `asym.Close` 释放。
 - `func (c *Curve) Check() error` — 命名/显式参数均支持；支持 P-256/384/521 与 secp256k1，X25519/X448 无 EC 参数文件。
 
-**规划中**
+**`0.7.0` 已实现与后续规划**
 
-| 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
+| 符号 | 版本 | 语义 / 后续前置 |
 |---|---|---|
-| 🧭 `func (k *PrivateKey) Close() error` / `func (k *PublicKey) Close() error` | `0.7.0` | 复用 core Close；幂等，关闭副本不影响原 asym 密钥 |
-| 🧭 `func DeriveSharedSecret(priv asym.PrivateKey, pub asym.PublicKey) ([]byte, error)` | `0.9.0` | 复用现有桥接及 derive，失败释放临时副本 |
-| 🧭 SM2DH 密钥协商（`CurveByName("SM2DH")`） | `0.9.0` | 铜锁已启用（`key-exchange-algorithms`）；`EVP_PKEY_derive*` 已绑定，需补 SM2 派生参数 |
+| 🆕 `func (k *PrivateKey) Close() error` / `func (k *PublicKey) Close() error` | `0.7.0` | nil/零值/已关闭均幂等；关闭后可失败操作返回错误，查询返回约定零值 |
+| 🆕 `func (k *PrivateKey) Public() (*PublicKey, error)` | `0.7.0` | BREAKING：复制为独立句柄，公私钥及源 asym 密钥独立关闭；复制失败返回 error，调用方释放返回公钥 |
+| 🧭 `func DeriveSharedSecret(priv asym.PrivateKey, pub asym.PublicKey) ([]byte, error)` | `0.8.0` | 复用现有桥接及 derive，失败释放临时副本 |
+| 🧭 SM2DH 密钥协商（`CurveByName("SM2DH")`） | `0.8.0` | 铜锁已启用（`key-exchange-algorithms`）；`EVP_PKEY_derive*` 已绑定，需补 SM2 派生参数 |
 
 **破坏性变更**
 
@@ -827,7 +828,7 @@
 
 - ♻️ `type CertificateRequest struct { …（内部字段） }` — PKCS#10 证书请求（原 `x509.CertificateRequest`）
 - ♻️ `type CRL struct { …（内部字段） }` — 证书吊销列表（原 `x509.CRL`）
-- ♻️ `type RevokedEntry struct { …（内部字段） }` — CRL 中的一条吊销记录
+- ♻️ `type RevokedEntry struct { SerialHex string; Serial int64; RevocationDate time.Time; ReasonCode int; Reason string }` — CRL 记录，Serial 仅为受限兼容视图
 - 🆕 `type CRLBuilder struct { …（内部字段） }` — CRL 构建器（原拟名 `crl.Builder`，加 `CRL` 前缀避免与本包其他构建器混淆）
 - 🆕 `type RevocationReason int` — 吊销原因码（对应 `crl -crl_reason`）
 - ♻️ `type Response struct { Status int; StatusText string; ProducedAt time.Time; CertStatus int; CertStatusText string; RevocationTime time.Time; RevocationReason int; ReasonText string; ThisUpdate time.Time; NextUpdate time.Time; ResponderCerts []*Certificate }` — OCSP 响应
@@ -959,7 +960,7 @@
 **CA 签发入口**
 
 - ✨ `func IssueCertificateFromRequest(req *CertificateRequest, issuer *Certificate, signer asym.PrivateKey, opts *IssueOptions) (*Certificate, error)` — 依据 CSR 签发（等价 `openssl ca` 的最小可用子集）
-- ✨ `type IssueOptions struct { Serial int64; NotBefore, NotAfter time.Time; Extensions []Extension; CopyRequestExtensions bool }`
+- ✨ `type IssueOptions struct { SerialBigInt *big.Int; Serial int64; NotBefore, NotAfter time.Time; Extensions []Extension; CopyRequestExtensions bool }`
 
   > `CopyRequestExtensions` 默认为 `false`（对齐 `openssl ca` 的 `copy_extensions none`）；
   > 开启时也**只拷白名单**（SAN / KeyUsage / EKU / BasicConstraints），且 `Extensions`
@@ -1023,19 +1024,32 @@
 - `func LoadFromURI(uri string) ([]*Certificate, []*CRL, error)` / `func LoadFromReader(r io.Reader) ([]*Certificate, []*CRL, error)` — 本地 PEM 多对象/单 DER，忽略密钥块，错误时释放全部部分结果；成功由调用方逐个 `Close`。
 - `ToCertificateRequest`、`SubjectHash`、`Store.SetTime`/`ChainVerify` 与任意扩展入口为既有能力，不引入重复签名。
 
-**规划中**
+**`0.7.0` 已实现与后续规划**
 
-| 符号 | 目标版本 | 前置 |
+| 符号 | 版本 | 语义 / 后续前置 |
 |---|---|---|
-| 🧭 `func (r *CertificateRequest) Close() error` | `0.7.0` | 复用 core Close；幂等，关闭后可失败操作返回错误 |
-| 🧭 `RevokedEntry.SerialHex string` | `0.7.0` | 无损读取完整 ASN.1 INTEGER；旧 `Serial int64` 保留为受限兼容视图 |
-| 🧭 `func (b *CRLBuilder) RevokeSerialHex(serial string, at time.Time, reason RevocationReason) error` | `0.7.0` | 完整序列号写入；现有 `Revoke(cert)` 同步摆脱 int64 中转 |
-| 🧭 `func (c *Certificate) AddExtensionDER(oid string, critical bool, der []byte) error` | `0.7.0` | 按已知/自定义 OID 写入原始扩展值，保持签名后不可变 |
-| 🧭 `func (s *Store) SetDefaultPaths() error` | `0.7.0` | `X509_STORE_set_default_paths`；铜锁默认路径不等于平台原生信任库 |
-| 🧭 `func (s *Store) LoadLocations(caFile, caDir string) error` | `0.7.0` | `X509_STORE_load_locations`；不隐式信任输入链根 |
-| 🧭 带扩展的分步证书签发示例与入口说明 | `0.7.0` | 复用 `NewCertificate` → Set/Add → Sign，不新增重复便捷入口 |
+| 🆕 `func (r *CertificateRequest) Close() error` | `0.7.0` | 复用 core Close；幂等，关闭后可失败操作返回错误 |
+| 🆕 `func (c *Certificate) SerialBigInt() (*big.Int, error)` | `0.7.0` | 无损读取；结果为独立对象，已关闭/缺失序列号及转换失败返回错误，不以 int64 溢出值代替 |
+| 🆕 `func (c *Certificate) SetSerialBigInt(serial *big.Int) error` | `0.7.0` | 复制输入；正整数，DER INTEGER 内容含符号补零不超过 20 octets；仍禁止签名后修改 |
+| 🆕 旧 SetSerial 等 int64 写入口收紧校验 | `0.7.0` | 保留签名，统一拒绝零和负数；交付时记录行为变化与迁移 |
+| 🆕 `IssueOptions.SerialBigInt *big.Int` | `0.7.0` | CSR 签发无损序列号；非 nil 且旧 Serial 非零时报冲突，nil 保留旧路径，调用时复制 |
+| 🆕 `RevokedEntry.SerialHex string` | `0.7.0` | 无损读取完整 ASN.1 INTEGER；旧 `Serial int64` 保留为受限兼容视图 |
+| 🆕 `func (e RevokedEntry) SerialBigInt() (*big.Int, error)` | `0.7.0` | 从完整 SerialHex 取得独立大整数；缺失或无效时明确报错，不回退到受限 Serial 字段 |
+| 🆕 `func (b *CRLBuilder) RevokeSerial(serial *big.Int, at time.Time, reason RevocationReason) error` | `0.7.0` | 无需被吊销证书；复制输入并校验序列号、原因码与构建器状态，归属与授权由调用方确认 |
+| 🆕 `func (b *CRLBuilder) RevokeSerialHex(serial string, at time.Time, reason RevocationReason) error` | `0.7.0` | hex 适配入口，复用 RevokeSerial 的完整值与校验路径 |
+| 🆕 现有 `Revoke(cert)` / `IsRevoked(cert)` / `RevocationCheck` 使用完整序列号 | `0.7.0` | 不经 int64 中转，按整数值匹配，保持各入口既有 issuer/信任边界；见 I-23/I-24 |
+| 🆕 `func (c *Certificate) AddExtensionDER(oid string, critical bool, der []byte) error` | `0.7.0` | 按已知/自定义 OID 写入原始扩展值，保持签名后不可变 |
+| 🆕 `func (s *Store) SetDefaultPaths() error` | `0.7.0` | `X509_STORE_set_default_paths`；铜锁默认路径不等于平台原生信任库 |
+| 🆕 `func (s *Store) LoadLocations(caFile, caDir string) error` | `0.7.0` | `X509_STORE_load_locations`；不隐式信任输入链根 |
+| 🆕 带扩展的分步证书签发示例与入口说明 | `0.7.0` | 复用 `NewCertificate` → Set/Add → Sign，不新增重复便捷入口 |
 | 🧭 CRL 配置式签发与应用级组合入口 | `1.0.0` | 复用现有内存构建流程，与公开面收敛一并设计 |
 | 🧭 `ca` 式数据库化签发 / 吊销 / 续期 | 暂缓，不承诺版本 | 文件系统状态机不列入容器/协议里程碑 |
+
+完整序列号入口为 I-23/I-24 与 I-18/I-20 的同一工作项，已在 0.7.0 实现；`big.Int`
+来自标准库 `math/big`。现有 `CreateCertificate` / `CreateSelfSigned` 的 int64 签名保留，
+大整数签发使用 `NewCertificate` → `SetSerialBigInt` → Set/Add → `Sign`；
+不为每个便捷函数平行扩充所有序列号表示。输入边界与兼容性验收见
+[功能需求记录 §3](requirements.md#3-crl-与完整序列号职责判断与排期)。
 
 **破坏性变更**
 
@@ -1107,20 +1121,20 @@
     底层 `net.ErrClosed`
   - 🆕 `func (l *Listener) Addr() net.Addr` — 委托底层监听器（`Close` 后仍可用）
 
-**规划中（传输深度归 `0.12.0`，公开面收敛归 `1.0.0`）**
+**规划中（传输深度归 `0.11.0`，公开面收敛归 `1.0.0`）**
 
 > 前置：均需在 `internal/native` 新增绑定（见 [roadmap.md](roadmap.md) §3）。
 
 | 符号 | 说明 | 版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|---|
-| 🧭 `Config.NextProtos []string` | ALPN（对应 `-alpn`） | `0.12.0` | `SSL_CTX_set_alpn_protos` / `SSL_get0_alpn_selected` |
-| 🧭 会话复用 / 票据 | `Config.SessionCache`、`Conn.SessionState()` | `0.12.0` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
-| 🧭 `Config.ClientAuth` + `Config.ClientCAs` | 客户端证书认证（服务端） | `0.12.0` | `SSL_CTX_set_client_CA_list` / `SSL_CTX_set_verify` 回调 |
-| 🧭 `Config.GetCertificate func(*ClientHelloInfo)` / `GetConfigForClient` | 服务端 SNI 多证书（对应 `-sign_cert2` / `-enc_cert2`） | `0.12.0` | SNI 回调与配置生命周期 |
-| 🧭 `Config.VerifyPeerCertificate` / `VerifyConnection` | 自定义证书校验回调 | `0.12.0` | 验证回调绑定 |
-| 🧭 `Options` / `Modes`、完整 `ConnectionState`、`VerifyHostname` / `UnderlyingConn`、错误码常量 | 配置与连接状态 | `0.12.0` | 配置/状态绑定 |
-| 🧭 `Config.DHParameters` / `Config.ECDHCurve`、`HostnameOptions` | 握手参数与主机名校验 flags | `0.12.0` | 参数加载和校验绑定 |
-| 🧭 `ListenAndServeTLS` / `ServeTLS`、OCSP stapling、keylog、HTTP 集成 | 复用现有 `NewListener` | `0.12.0` | TLS 绑定与标准库集成 |
+| 🧭 `Config.NextProtos []string` | ALPN（对应 `-alpn`） | `0.11.0` | `SSL_CTX_set_alpn_protos` / `SSL_get0_alpn_selected` |
+| 🧭 会话复用 / 票据 | `Config.SessionCache`、`Conn.SessionState()` | `0.11.0` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
+| 🧭 `Config.ClientAuth` + `Config.ClientCAs` | 客户端证书认证（服务端） | `0.11.0` | `SSL_CTX_set_client_CA_list` / `SSL_CTX_set_verify` 回调 |
+| 🧭 `Config.GetCertificate func(*ClientHelloInfo)` / `GetConfigForClient` | 服务端 SNI 多证书（对应 `-sign_cert2` / `-enc_cert2`） | `0.11.0` | SNI 回调与配置生命周期 |
+| 🧭 `Config.VerifyPeerCertificate` / `VerifyConnection` | 自定义证书校验回调 | `0.11.0` | 验证回调绑定 |
+| 🧭 `Options` / `Modes`、完整 `ConnectionState`、`VerifyHostname` / `UnderlyingConn`、错误码常量 | 配置与连接状态 | `0.11.0` | 配置/状态绑定 |
+| 🧭 `Config.DHParameters` / `Config.ECDHCurve`、`HostnameOptions` | 握手参数与主机名校验 flags | `0.11.0` | 参数加载和校验绑定 |
+| 🧭 `ListenAndServeTLS` / `ServeTLS`、OCSP stapling、keylog、HTTP 集成 | 复用现有 `NewListener` | `0.11.0` | TLS 绑定与标准库集成 |
 
 **破坏性变更**
 
@@ -1150,12 +1164,12 @@ cgo-free 的只读 DER 解析与转储；`Parse` 对深度设上限（`maxDERDep
 - `func Parse(der []byte) (*Node, error)` — 解析完整 DER（拒绝空输入、截断、非法长度、不定长与尾部多余字节）
 - `func Dump(n *Node) string` — 生成带缩进的文本视图
 
-**规划中（`0.7.0`）**
+**`0.7.0` 已实现**
 
 | 符号 | 目标版本 | 边界 |
 |---|---|---|
-| 🧭 `func ParseWithLimits(der []byte, maxDepth, maxNodes int) (*Node, error)` | `0.7.0` | 可配置深度和节点数限额；保留现有 Parse 的固定 128 层保护和行为 |
-| 🧭 可识别的深度/节点数超限错误 | `0.7.0` | 调用方可区分限额拒绝与 DER 格式错误 |
+| 🆕 `func ParseWithLimits(der []byte, maxDepth, maxNodes int) (*Node, error)` | `0.7.0` | 可配置深度和节点数限额；保留现有 Parse 的固定 128 层保护和行为 |
+| 🆕 `ErrDepthLimit` / `ErrNodeLimit` | `0.7.0` | errors.Is 识别；限额须为正数，根计入节点数，深度沿用构造层数；原 Parse 的错误文本与 128 层行为保留 |
 
 ---
 
@@ -1206,7 +1220,7 @@ _（本包已无待实现项）_
 
 ✅ **已有**（`pkcs/pkcs7` 未变）｜旧包：`pkcs/pkcs7`
 
-**仅支持「证书袋」（certificates-only）**：不含签名 / 加密流程。
+支持证书/CRL 容器、附带/分离签名及多 RSA 接收者 EnvelopedData；CMS 仍为后续规划。
 
 **函数**
 
@@ -1219,17 +1233,27 @@ _（本包已无待实现项）_
 - 🆕 `func FromCRL(crls []*tx509.CRL) ([]byte, error)` — 把 CRL 列表打包为 PKCS#7 SignedData（无签名者），对应 `crl2pkcs7` 的 CRL 侧
 - 🆕 `func ExtractCRLs(data []byte) ([]*tx509.CRL, error)` — 从 PKCS#7（DER 或 PEM）提取 CRL；容器无 CRL 时返回空切片
 
-**规划中**
+**`0.7.0` 已实现与后续规划**
 
-| 符号 | 目标版本 | 前置 |
+| 符号 | 版本 | 语义 / 后续前置 |
 |---|---|---|
-| 🧭 `pkcs7.Sign` / `Verify` / `Encrypt` / `Decrypt` | `0.8.0` | 新增 `PKCS7_sign` / `PKCS7_encrypt` 等绑定 |
-| 🧭 CMS 族（`cms` 命令） | `0.11.0` | 新增 `CMS_*` 绑定 |
+| 🆕 `Sign(data []byte, opts *SignOptions) ([]byte, error)` | `0.7.0` | SignerCert/SignerKey、ExtraCerts、Digest、Detached；默认 SHA-256、附带内容，返回 DER |
+| 🆕 `Verify(data []byte, opts *VerifyOptions) (*SignedData, error)` | `0.7.0` | Roots 为显式信任存储，ExtraCerts 补链，DetachedContent 提供分离内容；仅显式 SignatureOnly 可不验信任 |
+| 🆕 `Encrypt(data []byte, opts *EncryptOptions) ([]byte, error)` | `0.7.0` | Recipients 为多个 RSA 证书，Cipher 默认 AES-256-CBC；返回 DER |
+| 🆕 `Decrypt(data []byte, opts *DecryptOptions) ([]byte, error)` | `0.7.0` | RecipientCert/RecipientKey，失败无输出 |
+| 🆕 `SignOptions` / `VerifyOptions` / `EncryptOptions` / `DecryptOptions` | `0.7.0` | 证书用 x509.Certificate，私钥用 asym.PrivateKey，Roots 用 x509.Store；不暴露 internal 类型 |
+| 🆕 `SignedData` 与幂等 `Close() error` | `0.7.0` | Content、Signers、TrustVerified；返回证书资源归结果持有者释放 |
+| 🧭 CMS 族（`cms` 命令） | `0.10.0` | 新增 `CMS_*` 绑定 |
 
-`0.8.0` 覆盖附带/分离签名和 EnvelopedData，明确区分签名有效与签名证书受信任；
-与铜锁 CLI 双向互通。CMS 扩展归 `0.11.0`，不把两者视为同一容器格式。
+`0.7.0` 覆盖附带/分离签名和多接收者 EnvelopedData。Verify 默认要求显式 Roots，
+验证全部签名者及其信任；SignatureOnly=true 时仍验签，结果 TrustVerified=false。
+SignedData.Signers 为签名者证书；验证失败不返回内容，Close 幂等释放结果持有的证书。
+Verify/Decrypt 接受 DER/PKCS7 PEM，二进制输入不做换行转换；分离内容缺失与空内容
+必须可区分。8.4.0 必须支持 RSA/ECDSA 签名与 RSA 接收者加密，SM2 和其他不支持的
+组合明确报错；非认证加密不承诺检测全部篡改。CLI 双向互通使用 smime -sign/-verify
+和 -encrypt/-decrypt；CMS 扩展归 `0.10.0`，不混同为同一格式。
 
-**规划中｜新顶级包 `ts`（`0.11.0`，尚不存在）**
+**规划中｜新顶级包 `ts`（`0.10.0`，尚不存在）**
 
 - 🧭 RFC 3161 时间戳请求/响应与 HTTP 传输；需新增 `TS_*` 绑定并复用 CMS 基础设施。
 - 实施时同步包索引、依赖图与逐符号 API；当前公开包数仍为 16。
@@ -1260,13 +1284,18 @@ _（本包已无待实现项）_
 - `func ChangePasswordWithOptions(data []byte, opts *Options) ([]byte, error)`
 - PBE：AES-128/192/256-CBC 或 PBE-SHA1-3DES；默认 AES-256-CBC、2048 次加密/MAC 迭代。
   ReadPass 读取输入，WritePass 保护输出；两者不表示同一容器内分设加密/MAC 口令。
-- 当前 `ChangePasswordWithOptions` 通过 Parse + Pack 重打包，不承诺保留任意 safe/bag 与属性。
+- 0.6.0 的 `ChangePasswordWithOptions` 曾经通过 Parse + Pack 重打包；0.7.0 已改为下述无损路径。
 
-**规划中（`0.7.0`）**
+**`0.7.0` 已实现**
 
 | 符号/行为 | 目标版本 | 边界 |
 |---|---|---|
-| 🧭 现有 `ChangePassword` 的外部容器互通与无损改密 | `0.7.0` | safe/bag 层重加密，保留密钥、证书链及属性；覆盖默认 PBES2/AES 与可用 3DES，不自动加载 legacy provider |
+| 🆕 现有 `ChangePassword` 的复杂容器无损改密 | `0.7.0` | 保留原算法/派生/MAC 策略；多私钥、多 safe、嵌套与全部内容/顺序/属性保留，更新盐/IV |
+| 🆕 现有 `ChangePasswordWithOptions` 改为无损路径 | `0.7.0` | 应用 PBE/迭代/读写口令，保留全部内容；空 FriendlyName 保留名称，非空在多密钥时拒绝歧义 |
+
+两入口均先验证 MAC；必须覆盖 PBES2/AES-128/192/256 与可用 3DES，不自动加载 legacy。
+无 MAC、不同 MAC/加密口令、签名保护及其他无法完整处理的结构/算法明确失败，失败无输出，
+不再以 Bundle 重打包兜底。以上为 0.7.0 已实现行为；无损指内容与属性保留，不保证随机加密 DER 相同。
 
 
 **破坏性变更**
