@@ -552,11 +552,23 @@ internal/testutil ← 仅被 *_test.go 使用
 - native：`X_X509_set_serial_hex`、`X_X509_REVOKED_set_serial_hex` / `X_X509_REVOKED_serial_hex`、`X_X509_add_ext_der`、`X509_STORE_set_default_paths` / `X509_STORE_load_locations`、`X_SM2_expand_point`，均经 core 使用。
 - native：`X_PKCS12_reencrypt` 遍历复杂 safe/bag、更新 PBE 与 MAC；`X_PKCS7_sign` / `X_PKCS7_verify` / `PKCS7_get0_signers` / `X_PKCS7_encrypt` / `X_PKCS7_decrypt` 与 `BIO_ctrl_pending`，空内容单独处理，无 Go 数据指针被 BIO 长期持有。
 
+## `0.8.0` 增量：原生兼容与经典算法（已实现）
+
+- core：`ErrAlgorithmUnavailable`、`PKey.SupportsEdDSAInstance`、`SignEdDSAInstance` /
+  `VerifyEdDSAInstance`、`SupportsRSAPSSDigest`、`DeriveSM2DH`；所有新上下文显式释放，
+  跨包密钥经桥接复制，输出与错误保留原生边界。
+- native：`X_EVP_DigestSignVerifyInit_instance`、`X_EVP_PKEY_SM2DH`、
+  `TongsuoHeaderVersionNum`；`algorithms.c/.h` 仅组装 OSSL_PARAM 与调用 EVP，
+  宏不存在时返回不支持，C 密钥指针参数保存在 C 栈，ID/context 复制到 C 内存。
+- `internal/testutil.BuildNative(dir, source) (string, error)`：用 CC、CGO flags 与 TONGSUO_HOME 编译独立
+  EVP 测试驱动，返回编译错误供调用方断言，不使用 SDK shim 或系统 OpenSSL 兜底。
+- `TestNativeVersionIdentity` 比较头文件与运行库的低 32 位版本，兼容上游返回值的
+  符号扩展，并支持 CI 的 TONGSUO_EXPECT_VERSION 精确检查。
+
 ## 后续实施前置（规划，不属于已有符号清单）
 
 | 目标版本 | core/native 工作 | 边界 |
 |---|---|---|
-| `0.8.0` | 8.5 兼容、上下文签验、RSA-SM3 原生能力验证、SM2DH 参数 | 8.4 编译保护与运行时探测 |
 | `0.9.0` | TLS / NTLS 配置、混合模式、证书链、SNI/ALPN、认证回调、参数与状态；I/O、deadline 与错误采集修复 | 同一 SSL 的原生调用受控，独立读写 deadline、取消与关闭通过验收 |
 | `0.10.0` | RFC 8998 严格模式、组/签名状态、消息/状态/验证事件、`SSL_trace` 与 keylog | TLS / NTLS / RFC 8998 分别验收；回调数据复制，不暴露原生指针 |
 | `0.11.0` | `SSL_SESSION_*`、会话缓存/序列化、票据与密钥轮换 | 握手后票据处理、实际复用及身份隔离 |

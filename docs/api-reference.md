@@ -493,7 +493,7 @@
 
 **函数｜AES 扩展与 ZUC（`0.6.0` 新增）**
 
-- `AES-{128,192,256}-{CCM,OCB,SIV,WRAP,WRAP-PAD,CBC-CTS}`、`AES-{128,256}-XTS`、`ZUC-128-EEA3` 登记于 `Names`，共 55 项；`Available` 探测本地 provider。
+- `AES-{128,192,256}-{CCM,OCB,SIV,WRAP,WRAP-PAD,CBC-CTS}`、`AES-{128,256}-XTS`、`ZUC-128-EEA3` 登记于 `Names`，共 58 项（含 0.8.0 的三个 GCM-SIV 名称）；`Available` 探测本地 provider。
 - `func NewAESCCM(key []byte) (cipher.AEAD, error)` / `NewAESOCB` / `NewAESSIV` — 亦可用 `NewAEAD`。
 - `func EncryptAESCCM(key, nonce, plaintext, aad []byte) ([]byte, []byte, error)` / `EncryptAESOCB` / `EncryptAESSIV`
 - `func DecryptAESCCM(key, nonce, ciphertext, tag, aad []byte) ([]byte, error)` / `DecryptAESOCB` / `DecryptAESSIV`
@@ -501,7 +501,7 @@
 - `func EncryptZUC(key, iv, data []byte) ([]byte, error)` / `DecryptZUC` — 16 字节 key、5 字节原生 EEA3 IV。
 - `cipher.AEAD` 的 `NonceSize` / `Overhead` / `Seal` / `Open` 行为沿用现有模式；`Seal` 失败返回 nil，`Open` 失败不返回部分明文。
 - CCM/OCB 的 AEAD `NonceSize` 为 12；一次性 CCM 接受 7..13 字节、OCB 为 1..15。
-  SIV 使用 32/48/64 字节双密钥，AEAD 的 `NonceSize` 为 0（确定性），一次性入口将非空 nonce 作为最后一个 AAD 分量；8.4.0 上拒绝空消息并返回 `ErrUnsupported`。
+  SIV 使用 32/48/64 字节双密钥，AEAD 的 `NonceSize` 为 0（确定性），一次性入口将非空 nonce 作为最后一个 AAD 分量；8.4.0 上拒绝空消息并返回 `ErrUnsupported`，0.8.0 在铜锁 8.5.0 上支持空消息并校验认证。
   XTS 使用 32/64 字节双密钥，支持不少于 16 字节的数据；CBC-CTS 默认 CS1。
   WRAP/WRAP-PAD 的 nil IV 使用 RFC 3394/5649 标准值，后两者校验包装完整性；其余非 AEAD 模式不提供消息认证。
 - 新增模式的填充：XTS/WRAP/WRAP-PAD/CBC-CTS/ZUC 仅 `none`；CCM/OCB/SIV 无外部填充。
@@ -511,7 +511,7 @@
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
-| 🧭 AES-GCM-SIV | `0.8.0` | 铜锁 8.5 兼容与新版 provider |
+| 🆕 AES-GCM-SIV | `0.8.0` | NewAESGCMSIV / EncryptAESGCMSIV / DecryptAESGCMSIV；128/192/256 位，12 字节 nonce、16 字节 tag，8.4 返回 ErrUnsupported |
 
 > **DES 的实现方式与安全口径**：单 DES 在铜锁中只注册在 legacy provider，本库不加载 legacy（见
 > [roadmap.md](roadmap.md) §4 第 10 条），改以 `K‖K‖K`（三份相同密钥）驱动 DES-EDE3 实现——
@@ -641,7 +641,7 @@
 - `func LoadPKCS8(data []byte, format meta.Format, encrypted bool, pass string) (PrivateKey, error)`
 - `func MarshalRSAPublicKeyPKCS1PEM(pub PublicKey) ([]byte, error)` / `func LoadRSAPublicKeyPKCS1PEM(data []byte) (PublicKey, error)`
 - `func Check(priv PrivateKey) error` / `func PublicCheck(pub PublicKey) error`
-- `func SupportsRSASignatureDigest(key Key, hash string) (bool, error)` — 铜锁 8.4.0 的 RSA-SM3 签名不可用，签/验返回 `ErrUnsupported`；OAEP-SM3 可用。签名可运行支持随 8.5 兼容移至 `0.8.0`，以原生能力验证为准。
+- `func SupportsRSASignatureDigest(key Key, hash string) (bool, error)` — 铜锁 8.4.0 的 RSA-SM3 签名不可用，签/验返回 `ErrUnsupported`；OAEP-SM3 可用。`0.8.0` 已在固定 8.5.0 验证 PKCS#1 v1.5 / PSS 与 CLI 双向互验。
 - PKCS#8 Version 选择 PBE 方案：1 为 PBE-SHA1-3DES；2 为 PBES2（默认 AES-256-CBC / hmacWithSHA256 / 2048 次迭代），可选 AES-128/192/256-CBC 与 HMAC-SHA1/224/256/384/512。
   它不改变 ASN.1 PrivateKeyInfo 的版本。私钥结果由调用方 `asym.Close`；源密钥与口令缓冲由调用方清零。
 
@@ -651,8 +651,8 @@
 |---|---|---|
 | 🆕 现有 `Format` / `DecryptWithOrder` 已接受 SM2 压缩 C1 输入 | `0.7.0` | 经 core 调用铜锁点解码与校验；不增加压缩输出 |
 | 🆕 RSA 签名格式说明与双向互验 | `0.7.0` | 保持模数长度字节串，不能改成 SM2/ECDSA DER |
-| 🧭 现有 PKCS#1 v1.5 / PSS 的 SM3 签名可运行支持 | `0.8.0` | `SupportsRSASignatureDigest` 已在 `0.6.0` 实现；验证固定版本 RSA provider |
-| 🧭 ED25519ph / ED25519ctx / ED448ph | `0.8.0` | 铜锁 8.5 兼容；`instance` / `context-string` 参数 |
+| 🆕 现有 PKCS#1 v1.5 / PSS 的 SM3 签名可运行支持 | `0.8.0` | 8.5.0 签验与 CLI 双向互验通过；8.4.0 返回 ErrUnsupported；新增 SupportsRSAPSSDigest(key Key, hash string, saltLen int) (bool, error) |
+| 🆕 ED25519ph / ED25519ctx / ED448ph / Ed448 上下文 | `0.8.0` | 独立 Sign/Verify 函数，原消息输入；SupportsEdDSAInstance(key Key, instance string, context []byte) (bool, error) |
 | 🧭 ML-DSA-44 / 65 / 87 | `0.13.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
 | 🧭 SLH-DSA 12 变体 | `0.13.0` | 同上 |
 | 🧭 `func Encapsulate` / `func Decapsulate`（KEM） | `0.13.0` | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
@@ -667,6 +667,16 @@
 - `sm2.PublicKeyFromPKey(*core.PKey)` 移除（修复 E1-6）；`x25519` / `x448` 包的 `SharedSecret` 迁至 `ecdh`
 
 ---
+
+**`0.8.0` EdDSA 独立入口**：
+
+- `SignEd25519ctx` / `SignEd25519ph` / `SignEd448ph` / `SignEd448WithContext`：
+  `(priv PrivateKey, msg, context []byte) ([]byte, error)`。
+- `VerifyEd25519ctx` / `VerifyEd25519ph` / `VerifyEd448ph` / `VerifyEd448WithContext`：
+  `(pub PublicKey, msg, sig, context []byte) error`。
+- 输入为原消息；ph 在原生层完成预哈希，context 最长 255 字节，ctx 必须非空。
+  错误实例/上下文/签名不互认；不可用返回 ErrUnsupported，验签失败返回 ErrSignature。
+  旧 pure 入口与密钥编码保持，不新增证书/CSR/CRL 变体签发能力。
 
 ## 8. `ecdh` — 密钥协商
 
@@ -734,8 +744,8 @@
 |---|---|---|
 | 🆕 `func (k *PrivateKey) Close() error` / `func (k *PublicKey) Close() error` | `0.7.0` | nil/零值/已关闭均幂等；关闭后可失败操作返回错误，查询返回约定零值 |
 | 🆕 `func (k *PrivateKey) Public() (*PublicKey, error)` | `0.7.0` | BREAKING：复制为独立句柄，公私钥及源 asym 密钥独立关闭；复制失败返回 error，调用方释放返回公钥 |
-| 🧭 `func DeriveSharedSecret(priv asym.PrivateKey, pub asym.PublicKey) ([]byte, error)` | `0.8.0` | 复用现有桥接及 derive，失败释放临时副本 |
-| 🧭 SM2DH 密钥协商（`CurveByName("SM2DH")`） | `0.8.0` | 铜锁已启用（`key-exchange-algorithms`）；`EVP_PKEY_derive*` 已绑定，需补 SM2 派生参数 |
+| 🆕 `func DeriveSharedSecret(priv asym.PrivateKey, pub asym.PublicKey) ([]byte, error)` | `0.8.0` | 六条现有曲线，复用桥接/derive，释放临时副本，不接受 SM2DH 隐式默认参数 |
+| 🆕 `func DeriveSM2DH(opts *SM2DHOptions) ([]byte, error)` | `0.8.0` | 原生 SM3 参数化派生；不是曲线名入口，不生成或验证密钥确认消息 |
 
 **破坏性变更**
 
@@ -745,6 +755,13 @@
 - `LoadPrivateKey` / `LoadPublicKey` / `Curves` / `CurveByName` 为新增，无破坏性
 
 ---
+
+**`0.8.0` SM2DH 选项**：`StaticKey` / `EphemeralKey` 为 `asym.PrivateKey`，
+`PeerStaticKey` / `PeerEphemeralKey` 为 `asym.PublicKey`；`SelfID` / `PeerID` 为
+`[]byte`（各 1..8191 字节），`Role SM2DHRole` 必须为 `SM2DHInitiator` 或
+`SM2DHResponder`，`OutputLen int` 为 1..2147483647。摘要固定 SM3，调用期间不并发
+Close 输入密钥，调用方负责认证静态公钥、重新生成临时私钥及清零输出。
+`ErrUnsupported` 表示原生协商能力不可用；原通用曲线加载器仍拒绝 SM2。
 
 ## 9. `keystore` — 密钥元数据、存储与轮转
 

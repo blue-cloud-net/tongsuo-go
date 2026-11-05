@@ -156,7 +156,7 @@ func testNTLSConfigWithCN(t *testing.T, signCN, encCN string) *Config {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	build := func(cn string, priv asym.PrivateKey) *x509.Certificate {
+	build := func(cn string, priv asym.PrivateKey, usage string) *x509.Certificate {
 		subject := x509.NewName().Add("CN", cn)
 		cert := x509.NewCertificate()
 		if err := cert.SetVersion(2); err != nil {
@@ -180,6 +180,9 @@ func testNTLSConfigWithCN(t *testing.T, signCN, encCN string) *Config {
 		if err := cert.AddBasicConstraints(true); err != nil {
 			t.Fatal(err)
 		}
+		if err := cert.AddKeyUsage(usage); err != nil {
+			t.Fatal(err)
+		}
 		if err := cert.Sign(priv); err != nil {
 			t.Fatal(err)
 		}
@@ -187,9 +190,9 @@ func testNTLSConfigWithCN(t *testing.T, signCN, encCN string) *Config {
 	}
 	return &Config{
 		NTLS:     true,
-		SignCert: build(signCN, signPriv),
+		SignCert: build(signCN, signPriv, "critical,digitalSignature"),
 		SignKey:  signPriv,
-		EncCert:  build(encCN, encPriv),
+		EncCert:  build(encCN, encPriv, "critical,keyEncipherment,dataEncipherment,keyAgreement"),
 		EncKey:   encPriv,
 	}
 }

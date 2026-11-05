@@ -1,11 +1,4 @@
-# GitHub Actions CI for tongsuo-go
-#
-# 触发：push / PR 到 main（dev 不触发）、手动触发
-# 复用：release.yml 通过 workflow_call 调用本工作流，保证发布测试与 CI 完全一致
-# 矩阵：ubuntu + macOS × amd64 / arm64（Go 1.21）
-# 阶段：lint → test → interop（CLI 对拍）
-# Tongsuo 来源：源码编译 + actions/cache，避免每次拉取与重复编译
-
+# Fixed Tongsuo releases; release.yml reuses the same checks via workflow_call.
 name: CI
 
 on:
@@ -13,270 +6,78 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  workflow_call:      # 供 release.yml 复用（发布测试与 CI 完全同源）
+  workflow_call:
   workflow_dispatch:
 
-# 最小权限：仅读仓库内容
 permissions:
   contents: read
 
-# 全局环境变量：方便一处调整 Tongsuo 版本与仓库
-env:
-  TONGSUO_REPO: Tongsuo-Project/Tongsuo
-  # 固定到稳定 tag 以保证可复现；升级 Tongsuo 时同步修改 TONGSUO_REF 并 bump 下方缓存键前缀
-  TONGSUO_REF: 8.4.0
-
-# 取消冗余运行：同一分支/同一 PR 的旧运行自动取消
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  TONGSUO_REPO: Tongsuo-Project/Tongsuo
+
 jobs:
-  # ---------------------------------------------------------------------------
-  # 1. 静态检查：go vet（仅 ubuntu，避免重复消耗 runner）
-  #    说明：本项目历史上同时跑过 golangci-lint，但 cgo 绑定函数名（EVP_xxx /
-  #    HMAC_CTX_new 等）与项目内惯用的 `defer x.Close()` 模式与 lint 默认规则
-  #    大量冲突；这些是惯例写法，不属于真实 Bug。lint 暂退为只跑官方 go vet。
-  #    如未来要重新启用 lint，先建立 .golangci.yml 并收敛规则范围。
-  # ---------------------------------------------------------------------------
-  lint:
-    name: Lint (ubuntu / Go 1.21)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
-      CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
-      CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
-      TONGSUO_HOME: ${{ github.workspace }}/.tongsuo-install
-      TONGSUO_CONFIG_FLAGS: --prefix=${{ github.workspace }}/.tongsuo-install --libdir=${{ github.workspace }}/.tongsuo-install/lib enable-ntls enable-trace no-shared
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: "1.21"
-          cache: true
-          cache-dependency-path: go.mod
-
-      # 缓存 Tongsuo 编译/安装产物；go vet 解析 cgo 同样需要 Tongsuo 头文件
-      - name: Cache Tongsuo
-        id: cache-tongsuo
-        uses: actions/cache@v5
-        with:
-          path: ${{ github.workspace }}/.tongsuo-install
-          key: tongsuo-v3-${{ runner.os }}-amd64-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/ci.yml') }}
-          restore-keys: |
-            tongsuo-v3-${{ runner.os }}-amd64-${{ env.TONGSUO_REF }}-
-
-      - name: Build Tongsuo from source
-        if: steps.cache-tongsuo.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "==> Cloning Tongsuo (${{ env.TONGSUO_REPO }} @ ${{ env.TONGSUO_REF }})"
-          git clone --depth 1 --branch "${{ env.TONGSUO_REF }}" \
-            "https://github.com/${{ env.TONGSUO_REPO }}.git" tongsuo
-          echo "==> Clone done: $(du -sh tongsuo | cut -f1) in $(pwd)"
-          cd tongsuo
-          echo "==> ./config $TONGSUO_CONFIG_FLAGS"
-          ./config $TONGSUO_CONFIG_FLAGS
-          echo "==> ./config done"
-          JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
-          echo "==> make -j${JOBS}"
-          make -j"${JOBS}"
-          echo "==> make done"
-          # 用 install 而非 install_sw：前者 = install_sw + install_ssldirs，
-          # 会一并装 $OPENSSLDIR（ssl/openssl.cnf 等）；openssl CLI 的 req / ca /
-          # ocsp 读默认配置文件，缺了会报 "Can't open .../ssl/openssl.cnf"。
-          echo "==> make install"
-          make install
-          echo "==> Tongsuo installed to ${{ github.workspace }}/.tongsuo-install"
-
-      - name: go vet
-        run: go vet ./...
-
-  # ---------------------------------------------------------------------------
-  # 2. 编译与测试：ubuntu + macOS × amd64 / arm64（原生 runner，Go 1.21）
-  #    - arm64 使用原生 arm64 runner，真实执行 go build / go test（非交叉编译）
-  #    - 缓存键含架构：Linux/macOS 上 amd64/arm64 二进制互不兼容，必须区分
-  # ---------------------------------------------------------------------------
   test:
-    name: Test (${{ matrix.os }} / ${{ matrix.arch }})
-    needs: lint
+    name: Test (${{ matrix.os }} / ${{ matrix.arch }} / Tongsuo ${{ matrix.tongsuo }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
+        tongsuo: [8.4.0, 8.5.0]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15-intel, macos-latest]
         include:
-          - os: ubuntu-latest
-            arch: amd64
-          - os: ubuntu-24.04-arm
-            arch: arm64
-          - os: macos-15-intel
-            arch: amd64
-          - os: macos-latest
-            arch: arm64
+          - {os: ubuntu-latest, arch: amd64}
+          - {os: ubuntu-24.04-arm, arch: arm64}
+          - {os: macos-15-intel, arch: amd64}
+          - {os: macos-latest, arch: arm64}
     env:
       GOARCH: ${{ matrix.arch }}
+      TONGSUO_REF: ${{ matrix.tongsuo }}
+      TONGSUO_EXPECT_VERSION: ${{ matrix.tongsuo }}
+      TONGSUO_HOME: ${{ github.workspace }}/.tongsuo-install
+      CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
+      CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
       LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
       DYLD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
-      CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
-      CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
-      TONGSUO_HOME: ${{ github.workspace }}/.tongsuo-install
-      # Tongsuo 编译参数（来源：docs/architecture.md §6.2）
-      TONGSUO_CONFIG_FLAGS: --prefix=${{ github.workspace }}/.tongsuo-install --libdir=${{ github.workspace }}/.tongsuo-install/lib enable-ntls enable-trace no-shared
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: "1.21"
-          cache: true
-          cache-dependency-path: go.mod
-
-      # 缓存 Tongsuo 编译/安装产物，按 OS + 架构 + 版本号区分 key
-      - name: Cache Tongsuo
-        id: cache-tongsuo
-        uses: actions/cache@v5
-        with:
-          path: ${{ github.workspace }}/.tongsuo-install
-          key: tongsuo-v3-${{ runner.os }}-${{ matrix.arch }}-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/ci.yml') }}
-          restore-keys: |
-            tongsuo-v3-${{ runner.os }}-${{ matrix.arch }}-${{ env.TONGSUO_REF }}-
-
-      - name: Build Tongsuo from source
-        if: steps.cache-tongsuo.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "==> Cloning Tongsuo (${{ env.TONGSUO_REPO }} @ ${{ env.TONGSUO_REF }})"
-          git clone --depth 1 --branch "${{ env.TONGSUO_REF }}" \
-            "https://github.com/${{ env.TONGSUO_REPO }}.git" tongsuo
-          echo "==> Clone done: $(du -sh tongsuo | cut -f1) in $(pwd)"
-          cd tongsuo
-          echo "==> ./config $TONGSUO_CONFIG_FLAGS"
-          ./config $TONGSUO_CONFIG_FLAGS
-          echo "==> ./config done"
-          JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
-          echo "==> make -j${JOBS}"
-          make -j"${JOBS}"
-          echo "==> make done"
-          # 用 install 而非 install_sw：前者 = install_sw + install_ssldirs，
-          # 会一并装 $OPENSSLDIR（ssl/openssl.cnf 等）；openssl CLI 的 req / ca /
-          # ocsp 读默认配置文件，缺了会报 "Can't open .../ssl/openssl.cnf"。
-          echo "==> make install"
-          make install
-          echo "==> Tongsuo installed to ${{ github.workspace }}/.tongsuo-install"
-
-      # Linux：写入 ld.so.conf 并 ldconfig；macOS 通过 DYLD_LIBRARY_PATH 生效
-      # GitHub Actions hosted runner 默认以 `runner` 用户运行（非 root），
-      # 写入 /etc 需要 sudo；runner 用户已具备免密 sudo 权限。
-      - name: Configure dynamic linker (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          echo "${{ github.workspace }}/.tongsuo-install/lib" \
-            | sudo tee /etc/ld.so.conf.d/tongsuo.conf > /dev/null
-          sudo ldconfig
-
-      # 动态链接构建
-      - name: go build
-        run: go build ./...
-
-      # 静态链接构建（验证 internal/native/build_static.go 路径）
-      # 说明：build_static.go 目前仅提供 linux LDFLAGS，macOS 静态链接未接线，
-      # 故该步骤仅在 Linux 上执行。
-      - name: go build (static tag)
-        if: runner.os == 'Linux'
-        run: go build -tags static ./...
-
-      # 单元测试（默认不含 CLI 对比测试；tongsuocli tag 需要 openssl CLI，
-      # 本仓库的 *_tongsuocli_test.go 默认不编译，详见 testing-guide.md §2）
-      - name: go test
-        run: go test -count=1 ./...
-
-  # ---------------------------------------------------------------------------
-  # 3. CLI 对拍：`*_tongsuocli_test.go`（默认 build tag 排除，需铜锁 openssl CLI）
-  #    - 仅在 ubuntu/amd64 跑一次：对拍验证的是库与铜锁 CLI 的逐字节一致性，
-  #      与 OS/架构无关，无需铺满矩阵
-  #    - 复用 lint / test 已缓存的 Tongsuo 产物（缓存键同为 Linux-amd64-<ref>-…）
-  #    - TONGSUO_OPENSSL_BIN 必须显式指定：internal/testutil 的默认值
-  #      `/opt/tongsuo/bin/openssl` 只适用于本地开发机，CI 装在 workspace 下
-  # ---------------------------------------------------------------------------
-  interop:
-    name: Interop (ubuntu / Go 1.21)
-    needs: test
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
-      CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
-      CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
-      TONGSUO_HOME: ${{ github.workspace }}/.tongsuo-install
-      # 铜锁命令行位置：testutil 用它做逐字节对拍（NTLS 需 -ntls -enable_ntls 同传）
       TONGSUO_OPENSSL_BIN: ${{ github.workspace }}/.tongsuo-install/bin/openssl
-      TONGSUO_CONFIG_FLAGS: --prefix=${{ github.workspace }}/.tongsuo-install --libdir=${{ github.workspace }}/.tongsuo-install/lib enable-ntls enable-trace no-shared
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: "1.21"
+          go-version: '1.21'
           cache: true
           cache-dependency-path: go.mod
-
-      # 与 lint / test 使用同一缓存键，命中已有 Tongsuo 产物
       - name: Cache Tongsuo
         id: cache-tongsuo
         uses: actions/cache@v5
         with:
-          path: ${{ github.workspace }}/.tongsuo-install
-          key: tongsuo-v3-${{ runner.os }}-amd64-${{ env.TONGSUO_REF }}-${{ hashFiles('.github/workflows/ci.yml') }}
-          restore-keys: |
-            tongsuo-v3-${{ runner.os }}-amd64-${{ env.TONGSUO_REF }}-
-
-      - name: Build Tongsuo from source
+          path: .tongsuo-install
+          key: tongsuo-v4-${{ runner.os }}-${{ matrix.arch }}-${{ matrix.tongsuo }}-shared-${{ hashFiles('scripts/build-tongsuo-ci.sh') }}
+      - name: Build Tongsuo
         if: steps.cache-tongsuo.outputs.cache-hit != 'true'
+        run: bash scripts/build-tongsuo-ci.sh
+      - name: Check CLI identity
         shell: bash
         run: |
-          set -euo pipefail
-          echo "==> Cloning Tongsuo (${{ env.TONGSUO_REPO }} @ ${{ env.TONGSUO_REF }})"
-          git clone --depth 1 --branch "${{ env.TONGSUO_REF }}" \
-            "https://github.com/${{ env.TONGSUO_REPO }}.git" tongsuo
-          echo "==> Clone done: $(du -sh tongsuo | cut -f1) in $(pwd)"
-          cd tongsuo
-          echo "==> ./config $TONGSUO_CONFIG_FLAGS"
-          ./config $TONGSUO_CONFIG_FLAGS
-          echo "==> ./config done"
-          JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
-          echo "==> make -j${JOBS}"
-          make -j"${JOBS}"
-          echo "==> make done"
-          # 用 install 而非 install_sw：前者 = install_sw + install_ssldirs，
-          # 会一并装 $OPENSSLDIR（ssl/openssl.cnf 等）；openssl CLI 的 req / ca /
-          # ocsp 读默认配置文件，缺了会报 "Can't open .../ssl/openssl.cnf"。
-          echo "==> make install"
-          make install
-          echo "==> Tongsuo installed to ${{ github.workspace }}/.tongsuo-install"
-
-      - name: Configure dynamic linker (Linux)
+          banner=$("$TONGSUO_OPENSSL_BIN" version -a)
+          echo "$banner"
+          case "$banner" in *"Tongsuo $TONGSUO_REF ("*) ;; *) exit 1;; esac
+      - name: Build and vet
         run: |
-          echo "${{ github.workspace }}/.tongsuo-install/lib" \
-            | sudo tee /etc/ld.so.conf.d/tongsuo.conf > /dev/null
-          sudo ldconfig
-
-      - name: Verify openssl CLI
-        run: |
-          test -x "$TONGSUO_OPENSSL_BIN"
-          "$TONGSUO_OPENSSL_BIN" version
-
-      # CLI 对拍：每个算法包用铜锁命令行逐字节比对（-count=1 关闭结果缓存）
-      - name: go test (tongsuocli tag)
+          go build ./...
+          go vet ./...
+      - name: Unit tests
+        run: go test -count=1 ./...
+      - name: Linux static link and tests
+        if: runner.os == 'Linux'
+        run: go test -count=1 -tags static ./...
+      - name: Race tests
+        if: runner.os == 'Linux' && matrix.arch == 'amd64'
+        run: go test -count=1 -race ./...
+      - name: CLI interop
+        if: runner.os == 'Linux' && matrix.arch == 'amd64'
         run: go test -count=1 -tags tongsuocli ./...
-  

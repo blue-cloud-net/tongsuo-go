@@ -469,7 +469,7 @@ go test -fuzz FuzzRoundTrip ./sym
 
 - `sym/extended_test.go`：RFC 3394 WRAP、RFC 5297 SIV、RFC 7253 OCB 空消息、
   ZUC 零向量、NIST CAVS 11.0 AES-128/256-XTS（含密文窃取）、OpenSSL 官方 AES-256-CCM 16 字节 tag 向量；全部新模式 × 密钥长度 × 输入长度往返；认证 tag/AAD/nonce/密文
-  篡改；WRAP 完整性；SIV 空消息拒绝；CCM 空载荷必须生成并校验 tag。
+  篡改；WRAP 完整性；8.4 SIV 空消息拒绝（0.8.0 在 8.5 支持并认证）；CCM 空载荷必须生成并校验 tag。
   模糊种子为 `FuzzAESWrapPadRoundTrip`，基准为 `BenchmarkAESOCB`。
 - `ecdh/parameters*_test.go`：P-256/384/521/secp256k1 命名/显式参数逐字节 CLI 对拍，
   文件入口、参数驱动生成、坏输入与不支持曲线。
@@ -562,8 +562,14 @@ CLI 测试额外检查外部 PBES2/AES 与 3DES 的算法、迭代及 MAC 参数
 
 ### `0.8.0` 至 `1.0.0`
 
-- `0.8.0`：固定 8.4.0/8.5 版本独立构建、单元测试与 CLI 对拍，头文件、链接库、
-  CLI 必须同源；验证能力探测与真实调用一致，AES-SIV 空消息不能因升级而绕过认证。
+- `0.8.0`（已实现）：8.4.0/8.5.0 独立构建与 CLI 同源验证；50 组 RFC 8452
+  向量和独立 EVP 对拍，覆盖 AES-192 原生扩展、空消息和 tag/AAD/nonce/密钥篡改；
+  SIV 空消息在 8.4 拒绝、8.5 认证。8 组 RFC 8032 上下文/ph 向量与 CLI 双向互验，
+  覆盖 context 0/255/256 字节、错配与变体隔离；RSA-SM3 分 PKCS#1 v1.5/PSS/OAEP
+  验收，并独立探测 PSS/MGF1/盐长。通用 KEX 六曲线与既有路径一致；SM2DH 校验
+  GB/T 32918.5-2017 附录 B.2、双方角色/ID/输出长度与句柄释放，不把派生称为确认。
+  NTLS 正确用途握手及互换用途拒绝均覆盖；8.5 enc 的 WRAP 拒绝经明确断言，
+  使用独立 EVP 保持逐字节双向比较。测试驱动仅在临时目录编译，不下载铜锁。
 - `0.9.0`：TLS 1.2/1.3、NTLS ECC/ECDHE 分别回环与 CLI 双向互通，断言协议/套件与
   双向数据；覆盖混合端口并发、SNI/ALPN、完整证书链、客户端认证和严格参数配置。
   三种显式验证策略对同一错误证书分别断言连接结果和验证事实；覆盖错误 CA、过期、
