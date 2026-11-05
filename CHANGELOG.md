@@ -24,7 +24,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-## [0.8.0] - TBD
+## [0.8.0] - 2026-11-05
 
 ### Added
 
@@ -44,7 +44,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 ### BREAKING / Known limitations
 
 - New EdDSA variants and GCM-SIV return ErrUnsupported on unavailable native builds; existing pure EdDSA and OAEP-SM3 behavior is preserved. SM2DH returns derived key material only: peer authentication and key-confirmation messages are not provided.
-- NTLS certificates must meet the native version's purpose/security requirements; regenerate missing or incorrect KeyUsage before upgrading. No safety checks or legacy providers are enabled as a workaround.
+- NTLS certificates must meet the native version's purpose/security requirements; regenerate missing or incorrect KeyUsage before upgrading. Native safety checks remain enabled; legacy providers are not loaded as a workaround.
 
 ---
 

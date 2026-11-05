@@ -1,6 +1,6 @@
 # 官方 tongsuo-go-sdk 与本库功能对比
 
-> **`0.6.0` 实施更新**：下文采集时的基线表保留原口径；AES 扩展/ZUC、EC 参数、
+> **当前交付更新（`0.8.0`）**：下文采集时的基线表保留原口径；AES 扩展/ZUC、EC 参数、
 > PKCS#8/12 配置、PKCS#7 CRL、JWK OKP/oct、本地多对象加载、OCSP HTTP/nonce 与
 > 证书信任属性已在 8.4.0 基线上实现，当前逐符号事实见 [api-reference.md](api-reference.md)。
 > `0.8.0` 已实现铜锁 8.4.0/8.5.0 验证、GCM-SIV、EdDSA 上下文/ph、RSA-SM3 与 SM2DH 派生；下文历史缺口以当前 API 清单为准，密钥确认仍延期。
@@ -40,7 +40,7 @@
 | **对比基线（官方）** | [`Tongsuo-Project/tongsuo-go-sdk`](https://github.com/Tongsuo-Project/tongsuo-go-sdk) `main` @ [`002a0963`](https://github.com/Tongsuo-Project/tongsuo-go-sdk/commit/002a09631de785f2d984d9e0b3a7f1e9a169940c)（2025-01-14，Merge PR #40 Update README.md） |
 | **官方 README 自报能力** | Hash（SM3/MD5/SHA1/SHA256）、SM4、SM2 加解密、SM2withSM3 签名、HMAC、SM2 证书、TLCP + TLSv1.0/1.1/1.2/1.3（详见 README §Features） |
 | **官方内部文件基线** | 顶层 `ctx.go` / `ssl.go` / `conn.go` / `net.go` / `http.go` / `tickets.go` / `pem.go` / `init.go`；`crypto/`（`bio.go` `cert.go` `ciphers.go` `ciphers_gcm.go` `dh.go` `dhparam.go` `digest.go` `engine.go` `hmac.go` `hostname.go` `key.go` `mapping.go` `nid.go`）；`crypto/{md5,sha1,sha256,sm2,sm3,sm4}/` 子包；`utils/{errors,future}.go`；`test/`；`examples/{cert_gen,hmac_sm3,sm2_encrypt,sm2_keygen,sm2_sign,sm2_signasn1,sm3,sm4,tlcp_client,tlcp_server}` |
-| **本库基线** | `tongsuo-go` `0.6.0`（2026-11-03 定版） |
+| **本库基线** | `tongsuo-go` `0.8.0`（2026-11-05 定版，待标签发布） |
 | **检索方式** | 全仓库 `grep`/`ripgrep` 导出符号 + `internal/native/binding_*.go` + 现有 `docs/architecture.md` §3、§5 目录地图；结论字段「本库现状」均可在源码中校验 |
 | **环境声明** | 本机未安装 Tongsuo C 库，因此本次仅做静态比对；后续具体 PR 的实施必须 `gofmt -l .` / `go vet ./...` / `go build ./...` / `go test -count=1 ./...` 通过后才能合入 |
 

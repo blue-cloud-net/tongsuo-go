@@ -73,7 +73,7 @@ itself, and the Tongsuo installation is a build prerequisite (see [Requirements]
 
 ### Implementation baseline and future releases
 
-The `0.8.0` development branch implements Tongsuo 8.4.0/8.5.0 compatibility, GCM-SIV, EdDSA extensions and SM2DH; it is not released. AES-SIV empty messages use the verified 8.5.0 path; NTLS signing/encryption certificates must declare their respective KeyUsage.
+The `0.8.0` release candidate implements Tongsuo 8.4.0/8.5.0 compatibility, GCM-SIV, EdDSA extensions and SM2DH; it is not released. AES-SIV empty messages use the verified 8.5.0 path; NTLS signing/encryption certificates must declare their respective KeyUsage.
 `0.7.0`: reliability, data integrity and PKCS containers: handle release, parser limits, full serial numbers, DER extensions, trust paths, compressed SM2 input, lossless password changes for complex PKCS#12 containers, and PKCS#7 signing, verification, encryption and decryption.
 
 The following releases are planned capabilities, not currently available features:
