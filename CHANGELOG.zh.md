@@ -37,6 +37,7 @@
 
 ### Bug 修复
 
+- TLS/NTLS 每次 I/O 前清空原生线程残留错误，避免铜锁 8.5.0 偶发把 NTLS WANT_READ 误判为故障，导致对端 Broken pipe。
 - NTLS 测试夹具与可运行示例显式区分签名/加密证书 KeyUsage，保留 8.5.0 的原生证书用途检查。
 
 ### BREAKING / 已知限制

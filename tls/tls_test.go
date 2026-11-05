@@ -367,9 +367,17 @@ func TestNTLSLoopback(t *testing.T) {
 	c, _ := conn.(*Conn)
 	t.Logf("NTLS version=%s cipher=%s", c.Version(), c.CipherName())
 
+	// Let the server reach WANT_READ before sending application data. This
+	// exposes stale native thread errors that an immediate write can hide.
+	time.Sleep(20 * time.Millisecond)
 	msg := []byte("hello tongsuo-go ntls")
 	if _, err := conn.Write(msg); err != nil {
-		t.Fatal(err)
+		select {
+		case serverErr := <-errCh:
+			t.Fatalf("client write: %v; server: %v", err, serverErr)
+		default:
+			t.Fatal(err)
+		}
 	}
 	reply := make([]byte, len(msg))
 	if _, err := conn.Read(reply); err != nil {

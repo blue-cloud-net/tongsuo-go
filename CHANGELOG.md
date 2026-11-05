@@ -39,6 +39,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ### Fixed
 
+- TLS/NTLS I/O clears stale native thread errors before each operation, preventing intermittent NTLS WANT_READ misclassification and peer Broken pipe failures on Tongsuo 8.5.0.
 - NTLS fixtures and runnable examples declare distinct signing/encryption KeyUsage, preserving 8.5.0 native certificate-purpose checks.
 
 ### BREAKING / Known limitations
