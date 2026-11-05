@@ -68,18 +68,21 @@ var algos = []algo{
 	{"AES-128-CTR", AES128KeySize, "CTR"},
 	{"AES-128-ECB", AES128KeySize, "ECB"},
 	{"AES-128-GCM", AES128KeySize, "GCM"},
+	{"AES-128-GCM-SIV", AES128KeySize, "GCM-SIV"},
 	{"AES-128-OFB", AES128KeySize, "OFB"},
 	{"AES-192-CBC", AES192KeySize, "CBC"},
 	{"AES-192-CFB", AES192KeySize, "CFB"},
 	{"AES-192-CTR", AES192KeySize, "CTR"},
 	{"AES-192-ECB", AES192KeySize, "ECB"},
 	{"AES-192-GCM", AES192KeySize, "GCM"},
+	{"AES-192-GCM-SIV", AES192KeySize, "GCM-SIV"},
 	{"AES-192-OFB", AES192KeySize, "OFB"},
 	{"AES-256-CBC", AES256KeySize, "CBC"},
 	{"AES-256-CFB", AES256KeySize, "CFB"},
 	{"AES-256-CTR", AES256KeySize, "CTR"},
 	{"AES-256-ECB", AES256KeySize, "ECB"},
 	{"AES-256-GCM", AES256KeySize, "GCM"},
+	{"AES-256-GCM-SIV", AES256KeySize, "GCM-SIV"},
 	{"AES-256-OFB", AES256KeySize, "OFB"},
 	{"DES-CBC", DESKeySize, "CBC"},
 	{"DES-ECB", DESKeySize, "ECB"},
@@ -158,7 +161,7 @@ func NewCipher(name string, key []byte) (cipher.Block, error) {
 	name = a.name
 
 	switch mode {
-	case "GCM", "CCM", "POLY1305", "OCB", "SIV":
+	case "GCM", "CCM", "POLY1305", "OCB", "SIV", "GCM-SIV":
 		return nil, fmt.Errorf("sym: %q: %w: cipher.Block is not applicable to AEAD modes", name, ErrUnsupported)
 	case "XTS", "STREAM", "WRAP", "WRAP-PAD", "CBC-CTS":
 		return nil, fmt.Errorf("sym: %q: %w: cipher.Block is not applicable to mode %s", name, ErrUnsupported, mode)
@@ -212,11 +215,13 @@ func NewGCM(name string, key []byte) (cipher.AEAD, error) {
 // 支持 GCM（AES-128/192/256、SM4）、CCM（SM4）与 ChaCha20-Poly1305。
 // 未知算法名返回 ErrUnknownAlgorithm；非 AEAD 模式返回 ErrUnsupported。
 // 0.6.0 另支持 AES-CCM/OCB/SIV；SIV 为双密钥、默认 nonce 长度为 0，拒绝空消息。
+// 0.8.0 新增 GCM-SIV；铜锁 8.5.0 支持 SIV 空消息认证，8.4.0 仍拒绝。
 //
 // NewAEAD returns a cipher.AEAD by algorithm-mode name. It supports GCM
 // (AES-128/192/256, SM4), CCM (SM4) and ChaCha20-Poly1305. Unknown names
 // return ErrUnknownAlgorithm; non-AEAD modes return ErrUnsupported.
 // Version 0.6.0 also supports AES-CCM/OCB/SIV; SIV uses doubled keys and a zero default nonce size, rejecting empty messages.
+// Version 0.8.0 adds GCM-SIV; Tongsuo 8.5.0 authenticates empty SIV messages, while 8.4.0 rejects them.
 func NewAEAD(name string, key []byte) (cipher.AEAD, error) {
 	a, mode, err := lookup(name)
 	if err != nil {
@@ -233,7 +238,7 @@ func NewAEAD(name string, key []byte) (cipher.AEAD, error) {
 			return newExtendedAEAD(a, key)
 		}
 		return NewSM4CCM(key)
-	case "OCB", "SIV":
+	case "OCB", "SIV", "GCM-SIV":
 		return newExtendedAEAD(a, key)
 	case "POLY1305":
 		return NewChaCha20Poly1305(key)
@@ -258,7 +263,7 @@ func Encrypt(name string, key, iv, data []byte, opts *Options) ([]byte, error) {
 	}
 
 	switch mode {
-	case "GCM", "CCM", "POLY1305", "OCB", "SIV":
+	case "GCM", "CCM", "POLY1305", "OCB", "SIV", "GCM-SIV":
 		return nil, fmt.Errorf("sym: %q: %w: use EncryptAEAD", name, ErrUnsupported)
 	}
 	pad := ""
@@ -330,7 +335,7 @@ func Decrypt(name string, key, iv, data []byte, opts *Options) ([]byte, error) {
 	}
 
 	switch mode {
-	case "GCM", "CCM", "POLY1305", "OCB", "SIV":
+	case "GCM", "CCM", "POLY1305", "OCB", "SIV", "GCM-SIV":
 		return nil, fmt.Errorf("sym: %q: %w: use DecryptAEAD", name, ErrUnsupported)
 	}
 	pad := ""
@@ -523,6 +528,7 @@ func EncryptGCM(name string, key, nonce, plaintext, aad []byte) (ciphertext, tag
 //
 // 安全：nonce 必须在每个 (key, message) 对中唯一；复用会同时破坏
 // 机密性与真实性。
+// 0.8.0 新增 GCM-SIV；铜锁 8.5.0 支持 SIV 空消息认证，8.4.0 仍拒绝。
 //
 // EncryptAEAD encrypts in one shot with the named AEAD algorithm and
 // returns ciphertext and tag. It supports GCM (AES-128/192/256, SM4),
@@ -534,6 +540,7 @@ func EncryptGCM(name string, key, nonce, plaintext, aad []byte) (ciphertext, tag
 //
 // Security: the nonce MUST be unique per (key, message) pair; reuse
 // breaks both confidentiality and authenticity.
+// Version 0.8.0 adds GCM-SIV; Tongsuo 8.5.0 authenticates empty SIV messages, while 8.4.0 rejects them.
 func EncryptAEAD(name string, key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, err error) {
 	a, mode, err := lookup(name)
 	if err != nil {
@@ -550,7 +557,7 @@ func EncryptAEAD(name string, key, nonce, plaintext, aad []byte) (ciphertext, ta
 			return encryptExtendedAEAD(a, key, nonce, plaintext, aad)
 		}
 		return EncryptSM4CCM(key, nonce, plaintext, aad)
-	case "OCB", "SIV":
+	case "OCB", "SIV", "GCM-SIV":
 		return encryptExtendedAEAD(a, key, nonce, plaintext, aad)
 	case "POLY1305":
 		return EncryptChaCha20Poly1305(key, nonce, plaintext, aad)
@@ -562,12 +569,14 @@ func EncryptAEAD(name string, key, nonce, plaintext, aad []byte) (ciphertext, ta
 // 调用方须将任意非 nil 错误视为认证失败并丢弃返回的明文。
 // 支持的算法与参数要求同 EncryptAEAD。
 // 0.6.0 另支持 AES-CCM/OCB/SIV；SIV 空消息返回 ErrUnsupported，非空 nonce 作为最后一个 AAD 分量。
+// 0.8.0 新增 GCM-SIV；铜锁 8.5.0 支持 SIV 空消息认证，8.4.0 仍拒绝。
 //
 // DecryptAEAD verifies and decrypts with the named AEAD algorithm. A tag
 // or AAD mismatch yields an error; callers MUST treat any non-nil error
 // as an authentication failure and discard the returned plaintext. The
 // supported algorithms and parameter rules match EncryptAEAD.
 // Version 0.6.0 also supports AES-CCM/OCB/SIV; empty SIV messages return ErrUnsupported and a nonempty SIV nonce is the last AAD component.
+// Version 0.8.0 adds GCM-SIV; Tongsuo 8.5.0 authenticates empty SIV messages, while 8.4.0 rejects them.
 func DecryptAEAD(name string, key, nonce, ciphertext, tag, aad []byte) ([]byte, error) {
 	a, mode, err := lookup(name)
 	if err != nil {
@@ -584,7 +593,7 @@ func DecryptAEAD(name string, key, nonce, ciphertext, tag, aad []byte) ([]byte, 
 			return decryptExtendedAEAD(a, key, nonce, ciphertext, tag, aad)
 		}
 		return DecryptSM4CCM(key, nonce, ciphertext, tag, aad)
-	case "OCB", "SIV":
+	case "OCB", "SIV", "GCM-SIV":
 		return decryptExtendedAEAD(a, key, nonce, ciphertext, tag, aad)
 	case "POLY1305":
 		return DecryptChaCha20Poly1305(key, nonce, ciphertext, tag, aad)
@@ -634,7 +643,7 @@ func Available(name string) bool {
 	if err != nil {
 		return false
 	}
-	if extendedCipher(a) || a.mode == "CCM" || a.mode == "OCB" || a.mode == "SIV" {
+	if extendedCipher(a) || a.mode == "CCM" || a.mode == "OCB" || a.mode == "SIV" || a.mode == "GCM-SIV" {
 		c := core.FetchCipher(a.name)
 		if c == nil {
 			return false

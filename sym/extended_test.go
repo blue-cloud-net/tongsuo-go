@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
 func extHex(t *testing.T, s string) []byte {
@@ -196,8 +198,13 @@ func TestExtendedModes(t *testing.T) {
 			t.Fatal("short ciphertext accepted")
 		}
 	}
-	if _, _, err := EncryptAESSIV(make([]byte, 32), nil, nil, nil); !errors.Is(err, ErrUnsupported) {
-		t.Fatalf("empty SIV: %v", err)
+	_, _, emptyErr := EncryptAESSIV(make([]byte, 32), nil, nil, nil)
+	if core.VersionNum() < 0x30500000 {
+		if !errors.Is(emptyErr, ErrUnsupported) {
+			t.Fatalf("empty SIV on 8.4: %v", emptyErr)
+		}
+	} else if emptyErr != nil {
+		t.Fatalf("empty SIV on 8.5: %v", emptyErr)
 	}
 }
 

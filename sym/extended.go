@@ -8,6 +8,11 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
+const (
+	sivEmptyMinVersion   = 0x30500000
+	maxNativeCipherInput = 1<<31 - 1
+)
+
 func extendedAESName(key []byte, mode string) (string, error) {
 	size := len(key)
 	bits := size * 8
@@ -98,12 +103,19 @@ func extendedAEADContext(a algo, key, nonce, tag []byte, n int, enc bool) (*core
 		if l < 8 && uint64(n) >= uint64(1)<<uint(8*l) {
 			return nil, nil, fmt.Errorf("sym: CCM message too long")
 		}
+	case "GCM-SIV":
+		if uint64(n) > uint64(maxNativeCipherInput-2*BlockSize) {
+			return nil, nil, fmt.Errorf("sym: GCM-SIV message exceeds native input limit")
+		}
+		if len(nonce) != NonceSize {
+			return nil, nil, fmt.Errorf("sym: GCM-SIV nonce must be %d bytes", NonceSize)
+		}
 	case "OCB":
 		if len(nonce) < 1 || len(nonce) > 15 {
 			return nil, nil, fmt.Errorf("sym: invalid OCB nonce size %d", len(nonce))
 		}
 	case "SIV":
-		if n == 0 {
+		if n == 0 && core.VersionNum() < sivEmptyMinVersion {
 			return nil, nil, fmt.Errorf("sym: AES-SIV requires a non-empty message on Tongsuo 8.4.0: %w", ErrUnsupported)
 		}
 	default:
@@ -134,6 +146,9 @@ func extendedAEADContext(a algo, key, nonce, tag []byte, n int, enc bool) (*core
 }
 
 func encryptExtendedAEAD(a algo, key, nonce, data, aad []byte) ([]byte, []byte, error) {
+	if a.mode == "GCM-SIV" && uint64(len(aad)) > uint64(maxNativeCipherInput) {
+		return nil, nil, fmt.Errorf("sym: GCM-SIV AAD exceeds native input limit")
+	}
 	ctx, c, err := extendedAEADContext(a, key, nonce, nil, len(data), true)
 	if err != nil {
 		return nil, nil, err
@@ -162,6 +177,9 @@ func encryptExtendedAEAD(a algo, key, nonce, data, aad []byte) ([]byte, []byte, 
 }
 
 func decryptExtendedAEAD(a algo, key, nonce, data, tag, aad []byte) ([]byte, error) {
+	if a.mode == "GCM-SIV" && uint64(len(aad)) > uint64(maxNativeCipherInput) {
+		return nil, fmt.Errorf("sym: GCM-SIV AAD exceeds native input limit")
+	}
 	ctx, c, err := extendedAEADContext(a, key, nonce, tag, len(data), false)
 	if err != nil {
 		return nil, err
