@@ -531,6 +531,9 @@ func (s *SSLConn) Connect() error {
 		if !s.begin() {
 			return fmt.Errorf("tls: connection closed")
 		}
+		// NTLS may retain errors from earlier calls on this OS thread.
+		// SSL_get_error requires an empty queue before the current SSL operation.
+		native.ERR_clear_error()
 		ret := native.SSL_connect(s.handle.Ptr())
 		s.inflight.Done()
 		if ret == 1 {
@@ -557,6 +560,9 @@ func (s *SSLConn) Accept() error {
 		if !s.begin() {
 			return fmt.Errorf("tls: connection closed")
 		}
+		// NTLS may retain errors from earlier calls on this OS thread.
+		// SSL_get_error requires an empty queue before the current SSL operation.
+		native.ERR_clear_error()
 		ret := native.SSL_accept(s.handle.Ptr())
 		s.inflight.Done()
 		if ret == 1 {
@@ -588,6 +594,9 @@ func (s *SSLConn) Read(buf []byte) (int, error) {
 		if !s.begin() {
 			return 0, fmt.Errorf("tls: connection closed")
 		}
+		// NTLS may retain errors from earlier calls on this OS thread.
+		// SSL_get_error requires an empty queue before the current SSL operation.
+		native.ERR_clear_error()
 		ret := native.SSL_read(s.handle.Ptr(), buf)
 		s.inflight.Done()
 		if ret > 0 {
@@ -619,6 +628,9 @@ func (s *SSLConn) Write(buf []byte) (int, error) {
 		if !s.begin() {
 			return 0, fmt.Errorf("tls: connection closed")
 		}
+		// NTLS may retain errors from earlier calls on this OS thread.
+		// SSL_get_error requires an empty queue before the current SSL operation.
+		native.ERR_clear_error()
 		ret := native.SSL_write(s.handle.Ptr(), buf)
 		s.inflight.Done()
 		if ret > 0 {

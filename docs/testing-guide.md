@@ -597,3 +597,11 @@ CLI 测试额外检查外部 PBES2/AES 与 3DES 的算法、迭代及 MAC 参数
 分别执行 build、vet、默认/CLI/race 测试、Linux static 与示例构建。SDK 交付 API 与
 可运行示例；示例默认记录验证失败后继续，严格验证与完全不验证另行显式选择。
 STARTTLS、外部 PSK、0-RTT、主动重协商不作为本轮交付门槛。
+
+## NTLS 线程错误队列回归
+
+NTLS 握手后读取必须隔离 OS 线程上前次原生调用留下的错误。
+`internal/core/ssl_error_queue_test.go` 在同一线程注入旧错误并验证读取超时，
+不得改成只检查错误非空。回环另覆盖服务端先等待、客户端延迟发送的时序；
+Linux amd64 的 race 阶段重复该回环 50 次。调查与 act 漏检原因见
+[铜锁 8.5.0 NTLS 调查](ntls-8.5-race-investigation.md)。
