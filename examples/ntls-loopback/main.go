@@ -38,19 +38,42 @@ func main() {
 		log.Fatal(err)
 	}
 
+	defer asym.Close(signPriv)
+	defer asym.Close(encPriv)
+
 	// 2. 自签证书
 	now := time.Now()
 	subject := x509.NewName().Add("CN", "ntls-example.com")
-	signCert, err := x509.CreateCertificate(subject, subject, 1,
-		now.Add(-time.Hour), now.Add(365*24*time.Hour), signPriv.Public(), signPriv)
+	build := func(priv asym.PrivateKey, serial int64, usage string) (*x509.Certificate, error) {
+		cert := x509.NewCertificate()
+		steps := []func() error{
+			func() error { return cert.SetVersion(2) },
+			func() error { return cert.SetSerial(serial) },
+			func() error { return cert.SetSubject(subject) },
+			func() error { return cert.SetIssuer(subject) },
+			func() error { return cert.SetValidity(now.Add(-time.Hour), now.Add(365*24*time.Hour)) },
+			func() error { return cert.SetPublicKey(priv.Public()) },
+			func() error { return cert.AddKeyUsage(usage) },
+			func() error { return cert.Sign(priv) },
+		}
+		for _, step := range steps {
+			if err := step(); err != nil {
+				cert.Close()
+				return nil, err
+			}
+		}
+		return cert, nil
+	}
+	signCert, err := build(signPriv, 1, "critical,digitalSignature")
 	if err != nil {
 		log.Fatal(err)
 	}
-	encCert, err := x509.CreateCertificate(subject, subject, 2,
-		now.Add(-time.Hour), now.Add(365*24*time.Hour), encPriv.Public(), encPriv)
+	defer signCert.Close()
+	encCert, err := build(encPriv, 2, "critical,keyEncipherment,dataEncipherment,keyAgreement")
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer encCert.Close()
 
 	// 3. NTLS 配置：NTLS=true 表示启用国密双证书
 	cfg := &tls.Config{
