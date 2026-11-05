@@ -84,3 +84,12 @@ cd examples/ecdh && go run .
 - [分步签发与 DER 扩展](../x509/reliability_example_test.go)：大序列号、SAN/KU/SKID/AKID、自定义 OID、最后签名并验签；签名后不可修改。
 - [PKCS#7 签验与信封](../pkcs/pkcs7/operations_example_test.go)：显式信任存储、验证结果 Close、多接收者入口与 CBC 完整性边界。
 - [ECDH](./ecdh/main.go)：Public 返回独立公钥与 error，公私钥均显式 Close。
+
+## `0.8.0` 包级示例
+
+使用固定铜锁 8.4.0/8.5.0 的对应环境执行 `go test ./sym ./asym ./ecdh ./tls`：
+
+- [AES-GCM-SIV](../sym/gcmsiv_example_test.go)：AEAD tag 拼接与原生不支持处理（GoDoc 编译示例）。
+- [Ed25519ph](../asym/eddsa_example_test.go)：原消息、上下文及不支持分支（GoDoc 编译示例）。
+- [SM2DH](../ecdh/derive_example_test.go)：双方静态/临时密钥、角色、ID 与派生对称性；不含密钥确认。
+- [NTLS](./ntls-loopback/main.go)：显式分配签名与加密证书 KeyUsage，兼容 8.5.0 原生用途检查。

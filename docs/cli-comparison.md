@@ -3,7 +3,7 @@
 > **`0.6.0` 实施更新**：下文采集时的基线表保留原口径；AES 扩展/ZUC、EC 参数、
 > PKCS#8/12 配置、PKCS#7 CRL、JWK OKP/oct、本地多对象加载、OCSP HTTP/nonce 与
 > 证书信任属性已在 8.4.0 基线上实现，当前逐符号事实见 [api-reference.md](api-reference.md)。
-> 铜锁 8.5 兼容、GCM-SIV、EdDSA 上下文签名与 RSA-SM3 签名可运行支持归 `0.8.0`。
+> `0.8.0` 已实现铜锁 8.4.0/8.5.0 验证、GCM-SIV、EdDSA 上下文/ph、RSA-SM3 与 SM2DH 派生；下文历史缺口以当前 API 清单为准，密钥确认仍延期。
 > 后续按“0.7 可靠性与 PKCS 容器 → 0.8 兼容/经典算法 → 0.9 TLS/NTLS 握手与认证 →
 > 0.10 RFC 8998/诊断 → 0.11 会话/票据 → 0.12 HTTP/1.1/stapling → 0.13 PQC →
 > 0.14 CMS/时间戳 → 1.0 公开面稳定”交付；功能需求逐条结论见

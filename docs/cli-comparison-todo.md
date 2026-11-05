@@ -317,4 +317,4 @@
 2. **20 项 §9「明确不实现」**：`engine`、`fipsinstall`、`rsautl`、`s_time`、`speed`、`rehash`、`nseq`、`spkac`、`passwd`、`prime`、`dsaparam`、`gendsa`、`dsa`、`dhparam`、`srp`、`cmp`、`smime`、`help`、`ECIES`、库内加载 legacy provider。
 3. **无对应子命令的扩展算法**（本次以子命令为维度，故不含）：ML-KEM（含 5 个混合组）、ML-DSA-44/65/87、SLH-DSA 12 变体（§6.D D1–D4）。
 4. **横切项**（不单独设 API，随上述各项落地）：默认 stdin/stdout（§6.C C1/C2）、文件读写（C3）、统一 `Format` 维度（C4）、hex/base64/hexdump 助手（C5/C6）、口令来源抽象（C8）。
-5. **功能需求（非 CLI 缺口）**：AES-OFB/CFB、DES 家族、padding 矩阵、签名 DER/raw、OAEP-SM3、OKP/oct 与 PKCS#1 公钥已在 `0.6.0` 实现；剩余可靠性归 `0.7.0`，PKCS#7 基础流程归 `0.7.0`，RSA-SM3 签名可运行支持归 `0.8.0`。各项功能需求的技术判断、暂缓理由和验收边界见 [requirements.md](requirements.md)，不再笼统标注为“均归 0.6”。
+5. **功能需求（非 CLI 缺口）**：AES-OFB/CFB、DES 家族、padding 矩阵、签名 DER/raw、OAEP-SM3、OKP/oct 与 PKCS#1 公钥已在 `0.6.0` 实现；剩余可靠性归 `0.7.0`，PKCS#7 基础流程归 `0.7.0`，RSA-SM3 签名可运行支持已在 `0.8.0` 的固定 8.5.0 验证。各项功能需求的技术判断、暂缓理由和验收边界见 [requirements.md](requirements.md)，不再笼统标注为“均归 0.6”。

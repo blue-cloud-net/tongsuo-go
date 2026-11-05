@@ -24,6 +24,30 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
+## [0.8.0] - TBD
+
+### Added
+
+- AES-GCM-SIV AEAD and one-shot/by-name entries for 128/192/256-bit keys; 128/256 follow RFC 8452 and 192 is a native extension. Nonces are 12 bytes and tags are 16 bytes; empty messages are authenticated.
+- Independent Ed25519ctx, Ed25519ph, Ed448ph and Ed448-with-context sign/verify entries, plus operation initialization probes. Inputs are complete messages; native providers perform ph prehashing.
+- Direct `ecdh.DeriveSharedSecret` for asym keys and parameterized `DeriveSM2DH`, explicit static/ephemeral keys, IDs, roles and SM3-derived output. Added RSA-PSS digest/MGF1/salt initialization probes.
+
+### Changed
+
+- CI validates fixed Tongsuo 8.4.0 and 8.5.0 across Linux/macOS and amd64/arm64; Linux static builds select static Tongsuo archives. Header/library/CLI identity is checked. RSA-SM3 PKCS#1 v1.5 and PSS are verified to work on 8.5.0.
+- AES-SIV empty messages are authenticated on 8.5.0; the 8.4.0 baseline retains explicit rejection. Independent EVP interop covers GCM-SIV and the WRAP modes rejected by 8.5.0 enc.
+
+### Fixed
+
+- NTLS fixtures and runnable examples declare distinct signing/encryption KeyUsage, preserving 8.5.0 native certificate-purpose checks.
+
+### BREAKING / Known limitations
+
+- New EdDSA variants and GCM-SIV return ErrUnsupported on unavailable native builds; existing pure EdDSA and OAEP-SM3 behavior is preserved. SM2DH returns derived key material only: peer authentication and key-confirmation messages are not provided.
+- NTLS certificates must meet the native version's purpose/security requirements; regenerate missing or incorrect KeyUsage before upgrading. No safety checks or legacy providers are enabled as a workaround.
+
+---
+
 ## [0.7.0] - 2026-11-04
 
 ### Added
@@ -1039,7 +1063,8 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...v0.5.0

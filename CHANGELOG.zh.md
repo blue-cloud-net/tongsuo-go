@@ -22,6 +22,30 @@
 
 ---
 
+## [0.8.0] - TBD
+
+### 新增功能
+
+- AES-GCM-SIV AEAD、一次性与按名入口支持 128/192/256 位密钥；128/256 位遵循 RFC 8452，192 位为原生扩展。nonce 为 12 字节、tag 为 16 字节，空消息仍完成认证。
+- Ed25519ctx、Ed25519ph、Ed448ph 与带上下文 Ed448 的独立签验入口及操作初始化探测；输入为原消息，ph 预哈希由原生 provider 完成。
+- `ecdh.DeriveSharedSecret` 直接接受 asym 密钥，`DeriveSM2DH` 显式接收双方静态/临时密钥、ID、角色和 SM3 派生长度；新增 RSA-PSS 摘要/MGF1/盐长初始化探测。
+
+### 行为变化与重构
+
+- CI 固定验证铜锁 8.4.0 / 8.5.0，覆盖 Linux/macOS 与 amd64/arm64；Linux static 构建实际选择铜锁静态归档，并校验头文件/运行库/CLI 同源。RSA-SM3 的 PKCS#1 v1.5 / PSS 在 8.5.0 验证可用。
+- 8.5.0 支持 AES-SIV 空消息认证，8.4.0 基线仍明确拒绝；GCM-SIV 与 8.5.0 enc 不再接受的 WRAP 模式通过独立 EVP 驱动互验。
+
+### Bug 修复
+
+- NTLS 测试夹具与可运行示例显式区分签名/加密证书 KeyUsage，保留 8.5.0 的原生证书用途检查。
+
+### BREAKING / 已知限制
+
+- 新 EdDSA 变体与 GCM-SIV 在原生不可用时返回 ErrUnsupported；既有 pure EdDSA 与 OAEP-SM3 行为保持。SM2DH 仅返回派生密钥，不提供对端身份认证或密钥确认消息。
+- NTLS 证书须满足原生版本的用途/安全要求；升级前重新签发缺失或错误 KeyUsage 的证书，不以关闭检查或加载 legacy provider 兜底。
+
+---
+
 ## [0.7.0] - 2026-11-04
 
 ### 新增功能
@@ -852,7 +876,8 @@
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.4.0...v0.5.0
