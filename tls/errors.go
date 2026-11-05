@@ -118,6 +118,18 @@ var (
 // Unwrap returns the first non-nil of Err / sentinel so that errors.Is
 // matches the most specific error available.
 type HandshakeError struct {
+	// SSLCode 是失败原生调用的 SSL_get_error 返回值，未采集时为零。
+	//
+	// SSLCode is SSL_get_error from the failed native call, zero when unavailable.
+	SSLCode int
+	// VerifyCode 是原生证书验证错误码，未失败时为零。
+	//
+	// VerifyCode is the native certificate verification failure code, zero otherwise.
+	VerifyCode int
+	// NativeErrors 按原队列顺序保留本次失败的原生错误码。
+	//
+	// NativeErrors preserves native failure codes in original queue order.
+	NativeErrors []uint64
 	// Op 是触发失败的操作（如 "DialContext"、"HandshakeContext"、"Read"）。
 	//
 	// Op names the failing operation (for example "DialContext" or
@@ -239,3 +251,59 @@ func classifyOpenSSLError(class core.SSLErrorClass) HandshakeErrorKind {
 		return HandshakeErrorOther
 	}
 }
+
+// SSL_get_error result codes are stable across the supported Tongsuo ABI.
+const (
+	// SSLErrorNone 表示无 SSL 错误。
+	//
+	// SSLErrorNone indicates no SSL error.
+	SSLErrorNone = 0
+	// SSLErrorSSL 表示协议或原生库错误。
+	//
+	// SSLErrorSSL indicates a protocol or native library error.
+	SSLErrorSSL = 1
+	// SSLErrorWantRead 表示需要等待可读。
+	//
+	// SSLErrorWantRead indicates a pending read.
+	SSLErrorWantRead = 2
+	// SSLErrorWantWrite 表示需要等待可写。
+	//
+	// SSLErrorWantWrite indicates a pending write.
+	SSLErrorWantWrite = 3
+	// SSLErrorWantX509Lookup 表示需要证书查找。
+	//
+	// SSLErrorWantX509Lookup indicates a pending certificate lookup.
+	SSLErrorWantX509Lookup = 4
+	// SSLErrorSyscall 表示底层系统调用错误。
+	//
+	// SSLErrorSyscall indicates an underlying system-call error.
+	SSLErrorSyscall = 5
+	// SSLErrorZeroReturn 表示对端正常关闭。
+	//
+	// SSLErrorZeroReturn indicates a clean peer shutdown.
+	SSLErrorZeroReturn = 6
+	// SSLErrorWantConnect 表示需要完成连接。
+	//
+	// SSLErrorWantConnect indicates a pending connection.
+	SSLErrorWantConnect = 7
+	// SSLErrorWantAccept 表示需要完成接受连接。
+	//
+	// SSLErrorWantAccept indicates a pending accept.
+	SSLErrorWantAccept = 8
+	// SSLErrorWantAsync 表示需要异步操作完成。
+	//
+	// SSLErrorWantAsync indicates a pending asynchronous operation.
+	SSLErrorWantAsync = 9
+	// SSLErrorWantAsyncJob 表示需要异步任务资源。
+	//
+	// SSLErrorWantAsyncJob indicates a pending asynchronous job.
+	SSLErrorWantAsyncJob = 10
+	// SSLErrorWantClientHelloCB 表示需要 ClientHello 回调完成。
+	//
+	// SSLErrorWantClientHelloCB indicates a pending ClientHello callback.
+	SSLErrorWantClientHelloCB = 11
+	// SSLErrorWantRetryVerify 表示需要重试验证。
+	//
+	// SSLErrorWantRetryVerify indicates a pending verification retry.
+	SSLErrorWantRetryVerify = 12
+)

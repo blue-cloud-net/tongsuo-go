@@ -1,5 +1,11 @@
 # 铜锁 CLI 与本库能力对比
 
+> **`0.9.0` 实施更新（已合入 dev，待发布）**：TLS/NTLS 混合端口、完整凭证链、
+> SNI/ALPN、客户端认证、三种显式验证策略、参数与连接状态已实现；独立读写 deadline、
+> 并发 I/O 与原生错误采集已修复。可运行示例见 [examples/handshake](../examples/handshake/)。
+> RFC 8998/事件流/trace/keylog、会话/票据、HTTP/stapling 仍分别归 0.10/0.11/0.12。
+> 以下采集表保留历史基线；当前逐符号事实见 [公开 API 清单](api-reference.md#11-tls--tls--ntls-传输层)。
+
 > **当前交付更新（`0.8.0`）**：下文采集时的基线表保留原口径；AES 扩展/ZUC、EC 参数、
 > PKCS#8/12 配置、PKCS#7 CRL、JWK OKP/oct、本地多对象加载、OCSP HTTP/nonce 与
 > 证书信任属性已在 8.4.0 基线上实现，当前逐符号事实见 [api-reference.md](api-reference.md)。
@@ -23,9 +29,9 @@
 > 输入。签验/信封对拍使用 smime；下文历史 pkcs7 -sign/-encrypt 写法不是实际 CLI
 > 选项。当前接口与算法边界见公开 API 清单，CMS 归 `0.14.0`。
 
-> **传输排期（规划）**：交付 SDK API + 可运行客户端/服务端示例，供下游自行构建
+> **传输交付与后续排期**：交付 SDK API + 可运行客户端/服务端示例，供下游自行构建
 > `s_client` / `s_server` 式测试，不新增正式 CLI。TLS/NTLS 混合端口、SNI/ALPN、
-> 三种显式验证策略归 `0.9.0`；RFC 8998 单套签名凭证区别于 NTLS 双证书，严格模式、
+> 三种显式验证策略已随 `0.9.0` 合入 dev；RFC 8998 单套签名凭证区别于 NTLS 双证书，严格模式、
 > 结构化事件、trace/keylog 归 `0.10.0`。会话与 HTTP/stapling 分别归 `0.11.0`、
 > `0.12.0`；套件可枚举不代表已完成 RFC 8998 验收，以下历史采集表保持原口径。
 

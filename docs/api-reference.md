@@ -1077,11 +1077,29 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
 
 ---
 
+**验证错误码（`0.9.0` 新增）**
+
+- 🆕 `func VerifyErrorMessage(code int) string` — 返回铜锁验证码解释，包括未命名的未知码。
+- 🆕 `VerifyOK` 及 `Verify*` 常量 — 覆盖铜锁 8.4.0 的全部 X509_V_OK / X509_V_ERR_*（0–94），不代表某次连接确实执行过验证；TLS 请另查 ConnectionState.Verification。
+
+| 验证码 | 公开常量（按值递增） |
+|---|---|
+| 0–16 | `VerifyOK` / `VerifyUnspecified` / `VerifyUnableToGetIssuerCert` / `VerifyUnableToGetCRL` / `VerifyUnableToDecryptCertSignature` / `VerifyUnableToDecryptCRLSignature` / `VerifyUnableToDecodeIssuerPublicKey` / `VerifyCertSignatureFailure` / `VerifyCRLSignatureFailure` / `VerifyCertNotYetValid` / `VerifyCertHasExpired` / `VerifyCRLNotYetValid` / `VerifyCRLHasExpired` / `VerifyErrorInCertNotBeforeField` / `VerifyErrorInCertNotAfterField` / `VerifyErrorInCRLLastUpdateField` / `VerifyErrorInCRLNextUpdateField` |
+| 17–28 | `VerifyOutOfMem` / `VerifyDepthZeroSelfSignedCert` / `VerifySelfSignedCertInChain` / `VerifyUnableToGetIssuerCertLocally` / `VerifyUnableToVerifyLeafSignature` / `VerifyCertChainTooLong` / `VerifyCertRevoked` / `VerifyNoIssuerPublicKey` / `VerifyPathLengthExceeded` / `VerifyInvalidPurpose` / `VerifyCertUntrusted` / `VerifyCertRejected` |
+| 29–46 | `VerifySubjectIssuerMismatch` / `VerifyAKIDSKIDMismatch` / `VerifyAKIDIssuerSerialMismatch` / `VerifyKeyUsageNoCertSign` / `VerifyUnableToGetCRLIssuer` / `VerifyUnhandledCriticalExtension` / `VerifyKeyUsageNoCRLSign` / `VerifyUnhandledCriticalCRLExtension` / `VerifyInvalidNonCA` / `VerifyProxyPathLengthExceeded` / `VerifyKeyUsageNoDigitalSignature` / `VerifyProxyCertificatesNotAllowed` / `VerifyInvalidExtension` / `VerifyInvalidPolicyExtension` / `VerifyNoExplicitPolicy` / `VerifyDifferentCRLScope` / `VerifyUnsupportedExtensionFeature` / `VerifyUnnestedResource` |
+| 47–61 | `VerifyPermittedViolation` / `VerifyExcludedViolation` / `VerifySubtreeMinMax` / `VerifyApplicationVerification` / `VerifyUnsupportedConstraintType` / `VerifyUnsupportedConstraintSyntax` / `VerifyUnsupportedNameSyntax` / `VerifyCRLPathValidationError` / `VerifyPathLoop` / `VerifySuiteBInvalidVersion` / `VerifySuiteBInvalidAlgorithm` / `VerifySuiteBInvalidCurve` / `VerifySuiteBInvalidSignatureAlgorithm` / `VerifySuiteBLoSNotAllowed` / `VerifySuiteBCannotSignP384WithP256` |
+| 62–78 | `VerifyHostnameMismatch` / `VerifyEmailMismatch` / `VerifyIPAddressMismatch` / `VerifyDANENoMatch` / `VerifyEEKeyTooSmall` / `VerifyCAKeyTooSmall` / `VerifyCAMDTooWeak` / `VerifyInvalidCall` / `VerifyStoreLookup` / `VerifyNoValidSCTS` / `VerifyProxySubjectNameViolation` / `VerifyOCSPVerifyNeeded` / `VerifyOCSPVerifyFailed` / `VerifyOCSPCertUnknown` / `VerifyUnsupportedSignatureAlgorithm` / `VerifySignatureAlgorithmMismatch` / `VerifySignatureAlgorithmInconsistency` |
+| 79–94 | `VerifyInvalidCA` / `VerifyPathLenInvalidForNonCA` / `VerifyPathLenWithoutKUKeyCertSign` / `VerifyKUKeyCertSignInvalidForNonCA` / `VerifyIssuerNameEmpty` / `VerifySubjectNameEmpty` / `VerifyMissingAuthorityKeyIdentifier` / `VerifyMissingSubjectKeyIdentifier` / `VerifyEmptySubjectAltName` / `VerifyEmptySubjectSANNotCritical` / `VerifyCABasicConstraintsNotCritical` / `VerifyAuthorityKeyIdentifierCritical` / `VerifySubjectKeyIdentifierCritical` / `VerifyCACertMissingKeyUsage` / `VerifyExtensionsRequireVersion3` / `VerifyECKeyExplicitParams` |
+
+---
+
 ## 11. `tls` — TLS / NTLS 传输层
 
 ✅ **已有**｜旧包：`tls`
 
-客户端与服务端共享 `Config`；NTLS 双证书通过 `NTLS` + 四个证书/密钥字段启用。**默认不验证对端**（`RootCAs` 非 nil 且 `InsecureSkipVerify` 为 false 时才启用 PEER 验证 + 主机名校验）。
+客户端与服务端共享 `Config`；`0.9.0` 新增显式 `Protocol` 与 `Verification`，旧 `NTLS` 字段仍可用。
+零值验证策略保留旧入口实际行为：客户端 `RootCAs` 非空或 `ServerName` 非空且未
+`InsecureSkipVerify` 时开启验证，否则不验证；显式策略见下。
 
 **常量**
 
@@ -1090,12 +1108,12 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
 
 **类型**
 
-- ♻️ `type Config struct { Cert *x509.Certificate; Key asym.PrivateKey; NTLS bool; SignCert *x509.Certificate; SignKey asym.PrivateKey; EncCert *x509.Certificate; EncKey asym.PrivateKey; MinVersion uint16; MaxVersion uint16; CipherSuites []string; RootCAs []*x509.Certificate; InsecureSkipVerify bool; ServerName string }` — TLS / NTLS 配置（**五个密钥字段由 `*sm2.PrivateKey` 改为 `asym.PrivateKey`**）
+- ♻️ `type Config struct { Cert *x509.Certificate; Key asym.PrivateKey; NTLS bool; SignCert *x509.Certificate; SignKey asym.PrivateKey; EncCert *x509.Certificate; EncKey asym.PrivateKey; MinVersion uint16; MaxVersion uint16; CipherSuites []string; RootCAs []*x509.Certificate; InsecureSkipVerify bool; ServerName string }` — TLS / NTLS 配置（**三个密钥字段由 `*sm2.PrivateKey` 改为 `asym.PrivateKey`**）
 - ♻️ `type Server struct { …（内部字段） }` — 服务端
 - ♻️ `type Conn struct { …（内部字段） }` — TLS / NTLS 连接（实现 `net.Conn`）
 - ♻️ `type CipherSuiteInfo struct { Name string; ID uint16; MinVersion uint16; MaxVersion uint16 }` — 套件描述
 - ♻️ `type HandshakeErrorKind int` — 握手失败的语义分类
-- ♻️ `type HandshakeError struct { Op string; Kind HandshakeErrorKind; Err error }` — 分类后的握手错误（`Is` / `Unwrap` 可用）
+- ♻️ `type HandshakeError struct { Op string; Kind HandshakeErrorKind; Err error; SSLCode int; VerifyCode int; NativeErrors []uint64 }` — 分类后的握手错误（`Is` / `Unwrap` 可用）
 
 **错误**
 
@@ -1113,8 +1131,8 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
 **连接**
 
 - ♻️ `func (c *Conn) Handshake() error` / `HandshakeContext(ctx context.Context) error` — 执行握手（幂等 / 受 `ctx` 控制）
-- ♻️ `func (c *Conn) Read(b []byte) (int, error)` / `Write(b []byte) (int, error)` — 读写（内部加锁序列化）
-- ♻️ `func (c *Conn) Close() error` — 关闭（幂等；先关底层 socket 以唤醒在途调用）
+- ♻️ `func (c *Conn) Read(b []byte) (int, error)` / `Write(b []byte) (int, error)` — 首次 I/O 自动握手；读与写可并发，多个读/多个写分别串行
+- ♻️ `func (c *Conn) Close() error` — 关闭（幂等；先停止 SSL、shutdown 唤醒在途调用，再释放句柄和 socket）
 - ♻️ `func (c *Conn) LocalAddr() net.Addr` / `RemoteAddr() net.Addr` — 地址
 - ♻️ `func (c *Conn) SetDeadline(t time.Time) error` / `SetReadDeadline(t time.Time) error` / `SetWriteDeadline(t time.Time) error` — 截止时间
 - ♻️ `func (c *Conn) Version() string` / `CipherName() string` — 协商结果
@@ -1138,22 +1156,77 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
     底层 `net.ErrClosed`
   - 🆕 `func (l *Listener) Addr() net.Addr` — 委托底层监听器（`Close` 后仍可用）
 
-**规划中（传输能力分四版交付，公开面收敛归 `1.0.0`）**
+**`0.9.0` 新增（已实现，待发布）**
 
-> 下列均未实现；涉及原生能力的条目需在 `internal/native` 新增/扩展绑定，经 core
-> 管理生命周期（见 [roadmap.md](roadmap.md) §3）。交付 SDK API + 可运行客户端/服务端
-> 示例，下游自行集成握手测试，不新增正式 CLI 产品；候选 API 名称不代表签名已冻结。
+- 🆕 `type ProtocolMode uint8`：`ProtocolDefault` / `ProtocolTLS` / `ProtocolNTLS` / `ProtocolMixed`；客户端只可选择 TLS 或 NTLS，不自动回退；混合模式用于服务端同端口接入。
+- 🆕 `type VerificationPolicy uint8`：`VerifyDefault` / `VerifyNone` / `VerifyReport` / `VerifyStrict`；分别为旧行为、完全不执行信任验证、记录失败继续、失败终止。VerifyNone 仍执行协议必需的凭证/签名检查。
+- 🆕 `type ClientAuthType uint8`：`NoClientCert` / `RequestClientCert` / `RequireAnyClientCert` / `VerifyClientCertIfGiven` / `RequireAndVerifyClientCert`；最后两种强制严格验证，与 VerifyNone/VerifyReport 冲突。请求/要求凭证与验证策略独立；NTLS ECDHE 仍要求客户端双凭证。
+- 🆕 `type Certificate struct { Leaf *x509.Certificate; PrivateKey asym.PrivateKey; Chain []*x509.Certificate }`、`type NTLSCertificate struct { Sign Certificate; Enc Certificate }`；Chain 仅含按签发顺序排列的中间证书，源对象仍由调用方管理。
+- 🆕 `type ClientHelloInfo struct { ServerName string; NTLS bool }`；服务端在版本/套件选择前获取本连接 SNI 与实际协议。
+- 🆕 `type HostnameOptions struct { Flags uint32; Email string }`；flags：`HostnameAlwaysCheckSubject` / `HostnameNoWildcards` / `HostnameNoPartialWildcards` / `HostnameMultiLabelWildcards` / `HostnameSingleLabelSubdomains` / `HostnameNeverCheckSubject`。
+- 🆕 `OptionNoCompression` / `OptionCipherServerPreference` / `OptionNoRenegotiation`（uint64）；`ModeEnablePartialWrite` / `ModeAcceptMovingWriteBuffer`（int64）。其他位报错，不承诺任意原生选项透传。
+- 🆕 `func (cfg *Config) Clone() *Config` — 复制容器和切片，不复制源证书/密钥句柄；nil 接收者产生空配置。
+- 🆕 `func Client(raw net.Conn, config *Config) (*Conn, error)` — 包装已连接的 `*net.TCPConn`，不立即握手；成功后由 Conn 关闭 raw，构造失败时调用方仍须关闭 raw。
+- 🆕 `func (c *Conn) ConnectionState() ConnectionState` — 独立复制的最后状态，失败握手及 Close 后仍可读取。
+- 🆕 `func (c *Conn) VerifyHostname(host string) error` / `CheckEmail(email string) error` — 仅检查对端签名叶名称，不替代链验证。
+- 🆕 `func (c *Conn) UnderlyingConn() net.Conn` — 用于地址/期限管理，不得绕过 SSL 读写加密流量。
+
+`Config` 在上述历史字段之外新增以下字段：
+
+| 字段 | 类型 | 行为 |
+|---|---|---|
+| `Protocol` / `Verification` / `ClientAuth` | `ProtocolMode` / `VerificationPolicy` / `ClientAuthType` | 显式选择协议、信任验证与客户端认证 |
+| `ClientCAs` | `[]*x509.Certificate` | 服务端客户端信任根及发送的 CA 名称 |
+| `CertChain` / `SignChain` / `EncChain` | `[]*x509.Certificate` | TLS 及 NTLS 双身份的中间证书链；NTLS 两链按 DER 合并去重后发送为共享中间池 |
+| `NextProtos` | `[]string` | ALPN，服务端按自身顺序选择；有列表但无交集时失败 |
+| `CurvePreferences` / `SignatureAlgorithms` | `[]string` | 铜锁命名组及签名算法列表，不支持名称报错 |
+| `DHParameters` | `[]byte` | PEM 编码的 DH 参数；非法/非 DH 参数报错 |
+| `Options` / `Modes` / `StrictConfig` | `uint64` / `int64` / `bool` | 命名选项；StrictConfig 拒绝无效套件并精确限制显式集合，空集合保持原生默认 |
+| `VerificationName` / `DisableSNI` / `HostnameOptions` | `string` / `bool` / `HostnameOptions` | DNS/IP 验证名称与 SNI 分开；IP 不发送 SNI；非空 Email 额外验证邮箱 |
+| `GetConfigForClient` | `func(*ClientHelloInfo) (*Config, error)` | 选择完整配置，nil 结果沿用当前配置 |
+| `GetCertificate` | `func(*ClientHelloInfo) (*Certificate, error)` | TLS 凭证选择，nil 凭证报错 |
+| `GetNTLSCertificate` | `func(*ClientHelloInfo) (*NTLSCertificate, error)` | NTLS 完整双凭证选择，nil 凭证报错 |
+| `VerifyPeerCertificate` | `func(rawCerts [][]byte, verifiedChains [][][]byte) error` | 协议握手后检查独立 DER 副本；错误始终终止 |
+| `VerifyConnection` | `func(ConnectionState) error` | 内建验证及前一回调后检查独立状态；错误始终终止 |
+
+`ConnectionState` 包含 `HandshakeComplete bool`、`Version uint16`、`NTLS bool`、
+`CipherSuite uint16`、`CipherName` / `ServerName` / `NegotiatedProtocol` /
+`NegotiatedGroup` / `PeerSignatureAlgorithm string`、`PeerCertificates [][]byte`、
+`VerifiedChains [][][]byte`、`Verification VerificationState` 与
+`VerificationErrors []CertificateVerificationError`。DER 无须 Close，修改返回值不影响连接。
+`VerificationState` 为 `VerificationNotPerformed` / `VerificationPassed` /
+`VerificationFailed`；只在原生验证确实执行后标记通过/失败。NTLS 的原始链包含双证书，
+但原生 verified chain 仅报告最近一次验证链；任何失败时不填充 VerifiedChains。
+`CertificateVerificationError{Code int; Depth int; Certificate []byte}` 实现 error，保留失败码、深度与 DER。
+`HandshakeError.SSLCode`、`VerifyCode`、`NativeErrors` 保留本次原生线程的失败详情；`SSLErrorNone` / `SSLErrorSSL` /
+`SSLErrorWantRead` / `SSLErrorWantWrite` / `SSLErrorWantX509Lookup` / `SSLErrorSyscall` /
+`SSLErrorZeroReturn` / `SSLErrorWantConnect` / `SSLErrorWantAccept` / `SSLErrorWantAsync` /
+`SSLErrorWantAsyncJob` / `SSLErrorWantClientHelloCB` / `SSLErrorWantRetryVerify` 为 SSLCode 命名值（0–12）。
+验证码解释/常量见 `x509.VerifyErrorMessage` 与 `x509.Verify*`，原生错误码用 `meta.ErrorString`。
+
+验证名称依次取 `VerificationName`、`ServerName`、拨号地址 host；SNI 依次取
+`ServerName`、拨号地址 host，`DisableSNI` 可关闭。显式验证与 InsecureSkipVerify 冲突即报错；
+VerifyReport/VerifyStrict 无根时加载铜锁默认信任路径，不等同于平台原生信任库。
+VerifyReport 握手成功仍可能 VerificationFailed，不可据此认定可信；VerifyNone 不产生受信任链。
+
+配置构造后不可修改；选择回调可能并发执行，须及时返回，不得重入同一连接。
+源凭证在构造/选择期间保持有效，原生引用建立后连接独立使用；回调错误始终终止。
+混合模式及 SNI 服务端每次 ClientHello 都执行选择，须将其源凭证保留至服务端关闭且在途选择结束；证书用 Close、密钥用 asym.Close 释放。
+基础配置限制组时，所选配置必须显式提供 CurvePreferences（可 Clone 基础配置），
+避免无法从原生 SSL 对象清除的旧组限制。混合模式的 MinVersion/MaxVersion 仅限制 TLS 一侧，NTLS 保持自身版本。`NewListener` 允许仅回调凭证，静态混合模式须提供两类凭证。
+原生写入开始后的错误/超时会使后续写入保持失败，应关闭连接；只在写入前过期的 deadline 可重置。
+
+[握手示例](../examples/handshake/) 默认 VerifyReport，支持 TLS/NTLS/混合端口、严格/不验证、
+证书链、ALPN、客户端认证和数据回显；这是 SDK 使用示例，不新增正式 CLI 产品。
+
+**规划中（其余传输能力，公开面收敛归 `1.0.0`）**
+
+> 下列均未实现；涉及原生能力需新增/扩展绑定，经 core 管理生命周期。
+> 交付 SDK API + 可运行示例；候选名称不代表签名冻结。基础状态快照与验证失败记录已在
+> `0.9.0` 提供，事件流、详细 trace 与 RFC 8998 验收仍为后续工作。
 
 | 符号 / 能力 | 说明 | 版本 | 实施前置 |
 |---|---|---|---|
-| 🧭 显式协议模式与完整凭证链 | TLS、NTLS、服务端同端口混合接入；TLS 单套凭证及 NTLS 签名/加密双证书链；旧 `NTLS` 字段兼容 | `0.9.0` | 原生混合模式、证书链及配置校验 |
-| 🧭 已连接 TCP 的客户端包装入口 | 下游独立控制拨号与 `HandshakeContext`；保留现有服务端与 Listener 握手语义 | `0.9.0` | core SSL 构造与句柄所有权 |
-| 🧭 `Config.NextProtos []string` | ALPN（对应 `-alpn`）与协商结果 | `0.9.0` | 客户端协议配置、服务端选择回调与状态读取 |
-| 🧭 `Config.ClientAuth` + `Config.ClientCAs` | 请求/要求客户端证书与验证失败处理分别表达，NTLS 套件凭证要求仍生效 | `0.9.0` | 客户端 CA、原生验证模式与回调 |
-| 🧭 `Config.GetCertificate` / `GetConfigForClient` | 服务端 SNI 多证书；NTLS 切换完整双证书身份 | `0.9.0` | SNI 回调与配置生命周期 |
-| 🧭 显式验证策略、`Config.VerifyPeerCertificate` / `VerifyConnection` | 不验证、记录失败后继续、验证失败终止；保留旧入口实际行为，自定义回调错误始终终止 | `0.9.0` | 验证回调、失败记录与结果状态 |
-| 🧭 `Options` / `Modes`、`ConnectionState`、`VerifyHostname` / `UnderlyingConn`、错误码常量 | 配置与连接状态；SNI/验证名称分别配置，未验证/通过/失败与握手完成分别表达 | `0.9.0` | 配置/状态绑定与原生错误采集 |
-| 🧭 `Config.DHParameters`、组/曲线与签名算法、`HostnameOptions` | 严格参数配置、邮箱/主机名 flags 与 IP 校验；不新增独立 DH 算法 | `0.9.0` | 参数加载、组/签名算法和名称校验绑定 |
 | 🧭 RFC 8998 严格配置 | TLS 1.3 单套签名凭证，两个 SM4 套件、curveSM2、sm2sig_sm3 与证书约束，区别于 NTLS 双证书 | `0.10.0` | 原生严格模式及配置/状态验证 |
 | 🧭 结构化握手诊断 | 状态、消息、Alert 与证书验证事件；失败握手仍保留已发生的信息 | `0.10.0` | 消息/状态/验证回调及数据复制 |
 | 🧭 详细 trace / keylog | 可选输出、默认关闭；TLS / NTLS / RFC 8998 分别验收，缺少原生能力明确报错 | `0.10.0` | `SSL_trace`、keylog 回调与输出错误传播 |
@@ -1170,7 +1243,7 @@ STARTTLS、外部 PSK、0-RTT、主动重协商继续暂缓，不归入以上四
 **破坏性变更**
 
 - `Config` 的 `Key` / `SignKey` / `EncKey` 字段类型由 `*sm2.PrivateKey` 改为 `asym.PrivateKey`
-- 内部实现不再直接 import `internal/native`（修复分层违规；`tls/suites.go` / `tls/errors.go` 现直接引用绑定层）
+- `tls` 公共层仅经 core 调用 native（`0.3.0` 已修复 suites/errors 的跨层引用）
 
 ---
 
