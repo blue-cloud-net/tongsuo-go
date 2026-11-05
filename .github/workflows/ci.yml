@@ -43,6 +43,7 @@ jobs:
       CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
       LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
       DYLD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
+      OPENSSL_CONF: ${{ github.workspace }}/.tongsuo-install/ssl/openssl.cnf
       TONGSUO_OPENSSL_BIN: ${{ github.workspace }}/.tongsuo-install/bin/openssl
     steps:
       - uses: actions/checkout@v5
@@ -77,7 +78,9 @@ jobs:
         run: go test -count=1 -tags static ./...
       - name: Race tests
         if: runner.os == 'Linux' && matrix.arch == 'amd64'
-        run: go test -count=1 -race ./...
+        run: |
+          go test -count=1 -race ./...
+          go test -count=50 -race -run '^TestNTLSLoopback$' ./tls
       - name: CLI interop
         if: runner.os == 'Linux' && matrix.arch == 'amd64'
         run: go test -count=1 -tags tongsuocli ./...
