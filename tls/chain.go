@@ -161,6 +161,9 @@ func (c *Conn) peerCertificateChain(leaf *core.Certificate, pool []*core.Certifi
 	for _, cc := range coreChain {
 		wrapped, err := certaccess.Wrap(cc)
 		if err != nil {
+			for _, cert := range out {
+				_ = cert.Close()
+			}
 			return nil, err
 		}
 		out = append(out, wrapped)

@@ -560,6 +560,29 @@ static 标签构建。新增测试集中于 limits/lifecycle/reliability、SM2 �
 CLI 测试额外检查外部 PBES2/AES 与 3DES 的算法、迭代及 MAC 参数保留。原生 P12
 改密成功/错误路径另经临时 ASan/LSan 驱动检查，无原生内存错误或泄漏。
 
+#### `0.9.0` 实现测试映射
+
+- `tls/handshake_test.go`：ALPN 优先级/冲突、独立 SNI/验证名称、TLS/NTLS 完整身份选择与 SNI 精确套件/组切换、混合端口并发、客户端认证、三种信任策略、自定义验证拒绝、状态副本与 Close 后快照。
+- `tls/pki_test.go`：真实三级链、TLS 1.2/1.3、DNS/IP/邮箱与 hostname flags、SNI 更换版本/签名/密钥类型/标准 ffdhe2048 参数，覆盖缺中间链、过期、错误名称/邮箱。标准库只生成测试交叉夹具，生产路径均使用铜锁。
+- NTLS ECC/ECDHE × GCM/CBC：独立签名/加密私钥及 CA 签发证书、双向认证和实际套件断言；错误信任在 Report 中保存两套身份的失败记录。签名/加密使用不同中间 CA 时，ECC/ECDHE 均严格双向验证两链，缺失加密侧中间链明确失败。
+- `tls/handshake_tongsuocli_test.go`（tongsuocli）：TLS 1.2、TLS 1.3、NTLS ECC、NTLS ECDHE；CLI client → SDK server 与 SDK client → CLI server 均验证 mTLS、ALPN 和实际收发数据，CLI/头文件/库取同一安装前缀。
+- `internal/core/ssl_lifecycle_test.go`：构造失败接管 fd、显式 Close 与 Handle/finalizer 共用析构路径均释放 fd；上下文先关闭仍可安全释放 SSL，断开 socket 的真实 errno 可跨 goroutine 解包。
+- I/O 回归：读取挂起时写入可推进、独立 deadline、写超时后禁止不同缓冲重试、错误凭证配对/关闭句柄、并发状态/Close；已有取消/FD 生命周期用例继续运行。
+- `tls/handshake_example_test.go` 提供 Client 的 GoDoc 探测用法；`BenchmarkHandshake` 测量 TLS 1.2/1.3、NTLS ECC/ECDHE 完整握手和释放开销；真实验证失败逐项断言公开验证码、SSLCode 与原生错误队列。
+- `examples/handshake` 为独立 Go module，构建并使用本地 CA/证书运行握手+回显；示例 Report 默认值与严格/不验证选项分开验证。详细消息事件/trace/keylog 不属于本版验收。
+
+#### `0.9.0` 本地验证结果（Linux amd64，2026-11-05）
+
+铜锁 8.4.0：全仓库 build/vet、默认测试、tongsuocli 对拍、race 与 static 标签构建通过；
+全仓库 race + GOEXPERIMENT=cgocheck2 联合检查通过。七个独立示例模块均
+build/vet 通过；四种握手 Benchmark 完成。混合端口示例实测 TLS 1.2、NTLS ECC/ECDHE
+严格双向认证、ALPN、数据回显，另验证 Report 默认继续、VerifyNone 和严格失败后的状态/错误码。
+
+铜锁 8.5.0：全仓库 build/vet 通过，新增 TLS/NTLS 回环、配置、CLI 双向认证及 FD 用例通过。
+全量对拍仍有既有 NTLS 证书夹具与六个 AES-WRAP/WRAP-PAD CLI 用例失败；在未修改的
+`941ae5b` 基线上复现 `TestNTLSLoopback` 与 `TestCLIExtendedModes`，不据此宣称 8.5
+全量兼容，兼容收敛仍归 0.8.0。未验证 macOS / arm64。
+
 ### `0.8.0` 至 `1.0.0`
 
 - `0.8.0`：固定 8.4.0/8.5 版本独立构建、单元测试与 CLI 对拍，头文件、链接库、

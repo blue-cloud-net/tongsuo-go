@@ -1,5 +1,11 @@
 # 官方 tongsuo-go-sdk 与本库功能对比
 
+> **`0.9.0` 实施更新（开发分支，待集成/发布）**：TLS/NTLS 混合端口、完整凭证链、
+> SNI/ALPN、客户端认证、三种显式验证策略、参数与连接状态已实现；独立读写 deadline、
+> 并发 I/O 与原生错误采集已修复。可运行示例见 [examples/handshake](../examples/handshake/)。
+> RFC 8998/事件流/trace/keylog、会话/票据、HTTP/stapling 仍分别归 0.10/0.11/0.12。
+> 以下采集表保留历史基线；当前逐符号事实见 [公开 API 清单](api-reference.md#11-tls--tls--ntls-传输层)。
+
 > **`0.6.0` 实施更新**：下文采集时的基线表保留原口径；AES 扩展/ZUC、EC 参数、
 > PKCS#8/12 配置、PKCS#7 CRL、JWK OKP/oct、本地多对象加载、OCSP HTTP/nonce 与
 > 证书信任属性已在 8.4.0 基线上实现，当前逐符号事实见 [api-reference.md](api-reference.md)。

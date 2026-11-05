@@ -42,6 +42,15 @@ NTLS 双证书（签名 + 加密）握手 + 多轮回显读写。
 cd examples/ntls-loopback && go run .
 ```
 
+### [handshake](./handshake) — TLS / NTLS 客户端与服务端握手测试
+
+SDK API 示例：显式 TLS/NTLS/混合端口、完整证书链、ALPN、客户端认证及独立 SNI/验证名称。
+默认记录验证失败后继续，另提供 strict / none；显示失败握手的状态与验证错误，最后关闭连接。
+
+```bash
+cd examples/handshake && go run . -h
+```
+
 ### [ed25519](./ed25519) — Ed25519 签名 / 验签与 PEM 序列化
 
 Ed25519（RFC 8032）密钥生成、32B 原始种子 / 公钥互操作、64B 签名、PKCS#8 / SPKI PEM 往返。

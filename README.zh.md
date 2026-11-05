@@ -45,8 +45,8 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 - 🤝 **曲线 ECDH**（`ecdh`）：NIST P-256 / P-384 / P-521（X9.63）、OKP 曲线 X25519 / X448（RFC 7748）与 secp256k1；PEM（PKCS#8 / SPKI）往返与共享密钥派生，语义对齐 Go 标准库 `crypto/ecdh`；命名/显式 EC 参数 PEM 文件读写与参数驱动密钥生成
 - 🎲 **安全随机数**（`rand`）：基于铜锁 `RAND_bytes`
 - 🗄️ **密钥存储与轮转**（`keystore`）：密钥元数据、内存 / 自定义 Store、版本轮转与历史；`Load` / `LoadAllFromReader` 自动识别本地 PEM 多对象、DER 与 PKCS#12
-- 📜 **X.509 证书管理**（`x509`）：证书 / CSR / CRL / OCSP 解析与签发、一行自签证书（`CreateSelfSigned`）、分步签发 CRL（`CRLBuilder`）、CA 签发证书（SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448）、按 NID 或名字添加任意 X.509 v3 扩展（`AddExtension` / `AddExtensionByName` / `AddExtensions`）、按 CSR 签发（`IssueCertificateFromRequest`）、主机名 / IP / 邮箱校验（`VerifyHostname` / `CheckEmail`）、subject / issuer 名字 hash（`SubjectHash` / `IssuerHash`）与链验证（可用 `Store.SetTime` 指定验证时刻）；OCSP HTTP/nonce、trusted PEM 用途属性与证书/CRL 统一加载
-- 🌐 **TLS / NTLS 传输层**（`tls`）：客户端 / 服务端封装，支持国密 NTLS 双证书（签名证书 + 加密证书）；`tls.NewListener` 返回 Accept 内即完成握手的 `net.Listener`
+- 📜 **X.509 证书管理**（`x509`）：证书 / CSR / CRL / OCSP 解析与签发、一行自签证书（`CreateSelfSigned`）、分步签发 CRL（`CRLBuilder`）、CA 签发证书（SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448）、按 NID 或名字添加任意 X.509 v3 扩展（`AddExtension` / `AddExtensionByName` / `AddExtensions`）、按 CSR 签发（`IssueCertificateFromRequest`）、主机名 / IP / 邮箱校验（`VerifyHostname` / `CheckEmail`）、subject / issuer 名字 hash（`SubjectHash` / `IssuerHash`）与链验证（可用 `Store.SetTime` 指定验证时刻）；OCSP HTTP/nonce、trusted PEM 用途属性、证书/CRL 统一加载与验证错误码常量
+- 🌐 **TLS / NTLS 传输层**（`tls`）：显式 TLS / NTLS 与服务端混合端口、完整凭证链、SNI 选择、ALPN、双向认证、三种验证策略与独立状态快照；独立读写 deadline 与并发 I/O；[可运行握手示例](examples/handshake/)
 - 📦 **容器与格式**：PKCS#7 证书/CRL、签验与信封（`pkcs/pkcs7`）、带 PBE/迭代选项及复杂容器无损改密的 PKCS#12（`pkcs/pkcs12`）、PKCS#8 PBE/PRF/PEM/DER 与 RSA PKCS#1 公钥（`asym`）、OKP/oct JWK（`jwk`）、PEM 切分（`meta`）、带可配置限额的 ASN.1 DER 查看（`asn1`）、.NET 风格 RSA XML（`xml/rsa`）
 - 🧪 **标准向量测试**：每个算法包覆盖国标标准向量、往返、边界与错误路径，并与 openssl CLI 双向交叉验证
 
@@ -71,10 +71,11 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 `0.7.0` 已实现、待发布；仍以铜锁 8.4.0 为验证基线，AES-SIV 拒绝空消息。
 `0.7.0`：可靠性、数据完整性与 PKCS 容器，含句柄释放、解析限额、完整序列号、DER 扩展、信任路径、SM2 压缩输入、复杂 PKCS#12 容器无损改密，以及 PKCS#7 签名、验签、加密与解密。
 
-以下版本均为规划，不表示功能已可用：
+`0.9.0` 已在本开发分支实现、待集成/发布，覆盖 TLS / NTLS 握手与认证；使用现有 8.4.0 API 基线，可独立于 `0.8.0` 算法工作开发。
+
+以下其余版本均为规划，不表示功能已可用：
 
 - `0.8.0`：铜锁 8.5 兼容与经典算法扩展
-- `0.9.0`：TLS / NTLS 握手与认证、混合协议监听、SNI、ALPN、验证策略、连接状态与客户端/服务端示例
 - `0.10.0`：RFC 8998 国密 TLS 1.3、结构化握手诊断、可选详细 trace 与 keylog
 - `0.11.0`：会话复用、缓存、导入导出、票据控制与密钥轮换
 - `0.12.0`：HTTP/1.1 客户端/服务端集成与 OCSP stapling
@@ -83,7 +84,7 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 
 传输系列交付 SDK API 与可运行示例，供下游构建类似 `s_client` / `s_server` 的握手测试。
 RFC 8998 在 TLS 1.3 上使用单套签名凭证；NTLS 使用签名与加密双证书。
-保留 SDK 旧入口行为，新增不验证、记录验证失败后继续、验证失败终止三种显式策略；握手示例默认记录失败后继续，并单独展示验证结果。
+保留 SDK 旧入口行为，已新增不验证、记录验证失败后继续、验证失败终止三种显式策略；握手示例默认记录失败后继续，并单独展示验证结果。
 
 STARTTLS、外部 PSK、0-RTT、主动重协商继续暂缓，不承诺版本。
 
@@ -375,7 +376,9 @@ func main() {
 }
 ```
 
-更多可运行示例见 [examples/](./examples)。
+需要有期限的握手探测时，用 `tls.Client(raw, &tls.Config{Protocol: tls.ProtocolTLS, Verification: tls.VerifyReport})` 包装已连接的 TCP socket，调用 `HandshakeContext(ctx)`，失败时仍可检查 `ConnectionState()`，最后始终 `Close()`。`VerifyReport` 可能连接到不受信任的对端；认证连接请使用 `VerifyStrict` 并显式配置 `RootCAs`。`ServerName` 控制 SNI，`VerificationName` 独立控制 DNS/IP 校验。
+
+客户端/服务端参数和 NTLS 双证书的可运行示例见 [examples/handshake/](./examples/handshake/)。
 
 ## 架构
 
@@ -392,7 +395,7 @@ API 层（16 个顶级包）          ← 对外高层 API，仅此层可被外�
 - **内存安全**：原生句柄经核心层 `handle` 包装（`owned` 所有权 + 幂等 `Close()` +
   `runtime.SetFinalizer` 兜底），原生指针不进入公开 API
 - **错误处理**：原生失败统一为携带 `ERR_get_error()` 错误码的 `*core.OpError`
-- **并发模型**：不同句柄可并行使用；单句柄需调用方串行化
+- **并发模型**：不同句柄可并行使用；普通单句柄由调用方串行化，`tls.Conn` 支持并发读写与 Close，内部串行原生调用
 - **内部实现隐藏**：`internal/` 受 Go `internal` 机制保护，外部不可导入；公开签名中不出现 `internal/` 类型
 
 详细设计与依赖方向见 [docs/architecture.md](docs/architecture.md)，`0.7.0`–`1.0.0` 的版本规划见 [docs/roadmap.md](docs/roadmap.md)。
