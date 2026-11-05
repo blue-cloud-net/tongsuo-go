@@ -6,9 +6,9 @@
 > 1. 只列 `internal/` 的包；对外公开面见 `docs/api-reference.md`；
 > 2. `internal/` 受 Go 机制保护，**模块外无法 `import`**；下列符号只在本仓库内可见；
 > 3. 每项格式为「完整签名 — 中文一句话」；未导出（小写）符号不列；
-> 4. 某些 `internal/core` 类型会**出现在公开 API 签名中**（如 `*core.PKey`），下文用 ⚠️ 标出。
+> 4. 公开 API 签名禁止出现 `internal/` 类型；下文的原生句柄仅供核心层及现有桥接使用。
 >
-> **范围**：**6 个包**。生成基线：`0.7.0`（已实现，待发布）。
+> **范围**：**6 个包**。生成基线：`0.8.0`（2026-11-05 定版，待标签发布）。
 
 ---
 
@@ -552,14 +552,29 @@ internal/testutil ← 仅被 *_test.go 使用
 - native：`X_X509_set_serial_hex`、`X_X509_REVOKED_set_serial_hex` / `X_X509_REVOKED_serial_hex`、`X_X509_add_ext_der`、`X509_STORE_set_default_paths` / `X509_STORE_load_locations`、`X_SM2_expand_point`，均经 core 使用。
 - native：`X_PKCS12_reencrypt` 遍历复杂 safe/bag、更新 PBE 与 MAC；`X_PKCS7_sign` / `X_PKCS7_verify` / `PKCS7_get0_signers` / `X_PKCS7_encrypt` / `X_PKCS7_decrypt` 与 `BIO_ctrl_pending`，空内容单独处理，无 Go 数据指针被 BIO 长期持有。
 
+## `0.8.0` 增量：原生兼容与经典算法（已实现）
+
+- core：`ErrAlgorithmUnavailable`、`PKey.SupportsEdDSAInstance`、`SignEdDSAInstance` /
+  `VerifyEdDSAInstance`、`SupportsRSAPSSDigest`、`DeriveSM2DH`；所有新上下文显式释放，
+  跨包密钥经桥接复制，输出与错误保留原生边界。
+- native：`X_EVP_DigestSignVerifyInit_instance`、`X_EVP_PKEY_SM2DH`、
+  `TongsuoHeaderVersionNum`；`algorithms.c/.h` 仅组装 OSSL_PARAM 与调用 EVP，
+  宏不存在时返回不支持，C 密钥指针参数保存在 C 栈，ID/context 复制到 C 内存。
+- `internal/testutil.BuildNative(dir, source) (string, error)`：用 CC、CGO flags 与 TONGSUO_HOME 编译独立
+  EVP 测试驱动，返回编译错误供调用方断言，不使用 SDK shim 或系统 OpenSSL 兜底。
+- `TestNativeVersionIdentity` 比较头文件与运行库的低 32 位版本，兼容上游返回值的
+  符号扩展，并支持 CI 的 TONGSUO_EXPECT_VERSION 精确检查。
+
 ## 后续实施前置（规划，不属于已有符号清单）
 
 | 目标版本 | core/native 工作 | 边界 |
 |---|---|---|
-| `0.8.0` | 8.5 兼容、上下文签验、RSA-SM3 原生能力验证、SM2DH 参数 | 8.4 编译保护与运行时探测 |
-| `0.9.0` | PQC 密钥/签验/序列化与 KEM | 不可用能力明确报错 |
-| `0.10.0` | CMS / TS | 复用容器基础设施 |
-| `0.11.0` | TLS 配置、状态与回调绑定 | 生命周期与并发验收先于 1.0 稳定版 |
+| `0.9.0` | TLS / NTLS 配置、混合模式、证书链、SNI/ALPN、认证回调、参数与状态；I/O、deadline 与错误采集修复 | 同一 SSL 的原生调用受控，独立读写 deadline、取消与关闭通过验收 |
+| `0.10.0` | RFC 8998 严格模式、组/签名状态、消息/状态/验证事件、`SSL_trace` 与 keylog | TLS / NTLS / RFC 8998 分别验收；回调数据复制，不暴露原生指针 |
+| `0.11.0` | `SSL_SESSION_*`、会话缓存/序列化、票据与密钥轮换 | 握手后票据处理、实际复用及身份隔离 |
+| `0.12.0` | OCSP status 回调与响应读取；HTTP/1.1 集成复用 Listener | 取得 staple 不等于验证通过；不支持组合明确报告 |
+| `0.13.0` | PQC 密钥/签验/序列化与 KEM | 不可用能力明确报错 |
+| `0.14.0` | CMS / TS | 复用容器基础设施 |
 
 具体 C 接口与版本以 [roadmap.md](roadmap.md) §3 为准；此处不预先登记尚未实现的
 完整内部函数签名。

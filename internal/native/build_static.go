@@ -10,6 +10,6 @@ package native
 // 静态归档按从左到右扫描并按需拉入目标；若把 -lcrypto 放在 -lssl 前，
 // 处理 libssl.a 时已没有再走一遍 libcrypto.a 的机会，从而报
 // "undefined reference"。
-#cgo linux LDFLAGS: -L/opt/tongsuo/lib64 -lssl -lcrypto -ldl -lpthread
+#cgo linux LDFLAGS: -L/opt/tongsuo/lib64 -Wl,-Bstatic -lssl -lcrypto -Wl,-Bdynamic -ldl -lpthread
 */
 import "C"

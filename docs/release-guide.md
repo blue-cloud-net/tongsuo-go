@@ -12,9 +12,9 @@
 
 | 项 | 要求 |
 |----|------|
-| 铜锁 | **8.4.0+**，CI 固定 `TONGSUO_REF: 8.4.0` |
+| 铜锁 | **8.4.0 / 8.5.0**，CI 两版固定矩阵，头文件/运行库/CLI 同源 |
 | Go | 1.21（CI 固定） |
-| 推送权限 | `git push origin main` / `git push origin v<ver>`；agent 默认**禁止** push（AGENTS §6.5），需显式授权 |
+| 推送权限 | `git push origin main` / `git push origin v<ver>`；agent **禁止** push（AGENTS §6.5），由维护者手动执行 |
 | 工作区 | `git status --porcelain` 必须为空 |
 
 环境变量（每个新 shell 都要设，注意**库目录可能是 `lib` 或 `lib64`**）：
@@ -46,22 +46,11 @@ export CGO_LDFLAGS="-L$TONGSUO_HOME/lib64"  # 同上
 
 ---
 
-## 2. 整理提交历史（可选但推荐）
+## 2. 整理提交（不改写历史）
 
-目标：一个逻辑变更一个 commit，且不把未发布版本的修补拆成多段。
-
-1. 打安全锚点：`git tag backup/pre-release-<ver>`
-2. 重排：`git rebase -i <上一个已发布基线的提交>`
-   - 丢弃「临时 CHANGELOG 段」类提交，内容改为在最终一个 CHANGELOG 提交里重写
-   - 需要整体重写文件时用 `edit` 停在该提交上
-3. **完整性校验**（关键）：
-
-```bash
-git diff --stat backup/pre-release-<ver> HEAD          # 应只有 CHANGELOG 等文档
-git diff --quiet backup/pre-release-<ver> HEAD -- ':!CHANGELOG.md' ':!CHANGELOG.zh.md' && echo CODE-TREE-IDENTICAL
-```
-
-只要代码树不一致就说明重排过程中丢了东西，回到锚点重来。
+一个逻辑变更一个 Conventional Commit，中文主题。已存在的提交保持原样，
+修补以新增提交表达，不使用 rebase、amend 或 reset 改写历史。功能分支先合并到 dev，
+验收通过、干净且已合并后再回收对应 worktree；其他会话的 worktree 保留。
 
 ---
 
@@ -122,45 +111,30 @@ for d in examples/*/; do (cd "$d" && go build ./...); done
 find examples -maxdepth 2 -type f -perm -u+x ! -name '*.go' ! -name '*.md' ! -name 'go.mod' -print -delete
 ```
 
-### 5.1 用 CI 同款铜锁 8.4.0 复跑（强烈推荐）
+### 5.1 固定双版本验证
 
-「本地绿 / CI 红」几乎总是 **8.4 与 8.5 的语义差异**，不是 flaky。先例：0.4.0 首次发布
-就是 8.4 上 `X509_REQ_add_extensions` 的合并语义不同导致失败。
-
-```bash
-cd <tongsuo 源码目录>
-git worktree add /tmp/tongsuo-8.4.0 8.4.0
-cd /tmp/tongsuo-8.4.0
-./config --prefix=/tmp/tongsuo-8.4.0-install --libdir=/tmp/tongsuo-8.4.0-install/lib \
-         enable-ntls enable-trace no-shared
-make -j"$(nproc)" && make install
-```
-
-然后切到 8.4 环境跑 `go build` / `go test` / `go test -tags tongsuocli`。
-用完清理：`git worktree remove /tmp/tongsuo-8.4.0 --force && rm -rf /tmp/tongsuo-8.4.0-install`。
+分别使用铜锁 8.4.0 与 8.5.0 的头文件、库和 CLI 执行上述检查；不能以系统 OpenSSL
+替代，也不能用其中一版通过来证明另一版可用。CI 用 scripts/build-tongsuo-ci.sh
+在临时目录从固定 tag 构建 shared 库与静态归档，启用 NTLS/trace；Linux static
+标签用 -Bstatic 选择铜锁归档，最终链接测试二进制以验证，不要求整进程静态 libc。
 
 ---
 
 ## 6. 用 act 本地复跑 CI
 
 ```bash
-scripts/run-act.sh -j all        # lint + 本机可跑的 test 矩阵项
-for f in .act-logs/*.rc; do echo "$f: $(cat "$f")"; done   # 全为 0
+bash scripts/run-act.sh -j all
 ```
 
-- act 只覆盖 `ci.yml` 的 `lint` / `test`，**不覆盖 `interop`** → 由 §5 的 `-tags tongsuocli` 补齐
-- **代理坑**：容器内 git 没有宿主机 `~/.gitconfig` 的代理配置，clone 铜锁会
-  `RPC failed; curl 56 Recv failure: Connection timed out`。`run-act.sh` 已透传
-  `HTTP_PROXY/HTTPS_PROXY/http_proxy/https_proxy/NO_PROXY/GIT_CONFIG_*`，只需在调用前 export：
+当前 test job 包含 build/vet、单元测试和 Linux static；amd64 另含 race 与 CLI
+互通。脚本分别运行 Linux amd64/arm64，两条腿各含铜锁 8.4.0/8.5.0；arm64 在
+x86 主机上使用 QEMU 和对应架构的镜像 digest。macOS 必须交给真实 GitHub runner，
+不能把 Linux 容器改名为 macOS 视作验证。
 
-```bash
-export HTTP_PROXY=http://<proxy>:7890 HTTPS_PROXY=$HTTP_PROXY NO_PROXY=localhost,127.0.0.1,::1
-scripts/run-act.sh -j all
-```
-
-- 容器用 `--network=host`，宿主机能访问的代理地址容器内同样可访问
-- `lint` 与 `test` 的铜锁缓存 key 大小写不同（`tongsuo-v3-Linux-…` vs `…-linux-…`），
-  故 lint 可能 miss 而 test 命中；命中后不再 clone，也就不会再超时
+每条架构腿的日志与退出码写入 .act-logs/act-test-<arch>-<timestamp>.log/.rc，
+退出码必须全为 0。代理通过环境变量传入；容器使用 host 网络，脚本默认限制每个
+铜锁构建 8 个并发任务，可用 TONGSUO_BUILD_JOBS 覆盖。旧 -j lint/-j interop
+参数作为兼容别名，运行完整 test job。
 
 ---
 
@@ -168,16 +142,16 @@ scripts/run-act.sh -j all
 
 ```bash
 git switch main
-git reset --hard origin/main          # 若本地 main 含未推送的旧 merge（重排后即孤儿）
-git merge --no-ff dev -m "merge dev: <ver> 发布准备（要点）"
+git status --porcelain                # 必须为空
+git merge --no-ff dev -m "chore(merge): 合并 0.8.0 发布准备到 main"
 git rev-list --count main..dev        # 必须为 0
 git diff --stat dev main              # 必须为空（树一致）
-git push origin main
+# 由维护者手动执行：git push origin main
 ```
 
-`main` 的历史全部是 `merge dev: ...` 形式的合并提交，**禁止 rebase 已发布历史**。
+main 接受从 dev 的非快进合并；保留已有历史，不 reset 或 rebase。agent 完成本地合并后停止，由维护者推送。
 
-推送后等 CI：`lint` + `Test (ubuntu/macos × amd64/arm64)` + `Interop` 全绿。
+推送后等待双版本 × Linux/macOS × amd64/arm64 矩阵全部通过。
 **不要**在 CI 红的基础上打 tag。
 
 ---
@@ -215,16 +189,16 @@ curl -sS https://api.github.com/repos/blue-cloud-net/tongsuo-go/releases/tags/v<
 | tag 已推送但 Release 失败 | 修复后删远端 tag 重打，或走 `workflow_dispatch` 带 `tag` 输入重跑（不删 tag 优先） |
 | tag 打错且**已发布** | 不删已发布 tag；改发下一个 patch 版本 |
 | tag 打错且**未推送** | `git tag -d v<ver>` 后重新打 |
-| dev 历史需要重写 | 仅限**未发布**的 dev：`git push --force-with-lease origin dev`（需显式授权） |
-| 本地 main 含未推送的旧 merge | `git reset --hard origin/main` 后再合并（重排后旧 merge 的提交已成孤儿） |
+| dev 历史需修正 | 使用新增修正提交，不改写历史，不强推 |
+| 本地 main 与预期不一致 | 保留提交，先核对差异；不执行 reset --hard |
 
 ---
 
-## 10. 已知既有问题（不阻塞发版，但不要误判为本次回归）
+## 10. 历史并发诊断（失败仍阻塞发版）
 
 - `go test -race ./tls/` 约 1/3 概率在 `TestReadReturnsAfterCancel` 报数据竞争
   （`tls.Conn.Close` 与 `internal/core.(*SSLConn).Read` 之间）。
-  CI 不跑 `-race`，普通 `go test` 稳定通过。属既有问题，需单独开 issue 处理。
+  这是历史诊断记录。0.8.0 的 Linux amd64 CI 已执行 race；任何复现的失败均阻塞发版，不能作为豁免。
 
 ---
 

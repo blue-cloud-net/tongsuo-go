@@ -12,8 +12,13 @@
 
 > **排期更新**：本清单保留采集时的候选 API，不表示它们仍全部待实现或承诺交付。
 > `0.7.0` 的已实现符号以 [api-reference.md](api-reference.md) 为准；PKCS#7 基础流程
-> 已在 `0.7.0` 实现，CMS/ts 归 `0.10.0`，会话/TLS 归 `0.11.0`，文件系统 CA 继续暂缓。
+> 已在 `0.7.0` 实现，CMS/ts 延后至 `0.14.0`；TLS/NTLS 握手与认证、RFC 8998/完整
+> 诊断、会话/票据、HTTP/1.1/stapling 分别归 `0.9.0`、`0.10.0`、`0.11.0`、`0.12.0`，
+> PQC 归 `0.13.0`，文件系统 CA 继续暂缓。
 > 可靠性需求归 `0.7.0`，逐项见 [需求复核台账](requirements.md)。
+> 传输交付 SDK API + 可运行示例，不新增正式 CLI；支持混合端口、三种显式验证策略、
+> 结构化事件与可选 trace。RFC 8998 单套签名凭证与 NTLS 双证书分别验收；STARTTLS、
+> 外部 PSK、0-RTT、主动重协商继续暂缓。
 
 ---
 
@@ -108,11 +113,11 @@
 ## 4. `cms` — CMS 签名 / 验签 / 加密 / 解密
 
 - **§6.A**：5 ｜ **优先级**：P2 ｜ **归属包**：`pkcs/pkcs7`（现有，CMS 与 PKCS#7 同源 RFC 5652）｜ **API 数**：8
-- **现状**：`0.6.0` 已有证书/CRL 容器；`0.7.0` 已实现 PKCS#7 基础签名/加密，`0.10.0` 再扩展 CMS。
+- **现状**：`0.6.0` 已有证书/CRL 容器；`0.7.0` 已实现 PKCS#7 基础签名/加密，`0.14.0` 再扩展 CMS。
 - **对齐 CLI**：`cms -sign` / `-verify` / `-encrypt` / `-decrypt` / `-digest_create` / `-digest_verify`
-- **前置**：`0.7.0` 先新增 `PKCS7_*` 基础流程绑定；`0.10.0` 再新增 `CMS_*`，不能把两者混作一种格式。以下签名为候选，最终目标形态见公开 API 清单。
+- **前置**：`0.7.0` 已新增 `PKCS7_*` 基础流程绑定；`0.14.0` 再新增 `CMS_*`，不能把两者混作一种格式。以下签名为候选，最终目标形态见公开 API 清单。
 
-- [x] `pkcs7.Sign(data []byte, opts *SignOptions) ([]byte, error)` — 生成签名/封装数据；输入：明文 + 签名证书与私钥 → 输出：PKCS#7 DER（`0.7.0`）；CMS 扩展另归 `0.10.0`
+- [x] `pkcs7.Sign(data []byte, opts *SignOptions) ([]byte, error)` — 生成签名/封装数据；输入：明文 + 签名证书与私钥 → 输出：PKCS#7 DER（`0.7.0`）；CMS 扩展另归 `0.14.0`
 - [x] `pkcs7.Verify(data []byte, opts *VerifyOptions) (*SignedData, error)` — 验签并返回签名者信息
 - [x] `pkcs7.Encrypt(data []byte, opts *EncryptOptions) ([]byte, error)` — 信封加密（多接收者）
 - [x] `pkcs7.Decrypt(data []byte, opts *DecryptOptions) ([]byte, error)` — 信封解密
@@ -233,6 +238,9 @@
 
 ## 12. `sess_id` — SSL 会话读写与转换
 
+> 会话缓存、导入导出、实际复用、票据与密钥轮换目标为 `0.11.0`；以下保持候选 API，
+> 最终目标形态见公开 API 清单，TLS 1.3 的握手后票据与身份隔离须单独验收。
+
 - **§6.A**：46 ｜ **优先级**：P2 ｜ **归属包**：`tls`（现有）｜ **API 数**：8
 - **现状**：`SSL_SESSION_*` 未绑定，无会话对象；这也是「会话复用」缺失的连带缺口。
 - **对齐 CLI**：`sess_id -in s.pem -outform DER -text`
@@ -290,7 +298,7 @@
 
 | 包 | 承载 | 理由 |
 |---|---|---|
-| `ts`（顶层，`0.10.0`） | `ts` | RFC 3161 协议栈，含 ASN.1 结构与 HTTP 传输，体量与 `x509` 相当 |
+| `ts`（顶层，`0.14.0`） | `ts` | RFC 3161 协议栈，含 ASN.1 结构与 HTTP 传输，体量与 `x509` 相当 |
 
 **归入既有包的 7 项**：`ca` → `x509`；`ecparam` → `ecdh`；`pkeyparam`、`storeutl` → `asym`
 （`storeutl` 另有 `x509` 部分）；`sess_id` → `tls`；`cms`、`crl2pkcs7` → `pkcs/pkcs7`。
@@ -309,4 +317,4 @@
 2. **20 项 §9「明确不实现」**：`engine`、`fipsinstall`、`rsautl`、`s_time`、`speed`、`rehash`、`nseq`、`spkac`、`passwd`、`prime`、`dsaparam`、`gendsa`、`dsa`、`dhparam`、`srp`、`cmp`、`smime`、`help`、`ECIES`、库内加载 legacy provider。
 3. **无对应子命令的扩展算法**（本次以子命令为维度，故不含）：ML-KEM（含 5 个混合组）、ML-DSA-44/65/87、SLH-DSA 12 变体（§6.D D1–D4）。
 4. **横切项**（不单独设 API，随上述各项落地）：默认 stdin/stdout（§6.C C1/C2）、文件读写（C3）、统一 `Format` 维度（C4）、hex/base64/hexdump 助手（C5/C6）、口令来源抽象（C8）。
-5. **功能需求（非 CLI 缺口）**：AES-OFB/CFB、DES 家族、padding 矩阵、签名 DER/raw、OAEP-SM3、OKP/oct 与 PKCS#1 公钥已在 `0.6.0` 实现；剩余可靠性归 `0.7.0`，PKCS#7 基础流程归 `0.7.0`，RSA-SM3 签名可运行支持归 `0.8.0`。各项功能需求的技术判断、暂缓理由和验收边界见 [requirements.md](requirements.md)，不再笼统标注为“均归 0.6”。
+5. **功能需求（非 CLI 缺口）**：AES-OFB/CFB、DES 家族、padding 矩阵、签名 DER/raw、OAEP-SM3、OKP/oct 与 PKCS#1 公钥已在 `0.6.0` 实现；剩余可靠性归 `0.7.0`，PKCS#7 基础流程归 `0.7.0`，RSA-SM3 签名可运行支持已在 `0.8.0` 的固定 8.5.0 验证。各项功能需求的技术判断、暂缓理由和验收边界见 [requirements.md](requirements.md)，不再笼统标注为“均归 0.6”。

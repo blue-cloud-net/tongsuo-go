@@ -16,7 +16,7 @@
 - **定位**：**全新独立实现**，与官方
   [tongsuo-project/tongsuo-go-sdk](https://github.com/tongsuo-project/tongsuo-go-sdk)
   并存，不复用其代码；但其 cgo/shim 构建思路、子包划分、线程锁与静态链接约定作为实现参考
-- **底层依赖**：铜锁 (Tongsuo) **8.4.0+**（Apache-2.0；已在 8.4.0 验证）
+- **底层依赖**：铜锁 (Tongsuo) **8.4.0+**（Apache-2.0；固定验证 8.4.0 / 8.5.0）
 - **授权**：Apache-2.0（工作区 `LICENSE`）
 
 ### 1.1 API 设计取向
@@ -404,7 +404,7 @@ tongsuo-go/
   `params.go` / `pkcs8.go` / `trust.go` / `ocsp_nonce.go` 管理生命周期与错误。
 - HTTP 在 API 层使用标准库 `net/http`；只传 DER，限制大小、超时且拒绝重定向。
   `FetchOCSP` 不隐式信任响应，签名与时间校验由调用方完成；资源 Close 责任见 GoDoc。
-- 8.4.0 为本版唯一验证基线，8.5 兼容见 `roadmap.md` §2.2。SIV 空消息明确拒绝；
+- 0.6/0.7 的 8.4.0 基线仍保留；0.8.0 增加固定 8.5.0 验证。SIV 空消息在 8.4 拒绝、8.5 支持并认证；
   RSA-SM3 签名按 provider 能力报错，不回退其他密码实现。
 
 ### `0.7.0` 实现与后续架构约束
@@ -429,9 +429,14 @@ tongsuo-go/
   返回证书由 SignedData.Close 幂等释放。8.4 基线限 RSA/ECDSA 签名与 RSA 接收者加密，
   不支持的 SM2/其他组合明确失败。完整 Options 和默认值见公开 API 清单。
 - `0.8.0` 起新增能力在保留 8.4 构建兼容的前提下，通过编译保护和运行时探测隔离
-  8.5 接口；PQC 归 `0.9.0`，不能让旧基线引用不存在的原生符号。
-- `0.10.0` 的新顶级 `ts` 包与 x509 平级，实施时再更新包计数与依赖图；当前包数
-  保持 16。`0.11.0` 先完成 TLS 能力，`1.0.0` 再集中稳定公开 API。
+  8.5 接口；PQC 归 `0.13.0`，不能让旧基线引用不存在的原生符号。
+- `0.9.0` 至 `0.12.0` 分别交付 TLS / NTLS 握手与认证、RFC 8998 与完整诊断、
+  会话复用与票据、HTTP/1.1 与 OCSP stapling。SDK API 与客户端/服务端示例复用现有
+  三层架构和桥接；混合端口按实际协商协议区分状态，NTLS 双证书与 RFC 8998 单套
+  签名凭证分别处理。保留旧入口行为，新增三种显式验证策略；状态分别表达握手完成、
+  未验证/通过/失败，诊断回调传递数据副本，不暴露原生句柄。
+- `0.14.0` 的新顶级 `ts` 包与 x509 平级，实施时再更新包计数与依赖图；当前包数
+  保持 16。传输能力分版验收后，`1.0.0` 再集中稳定公开 API。
 
 新增实现按职责分布：`asn1/limits.go` 使用显式栈；`x509/reliability.go` 公开完整序列号、
 DER 扩展与信任路径；`internal/core/reliability.go` 管理校验和句柄，`pkcs7_ops.go` 管理
@@ -441,7 +446,7 @@ P7 BIO/证书资源。绑定在 `binding_reliability.go` / `binding_pkcs7_ops.go
 `pkcs/pkcs12/testdata/complex.c`，不需要额外库或 CLI。
 
 具体排期见 [roadmap.md](roadmap.md) §2；功能需求与验收边界见
-[requirements.md](requirements.md)。本节 0.7.0 能力已落地，0.8.0 及以后仍为规划。
+[requirements.md](requirements.md)。本节 0.7.0 / 0.8.0 能力已落地，0.9.0 及以后仍为规划。
 
 ---
 
@@ -450,15 +455,28 @@ P7 BIO/证书资源。绑定在 `binding_reliability.go` / `binding_pkcs7_ops.go
 ### 6.1 环境要求
 
 - Go 1.21+（启用 CGO；已在 Go 1.26 验证）
-- 铜锁 8.4.0+（已在 8.4.0 验证），安装路径 `/opt/tongsuo`（可通过环境变量覆盖）
+- 铜锁 8.4.0+（固定验证 8.4.0 / 8.5.0），安装路径 `/opt/tongsuo`（可通过环境变量覆盖）
 - 平台：**Linux 优先，macOS 兼容，Windows 后置**
+
+### `0.8.0` 原生兼容与算法边界
+
+GCM-SIV 复用 fetch/AEAD 核心路径；EdDSA/SM2DH 经 API → core → native，
+`algorithms.c/.h` 只包装参数与 EVP，不实现替代密码算法。SM2DH 是独立参数化协议
+入口，四个密钥经 keyaccess 复制并释放，不把协议名登记为曲线。确认消息尚无原生输出，
+单独延期；TLS 状态机不依赖 SDK 手动编排该入口。
+
+CI 使用固定 8.4.0/8.5.0 × Linux/macOS × amd64/arm64 原生 runner，执行 build/vet/
+单元测试；Linux 运行真正静态链接的测试，amd64 另跑 race 与 CLI。shared 编译和缓存
+由 scripts/build-tongsuo-ci.sh 管理，缓存键包含版本、架构与构建脚本；release.yml
+通过 workflow_call 复用同一矩阵。测试校验头文件/运行库，CI 另核对 CLI 产品版本。
+本机通过不代表 GitHub runner 已执行。
 
 ### 6.2 安装铜锁
 
 ```bash
 git clone https://github.com/Tongsuo-Project/Tongsuo.git
 cd Tongsuo
-./config --prefix=/opt/tongsuo --libdir=/opt/tongsuo/lib enable-ntls enable-trace no-shared
+./config --prefix=/opt/tongsuo --libdir=/opt/tongsuo/lib enable-ntls enable-trace shared
 make -j$(nproc)
 sudo make install
 # 配置动态库路径
@@ -477,7 +495,7 @@ go build ./...
 ```
 
 - macOS 将 `LD_LIBRARY_PATH` 换为 `DYLD_LIBRARY_PATH`
-- 静态链接：`go build -tags static ./...`（`#cgo` 切换为 `-extldflags -static`）
+- 静态链接：`go build -tags static ./...`（Linux 使用 `-Bstatic -lssl -lcrypto -Bdynamic`，仅静态链接铜锁归档；需链接可执行文件或测试才能验证最终链接）
 
 ### 6.4 go.mod
 

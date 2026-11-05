@@ -12,7 +12,7 @@ Tongsuo source, headers or binaries are included, so you must install Tongsuo yo
 building, testing or running (see [Requirements](#requirements)).
 
 - **Module path**: `github.com/blue-cloud-net/tongsuo-go`
-- **Native dependency**: Tongsuo **8.4.0** baseline (Apache-2.0); 8.5 compatibility is scheduled for `0.8.0`
+- **Native dependency**: Tongsuo **8.4.0 / 8.5.0** validation (Apache-2.0)
 - **Reference design**: [blue-cloud-net/tongsuo-csharp](https://github.com/blue-cloud-net/tongsuo-csharp)
 - **Positioning**: a brand-new independent implementation, coexisting with the official [tongsuo-project/tongsuo-go-sdk](https://github.com/tongsuo-project/tongsuo-go-sdk)
 - **CI/CD**: GitHub Actions ([`.github/workflows/`](.github/workflows/)) — lint + cross-platform tests + automatic releases on tag
@@ -34,17 +34,17 @@ interfaces and a CLI-style by-name entry point; see the
 - 🔒 **SM4 symmetric cipher** (GB/T 32907, `sym`): ECB / CBC / CTR / OFB / CFB / GCM (AEAD), plus SM4-CCM and SM4-XTS
 - 🧮 **Message authentication codes** (`mac`): 14 `EVP_MAC` algorithms — HMAC-SM3 / MD5 / SHA1 / SHA224 / SHA256 / SHA384 / SHA512, CMAC, GMAC, KMAC-128/256, SipHash, Poly1305, EIA3
 - 🔗 **More hashes** (`digest`): MD5, SHA1, SHA224, SHA256, SHA384, SHA512, SHA-256/192, SHA-512/224, SHA-512/256, SHA3-224/256/384/512, KECCAK-224/256/384/512 and SHAKE128/256 (`hash.Hash` + `Sum`, with `SumSHAKE*` taking an explicit output length)
-- 🔄 **AES symmetric cipher** (`sym`): 128 / 192 / 256-bit ECB / CBC / CTR / OFB / CFB / GCM / CCM / OCB / SIV / WRAP / WRAP-PAD / CBC-CTS, plus 128/256-bit XTS (`cipher.Block` + `cipher.AEAD`)
+- 🔄 **AES symmetric cipher** (`sym`): 128 / 192 / 256-bit ECB / CBC / CTR / OFB / CFB / GCM / CCM / OCB / SIV / GCM-SIV / WRAP / WRAP-PAD / CBC-CTS, plus 128/256-bit XTS (`cipher.Block` + `cipher.AEAD`)
 - 🗝️ **DES / 3DES compatibility** (`sym`): DES / DES-EDE (two-key) / DES-EDE3 in ECB / CBC — for legacy data only. Single DES is realised as DES-EDE3 with `K‖K‖K`, so no legacy provider is ever loaded
 - 🧾 **Padding matrix** (`sym`): `Supports(name, padding)` / `Paddings(name)` answer "is this algorithm × padding combination valid?" without submitting data; invalid combinations return `ErrUnsupportedPadding` instead of silently falling back
-- ✍️ **Signature formats and RSA digests** (`asym`): DER ↔ bare `r‖s` conversion for SM2 / ECDSA (`SignatureParts` / `SignatureDER` / `FormatSignature`); RSA-OAEP accepts `sm3`; probe RSA-SM3 signing with `SupportsRSASignatureDigest`, which is unavailable on 8.4.0 and returns `ErrUnsupported`
+- ✍️ **Signature formats and RSA digests** (`asym`): DER ↔ bare `r‖s` conversion for SM2 / ECDSA (`SignatureParts` / `SignatureDER` / `FormatSignature`); RSA-OAEP accepts `sm3`; probe RSA-SM3 signing with `SupportsRSASignatureDigest`, which is unavailable on 8.4.0 and returns `ErrUnsupported`; PKCS#1 v1.5/PSS work on 8.5.0, with separate PSS probing through `SupportsRSAPSSDigest`
 - 🌊 **Stream ciphers** (`sym`): ChaCha20, ChaCha20-Poly1305, ZUC-128-EEA3 (native 5-byte IV)
 - 🧬 **Key derivation** (`kdf`): 10 KDFs — HKDF / PBKDF2 / scrypt / SSKDF / TLS1-PRF / TLS13-KDF / KBKDF / X942KDF / X963KDF / HMAC-DRBG-KDF, each with a typed entry plus the by-name `Derive`
 - 🧰 **CLI-style form entries**: `meta` provides `Source` (bytes / reader / file / stdin), `Sink` (with raw / hex / base64 encoding), `Format` (PEM / DER) and `Passphrase` (`pass:` / `env:` / `file:` / `fd:` / `stdin:`); the primitive packages add one-liners such as `SumSource` / `SumTo` / `EncryptSource` / `DeriveTo` / `MarshalPrivateKeyTo` / `LoadCertificateSource`
 - 🗂️ **Algorithm and provider enumeration** (`meta`): `Digests` / `Ciphers` / `MACs` / `KDFs` / `Signatures` / `KeyExchanges` / `KEMs` / `TLSGroups` / `Providers` / `SeedingSource`
-- 📝 **Ed25519 / Ed448 signatures** (RFC 8032, `asym`): pure EdDSA (no pre-hashing), raw 32B / 57B seed and public-key bytes interoperable with Go standard library, WireGuard; X.509 certificate / CSR / CRL signing via the `X509_sign_ctx` path
+- 📝 **Ed25519 / Ed448 signatures** (RFC 8032, `asym`): pure EdDSA plus Ed25519ctx / Ed25519ph / Ed448ph and Ed448 contexts (native prehashing), raw 32B / 57B seed and public-key bytes interoperable with Go standard library, WireGuard; X.509 certificate / CSR / CRL signing via the `X509_sign_ctx` path
 - 🤝 **X25519 / X448 ECDH key agreement** (RFC 7748, `ecdh`): 32 / 56-byte shared secret, interoperable with Go `crypto/ecdh` and WireGuard
-- 🤝 **Curve-based ECDH** (`ecdh`): NIST P-256 / P-384 / P-521 (X9.63), the OKP curves X25519 / X448 (RFC 7748) and secp256k1; PEM (PKCS#8 / SPKI) round-trip and shared-secret derivation matching Go's standard `crypto/ecdh` semantics; named/explicit EC parameter PEM files and parameter-based key generation
+- 🤝 **Curve-based ECDH** (`ecdh`): NIST P-256 / P-384 / P-521 (X9.63), the OKP curves X25519 / X448 (RFC 7748) and secp256k1; PEM (PKCS#8 / SPKI) round-trip and shared-secret derivation matching Go's standard `crypto/ecdh` semantics; named/explicit EC parameter PEM files and parameter-based key generation; `DeriveSharedSecret` directly adapts asym keys and `DeriveSM2DH` takes explicit static/ephemeral keys, IDs and roles (without key confirmation)
 - 🎲 **Cryptographically secure random** (`rand`): based on Tongsuo `RAND_bytes`
 - 🗄️ **Key storage and rotation** (`keystore`): key metadata, in-memory / custom stores, version rotation and history; `Load` / `LoadAllFromReader` detect local multiple PEM objects, DER and PKCS#12
 - 📜 **X.509 certificate management** (`x509`): parse and issue certificates / CSR / CRL / OCSP, one-line self-signed certificates (`CreateSelfSigned`), step-by-step CRL issuance (`CRLBuilder`), CA-signed certificates (SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448), arbitrary X.509 v3 extensions by NID or name (`AddExtension` / `AddExtensionByName` / `AddExtensions`), CSR-driven issuance (`IssueCertificateFromRequest`), hostname / IP / e-mail verification (`VerifyHostname` / `CheckEmail`), subject / issuer name hashes (`SubjectHash` / `IssuerHash`) and chain verification with an optional pinned verification instant (`Store.SetTime`); OCSP HTTP/nonces, trusted PEM purposes and unified certificate/CRL loading
@@ -73,13 +73,23 @@ itself, and the Tongsuo installation is a build prerequisite (see [Requirements]
 
 ### Implementation baseline and future releases
 
-`0.7.0` is implemented and awaiting release; Tongsuo 8.4.0 remains the validation baseline and AES-SIV rejects empty messages.
+The `0.8.0` release candidate implements Tongsuo 8.4.0/8.5.0 compatibility, GCM-SIV, EdDSA extensions and SM2DH; it is not released. AES-SIV empty messages use the verified 8.5.0 path; NTLS signing/encryption certificates must declare their respective KeyUsage.
 `0.7.0`: reliability, data integrity and PKCS containers: handle release, parser limits, full serial numbers, DER extensions, trust paths, compressed SM2 input, lossless password changes for complex PKCS#12 containers, and PKCS#7 signing, verification, encryption and decryption.
 
 The following releases are planned capabilities, not currently available features:
 
-- `0.8.0` / `0.9.0`: Tongsuo 8.5 compatibility and classical algorithm extensions / PQC
-- `0.10.0` / `0.11.0` / `1.0.0`: CMS and RFC 3161 timestamps / TLS capabilities / public API convergence and stability
+- `0.9.0`: TLS / NTLS handshakes and authentication, mixed-protocol listeners, SNI, ALPN, verification policies, connection state and client/server examples
+- `0.10.0`: RFC 8998 ShangMi TLS 1.3, structured handshake diagnostics, optional detailed trace and keylog
+- `0.11.0`: Session resumption, caches, import/export, ticket controls and key rotation
+- `0.12.0`: HTTP/1.1 client/server integration and OCSP stapling
+- `0.13.0` / `0.14.0`: PQC / CMS and RFC 3161 timestamps
+- `1.0.0`: Public API convergence and stability
+
+The transport releases deliver SDK APIs and runnable examples for downstream handshake tests similar to `s_client` / `s_server`.
+RFC 8998 uses a single signing credential set over TLS 1.3; NTLS uses signing and encryption certificates.
+Existing SDK entry-point behavior is preserved; explicit policies will support no verification, reporting verification failures while continuing, and aborting on verification failure. Handshake examples default to reporting failures while continuing and expose the verification result separately.
+
+STARTTLS, external PSK, 0-RTT and active renegotiation remain deferred without a target version.
 
 See [docs/requirements.md](docs/requirements.md) for functional requirements, technical decisions and acceptance criteria.
 

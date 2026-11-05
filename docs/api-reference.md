@@ -9,16 +9,16 @@
 > 4. 类型给出导出字段；未导出字段以「（内部字段）」表示其存在；
 > 5. 本文描述的是**重构后的目标形态**：`crypto/` 整目录与 `key/` 已被 `digest` / `mac` / `sym` / `asym` / `ecdh` / `kdf` / `rand` / `keystore` 取代；`csr` / `crl` / `ocsp` **未拆**，全部留在 `x509`。
 >
-> **范围**：**16 个包**。实现基线：`0.7.0`（已实现，待发布）；未来目标均以 🧭 标注。
+> **范围**：**16 个包**。实现基线：`0.8.0`（2026-11-05 定版，待标签发布）；未来目标均以 🧭 标注。
 > **版本归属**：本文件不负责版本分配，哪个 🧭 符号落在哪个版本见 [roadmap.md](roadmap.md) §2。
 >
 > **状态标记**：
-> - ✅ **已有** — 已实现（`0.7.0` 及之前；发布状态以版本标签为准）；
+> - ✅ **已有** — 已实现（`0.8.0` 及之前；发布状态以版本标签为准）；
 > - 🚧 **变更中** — 目标版本另标，尚不可用；
 > - 🧭 **规划中** — 仅表达**目标 API 形态**，尚不可用；**目标版本以 [roadmap.md](roadmap.md) §2 为准**，
 >   下表的版本列仅为速查，若与该文冲突以 roadmap 为准。
 >
-> 符号行前缀：`🆕` 新增（`0.3.0`、`0.5.0`、`0.6.0` 与 `0.7.0` 沿用；所在小节标题已注明版本） / `✨` `0.4.0` 新增 /
+> 符号行前缀：`🆕` 新增（`0.3.0`、`0.5.0`、`0.6.0` 、`0.7.0` 与 `0.8.0` 沿用；所在小节标题已注明版本） / `✨` `0.4.0` 新增 /
 > `♻️` 迁移自其他包（附原名） / `🧭` 规划中。
 > `0.4.0` 与 `0.5.0` 的**行为变更**（非新增符号）写在对应行内，如 `Certificate.Sign` /
 > `CertificateRequest.Sign` 收紧为单向终态。
@@ -493,7 +493,7 @@
 
 **函数｜AES 扩展与 ZUC（`0.6.0` 新增）**
 
-- `AES-{128,192,256}-{CCM,OCB,SIV,WRAP,WRAP-PAD,CBC-CTS}`、`AES-{128,256}-XTS`、`ZUC-128-EEA3` 登记于 `Names`，共 55 项；`Available` 探测本地 provider。
+- `AES-{128,192,256}-{CCM,OCB,SIV,WRAP,WRAP-PAD,CBC-CTS}`、`AES-{128,256}-XTS`、`ZUC-128-EEA3` 登记于 `Names`，共 58 项（含 0.8.0 的三个 GCM-SIV 名称）；`Available` 探测本地 provider。
 - `func NewAESCCM(key []byte) (cipher.AEAD, error)` / `NewAESOCB` / `NewAESSIV` — 亦可用 `NewAEAD`。
 - `func EncryptAESCCM(key, nonce, plaintext, aad []byte) ([]byte, []byte, error)` / `EncryptAESOCB` / `EncryptAESSIV`
 - `func DecryptAESCCM(key, nonce, ciphertext, tag, aad []byte) ([]byte, error)` / `DecryptAESOCB` / `DecryptAESSIV`
@@ -501,7 +501,7 @@
 - `func EncryptZUC(key, iv, data []byte) ([]byte, error)` / `DecryptZUC` — 16 字节 key、5 字节原生 EEA3 IV。
 - `cipher.AEAD` 的 `NonceSize` / `Overhead` / `Seal` / `Open` 行为沿用现有模式；`Seal` 失败返回 nil，`Open` 失败不返回部分明文。
 - CCM/OCB 的 AEAD `NonceSize` 为 12；一次性 CCM 接受 7..13 字节、OCB 为 1..15。
-  SIV 使用 32/48/64 字节双密钥，AEAD 的 `NonceSize` 为 0（确定性），一次性入口将非空 nonce 作为最后一个 AAD 分量；8.4.0 上拒绝空消息并返回 `ErrUnsupported`。
+  SIV 使用 32/48/64 字节双密钥，AEAD 的 `NonceSize` 为 0（确定性），一次性入口将非空 nonce 作为最后一个 AAD 分量；8.4.0 上拒绝空消息并返回 `ErrUnsupported`，0.8.0 在铜锁 8.5.0 上支持空消息并校验认证。
   XTS 使用 32/64 字节双密钥，支持不少于 16 字节的数据；CBC-CTS 默认 CS1。
   WRAP/WRAP-PAD 的 nil IV 使用 RFC 3394/5649 标准值，后两者校验包装完整性；其余非 AEAD 模式不提供消息认证。
 - 新增模式的填充：XTS/WRAP/WRAP-PAD/CBC-CTS/ZUC 仅 `none`；CCM/OCB/SIV 无外部填充。
@@ -511,7 +511,7 @@
 
 | 符号 | 目标版本 | 前置（需新增 `internal/native` 绑定） |
 |---|---|---|
-| 🧭 AES-GCM-SIV | `0.8.0` | 铜锁 8.5 兼容与新版 provider |
+| 🆕 AES-GCM-SIV | `0.8.0` | NewAESGCMSIV / EncryptAESGCMSIV / DecryptAESGCMSIV；128/192/256 位，12 字节 nonce、16 字节 tag，8.4 返回 ErrUnsupported |
 
 > **DES 的实现方式与安全口径**：单 DES 在铜锁中只注册在 legacy provider，本库不加载 legacy（见
 > [roadmap.md](roadmap.md) §4 第 10 条），改以 `K‖K‖K`（三份相同密钥）驱动 DES-EDE3 实现——
@@ -641,7 +641,7 @@
 - `func LoadPKCS8(data []byte, format meta.Format, encrypted bool, pass string) (PrivateKey, error)`
 - `func MarshalRSAPublicKeyPKCS1PEM(pub PublicKey) ([]byte, error)` / `func LoadRSAPublicKeyPKCS1PEM(data []byte) (PublicKey, error)`
 - `func Check(priv PrivateKey) error` / `func PublicCheck(pub PublicKey) error`
-- `func SupportsRSASignatureDigest(key Key, hash string) (bool, error)` — 铜锁 8.4.0 的 RSA-SM3 签名不可用，签/验返回 `ErrUnsupported`；OAEP-SM3 可用。签名可运行支持随 8.5 兼容移至 `0.8.0`，以原生能力验证为准。
+- `func SupportsRSASignatureDigest(key Key, hash string) (bool, error)` — 铜锁 8.4.0 的 RSA-SM3 签名不可用，签/验返回 `ErrUnsupported`；OAEP-SM3 可用。`0.8.0` 已在固定 8.5.0 验证 PKCS#1 v1.5 / PSS 与 CLI 双向互验。
 - PKCS#8 Version 选择 PBE 方案：1 为 PBE-SHA1-3DES；2 为 PBES2（默认 AES-256-CBC / hmacWithSHA256 / 2048 次迭代），可选 AES-128/192/256-CBC 与 HMAC-SHA1/224/256/384/512。
   它不改变 ASN.1 PrivateKeyInfo 的版本。私钥结果由调用方 `asym.Close`；源密钥与口令缓冲由调用方清零。
 
@@ -651,11 +651,11 @@
 |---|---|---|
 | 🆕 现有 `Format` / `DecryptWithOrder` 已接受 SM2 压缩 C1 输入 | `0.7.0` | 经 core 调用铜锁点解码与校验；不增加压缩输出 |
 | 🆕 RSA 签名格式说明与双向互验 | `0.7.0` | 保持模数长度字节串，不能改成 SM2/ECDSA DER |
-| 🧭 现有 PKCS#1 v1.5 / PSS 的 SM3 签名可运行支持 | `0.8.0` | `SupportsRSASignatureDigest` 已在 `0.6.0` 实现；验证固定版本 RSA provider |
-| 🧭 ED25519ph / ED25519ctx / ED448ph | `0.8.0` | 铜锁 8.5 兼容；`instance` / `context-string` 参数 |
-| 🧭 ML-DSA-44 / 65 / 87 | `0.9.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
-| 🧭 SLH-DSA 12 变体 | `0.9.0` | 同上 |
-| 🧭 `func Encapsulate` / `func Decapsulate`（KEM） | `0.9.0` | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
+| 🆕 现有 PKCS#1 v1.5 / PSS 的 SM3 签名可运行支持 | `0.8.0` | 8.5.0 签验与 CLI 双向互验通过；8.4.0 返回 ErrUnsupported；新增 SupportsRSAPSSDigest(key Key, hash string, saltLen int) (bool, error) |
+| 🆕 ED25519ph / ED25519ctx / ED448ph / Ed448 上下文 | `0.8.0` | 独立 Sign/Verify 函数，原消息输入；SupportsEdDSAInstance(key Key, instance string, context []byte) (bool, error) |
+| 🧭 ML-DSA-44 / 65 / 87 | `0.13.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
+| 🧭 SLH-DSA 12 变体 | `0.13.0` | 同上 |
+| 🧭 `func Encapsulate` / `func Decapsulate`（KEM） | `0.13.0` | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
 
 > 明确不做：DSA、DH、EC-ElGamal、Paillier（见 `docs/cli-comparison.md` §9）。
 
@@ -667,6 +667,16 @@
 - `sm2.PublicKeyFromPKey(*core.PKey)` 移除（修复 E1-6）；`x25519` / `x448` 包的 `SharedSecret` 迁至 `ecdh`
 
 ---
+
+**`0.8.0` EdDSA 独立入口**：
+
+- `SignEd25519ctx` / `SignEd25519ph` / `SignEd448ph` / `SignEd448WithContext`：
+  `(priv PrivateKey, msg, context []byte) ([]byte, error)`。
+- `VerifyEd25519ctx` / `VerifyEd25519ph` / `VerifyEd448ph` / `VerifyEd448WithContext`：
+  `(pub PublicKey, msg, sig, context []byte) error`。
+- 输入为原消息；ph 在原生层完成预哈希，context 最长 255 字节，ctx 必须非空。
+  错误实例/上下文/签名不互认；不可用返回 ErrUnsupported，验签失败返回 ErrSignature。
+  旧 pure 入口与密钥编码保持，不新增证书/CSR/CRL 变体签发能力。
 
 ## 8. `ecdh` — 密钥协商
 
@@ -734,8 +744,8 @@
 |---|---|---|
 | 🆕 `func (k *PrivateKey) Close() error` / `func (k *PublicKey) Close() error` | `0.7.0` | nil/零值/已关闭均幂等；关闭后可失败操作返回错误，查询返回约定零值 |
 | 🆕 `func (k *PrivateKey) Public() (*PublicKey, error)` | `0.7.0` | BREAKING：复制为独立句柄，公私钥及源 asym 密钥独立关闭；复制失败返回 error，调用方释放返回公钥 |
-| 🧭 `func DeriveSharedSecret(priv asym.PrivateKey, pub asym.PublicKey) ([]byte, error)` | `0.8.0` | 复用现有桥接及 derive，失败释放临时副本 |
-| 🧭 SM2DH 密钥协商（`CurveByName("SM2DH")`） | `0.8.0` | 铜锁已启用（`key-exchange-algorithms`）；`EVP_PKEY_derive*` 已绑定，需补 SM2 派生参数 |
+| 🆕 `func DeriveSharedSecret(priv asym.PrivateKey, pub asym.PublicKey) ([]byte, error)` | `0.8.0` | 六条现有曲线，复用桥接/derive，释放临时副本，不接受 SM2DH 隐式默认参数 |
+| 🆕 `func DeriveSM2DH(opts *SM2DHOptions) ([]byte, error)` | `0.8.0` | 原生 SM3 参数化派生；不是曲线名入口，不生成或验证密钥确认消息 |
 
 **破坏性变更**
 
@@ -745,6 +755,13 @@
 - `LoadPrivateKey` / `LoadPublicKey` / `Curves` / `CurveByName` 为新增，无破坏性
 
 ---
+
+**`0.8.0` SM2DH 选项**：`StaticKey` / `EphemeralKey` 为 `asym.PrivateKey`，
+`PeerStaticKey` / `PeerEphemeralKey` 为 `asym.PublicKey`；`SelfID` / `PeerID` 为
+`[]byte`（各 1..8191 字节），`Role SM2DHRole` 必须为 `SM2DHInitiator` 或
+`SM2DHResponder`，`OutputLen int` 为 1..2147483647。摘要固定 SM3，调用期间不并发
+Close 输入密钥，调用方负责认证静态公钥、重新生成临时私钥及清零输出。
+`ErrUnsupported` 表示原生协商能力不可用；原通用曲线加载器仍拒绝 SM2。
 
 ## 9. `keystore` — 密钥元数据、存储与轮转
 
@@ -1121,20 +1138,34 @@
     底层 `net.ErrClosed`
   - 🆕 `func (l *Listener) Addr() net.Addr` — 委托底层监听器（`Close` 后仍可用）
 
-**规划中（传输深度归 `0.11.0`，公开面收敛归 `1.0.0`）**
+**规划中（传输能力分四版交付，公开面收敛归 `1.0.0`）**
 
-> 前置：均需在 `internal/native` 新增绑定（见 [roadmap.md](roadmap.md) §3）。
+> 下列均未实现；涉及原生能力的条目需在 `internal/native` 新增/扩展绑定，经 core
+> 管理生命周期（见 [roadmap.md](roadmap.md) §3）。交付 SDK API + 可运行客户端/服务端
+> 示例，下游自行集成握手测试，不新增正式 CLI 产品；候选 API 名称不代表签名已冻结。
 
-| 符号 | 说明 | 版本 | 前置（需新增 `internal/native` 绑定） |
+| 符号 / 能力 | 说明 | 版本 | 实施前置 |
 |---|---|---|---|
-| 🧭 `Config.NextProtos []string` | ALPN（对应 `-alpn`） | `0.11.0` | `SSL_CTX_set_alpn_protos` / `SSL_get0_alpn_selected` |
+| 🧭 显式协议模式与完整凭证链 | TLS、NTLS、服务端同端口混合接入；TLS 单套凭证及 NTLS 签名/加密双证书链；旧 `NTLS` 字段兼容 | `0.9.0` | 原生混合模式、证书链及配置校验 |
+| 🧭 已连接 TCP 的客户端包装入口 | 下游独立控制拨号与 `HandshakeContext`；保留现有服务端与 Listener 握手语义 | `0.9.0` | core SSL 构造与句柄所有权 |
+| 🧭 `Config.NextProtos []string` | ALPN（对应 `-alpn`）与协商结果 | `0.9.0` | 客户端协议配置、服务端选择回调与状态读取 |
+| 🧭 `Config.ClientAuth` + `Config.ClientCAs` | 请求/要求客户端证书与验证失败处理分别表达，NTLS 套件凭证要求仍生效 | `0.9.0` | 客户端 CA、原生验证模式与回调 |
+| 🧭 `Config.GetCertificate` / `GetConfigForClient` | 服务端 SNI 多证书；NTLS 切换完整双证书身份 | `0.9.0` | SNI 回调与配置生命周期 |
+| 🧭 显式验证策略、`Config.VerifyPeerCertificate` / `VerifyConnection` | 不验证、记录失败后继续、验证失败终止；保留旧入口实际行为，自定义回调错误始终终止 | `0.9.0` | 验证回调、失败记录与结果状态 |
+| 🧭 `Options` / `Modes`、`ConnectionState`、`VerifyHostname` / `UnderlyingConn`、错误码常量 | 配置与连接状态；SNI/验证名称分别配置，未验证/通过/失败与握手完成分别表达 | `0.9.0` | 配置/状态绑定与原生错误采集 |
+| 🧭 `Config.DHParameters`、组/曲线与签名算法、`HostnameOptions` | 严格参数配置、邮箱/主机名 flags 与 IP 校验；不新增独立 DH 算法 | `0.9.0` | 参数加载、组/签名算法和名称校验绑定 |
+| 🧭 RFC 8998 严格配置 | TLS 1.3 单套签名凭证，两个 SM4 套件、curveSM2、sm2sig_sm3 与证书约束，区别于 NTLS 双证书 | `0.10.0` | 原生严格模式及配置/状态验证 |
+| 🧭 结构化握手诊断 | 状态、消息、Alert 与证书验证事件；失败握手仍保留已发生的信息 | `0.10.0` | 消息/状态/验证回调及数据复制 |
+| 🧭 详细 trace / keylog | 可选输出、默认关闭；TLS / NTLS / RFC 8998 分别验收，缺少原生能力明确报错 | `0.10.0` | `SSL_trace`、keylog 回调与输出错误传播 |
 | 🧭 会话复用 / 票据 | `Config.SessionCache`、`Conn.SessionState()` | `0.11.0` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
-| 🧭 `Config.ClientAuth` + `Config.ClientCAs` | 客户端证书认证（服务端） | `0.11.0` | `SSL_CTX_set_client_CA_list` / `SSL_CTX_set_verify` 回调 |
-| 🧭 `Config.GetCertificate func(*ClientHelloInfo)` / `GetConfigForClient` | 服务端 SNI 多证书（对应 `-sign_cert2` / `-enc_cert2`） | `0.11.0` | SNI 回调与配置生命周期 |
-| 🧭 `Config.VerifyPeerCertificate` / `VerifyConnection` | 自定义证书校验回调 | `0.11.0` | 验证回调绑定 |
-| 🧭 `Options` / `Modes`、完整 `ConnectionState`、`VerifyHostname` / `UnderlyingConn`、错误码常量 | 配置与连接状态 | `0.11.0` | 配置/状态绑定 |
-| 🧭 `Config.DHParameters` / `Config.ECDHCurve`、`HostnameOptions` | 握手参数与主机名校验 flags | `0.11.0` | 参数加载和校验绑定 |
-| 🧭 `ListenAndServeTLS` / `ServeTLS`、OCSP stapling、keylog、HTTP 集成 | 复用现有 `NewListener` | `0.11.0` | TLS 绑定与标准库集成 |
+| 🧭 会话导入导出、票据控制与密钥轮换 | 处理 TLS 1.3 握手后票据；缓存按协议、服务/客户端身份和验证配置隔离 | `0.11.0` | 新会话回调、序列化、票据与实际复用状态 |
+| 🧭 `ListenAndServeTLS` / `ServeTLS`、HTTP/1.1 客户端/服务端集成 | 复用现有 `NewListener`；不承诺 HTTP/2 集成 | `0.12.0` | 标准库 HTTP 集成 |
+| 🧭 OCSP stapling | 配置、请求与读取 staple；提供响应有效性与证书状态验证示例 | `0.12.0` | status 回调与 OCSP 响应绑定 |
+
+示例默认“验证并记录失败后继续”，另提供严格验证与完全不验证选项；连接成功不能
+代替证书可信。RFC 8998 的版本、套件、组、签名、证书及 SM2 ID 验收条件见
+[路线图 §2.4](roadmap.md#24-0100--rfc-8998-与完整握手诊断规划)。
+STARTTLS、外部 PSK、0-RTT、主动重协商继续暂缓，不归入以上四版。
 
 **破坏性变更**
 
@@ -1243,7 +1274,7 @@ _（本包已无待实现项）_
 | 🆕 `Decrypt(data []byte, opts *DecryptOptions) ([]byte, error)` | `0.7.0` | RecipientCert/RecipientKey，失败无输出 |
 | 🆕 `SignOptions` / `VerifyOptions` / `EncryptOptions` / `DecryptOptions` | `0.7.0` | 证书用 x509.Certificate，私钥用 asym.PrivateKey，Roots 用 x509.Store；不暴露 internal 类型 |
 | 🆕 `SignedData` 与幂等 `Close() error` | `0.7.0` | Content、Signers、TrustVerified；返回证书资源归结果持有者释放 |
-| 🧭 CMS 族（`cms` 命令） | `0.10.0` | 新增 `CMS_*` 绑定 |
+| 🧭 CMS 族（`cms` 命令） | `0.14.0` | 新增 `CMS_*` 绑定 |
 
 `0.7.0` 覆盖附带/分离签名和多接收者 EnvelopedData。Verify 默认要求显式 Roots，
 验证全部签名者及其信任；SignatureOnly=true 时仍验签，结果 TrustVerified=false。
@@ -1251,9 +1282,9 @@ SignedData.Signers 为签名者证书；验证失败不返回内容，Close 幂�
 Verify/Decrypt 接受 DER/PKCS7 PEM，二进制输入不做换行转换；分离内容缺失与空内容
 必须可区分。8.4.0 必须支持 RSA/ECDSA 签名与 RSA 接收者加密，SM2 和其他不支持的
 组合明确报错；非认证加密不承诺检测全部篡改。CLI 双向互通使用 smime -sign/-verify
-和 -encrypt/-decrypt；CMS 扩展归 `0.10.0`，不混同为同一格式。
+和 -encrypt/-decrypt；CMS 扩展归 `0.14.0`，不混同为同一格式。
 
-**规划中｜新顶级包 `ts`（`0.10.0`，尚不存在）**
+**规划中｜新顶级包 `ts`（`0.14.0`，尚不存在）**
 
 - 🧭 RFC 3161 时间戳请求/响应与 HTTP 传输；需新增 `TS_*` 绑定并复用 CMS 基础设施。
 - 实施时同步包索引、依赖图与逐符号 API；当前公开包数仍为 16。

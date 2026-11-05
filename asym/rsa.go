@@ -289,3 +289,22 @@ func SupportsRSASignatureDigest(key Key, hash string) (bool, error) {
 	}
 	return key.corePKey().SupportsRSASignatureDigest(md), nil
 }
+
+// SupportsRSAPSSDigest 探测 RSA-PSS 的摘要、相同摘要的 MGF1 和盐长参数支持。
+// saltLen 接受 PSSSaltLen* 或非负字节数；未知摘要、非法/关闭密钥返回错误。
+// 不支持返回 false；该结果不替代消息长度、实际签验与信任校验。
+//
+// SupportsRSAPSSDigest probes RSA-PSS digest, matching MGF1 digest and salt-length support.
+// saltLen accepts PSSSaltLen* or a nonnegative byte count; unknown digests and invalid/closed keys return errors.
+// Unsupported parameters return false; this does not replace message-length, actual signature or trust validation.
+func SupportsRSAPSSDigest(key Key, hash string, saltLen int) (bool, error) {
+	if key == nil || key.Algorithm() != AlgRSA || key.corePKey() == nil || saltLen < PSSSaltLenMax {
+		return false, fmt.Errorf("asym: invalid RSA-PSS probe arguments")
+	}
+	md, err := digestForRSAHash(hash)
+	if err != nil {
+		return false, err
+	}
+	_, sign := key.(PrivateKey)
+	return key.corePKey().SupportsRSAPSSDigest(md, saltLen, sign)
+}

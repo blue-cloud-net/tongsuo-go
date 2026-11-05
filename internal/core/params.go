@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"runtime"
+	"unsafe"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
@@ -78,4 +79,36 @@ func (k *PKey) SupportsRSASignatureDigest(md *Digest) bool {
 	defer native.EVP_MD_CTX_free(ctx)
 	ok, _ := native.EVP_DigestSignInit(ctx, md.handle.Ptr(), nil, k.handle.Ptr())
 	return ok
+}
+
+// SupportsRSAPSSDigest 探测签名或验签初始化能否应用 PSS、摘要、MGF1 与盐长。
+// 不修改密钥，清理探测错误队列；关闭句柄返回错误，不支持返回 false。
+//
+// SupportsRSAPSSDigest probes sign/verify initialization with PSS, digest, MGF1 and salt length.
+// It preserves keys and clears probe errors; closed handles return errors, unsupported parameters return false.
+func (k *PKey) SupportsRSAPSSDigest(md *Digest, saltLen int, sign bool) (bool, error) {
+	defer runtime.KeepAlive(k)
+	defer runtime.KeepAlive(md)
+	if k == nil || k.handle == nil || k.handle.IsClosed() || md == nil || md.handle == nil || md.handle.IsClosed() {
+		return false, fmt.Errorf("pkey: invalid or closed key/digest")
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	native.ERR_clear_error()
+	defer native.ERR_clear_error()
+	ctx := native.EVP_MD_CTX_new()
+	if ctx == nil {
+		return false, NewOpError("pkey: new PSS probe", native.PopError())
+	}
+	defer native.EVP_MD_CTX_free(ctx)
+	var ok bool
+	var pctx unsafe.Pointer
+	if sign {
+		ok, pctx = native.EVP_DigestSignInit(ctx, md.handle.Ptr(), nil, k.handle.Ptr())
+	} else {
+		ok, pctx = native.EVP_DigestVerifyInit(ctx, md.handle.Ptr(), nil, k.handle.Ptr())
+	}
+	return ok && native.EVP_PKEY_CTX_set_rsa_padding(pctx, native.RsaPaddingPSS) &&
+		native.EVP_PKEY_CTX_set_rsa_pss_saltlen(pctx, saltLen) &&
+		native.EVP_PKEY_CTX_set_rsa_mgf1_md(pctx, md.handle.Ptr()), nil
 }

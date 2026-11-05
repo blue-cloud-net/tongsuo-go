@@ -30,7 +30,7 @@ const streamChunk = 64 << 10
 // may differ from the argument: single DES is expanded to K‖K‖K.
 func streamCipher(name string, a algo, key []byte) (*core.Cipher, []byte, error) {
 	switch a.mode {
-	case "GCM", "CCM", "POLY1305", "XTS", "OCB", "SIV", "WRAP", "WRAP-PAD", "CBC-CTS":
+	case "GCM", "CCM", "POLY1305", "XTS", "OCB", "SIV", "GCM-SIV", "WRAP", "WRAP-PAD", "CBC-CTS":
 		return nil, nil, fmt.Errorf("sym: %q: %w: streaming is not supported for this mode", name, ErrUnsupported)
 	}
 	if len(key) != a.size {
