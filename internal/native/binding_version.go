@@ -2,7 +2,9 @@ package native
 
 /*
 #include <openssl/crypto.h>
+#include <openssl/opensslv.h>
 #include <stdlib.h>
+static unsigned long X_tongsuo_header_version(void) { return (unsigned int)TONGSUO_VERSION_NUMBER; }
 */
 import "C"
 
@@ -71,3 +73,7 @@ func OpenSSLVersionWithIndex(idx OpenSSLVersionInfo) string {
 	}
 	return C.GoString(p)
 }
+
+// TongsuoHeaderVersionNum 返回编译时头文件中的铜锁版本数字。
+// TongsuoHeaderVersionNum returns the Tongsuo version embedded in the build headers.
+func TongsuoHeaderVersionNum() uint64 { return uint64(C.X_tongsuo_header_version()) }
