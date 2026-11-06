@@ -24,6 +24,31 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
+## [0.9.0] - TBD
+
+### Added
+
+- TLS / NTLS protocol selection and mixed server ports; complete TLS and separate NTLS signing/encryption chains, with certificate/key matching checks.
+- Server SNI configuration/credential callbacks, ALPN, client authentication and client CA lists; named groups, signature algorithms, DH parameters, bounded options/modes and strict cipher selection.
+- Explicit `VerifyNone`, `VerifyReport` and `VerifyStrict` policies; independent SNI and DNS/IP/email verification settings, custom peer/state verification callbacks and copied `ConnectionState` snapshots after successful or failed handshakes.
+- `tls.Client` for connected TCP sockets, `VerifyHostname`, `CheckEmail`, `UnderlyingConn`, native handshake failure details and SSL error constants, complete Tongsuo 8.4 X.509 verification codes with `x509.VerifyErrorMessage`, and runnable client/server examples defaulting to report-and-continue verification.
+
+### Fixed
+
+- Concurrent TLS reads and writes progress independently; read/write deadlines no longer clear one another. Cipher lists preserve the union of selected suites, and SNI configuration replacement applies before version/cipher selection.
+- Capture SSL error queues and system-call errno on the native operation's OS thread; protect connection/context teardown, close duplicated descriptors on constructor failure and finalization, and copy pending write data into native-owned memory.
+- Release intermediate peer-certificate copies and merge both NTLS intermediate chains into the shared wire pool and preserve encryption-chain candidates, including connections accepted by mixed-protocol servers.
+
+### BREAKING / Known limitations
+
+- Added fields in `Config` and `HandshakeError` require unkeyed struct literals to migrate to keyed literals. Legacy zero-policy verification is retained: clients verify when roots are nonempty or ServerName is set unless InsecureSkipVerify is true; explicit policies reject conflicting InsecureSkipVerify.
+- First connection I/O now performs the handshake. Read and write deadlines are independent. After a native write starts, a write failure or timeout permanently fails later writes; close the connection. A deadline already expired before native writing starts can still be reset.
+- Do not mutate configurations after construction. Selection callbacks may run concurrently, must return promptly and must not reenter the same connection. When a base config restricts groups, its selected config must explicitly supply CurvePreferences (or Clone the base). Config sources must remain live during construction/selection.
+- Report mode permits untrusted connections and never suppresses custom verification errors. Default trust paths belong to Tongsuo, not necessarily the platform trust store. NTLS ECDHE still requires client dual credentials; native verified-chain snapshots expose only the most recently verified NTLS chain.
+- RFC 8998 strict profiles, structured event streams, trace/keylog, session/ticket controls and HTTP/OCSP integration remain scheduled for 0.10.0–0.12.0. No automatic protocol fallback is performed.
+
+---
+
 ## [0.8.0] - 2026-11-05
 
 ### Added
@@ -1065,6 +1090,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 ---
 
 [Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.8.0...HEAD
+[0.9.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.5.0...v0.6.0

@@ -263,7 +263,7 @@ internal/testutil ← 仅被 *_test.go 使用
 - `func (c *TLSContext) SetMinProtoVersion(v uint16) error` / `SetMaxProtoVersion(v uint16) error` — 协议版本范围
 - `func (c *TLSContext) SetVerifyMode(mode int) error` / `SetVerifyDepth(depth int) error` — 验证模式与深度
 - `func (c *TLSContext) AddVerifyRoots(certs []*Certificate) error` — 注入受信根
-- `func (c *TLSContext) SetDefaultVerifyPaths() error` — 使用系统默认信任路径
+- `func (c *TLSContext) SetDefaultVerifyPaths() error` — 使用铜锁默认信任路径
 - `func (c *TLSContext) IsNTLS() bool` — 是否 NTLS 上下文
 - `func (c *TLSContext) Close() error` — 释放（幂等）
 - `type SSLConn struct { …（内部字段） }` — `SSL` 包装
@@ -283,6 +283,17 @@ internal/testutil ← 仅被 *_test.go 使用
 - `func CipherVersionToUint16(version uint16) uint16` — 校验并回传协议版本常量（未知返回 0）
 - `func VersionNameToUint16(name string) uint16` — 版本名（如 `"TLSv1.2"`）→ 版本常量
 - `const VerifyResultClosed = -2` — `VerifyResult` 在连接已关闭时的返回值
+
+#### `0.9.0` 新增与生命周期
+
+- `TLSSettings`：配置标记 Tag、ALPN、组/签名、有效套件、DH/options/modes、验证策略与 SelectContext；`TLSContext.ConfigureTLS(TLSSettings) error` 安装构造期参数及每连接回调。
+- `TLSContext.EnableMixedNTLS() error`、`AddChainCertificate(*Certificate) error`、`AddClientCA(*Certificate) error`、`RestrictCipherSuites(legacy, tls13 string) error`；证书 add1/up-ref，源对象仍由调用方管理。
+- `SSLConn.SetReadDeadline(time.Time) error` / `SetWriteDeadline(time.Time) error`、`SetVerifyName(host, email string, flags uint32) error`，及 `Certificate.CheckName(name string, email bool, flags uint32) error`。
+- `SSLConn.State() (TLSState, error)`：复制版本/套件、SNI/ALPN、组/签名、对端与最近验证链 DER、VerifyEnabled/VerificationPerformed 和失败记录；`TLSVerificationFailure{Code, Depth, Certificate}` 无原生资源。
+- `SSLConn.CallbackError() error` / `SelectedConfiguration() any` 暴露当前连接的回调结果和不透明配置标记，仅在 core/API 间流转。
+- `SSLOperationError{Op, SSLCode, VerifyCode, Codes, Err}` 实现 Error/Unwrap；每次 SSL 调用与 SSL_get_error 在同一 OS 线程且无中间原生调用，保留完整错误队列；SSL_ERROR_SYSCALL 同时捕获真实 errno，供 errors.Is 解包。
+- `ssl_io.go` 分开 readMu/writeMu，只在原生调用期间持有 ioMu，等待就绪时释放；读写 deadline 独立；SSL_write 使用 C 拷贝的重试缓冲，失败后拒绝后续写入，避免参数不一致。
+- `NewSSLConn` 接管传入的非阻塞 fd，包括构造失败路径；Handle 的释放函数同时释放 SSL 与 socket 副本，finalizer 仍能关闭 fd。Close 先 Stop/shutdown、等待 inflight，再释放；ctx.Close 与 SSL_new 互斥。
 
 ### 1.10 随机数与工具
 
@@ -405,9 +416,22 @@ internal/testutil ← 仅被 *_test.go 使用
 
 `TLS_client_method` `TLS_server_method` `NTLS_method`、`SSL_CTX_new` `free` `enable_ntls` `get_cert_store`、`SSL_CTX_use_certificate` `use_PrivateKey` `use_sign_certificate` `use_enc_certificate` `use_sign_PrivateKey` `use_enc_PrivateKey`、`SSL_CTX_check_private_key`、`SSL_CTX_set_cipher_list` `set_ciphersuites` `set_min_proto_version` `set_max_proto_version` `set_verify` `set_verify_depth` `set_default_verify_paths` `get_ciphers`、`SSL_new` `free` `set_fd` `connect` `accept` `shutdown` `read` `write` `get_error`、`SSL_get_version` `get_current_cipher_name` `get_verify_result` `get_peer_certificate` `get_peer_cert_chain`、`SSL_set1_host` `SSL_set_tlsext_host_name`、`SSL_CIPHER_get_{name,id,protocol_id,version}` `SSL_CIPHER_sk_{num,value}`
 
+#### `binding_ssl_handshake.go` / `ssl_handshake.c`（`0.9.0`）
+
+`TLSCallbacks` / `TLSSelection` / `TLSVerifyFailure` / `TLSSnapshot` 为内部回调及值快照。
+`X_SSL_attach_callbacks` 将 cgo.Handle 的整数 ID 存入 SSL ex_data，SSL_free 时
+`CgoTLSRelease` 删除句柄并释放连接专属的所选 ctx；不向 C 长期传 Go 指针。
+`CgoTLSSelect` 在 ClientHello 阶段切换完整配置，`CgoTLSVerify` 复制每层失败证书，
+`CgoTLSALPN` 返回客户端原生缓冲区中的偏移，不返回 Go 切片指针。
+`X_SSL_CTX_callbacks` / `X_SSL_CTX_parameters` / `X_SSL_CTX_add_chain` /
+`X_SSL_CTX_add_client_ca` / `X_SSL_set_verify_name` / `X_SSL_name_check` /
+`X_SSL_snapshot` / `X_SSL_operation` / `X_SSL_send_close_notify`、
+`SSL_CTX_set_alpn_protos`、`X509_check_private_key` 均经 core 使用。
+C shim 的 X_SSL_write_owned 持有重试写缓冲；C 写缓冲区随成功或 SSL_free 清零释放；Close 仅尝试非阻塞 close_notify，不等对端响应。
+
 ### 2.15 未绑定 / 未暴露家族
 
-`SSL_SESSION_*`、`SSL_CTX_set_alpn*`、`SSL_CTX_set_tlsext_ticket_key_cb`、`SSL_CTX_set_tlsext_status*`（OCSP stapling）、`SSL_CTX_set_client_CA_list`、`CMS_*`、`OSSL_STORE_*`、`TS_*`、`EVP_MAC_*`、`EVP_PKEY_encapsulate/decapsulate`、`EVP_*_xts/ccm/ocb/wrap`、除 HKDF/PBKDF2 外的 `EVP_KDF` 算法、`EVP_aes_192_*`、`EVP_aes_*_ofb/cfb`、`EVP_chacha20*`、`EVP_sm4_ccm/xts`、`ZUC`、SM9、Paillier / EC-ElGamal、ML-KEM / ML-DSA / SLH-DSA、白盒 SM4。
+`SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb`、`SSL_CTX_set_tlsext_status*`（OCSP stapling）、`CMS_*`、`OSSL_STORE_*`、`TS_*`、`EVP_MAC_*`、`EVP_PKEY_encapsulate/decapsulate`、`EVP_*_xts/ccm/ocb/wrap`、除 HKDF/PBKDF2 外的 `EVP_KDF` 算法、`EVP_aes_192_*`、`EVP_aes_*_ofb/cfb`、`EVP_chacha20*`、`EVP_sm4_ccm/xts`、`ZUC`、SM9、Paillier / EC-ElGamal、ML-KEM / ML-DSA / SLH-DSA、白盒 SM4。
 
 ---
 
@@ -567,9 +591,10 @@ internal/testutil ← 仅被 *_test.go 使用
 
 ## 后续实施前置（规划，不属于已有符号清单）
 
+0.8.0 的兼容/算法绑定与 0.9.0 的 TLS 配置、认证、参数及 I/O 已实现，详见上文。
+
 | 目标版本 | core/native 工作 | 边界 |
 |---|---|---|
-| `0.9.0` | TLS / NTLS 配置、混合模式、证书链、SNI/ALPN、认证回调、参数与状态；I/O、deadline 与错误采集修复 | 同一 SSL 的原生调用受控，独立读写 deadline、取消与关闭通过验收 |
 | `0.10.0` | RFC 8998 严格模式、组/签名状态、消息/状态/验证事件、`SSL_trace` 与 keylog | TLS / NTLS / RFC 8998 分别验收；回调数据复制，不暴露原生指针 |
 | `0.11.0` | `SSL_SESSION_*`、会话缓存/序列化、票据与密钥轮换 | 握手后票据处理、实际复用及身份隔离 |
 | `0.12.0` | OCSP status 回调与响应读取；HTTP/1.1 集成复用 Listener | 取得 staple 不等于验证通过；不支持组合明确报告 |

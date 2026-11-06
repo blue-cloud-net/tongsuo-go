@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -79,6 +80,11 @@ func coreCertOf(c *x509.Certificate) (*core.Certificate, error) {
 // 时由 SignCert / SignKey 与 EncCert / EncKey 提供 GM/T 0024 TLCP 双证书
 // （签名证书 + 加密证书）。MinVersion / MaxVersion 与 CipherSuites 非空时覆盖库默认。
 //
+// 0.9.0 起请优先使用 Verification 显式指定策略。以下 D1 描述是历史说明；
+// 零值实际行为是 RootCAs 非空或 ServerName 非空且未跳过时启用验证。
+// VerifyReport 与 VerifyStrict 在未配置根时使用铜锁默认信任路径。
+// 配置构造后不可修改；选择回调可能并发执行，不得重入同一连接。
+//
 // 客户端对端验证（D1，方案 A，默认不验证）：
 //
 //   - RootCAs 为 nil 或 InsecureSkipVerify 为 true：客户端不验证对端证书，
@@ -97,33 +103,184 @@ func coreCertOf(c *x509.Certificate) (*core.Certificate, error) {
 //
 // Config represents a TLS or NTLS configuration shared by Dial and Server.
 //
+// Since 0.9.0, prefer an explicit Verification policy. The following D1
+// description is historical; the zero policy actually verifies when RootCAs
+// is nonempty or ServerName is set, unless verification is skipped.
+// VerifyReport and VerifyStrict use Tongsuo default trust paths when roots
+// are absent. Do not mutate configurations after construction; selection
+// callbacks may run concurrently and must not reenter the same connection.
+//
 // See the package-level "客户端对端验证" Chinese comment above for the
 // D1 default-verify policy (方案 A: VERIFY_NONE by default; PEER enabled
 // only when RootCAs is set AND InsecureSkipVerify is false).
 type Config struct {
+	// Protocol 显式选择协议；混合模式仅用于服务端。
+	//
+	// Protocol explicitly selects the protocol; mixed mode is server-only.
+	Protocol ProtocolMode
+
+	// Verification 控制验证与失败处理，零值保留旧行为。
+	//
+	// Verification controls validation and failure handling; zero preserves legacy behavior.
+	Verification VerificationPolicy
+
+	// ClientAuth 控制客户端证书请求策略。
+	//
+	// ClientAuth controls client certificate requests.
+	ClientAuth ClientAuthType
+
+	// ClientCAs 是服务端验证客户端的信任根及 CA 名称。
+	//
+	// ClientCAs contains trust roots and CA names for client authentication.
+	ClientCAs []*x509.Certificate
+
+	// CertChain 为 TLS 中间证书链。
+	//
+	// CertChain contains TLS intermediates.
+	CertChain []*x509.Certificate
+
+	// SignChain 为 NTLS 签名中间证书链。
+	//
+	// SignChain contains NTLS signing intermediates.
+	SignChain []*x509.Certificate
+
+	// EncChain 为 NTLS 加密中间证书链。
+	//
+	// EncChain contains NTLS encryption intermediates.
+	EncChain []*x509.Certificate
+
+	// NextProtos 是 ALPN 列表，服务端按本列表优先级选择。
+	//
+	// NextProtos lists ALPN protocols in server preference order.
+	NextProtos []string
+
+	// CurvePreferences 配置命名组，按铜锁名称与顺序设置。
+	//
+	// CurvePreferences configures named groups in Tongsuo name and preference order.
+	CurvePreferences []string
+
+	// SignatureAlgorithms 配置签名算法列表。
+	//
+	// SignatureAlgorithms configures signature algorithms.
+	SignatureAlgorithms []string
+
+	// DHParameters 是 PEM 编码的 DH 参数。
+	//
+	// DHParameters contains PEM-encoded DH parameters.
+	DHParameters []byte
+
+	// Options 为本包 Option 常量的组合。
+	//
+	// Options combines the package Option constants.
+	Options uint64
+
+	// Modes 为本包 Mode 常量的组合。
+	//
+	// Modes combines the package Mode constants.
+	Modes int64
+
+	// StrictConfig 拒绝无效套件并精确限制已指定的套件集合。
+	//
+	// StrictConfig rejects invalid suites and precisely restricts the specified suite set.
+	StrictConfig bool
+
+	// VerificationName 独立指定验证名称，可为 IP。
+	//
+	// VerificationName independently specifies the verification name and may be an IP.
+	VerificationName string
+
+	// DisableSNI 禁止发送 SNI，不影响名称验证。
+	//
+	// DisableSNI disables SNI without changing name verification.
+	DisableSNI bool
+
+	// HostnameOptions 配置 DNS 与邮箱验证。
+	//
+	// HostnameOptions configures DNS and email verification.
+	HostnameOptions HostnameOptions
+
+	// GetConfigForClient 在服务端选择完整配置；nil 结果沿用当前配置。
+	//
+	// GetConfigForClient selects a server configuration; a nil result retains the current configuration.
+	GetConfigForClient func(*ClientHelloInfo) (*Config, error)
+
+	// GetCertificate 选择 TLS 签名凭证，回调不得重入连接。
+	//
+	// GetCertificate selects TLS signing credentials; callbacks must not reenter the connection.
+	GetCertificate func(*ClientHelloInfo) (*Certificate, error)
+
+	// GetNTLSCertificate 选择完整 NTLS 双证书凭证。
+	//
+	// GetNTLSCertificate selects complete NTLS dual-certificate credentials.
+	GetNTLSCertificate func(*ClientHelloInfo) (*NTLSCertificate, error)
+
+	// VerifyPeerCertificate 检查独立 DER 副本，返回错误始终终止。
+	//
+	// VerifyPeerCertificate checks independent DER copies; any returned error aborts.
+	VerifyPeerCertificate func([][]byte, [][][]byte) error
+
+	// VerifyConnection 在内建验证后检查状态，返回错误始终终止。
+	//
+	// VerifyConnection checks state after built-in validation; any returned error aborts.
+	VerifyConnection func(ConnectionState) error
+
 	// Cert 与 Key 为 TLS 证书与私钥（服务端必填；客户端用作客户端证书时可选）。
+	//
+	// Cert is the TLS leaf certificate, required on static servers and optional on clients.
 	Cert *x509.Certificate
-	Key  asym.PrivateKey
+	// Key 是 TLS 证书对应的私钥。
+	//
+	// Key is the private key matching Cert.
+	Key asym.PrivateKey
 
 	// NTLS 启用国密双证书（须同时提供签名证书与加密证书）。
-	NTLS     bool
+	//
+	// NTLS enables legacy dual-certificate selection; prefer explicit Protocol.
+	NTLS bool
+	// SignCert 是 NTLS 签名叶证书。
+	//
+	// SignCert is the NTLS signing leaf certificate.
 	SignCert *x509.Certificate
-	SignKey  asym.PrivateKey
-	EncCert  *x509.Certificate
-	EncKey   asym.PrivateKey
+	// SignKey 是 SignCert 对应私钥。
+	//
+	// SignKey is the private key matching SignCert.
+	SignKey asym.PrivateKey
+	// EncCert 是 NTLS 加密叶证书。
+	//
+	// EncCert is the NTLS encryption leaf certificate.
+	EncCert *x509.Certificate
+	// EncKey 是 EncCert 对应私钥。
+	//
+	// EncKey is the private key matching EncCert.
+	EncKey asym.PrivateKey
 
 	// MinVersion / MaxVersion 为协议版本范围（0 表示不限制）。
+	//
+	// MinVersion is the lower protocol bound; in mixed mode it applies to TLS only.
 	MinVersion uint16
+	// MaxVersion 是最高协议版本，混合模式仅限制 TLS 一侧。
+	//
+	// MaxVersion is the upper protocol bound; in mixed mode it applies to TLS only.
 	MaxVersion uint16
 
 	// CipherSuites 为可用密码套件（空表示使用默认）。
+	//
+	// CipherSuites lists allowed suites; empty preserves native defaults.
 	CipherSuites []string
 
 	// RootCAs 为客户端用于信证书池（nil 表示不进行对端验证）；
 	// InsecureSkipVerify 为 true 时强制跳过验证（覆盖 RootCAs）。
-	RootCAs            []*x509.Certificate
+	//
+	// RootCAs contains client trust roots. The preceding skip description is
+	// historical; explicit policies also permit default Tongsuo trust paths.
+	RootCAs []*x509.Certificate
+	// InsecureSkipVerify 为旧策略强制关闭验证；与显式 Verification 冲突。
+	//
+	// InsecureSkipVerify disables legacy verification and conflicts with explicit policies.
 	InsecureSkipVerify bool
 	// ServerName 为对端主机名校验的预期值（空时 Dial 从 addr 推导 host）。
+	//
+	// ServerName is sent as SNI and supplies a verification name unless overridden.
 	ServerName string
 }
 
@@ -165,69 +322,26 @@ type Config struct {
 // error is a *HandshakeError{Kind:HandshakeErrorPeerVerify} wrapping
 // the Tongsuo X509 verification result text.
 func DialContext(ctx context.Context, network, addr string, config *Config) (net.Conn, error) {
-	dialer := &net.Dialer{}
-	raw, err := dialer.DialContext(ctx, network, addr)
+	if ctx == nil {
+		return nil, errors.New("tls: nil context")
+	}
+	if err := validateConfig(config, true); err != nil {
+		return nil, err
+	}
+	raw, err := (&net.Dialer{}).DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
-	tlsCtx, err := newContext(config, true)
+	c, err := newClient(raw, config, addr)
 	if err != nil {
 		_ = raw.Close()
 		return nil, err
 	}
-	// 主机名：
-	//   - sniHost：ClientHello 的 SNI 扩展值，**无条件**推导——SNI 是路由信息，
-	//     与是否校验证书无关；缺它时多数真实站点回 `sslv3 alert handshake
-	//     failure`（alert 40），握手在验证之前就失败（见 SetServerName 注释）。
-	//   - verifyHost：仅在开启 PEER 验证时用于 SSL_set1_host 主机名校验。
-	// 两者都取自 ServerName，其次从 addr 推导（"host:port" / "[host]:port" / "host"）。
-	sniHost := ""
-	if config != nil && config.ServerName != "" {
-		sniHost = config.ServerName
-	} else if host, _, e := net.SplitHostPort(addr); e == nil {
-		// SplitHostPort 成功：去掉端口，得到纯主机名用作 SNI / 证书校验。
-		// 去除 IPv6 字面量外层的方括号（SplitHostPort 不会去掉）。
-		sniHost = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
-	} else if !strings.Contains(addr, ":") {
-		// addr 没有冒号（裸主机名）：可直接用作 SNI。
-		sniHost = addr
-	}
-	// IPv4 / IPv6 字面量不作为 SNI 发送（RFC 6066 §3：SNI 只允许 DNS 主机名，
-	// 发 IP 会被部分实现直接拒绝），但主机名校验仍可用 IP。
-	if net.ParseIP(sniHost) != nil {
-		sniHost = ""
-	}
-
-	verifyHost := ""
-	if !shouldSkipVerify(config) {
-		verifyHost = sniHost
-	}
-
-	conn, err := wrapConnWithHostname(raw, tlsCtx, false, sniHost, verifyHost, true)
-	if err != nil {
-		// wrapConnWithHostname 现在不做握手；唯一可能的失败是
-		// NewSSLConn / SetHostname，都与 ctx 无关——直接返回。
-		_ = raw.Close()
-		_ = tlsCtx.Close()
+	if err := c.HandshakeContext(ctx); err != nil {
+		_ = c.Close()
 		return nil, err
 	}
-	tlsConn := conn.(*Conn) // wrapConn 总是返回 *Conn
-	if hsErr := tlsConn.HandshakeContext(ctx); hsErr != nil {
-		// HandshakeContext 已经 Close 了连接。
-		return nil, hsErr
-	}
-	// 主机名校验：握手完成后检查 Tongsuo 验证结果。
-	if !shouldSkipVerify(config) {
-		if code := tlsConn.ssl.VerifyResult(); code != core.VerifyOK {
-			_ = tlsConn.Close()
-			return nil, &HandshakeError{
-				Op:   "DialContext",
-				Kind: HandshakeErrorPeerVerify,
-				Err:  fmt.Errorf("peer verification failed: %s", core.VerifyErrorMessage(code)),
-			}
-		}
-	}
-	return tlsConn, nil
+	return c, nil
 }
 
 // Dial 以 context.Background() 包装 DialContext，向后兼容现有调用点。
@@ -305,6 +419,8 @@ func (s *Server) Close() error {
 // 的 SSL_read / SSL_write / select 调用），再释放 SSL 句柄（含其持有的 dup socket
 // 副本）；之后 Read/Write 立即返回 `io.EOF`/错误而非传 nil 进 cgo。
 //
+// 0.9.0 起以下读写串行化描述为历史行为：读取与写入分别串行，原生单步互斥，等待就绪时允许另一方向推进。
+//
 // Conn is a net.Conn implementation that performs TLS or NTLS I/O on top
 // of an underlying socket file descriptor.
 //
@@ -315,10 +431,17 @@ func (s *Server) Close() error {
 // releases the SSL handle, including the dup'ed socket duplicate it owns.
 // Subsequent Read/Write calls return io.EOF / an error rather than passing nil
 // across the cgo boundary.
+//
+// Since 0.9.0, the serialization description below is historical: reads and writes progress independently, with serialized native steps and unlocked readiness waits.
 type Conn struct {
+	config    *Config
+	stateMu   sync.RWMutex
+	state     ConnectionState
 	ssl       *core.SSLConn
 	raw       net.Conn
-	mu        sync.Mutex  // 序列化 Read/Write
+	mu        sync.Mutex // serializes readers
+	writeMu   sync.Mutex // serializes writers independently
+	closeErr  error
 	closeOnce sync.Once   // 保证 Close 只执行一次（幂等）
 	closed    atomic.Bool // Close 完成后置位，Read/Write 入口短路
 
@@ -470,6 +593,18 @@ func (c *Conn) HandshakeContext(ctx context.Context) error {
 			<-errCh
 			c.handshakeErr = ctx.Err()
 		}
+		if cbErr := c.ssl.CallbackError(); cbErr != nil && c.handshakeErr != nil && ctx.Err() == nil {
+			c.handshakeErr = cbErr
+		}
+		if stateErr := c.captureState(c.handshakeErr == nil); c.handshakeErr == nil {
+			c.handshakeErr = stateErr
+		}
+		if c.handshakeErr == nil && ctx.Err() != nil {
+			c.handshakeErr = ctx.Err()
+			c.stateMu.Lock()
+			c.state.HandshakeComplete = false
+			c.stateMu.Unlock()
+		}
 		if c.handshakeErr == nil {
 			c.handshakeDone.Store(true)
 		}
@@ -494,13 +629,36 @@ func classifyHandshakeErr(op string, err error) error {
 	if err == nil {
 		return nil
 	}
-	// 先把队列里残留的错误全部弹出，再用最后一次弹出的码分类。
-	kind := classifyOpenSSLError(core.ClassifySSLError(core.DrainErrors()))
-	if kind == HandshakeErrorOther {
-		// 无可分类错误码：归到 Network 类。
+	var existing *HandshakeError
+	if errors.As(err, &existing) {
+		return err
+	}
+	kind := HandshakeErrorOther
+	var nativeErr *core.SSLOperationError
+	if errors.As(err, &nativeErr) {
+		if nativeErr.SSLCode == SSLErrorSyscall {
+			kind = HandshakeErrorNetwork
+		}
+		if nativeErr.VerifyCode > 0 {
+			kind = HandshakeErrorPeerVerify
+		}
+		for _, code := range nativeErr.Codes {
+			candidate := classifyOpenSSLError(core.ClassifySSLError(code))
+			if candidate != HandshakeErrorNetwork && candidate != HandshakeErrorOther {
+				kind = candidate
+				break
+			}
+		}
+	} else if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		kind = HandshakeErrorNetwork
 	}
-	return &HandshakeError{Op: op, Kind: kind, Err: err}
+	result := &HandshakeError{Op: op, Kind: kind, Err: err}
+	if nativeErr != nil {
+		result.SSLCode = nativeErr.SSLCode
+		result.VerifyCode = nativeErr.VerifyCode
+		result.NativeErrors = append([]uint64(nil), nativeErr.Codes...)
+	}
+	return result
 }
 
 // Read 读取解密后的应用层数据。
@@ -511,10 +669,17 @@ func classifyHandshakeErr(op string, err error) error {
 // Read reads decrypted application data from the TLS or NTLS connection
 // into b.
 //
+// 0.9.0 起以下与 Write 互斥的描述为历史行为：读取仅与其他读取串行，首次 I/O 自动握手。
+//
 // Read is serialized with concurrent Write calls on the same Conn.
 // Returns io.EOF after Close. Returns (n, nil) for partial reads
 // (matching the io.Reader contract).
+//
+// Since 0.9.0, the Write-exclusion description below is historical: reads serialize only with other reads, and first I/O triggers a handshake.
 func (c *Conn) Read(b []byte) (int, error) {
+	if err := c.Handshake(); err != nil {
+		return 0, err
+	}
 	if c.closed.Load() {
 		return 0, io.EOF
 	}
@@ -537,23 +702,44 @@ func (c *Conn) Read(b []byte) (int, error) {
 
 // Write 加密并发送应用层数据。
 //
+// 0.9.0 起下述读写互斥为历史行为：写入仅与其他写入串行；
+// 原生写入开始后的超时或错误会使后续写入保持失败，须关闭连接。
+//
 // 与同一 Conn 上的并发 Read 调用互斥序列化。连接已关闭时返回 ErrClosed。
 //
 // Write encrypts and sends application data b over the TLS or NTLS
 // connection.
 //
+// Since 0.9.0, the read/write exclusion below is historical: writes serialize
+// only with other writes. A timeout or error after native writing begins
+// permanently fails subsequent writes; close the connection.
+//
 // Write is serialized with concurrent Read calls on the same Conn.
 // Returns ErrClosed after Close.
 func (c *Conn) Write(b []byte) (int, error) {
+	if err := c.Handshake(); err != nil {
+		return 0, err
+	}
 	if c.closed.Load() {
 		return 0, ErrClosed
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	if c.closed.Load() {
 		return 0, ErrClosed
 	}
-	return c.ssl.Write(b)
+	written := 0
+	for written < len(b) {
+		n, err := c.ssl.Write(b[written:])
+		written += n
+		if err != nil {
+			return written, err
+		}
+		if n == 0 {
+			return written, io.ErrShortWrite
+		}
+	}
+	return written, nil
 }
 
 // ErrClosed 表示对 tls.Conn 的 I/O 操作因连接已关闭而失败。
@@ -621,8 +807,9 @@ func (c *Conn) Close() error {
 				firstErr = err
 			}
 		}
+		c.closeErr = firstErr
 	})
-	return firstErr
+	return c.closeErr
 }
 
 // LocalAddr 返回本地地址。
@@ -655,46 +842,44 @@ func (c *Conn) SetDeadline(t time.Time) error {
 // 同时清空 raw socket 的写入 deadline，避免用户后续 Write 因旧写入
 // deadline 而意外超时。
 //
+// 0.9.0 起以下清空写入期限的描述为历史行为：读取期限独立设置，保留写入期限。
+//
 // SetReadDeadline sets the read deadline on both the SSL and the
 // underlying socket; the raw socket's write deadline is also cleared to
 // zero so that subsequent Write calls are not impacted by a stale write
 // timeout.
+//
+// Since 0.9.0, clearing the write deadline as described below is historical: read and write deadlines remain independent.
 func (c *Conn) SetReadDeadline(t time.Time) error {
 	if c == nil || c.ssl == nil {
 		return errors.New("tls: SSL closed")
 	}
-	if err := c.ssl.SetDeadline(t); err != nil {
+	if err := c.ssl.SetReadDeadline(t); err != nil {
 		return err
 	}
-	if err := c.raw.SetReadDeadline(t); err != nil {
-		return err
-	}
-	// 关键修复：SetReadDeadline 不应影响写入侧 deadline，显式置零。
-	// Critical fix: SetReadDeadline must not affect the write side; reset it explicitly.
-	return c.raw.SetWriteDeadline(time.Time{})
+	return c.raw.SetReadDeadline(t)
 }
 
 // SetWriteDeadline 设置写入期限（仅 SSL 层；raw socket 层同时设置）。
 // 同时清空 raw socket 的读取 deadline，避免用户后续 Read 因旧读取
 // deadline 而意外超时。
 //
+// 0.9.0 起上述清空读取期限的描述为历史行为；写入期限独立设置，保留读取期限。
+//
 // SetWriteDeadline sets the write deadline on both the SSL and the
 // underlying socket; the raw socket's read deadline is also cleared to
 // zero so that subsequent Read calls are not impacted by a stale read
 // timeout.
+//
+// Since 0.9.0, the read-deadline clearing described above is historical; write deadlines preserve read deadlines.
 func (c *Conn) SetWriteDeadline(t time.Time) error {
 	if c == nil || c.ssl == nil {
 		return errors.New("tls: SSL closed")
 	}
-	if err := c.ssl.SetDeadline(t); err != nil {
+	if err := c.ssl.SetWriteDeadline(t); err != nil {
 		return err
 	}
-	if err := c.raw.SetWriteDeadline(t); err != nil {
-		return err
-	}
-	// 配对修复：SetWriteDeadline 不应影响读取侧 deadline。
-	// Matching fix: SetWriteDeadline must not affect the read side.
-	return c.raw.SetReadDeadline(time.Time{})
+	return c.raw.SetWriteDeadline(t)
 }
 
 // Version 返回协商后的协议版本。
@@ -732,9 +917,17 @@ func (c *Conn) PeerCertificates() ([]*x509.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		for _, cert := range pool {
+			_ = cert.Close()
+		}
+	}()
 	leafCore, err := c.ssl.PeerCertificate()
 	if err != nil {
 		return nil, err
+	}
+	if leafCore != nil {
+		defer leafCore.Close()
 	}
 	return c.peerCertificateChain(leafCore, pool)
 }
@@ -763,13 +956,18 @@ func (c *Conn) PeerEncCertificates() ([]*x509.Certificate, error) {
 	if !c.handshakeDone.Load() {
 		return nil, errors.New("tls: PeerEncCertificates before handshake")
 	}
-	if !c.ntls {
+	if !c.ConnectionState().NTLS {
 		return nil, nil
 	}
 	pool, err := c.ssl.PeerCertificates()
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		for _, cert := range pool {
+			_ = cert.Close()
+		}
+	}()
 	if len(pool) == 0 {
 		return nil, nil
 	}
@@ -777,7 +975,7 @@ func (c *Conn) PeerEncCertificates() ([]*x509.Certificate, error) {
 	switch c.isServer {
 	case true:
 		// 服务端：加密叶 = peer_chain[0]；栈只此一张。
-		return c.peerCertificateChain(pool[0], pool[:0])
+		return c.peerCertificateChain(pool[0], pool[1:])
 	default:
 		// 客户端：加密叶 = peer_chain[1]；后续为链证书。
 		if len(pool) < 2 {
@@ -792,127 +990,132 @@ func (c *Conn) PeerEncCertificates() ([]*x509.Certificate, error) {
 // newContext builds the underlying Tongsuo TLS context (NTLS, client, or
 // server) from config and loads the configured certificates / keys onto it.
 func newContext(config *Config, client bool) (*core.TLSContext, error) {
-	var (
-		ctx *core.TLSContext
-		err error
-	)
-	ntls := config != nil && config.NTLS
-	switch {
-	case ntls:
+	// Configuration failures must read the same native thread's error queue.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	cfg := config.Clone()
+	if err := validateConfig(cfg, client); err != nil {
+		return nil, err
+	}
+	mode, err := protocolMode(cfg, client)
+	if err != nil {
+		return nil, err
+	}
+	var ctx *core.TLSContext
+	if mode == ProtocolNTLS {
 		ctx, err = core.NewNTLSContext()
-	case client:
+	} else if client {
 		ctx, err = core.NewClientTLSContext()
-	default:
+	} else {
 		ctx, err = core.NewServerTLSContext()
 	}
 	if err != nil {
 		return nil, err
 	}
-	if config == nil {
-		return ctx, nil
+	success := false
+	defer func() {
+		if !success {
+			_ = ctx.Close()
+		}
+	}()
+	if mode == ProtocolMixed {
+		if err := ctx.EnableMixedNTLS(); err != nil {
+			return nil, err
+		}
 	}
-
-	// 加载证书与私钥。
-	if ntls {
-		if config.SignCert != nil && config.SignKey != nil {
-			signCore, err := coreCertOf(config.SignCert)
-			if err != nil {
-				_ = ctx.Close()
-				return nil, err
-			}
-			signKey, err := corePrivateKeyForTLS(config.SignKey)
-			if err != nil {
-				_ = ctx.Close()
-				return nil, err
-			}
-			if err := ctx.UseSignCertificate(signCore, signKey); err != nil {
-				_ = ctx.Close()
-				return nil, err
-			}
+	if mode != ProtocolNTLS {
+		if err := addCredential(ctx, cfg.Cert, cfg.Key, cfg.CertChain, tlsCredential); err != nil {
+			return nil, err
 		}
-		if config.EncCert != nil && config.EncKey != nil {
-			encCore, err := coreCertOf(config.EncCert)
-			if err != nil {
-				_ = ctx.Close()
-				return nil, err
-			}
-			encKey, err := corePrivateKeyForTLS(config.EncKey)
-			if err != nil {
-				_ = ctx.Close()
-				return nil, err
-			}
-			if err := ctx.UseEncryptCertificate(encCore, encKey); err != nil {
-				_ = ctx.Close()
-				return nil, err
-			}
-		}
-	} else if config.Cert != nil && config.Key != nil {
-		certCore, err := coreCertOf(config.Cert)
+	}
+	if mode != ProtocolTLS {
+		// NTLS sends one shared intermediate pool after its two leaves.
+		chain, err := mergeCertificateChains(cfg.SignChain, cfg.EncChain)
 		if err != nil {
-			_ = ctx.Close()
 			return nil, err
 		}
-		keyCore, err := corePrivateKeyForTLS(config.Key)
-		if err != nil {
-			_ = ctx.Close()
+		if err := addCredential(ctx, cfg.SignCert, cfg.SignKey, chain, signingCredential); err != nil {
 			return nil, err
 		}
-		if err := ctx.UseCertificate(certCore, keyCore); err != nil {
-			_ = ctx.Close()
+		if err := addCredential(ctx, cfg.EncCert, cfg.EncKey, cfg.EncChain, encryptionCredential); err != nil {
 			return nil, err
 		}
 	}
-
-	if config.MinVersion != 0 {
-		if err := ctx.SetMinProtoVersion(config.MinVersion); err != nil {
-			_ = ctx.Close()
+	if cfg.MinVersion != 0 {
+		if err := ctx.SetMinProtoVersion(cfg.MinVersion); err != nil {
 			return nil, err
 		}
 	}
-	if config.MaxVersion != 0 {
-		if err := ctx.SetMaxProtoVersion(config.MaxVersion); err != nil {
-			_ = ctx.Close()
+	if cfg.MaxVersion != 0 {
+		if err := ctx.SetMaxProtoVersion(cfg.MaxVersion); err != nil {
 			return nil, err
 		}
 	}
-	if len(config.CipherSuites) > 0 {
-		if err := applyCipherSuites(ctx, config.CipherSuites); err != nil {
-			_ = ctx.Close()
-			return nil, err
+	legacy, tls13, err := configureCiphers(ctx, cfg.CipherSuites, cfg.StrictConfig)
+	if err != nil {
+		return nil, err
+	}
+	// Capture effective suite lists so SNI replacement also resets omitted families.
+	legacyNames, tls13Names := []string{}, []string{}
+	for _, suite := range ctx.CipherList() {
+		if strings.HasPrefix(suite.Name, "TLS_") {
+			tls13Names = append(tls13Names, suite.Name)
+		} else {
+			legacyNames = append(legacyNames, suite.Name)
 		}
 	}
-
-	// 客户端对端验证（D1 方案 A）：仅在 !shouldSkipVerify 时启用 PEER
-	// 并注入用户提供的根 CA。NTLS 同理，但 Tongsuo TLCP 是否执行标准
-	// X509_STORE 链验证待实测（实现期验证点）。
-	if client && !shouldSkipVerify(config) {
-		if err := ctx.SetVerifyMode(core.VerifyModePeer); err != nil {
-			_ = ctx.Close()
-			return nil, err
+	legacy, tls13 = strings.Join(legacyNames, ":"), strings.Join(tls13Names, ":")
+	policy := effectiveVerification(cfg, client)
+	verifyMode := 0
+	if client && policy != VerifyNone {
+		verifyMode = 1
+	}
+	if !client && cfg.ClientAuth != NoClientCert {
+		verifyMode = 1
+		if cfg.ClientAuth == RequireAnyClientCert || cfg.ClientAuth == RequireAndVerifyClientCert {
+			verifyMode |= 2
 		}
-		if err := ctx.SetVerifyDepth(defaultVerifyDepth); err != nil {
-			_ = ctx.Close()
-			return nil, err
-		}
-		if len(config.RootCAs) > 0 {
-			certs := make([]*core.Certificate, 0, len(config.RootCAs))
-			for _, c := range config.RootCAs {
-				if c == nil {
-					continue
-				}
-				h, err := coreCertOf(c)
-				if err != nil {
-					_ = ctx.Close()
+	}
+	if err := ctx.SetVerifyMode(verifyMode); err != nil {
+		return nil, err
+	}
+	if err := ctx.SetVerifyDepth(defaultVerifyDepth); err != nil {
+		return nil, err
+	}
+	roots := cfg.RootCAs
+	if !client {
+		roots = cfg.ClientCAs
+	}
+	if len(roots) > 0 {
+		certs := make([]*core.Certificate, 0, len(roots))
+		for _, root := range roots {
+			c, err := coreCertOf(root)
+			if err != nil {
+				return nil, err
+			}
+			certs = append(certs, c)
+			if !client {
+				if err := ctx.AddClientCA(c); err != nil {
 					return nil, err
 				}
-				certs = append(certs, h)
-			}
-			if err := ctx.AddVerifyRoots(certs); err != nil {
-				_ = ctx.Close()
-				return nil, err
 			}
 		}
+		if err := ctx.AddVerifyRoots(certs); err != nil {
+			return nil, err
+		}
+	} else if policy != VerifyNone && cfg.Verification != VerifyDefault {
+		if err := ctx.SetDefaultVerifyPaths(); err != nil {
+			return nil, err
+		}
 	}
+	settings := core.TLSSettings{Tag: cfg, Protocols: cfg.NextProtos, Groups: strings.Join(cfg.CurvePreferences, ":"), Signatures: strings.Join(cfg.SignatureAlgorithms, ":"), DHParameters: cfg.DHParameters, Options: cfg.Options, Modes: cfg.Modes, Continue: policy == VerifyNone || policy == VerifyReport, VerifyEnabled: policy != VerifyNone, LegacyCiphers: legacy, TLS13Ciphers: tls13}
+	if !client && (mode == ProtocolMixed || cfg.GetConfigForClient != nil || cfg.GetCertificate != nil || cfg.GetNTLSCertificate != nil) {
+		settings.SelectContext = func(name string, ntls bool) (*core.TLSContext, error) { return selectServerConfig(cfg, name, ntls) }
+	}
+	if err := ctx.ConfigureTLS(settings); err != nil {
+		return nil, err
+	}
+	success = true
 	return ctx, nil
 }
 

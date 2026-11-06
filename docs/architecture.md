@@ -198,6 +198,21 @@ API 层内部存在必须先拿到 `*core.PKey` 才能工作的场景（如 `ecd
 方法虽在 godoc，但外部模块无法 import `internal/core`，拿到也用不了；且 owned 副本语义与
 `tls.peerCertificateChain` 声明的契约「每个返回的证书由调用方各自 `Close`」一致）。
 
+#### `0.9.0` TLS / NTLS 连接模型（已实现，待发布）
+
+API 的 `config.go` 固定配置和选择规则，`state.go` 提供 DER 值快照；core 的
+`ssl_config.go` 编排参数与每连接回调，`ssl_io.go` 管理独立读写与原生错误。
+绑定层的 `binding_ssl_handshake.go` / `ssl_handshake.c` 仅桥接原生接口与回调。
+
+- `Protocol` 显式选择 TLS/NTLS/服务端混合端口；SNI 在 ClientHello 阶段选择完整配置或 TLS/NTLS 凭证。NTLS 按双身份切换，签名/加密中间链合并去重为线上的共享池；状态按实际协商协议记录。
+- `tls.Client` 包装已连接 TCP，`Server.Accept` 惰性构造；首次 I/O 自动握手，`NewListener.Accept` 保持自动握手。原生构造成功后持有凭证引用，密钥先经 keyaccess Dup，证书经 certaccess；源凭证在构造/选择期间必须有效。
+- 独立 readMu/writeMu 序列化同方向操作，ioMu 仅保护单步 SSL 调用；释放 ioMu 等待 socket 就绪，让另一方向推进。同一 SSL 对象不会同时被两个原生调用访问。
+- 每次 SSL 调用、SSL_get_error 与完整 ERR 队列采集在同一 OS 线程；原生错误不在调用方 goroutine 重新读取。独立读写 deadline 不互相清空，握手取两者较早值。
+- C ex_data 只持有 cgo.Handle 整数 ID；每连接所选 ctx 在 SSL_free 回调释放。读缓冲在重试期间 pin，写缓冲复制到 C 并在成功/SSL_free 清零释放；原生写入开始后失败即禁止再次写入。混合模式的 TLS 版本范围在 ClientHello 选择时与 NTLS 范围分离。
+- Stop 先拒绝新操作并 shutdown socket，Close 等 inflight 归零后释放 SSL/fd；Handle 释放函数在显式 Close、构造失败及 finalizer 路径均关闭 fd 副本。ctx.Close 与 SSL_new 通过读写锁隔离。
+- VerifyNone/VerifyReport/VerifyStrict 分别表达不验证/失败继续/失败终止；ClientAuth 独立请求客户端证书。自定义验证错误始终终止；状态分别表达握手完成与未验证/通过/失败，复制证书及失败信息，不暴露原生资源。
+- 配置构造后不可修改，选择回调可能并发执行且不得重入同一连接；基础组受限时，所选配置须显式指定组。示例默认 Report；RFC 8998 严格配置/事件流/trace 仍归 0.10.0。
+
 #### tls 包公开 API（v0.2.0+）
 
 `tls/` 在 v0.2.0 引入 ctx 友好的握手与错误分类 API，公共符号：
@@ -216,8 +231,8 @@ API 层内部存在必须先拿到 `*core.PKey` 才能工作的场景（如 `ecd
 - 错误：哨兵 `ErrVersionNotSupported` / `ErrNoSharedCipher` / `ErrPeerVerification`
   / `ErrNetwork`；类型化 `*HandshakeError{Op, Kind, Err}` 按 library + reason
   对 OpenSSL 错误分类；`ctx.Err()` 透传不包 `*HandshakeError`
-- `(*Server).Accept`：v0.2.0 起仅构造 `*Conn` 即返回，握手推迟到调用方显式调用
-  `Handshake` / `HandshakeContext`；未显式调用的调用方需要补上
+- `(*Server).Accept`：v0.2.0 起仅构造 `*Conn` 即返回，握手可由调用方显式调用
+  `Handshake` / `HandshakeContext`，`0.9.0` 起首次 I/O 也自动握手
 
 ---
 
@@ -315,11 +330,11 @@ tongsuo-go/
 │   ├── ocsp_http.go           # HTTP POST、nonce 与请求 CertID 校验
 │   ├── trust.go  load.go      # AUX 信任属性与本地证书/CRL 多对象加载
 │   ├── issue.go               # IssueCertificateFromRequest / IssueOptions
-│   ├── store.go               # Store / VerifyError / ChainVerify
+│   ├── store.go  verify.go    # Store / VerifyError / ChainVerify / 验证码常量与解释
 │   ├── forms.go               # 形态入口：MarshalFormat / LoadCertificateSource / MarshalCSRTo
 │   └── helpers.go             # convertEntries / convertExtensions
 ├── tls/                       # 【传输】TLS / NTLS
-│   ├── tls.go  chain.go  suites.go  errors.go
+│   ├── tls.go  config.go  state.go  chain.go  suites.go  errors.go
 │   └── listener.go            # Listener / NewListener（Accept 内握手的 net.Listener）
 ├── asn1/                      # 【格式】DER viewer（纯 Go，cgo-free）
 ├── jwk/                       # 【格式】JWK ↔ PEM / JSON
@@ -345,6 +360,8 @@ tongsuo-go/
 │   │   ├── binding_rand.go    # RAND_bytes
 │   │   ├── binding_bio.go     # BIO 系列
 │   │   ├── binding_ssl.go     # SSL_CTX / SSL / TLS 会话
+│   │   ├── binding_ssl_handshake.go # 参数、ClientHello/ALPN/验证回调与快照
+│   │   ├── ssl_handshake.c  ssl_handshake.h # SSL ex_data 整数句柄与 C 写缓冲
 │   │   ├── binding_x509.go    # X509 / X509_REQ / X509_CRL / X509_STORE / PEM / DER
 │   │   ├── binding_pkcs.go    # PKCS#7 / PKCS#12 系列
 │   │   ├── binding_pkcs7_ops.go # PKCS#7 签验与信封
@@ -359,7 +376,7 @@ tongsuo-go/
 │   │   ├── digest.go  cipher.go  hmac.go  kdf.go
 │   │   ├── mac.go  meta.go
 │   │   ├── pkey.go  pkey_id.go  pkcs.go  ocsp.go
-│   │   ├── x509.go  ssl.go  rand.go  zero.go
+│   │   ├── x509.go  ssl.go  ssl_config.go  ssl_io.go  rand.go  zero.go
 │   │   └── waitfd_linux.go  waitfd_darwin.go
 │   ├── keyaccess/             # 【桥接】公开密钥对象 → *core.PKey（结构化接口断言，叶子包）
 │   │   └── keyaccess.go       # corePKeyer + PKey(v any)
@@ -374,7 +391,7 @@ tongsuo-go/
 │                              #   bilingual-doc-guide / api-reference ×2 / roadmap …）
 ├── scripts/                   # check-coverage.sh / extract_release_notes.py
 └── examples/                  # 示例（对应 C# Demo/），每个示例是独立 Go module
-    └── sm2/ self-signed-cert/ ntls-loopback/ ed25519/ x25519/ ecdh/
+    └── sm2/ self-signed-cert/ ntls-loopback/ handshake/ ed25519/ x25519/ ecdh/
 ```
 
 > **内部实现隐藏**：`internal/` 使绑定层、核心层与桥接层对库外部不可见；公开 API 由上述
@@ -523,7 +540,7 @@ go build ./...
 ## 8. 线程与并发模型
 
 - cgo 调用本身并发安全；**不同句柄**可在多个 goroutine 中并行使用
-- **单个句柄不保证并发安全**，需并发使用时由调用方串行化或加锁
+- **普通单句柄不保证并发安全**，由调用方串行化；`tls.Conn` 是例外，允许并发读写、状态读取与 Close，内部控制原生调用
 - 涉及 TLS 操作 / C 回调的场景使用 `runtime.LockOSThread()` 固定线程
 - 初始化阶段注册 OpenSSL 线程锁回调（思路参考官方 SDK 的 `init_posix.go`，
   本项目独立实现，不复制其代码）

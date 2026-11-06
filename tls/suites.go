@@ -28,7 +28,6 @@
 package tls
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -256,35 +255,56 @@ func versionForCipher(minTLS string, fallback uint16) uint16 {
 // single name fails does it return ErrNoSharedCipher. Final effective
 // suites are the union of successful names.
 func applyCipherSuites(ctx *core.TLSContext, names []string) error {
+	_, _, err := configureCiphers(ctx, names, false)
+	return err
+}
+
+func configureCiphers(ctx *core.TLSContext, names []string, strict bool) (string, string, error) {
 	var legacy, tls13 []string
-	for _, n := range names {
-		n = strings.TrimSpace(n)
-		if n == "" {
-			continue
-		}
-		if strings.HasPrefix(n, "TLS_") {
-			tls13 = append(tls13, n)
-		} else {
-			legacy = append(legacy, n)
+	for _, entry := range names {
+		for _, name := range strings.Split(entry, ":") {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				if strict {
+					return "", "", fmt.Errorf("tls: empty cipher suite")
+				}
+				continue
+			}
+			var err error
+			if strings.HasPrefix(name, "TLS_") {
+				err = ctx.SetCipherSuites(name)
+			} else {
+				err = ctx.SetCipherList(name)
+			}
+			if err != nil {
+				if strict {
+					return "", "", fmt.Errorf("tls: unsupported cipher %q: %w", name, err)
+				}
+				continue
+			}
+			if strings.HasPrefix(name, "TLS_") {
+				tls13 = append(tls13, name)
+			} else {
+				legacy = append(legacy, name)
+			}
 		}
 	}
-	anySucceeded := false
-	for _, n := range legacy {
-		if err := ctx.SetCipherList(n); err == nil {
-			anySucceeded = true
+	l, t := strings.Join(legacy, ":"), strings.Join(tls13, ":")
+	if len(names) > 0 && l == "" && t == "" {
+		return "", "", ErrNoSharedCipher
+	}
+	if strict && len(names) > 0 {
+		return l, t, ctx.RestrictCipherSuites(l, t)
+	}
+	if l != "" {
+		if err := ctx.SetCipherList(l); err != nil {
+			return "", "", err
 		}
 	}
-	for _, n := range tls13 {
-		if err := ctx.SetCipherSuites(n); err == nil {
-			anySucceeded = true
+	if t != "" {
+		if err := ctx.SetCipherSuites(t); err != nil {
+			return "", "", err
 		}
 	}
-	if !anySucceeded && len(legacy)+len(tls13) > 0 {
-		return &HandshakeError{
-			Op:   "Config.CipherSuites",
-			Kind: HandshakeErrorCipher,
-			Err:  errors.New("no cipher matched"),
-		}
-	}
-	return nil
+	return l, t, nil
 }

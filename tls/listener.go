@@ -75,17 +75,21 @@ func validateServerConfig(config *Config) error {
 	if config == nil {
 		return fmt.Errorf("tls: nil config")
 	}
-	if config.NTLS {
-		if config.SignCert == nil || config.SignKey == nil {
-			return fmt.Errorf("tls: NTLS server config requires SignCert and SignKey")
-		}
-		if config.EncCert == nil || config.EncKey == nil {
-			return fmt.Errorf("tls: NTLS server config requires EncCert and EncKey")
-		}
+	if err := validateConfig(config, false); err != nil {
+		return err
+	}
+	mode, err := protocolMode(config, false)
+	if err != nil {
+		return err
+	}
+	if config.GetConfigForClient != nil {
 		return nil
 	}
-	if config.Cert == nil || config.Key == nil {
+	if mode != ProtocolNTLS && config.GetCertificate == nil && (config.Cert == nil || config.Key == nil) {
 		return fmt.Errorf("tls: server config requires Cert and Key")
+	}
+	if mode != ProtocolTLS && config.GetNTLSCertificate == nil && (config.SignCert == nil || config.SignKey == nil || config.EncCert == nil || config.EncKey == nil) {
+		return fmt.Errorf("tls: NTLS server requires both certificate/key pairs")
 	}
 	return nil
 }

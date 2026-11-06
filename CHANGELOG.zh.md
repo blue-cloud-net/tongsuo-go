@@ -22,6 +22,31 @@
 
 ---
 
+## [0.9.0] - TBD
+
+### 新增功能
+
+- TLS / NTLS 显式协议与服务端混合端口；完整 TLS 证书链及独立 NTLS 签名/加密证书链，校验证书与私钥配对。
+- 服务端 SNI 配置/凭证选择、ALPN、客户端认证及 CA 列表；命名组、签名算法、DH 参数、限定范围的 options/modes 与严格套件选择。
+- `VerifyNone`、`VerifyReport`、`VerifyStrict` 显式策略；SNI 与 DNS/IP/邮箱验证名称独立配置，自定义对端/状态验证回调，成功或失败握手后均保留独立 `ConnectionState` 快照。
+- 已连接 TCP socket 的 `tls.Client`、`VerifyHostname`、`CheckEmail`、`UnderlyingConn`、原生握手失败详情及 SSL 错误常量、完整铜锁 8.4 X.509 验证码和 `x509.VerifyErrorMessage`，以及默认验证失败后继续的可运行客户端/服务端示例。
+
+### Bug 修复
+
+- TLS 并发读写可独立推进，读写 deadline 不再相互清空；套件列表保留所选套件的并集，SNI 完整配置在版本/套件选择之前应用。
+- 在原生操作所在 OS 线程采集 SSL 错误队列及系统调用 errno；保护连接/上下文释放，在构造失败及 finalizer 中关闭 socket 副本，待重试写入使用原生持有的数据副本。
+- 释放对端证书的中间副本，将 NTLS 双凭证中间链合并为线上共享池，保留加密链候选证书，支持混合协议服务端连接的实际协议判断。
+
+### BREAKING / 已知限制
+
+- `Config` 与 `HandshakeError` 增加字段，非键名结构体字面量须改为键名形式。保留零值旧验证行为：客户端根非空或 ServerName 非空且未 InsecureSkipVerify 时验证；显式策略拒绝同时设置 InsecureSkipVerify。
+- 首次连接 I/O 自动握手；读写 deadline 独立。原生写入开始后的错误/超时使后续写入保持失败，须关闭连接；在开始原生写入前已经过期的 deadline 仍可重置。
+- 构造后不可修改配置。选择回调可能并发执行，须及时返回且不得重入同一连接；基础配置限制组时，所选配置须显式提供 CurvePreferences（或 Clone 基础配置）。构造/选择期间源证书及密钥须保持有效。
+- Report 模式允许不可信连接，不吞掉自定义验证错误；默认信任路径属于铜锁，不必等同于平台信任库。NTLS ECDHE 仍要求客户端双凭证；原生已验证链快照仅报告 NTLS 最近一次验证链。
+- RFC 8998 严格配置、结构化事件流、trace/keylog、会话/票据控制与 HTTP/OCSP 集成仍归 0.10.0–0.12.0；不自动回退其他协议。
+
+---
+
 ## [0.8.0] - 2026-11-05
 
 ### 新增功能
@@ -878,6 +903,7 @@
 ---
 
 [Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.8.0...HEAD
+[0.9.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.5.0...v0.6.0
