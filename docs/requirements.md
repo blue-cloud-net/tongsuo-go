@@ -1,7 +1,7 @@
 # 功能需求复核与交付边界
 
 > 状态：0.8.0 已实现、待标签发布，0.9.0 已实现、待发布，0.10.0 起仍为规划 ｜ 实现基线：`0.9.0`
-> ｜ 最后复核：2026-11-05
+> ｜ 最后复核：2026-11-06
 >
 > 按 `0.6.0` 复核原始缺口，并以 `0.7.0` 验收更新交付状态；需求编号仅用于本文与路线图之间的交叉引用。
 
@@ -35,6 +35,18 @@
 | I-20 | 只能按证书吊销 | 缺按完整序列号入口，且现有 Revoke(cert) 也经 int64 中转 | `0.7.0` 已实现：RevokeSerialHex；现有 Revoke 同步修复截断 |
 | I-21 | 便捷签发无法再加扩展 | 立即签名、之后不可变是既有设计；NewCertificate + Set/Add + Sign 已可满足需求 | `0.7.0` 已实现：补推荐示例与入口说明，不放开签名后修改 |
 | I-22 | 外部 P12 改密 | 原生诊断中默认导出容器改密失败，显式 3DES/SHA-1 组合成功；“所有外部容器一律失败”不成立。WithOptions 重打包不是无损修复 | `0.7.0` 已实现：两个改密入口均保留复杂 safe/bag 内容，覆盖多私钥与嵌套，不依赖升级 8.5 解决 |
+| I-29 | OCSP 装订状态 | `ConnectionState` 只报版本/套件/ALPN/组/签名算法/证书，缺装订标志与响应体；原生 `SSL_get_tlsext_status_ocsp_resp` 可用 | `0.12.0`：新增 `ConnectionState.OCSPStapled` / `OCSPResponse`，DER 可直接交 `x509.ParseOCSPResponse(der, cert, issuer)`；与 stapling 配置同版交付 |
+| I-30 | TLS 扩展 SCT 列表 | 原生无 SCT 只读 getter（`s->ext.scts` 为内部字段），只能经 `SSL_CTX_set_ct_validation_callback` 采集 | `0.10.0`：`Config.CaptureSCT` 显式开启，`ConnectionState.SignedCertificateTimestamps` 逐项保留 SCT DER；默认关闭，回调恒允许，本库只记录不执行 CT 策略校验 |
+| I-31 | 会话复用标志 | 无 `SessionReused`，无法区分首次与恢复握手；原生 `SSL_session_reused` 可用 | `0.11.0`：`ConnectionState.SessionReused` 与 `Conn.SessionState()` 同版交付，启用缓存不等于实际复用 |
+| I-32 | 安全重协商 / 压缩 / heartbeat 状态 | 仅安全重协商有原生查询接口（`SSL_get_secure_renegotiation_support`） | `0.10.0` 只做 `ConnectionState.SecureRenegotiation`；压缩与 heartbeat 见路线图 §4 第 14 条不做 |
+| I-33 | 报文级裸握手 / 心跳发包 | 需绕过铜锁状态机自行拼装 TLS 记录层，与「复用原生状态机、不自研协议栈」冲突 | 不做，登记路线图 §4 第 13 条；属渗透与漏洞扫描工具职责 |
+
+### 1.1 编号说明
+
+本仓库 `I-01` 至 `I-33` 为独立序列，`I-23` / `I-24` 在本仓库**指 CRL 按序列号吊销
+与完整大整数序列号**（见 §3）。下游使用方台账里同号条目（TLS OCSP 装订、SCT 列表）
+含义不同，自本次复核起按其能力重新登记为 `I-29` 至 `I-33`，不复用 `I-23` / `I-24`。
+引用外部台账时须注明来源与版本，避免与本文编号混用。
 
 ## 2. 实现与验收边界
 
@@ -52,6 +64,10 @@
   产物逐字节相等；确定性转换与原始 DER 迁移使用逐字节断言。
 - **格式纠偏**：RSA 签名输出格式见 [RFC 8017 §8](https://www.rfc-editor.org/rfc/rfc8017.html#section-8)；
   默认信任路径见 [OpenSSL X509_STORE 文档](https://docs.openssl.org/3.0/man3/X509_STORE_add_cert/)。
+- **连接状态扩容**：`ConnectionState`（以及必要的 `Config`）只追加字段，不改变既有
+  字段语义；导出结构体扩容会影响无字段名复合字面量，须在双语 CHANGELOG 与迁移说明
+  中标注。SCT 采集默认关闭，开启后 CT 校验回调恒返回允许，因此本库不承担 CT 策略
+  校验责任；`OPENSSL_NO_CT` 构建下明确返回不支持，不静默返回空列表。
 
 ### 2.1 0.7.0 兼容取舍与容器边界（已发布）
 

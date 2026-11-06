@@ -21,9 +21,9 @@
 | `0.7.0` | **可靠性、数据完整性与 PKCS 容器** | 显式释放、解析限额、完整序列号、DER 扩展、信任路径、SM2 压缩输入、复杂 PKCS#12 无损改密、PKCS#7 签验与加解密 | **是**：ECDH Public 签名调整、序列号校验收紧与改密行为变化 |
 | `0.8.0` | **铜锁 8.5 兼容与经典算法扩展** | 8.4.0/8.5.0 矩阵、NTLS 用途适配、RSA-SM3、GCM-SIV、SIV 空消息、EdDSA 上下文/ph、SM2DH 派生与通用 KEX | 否 |
 | `0.9.0` | **TLS / NTLS 握手与认证** | 连接可靠性、参数配置、证书链、混合端口、SNI、ALPN、客户端认证、验证策略、连接状态与示例 | **是**：新增字段影响非键名字面量，首次 I/O 自动握手与独立 deadline |
-| `0.10.0` | **RFC 8998 与完整握手诊断** | 国密 TLS 1.3 严格配置、两个 SM4 套件、结构化事件、详细 trace、keylog | 否 |
-| `0.11.0` | **会话复用与票据** | 客户端/服务端缓存、会话导入导出、票据控制、密钥轮换、握手后票据处理与身份隔离 | 否 |
-| `0.12.0` | **HTTP/1.1 集成与 OCSP stapling** | 客户端/服务端集成、便捷服务入口、staple 配置与读取、状态验证示例 | 否 |
+| `0.10.0` | **RFC 8998 与完整握手诊断** | 国密 TLS 1.3 严格配置、两个 SM4 套件、结构化事件、详细 trace、keylog、连接状态补全（SCT、安全重协商） | 轻微：导出结构体扩容 |
+| `0.11.0` | **会话复用与票据** | 客户端/服务端缓存、会话导入导出、票据控制、密钥轮换、握手后票据处理、身份隔离与复用标志 | 轻微：导出结构体扩容 |
+| `0.12.0` | **HTTP/1.1 集成与 OCSP stapling** | 客户端/服务端集成、便捷服务入口、staple 配置、读取与状态快照、状态验证示例 | 轻微：导出结构体扩容 |
 | `0.13.0` | **PQC** | ML-DSA、SLH-DSA、原生 KEM，密钥生命周期与序列化、能力探测 | 否 |
 | `0.14.0` | **CMS 与时间戳** | CMS 扩展、独立顶级包 `ts` 的 RFC 3161 能力 | 否 |
 | `1.0.0` | **公开 API 收敛与稳定** | 统一 Options、应用级组合入口、CRL 配置式签发、迁移指南与兼容性承诺 | **是** |
@@ -41,6 +41,10 @@
 **兼容原则**：`0.7.0` 保持铜锁 **8.4.0** 发布基线。`0.8.0` 增加固定
 8.5.0 版本构建与运行验证，保留 8.4 构建兼容；新能力须通过编译保护与运行时探测报告
 支持情况，不以 master、替代密码实现或自动加载 legacy provider 兜底。
+
+`0.10.0` 至 `0.12.0` 的破坏性列为「轻微」：只向 `ConnectionState` / `Config` 追加导出
+字段，未改变既有字段与默认行为；影响范围限于无字段名的复合字面量，迁移方式随交付
+写入双语 CHANGELOG。
 
 ---
 
@@ -209,6 +213,7 @@ FD/句柄释放通过回归；同一 SSL 对象的原生调用受控，等待 so
 | RFC 8998 | TLS 1.3 单套签名凭证、严格配置入口、`TLS_SM4_GCM_SM3` / `TLS_SM4_CCM_SM3`，约束冲突明确失败 | RFC 8998 / 诊断 |
 | 结构化诊断 | 每连接有序交付握手开始/完成、状态、收发消息/Alert、证书验证事件及可保留的数据副本；失败握手仍可读取已发生的信息（§6.A 43 / 44） | RFC 8998 / 诊断 |
 | trace / keylog | 可选详细 trace 与 keylog，默认关闭；复用铜锁原生解码，未知内容保留类型与原始字节，不承诺 CLI 文本逐字符一致；显式启用不可用能力时返回不支持错误 | RFC 8998 / 诊断 |
+| 连接状态补全 | `ConnectionState.SecureRenegotiation` 报告 RFC 5746 支持；`ConnectionState.SignedCertificateTimestamps` 按握手顺序保留每项 SCT DER；SCT 采集由 `Config.CaptureSCT` 显式开启（默认关闭），回调恒返回允许，本库只记录不执行 CT 策略校验（I-30 / I-32） | TLS 连接状态查询 / CT 回调采集 |
 
 RFC 8998 是国密 **TLS 1.3 单证书**配置，与 NTLS/TLCP **签名+加密双证书**分别配置、
 分别验收。协议处理复用铜锁 TLS 状态机，不依赖 SDK 自行编排 SM2DH。
@@ -222,12 +227,14 @@ TLS 1.3、两个 SM4 套件、`curveSM2` 的 supported_groups/key_share、`sm2si
 版本、组、签名与证书配置明确失败。TLS / NTLS / RFC 8998 的消息、状态、Alert、
 验证事件、trace 与 keylog 分别验收。原生消息回调可能经过解密/重组，不作为原始
 网络抓包；诊断不无限积累日志，写入失败明确反馈，不把验证失败覆盖为通过。
+SCT 采集验证开启/关闭两态与逐项 DER 一致，`OPENSSL_NO_CT` 构建明确不支持；
+`SecureRenegotiation` 在 TLS 1.2 与 NTLS 下分别断言取值。
 
 ### 2.5 `0.11.0` — 会话复用与票据（规划）
 
 | 能力 | 交付内容与边界 | 前置（§3） |
 |------|----------------|-------------|
-| 会话缓存与状态 | 跨连接客户端缓存、服务端缓存、`Conn.SessionState()`、导入导出、过期及实际复用结果（§6.B A3） | TLS 会话与票据 |
+| 会话缓存与状态 | 跨连接客户端缓存、服务端缓存、`Conn.SessionState()`、`ConnectionState.SessionReused`、导入导出、过期及实际复用结果（§6.B A3）（I-31） | TLS 会话与票据 |
 | 票据 | 开关、数量控制、密钥管理与轮换、TLS 1.3 握手后票据处理（§6.B A4） | TLS 会话与票据 |
 | 身份隔离 | 按协议、服务身份、客户端身份和验证配置隔离缓存，复用后仍执行约定的验证回调 | TLS 会话与票据 |
 
@@ -240,7 +247,7 @@ TLS 1.3、两个 SM4 套件、`curveSM2` 的 supported_groups/key_share、`sm2si
 | 能力 | 交付内容与边界 | 前置（§3） |
 |------|----------------|-------------|
 | HTTP/1.1 | 客户端/服务端集成、`ListenAndServeTLS` / `ServeTLS`、握手/回显/HTTP 响应示例，复用已有 `NewListener`（§6.A 9 / 43 / 44） | TLS stapling / HTTP 集成 |
-| OCSP stapling | 配置、请求、读取 staple 与状态验证示例，分别表达“取得响应”和“验证响应有效” | TLS stapling / HTTP 集成 |
+| OCSP stapling | 配置、请求、读取 staple 与状态验证示例，分别表达“取得响应”和“验证响应有效”；`ConnectionState.OCSPStapled` / `OCSPResponse` 提供连接级快照，DER 可直接交 `x509.ParseOCSPResponse`（I-29） | TLS stapling / HTTP 集成 |
 
 **完成条件**：在已有 TLS / NTLS / RFC 8998 协议矩阵上验证 HTTP/1.1 与适用的
 stapling 路径；受控本地测试覆盖缺失、过期、吊销及错误签名/身份的响应。不支持的
@@ -293,6 +300,8 @@ stapling 路径；受控本地测试覆盖缺失、过期、吊销及错误签�
 | SM2DH | `EVP_PKEY_derive_init_ex` 的双方静态密钥指针、ID、角色、SM3 与长度参数（已实现） | `ecdh` | `0.8.0` |
 | TLS 配置与认证 | NTLS 混合模式、证书链、ALPN、SNI/验证回调、客户端 CA、组/签名算法/DH 参数、配置与状态绑定；完善 I/O、deadline 与原生错误采集 | `tls` | `0.9.0` |
 | 主机名校验 flags | `X509_check_host` 的 flags 扩展 / `X509_check_email` 等 | `tls.HostnameOptions` | `0.9.0` |
+| TLS 连接状态查询 | `SSL_get_secure_renegotiation_support`、`SSL_session_reused`、`SSL_get_tlsext_status_ocsp_resp`（`SSL_ctrl` 宏，需 shim）；返回值复制为独立切片，不持有原生指针 | `tls` | `0.10.0` / `0.11.0` / `0.12.0` |
+| CT 回调采集 | `SSL_CTX_set_ct_validation_callback` / `SSL_set_ct_validation_callback`、`STACK_OF(SCT)` → DER、按连接保存捕获缓冲（`SSL_set_ex_data`）；回调内同步拷贝，不让 C 长期持有 Go 指针 | `tls` | `0.10.0` |
 | RFC 8998 / 诊断 | `SSL_CTX_enable_sm_tls13_strict`、SM4 套件/curveSM2/sm2sig_sm3 配置与状态、消息/状态/验证回调、`SSL_trace`、keylog | `tls` | `0.10.0` |
 | TLS 会话与票据 | `SSL_SESSION_*`、会话新建/缓存回调、复用状态、票据数量与密钥轮换绑定 | `tls` | `0.11.0` |
 | TLS stapling / HTTP 集成 | `SSL_CTX_set_tlsext_status*` / `SSL_get_tlsext_status_ocsp_resp` 等；HTTP 入口复用已有 Listener 与标准库 | `tls` | `0.12.0` |
@@ -339,6 +348,8 @@ DER 值构造扩展，绕开 OpenSSL 的扩展配置语法）、`X509_CRL_add_ex
 | 10 | 库内自动加载 legacy provider | 不做 | 保持默认原生能力边界；单 DES 已在 `0.6.0` 以 `K‖K‖K` 驱动 DES-EDE3 等价实现，仅用于存量数据兼容 |
 | 11 | EC/SM2 自定义 XML 格式 | 不做 | `xml/rsa` 只处理 .NET RSAKeyValue；不另创 ECKeyValue 格式（I-13） |
 | 12 | STARTTLS、外部 PSK、0-RTT、主动重协商 | **暂缓，不承诺版本** | 不作为四版 TLS 系列或 1.0 稳定版的交付前提；RFC 8998 已单独归入 `0.10.0` |
+| 13 | 报文级裸握手 / 心跳发包（`RawHandshake` / `SendRecord`） | 不做 | 需绕过铜锁状态机自行拼装 TLS 记录层，等于在本库内自研协议栈；Heartbleed / ROBOT / CCS-Injection / POODLE / Ticketbleed 一类主动探测属渗透与漏洞扫描工具职责，不作为 SDK 能力（I-33） |
+| 14 | TLS 压缩与 heartbeat 状态查询 | 不做 | 本库构建未启用 ZLIB / BROTLI / ZSTD，压缩恒不可协商，字段恒为 false 无诊断价值；heartbeat 无公开原生状态接口；配置侧已由 `OptionNoCompression` 表达（I-32） |
 
 ---
 
