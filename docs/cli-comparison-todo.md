@@ -1,9 +1,10 @@
 # 铜锁 CLI 缺失子命令 → 待生成 API 清单（TODO）
 
-> **`0.9.0` 实施更新（开发分支，待集成/发布）**：TLS/NTLS 混合端口、完整凭证链、
-> SNI/ALPN、客户端认证、三种显式验证策略、参数与连接状态已实现；独立读写 deadline、
-> 并发 I/O 与原生错误采集已修复。可运行示例见 [examples/handshake](../examples/handshake/)。
-> RFC 8998/事件流/trace/keylog、会话/票据、HTTP/stapling 仍分别归 0.10/0.11/0.12。
+> **`0.10.0` 实施更新（已发布，2026-11-12）**：RFC 8998 严格 TLS 1.3、有序握手诊断、
+> 可选 trace/keylog 与 TLS 扩展 SCT 快照已交付；`0.9.0` 的 TLS/NTLS 混合端口、完整
+> 凭证链、SNI/ALPN、客户端认证、三种显式验证策略、参数与连接状态已发布。可运行示例
+> 见 [examples/handshake](../examples/handshake/)。
+> 会话/票据、HTTP/stapling 仍分别归 0.11/0.12。
 > 以下采集表保留历史基线；当前逐符号事实见 [公开 API 清单](api-reference.md#11-tls--tls--ntls-传输层)。
 
 > **用途**：把 `docs/cli-comparison.md` §6.A 中判定为 **❌ 缺失**、且**不在**该文 §9「明确不实现清单」内的子命令，逐条展开为**待实现的 API**。每条 API 前带复选框 `[ ]`，**勾选即表示打算做**。

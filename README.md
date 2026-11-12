@@ -78,7 +78,7 @@ The released `0.8.0` implements Tongsuo 8.4.0/8.5.0 compatibility, GCM-SIV, EdDS
 
 `0.9.0` was released on 2026-11-06; it covers TLS / NTLS handshakes and authentication, mixed ports, SNI, ALPN, verification policies, connection state and client/server examples.
 
-`0.10.0` is implemented on the feature branch and awaits release; later releases remain planned:
+`0.10.0` was released on 2026-11-12; later releases remain planned:
 
 - `0.10.0`: RFC 8998 ShangMi TLS 1.3, structured handshake diagnostics, optional detailed trace and keylog
 - `0.11.0`: Session resumption, caches, import/export, ticket controls and key rotation
