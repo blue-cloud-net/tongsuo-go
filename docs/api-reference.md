@@ -1156,7 +1156,7 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
     底层 `net.ErrClosed`
   - 🆕 `func (l *Listener) Addr() net.Addr` — 委托底层监听器（`Close` 后仍可用）
 
-**`0.9.0` 新增（已实现，待发布）**
+**`0.9.0` 新增（已发布，2026-11-06）**
 
 - 🆕 `type ProtocolMode uint8`：`ProtocolDefault` / `ProtocolTLS` / `ProtocolNTLS` / `ProtocolMixed`；客户端只可选择 TLS 或 NTLS，不自动回退；混合模式用于服务端同端口接入。
 - 🆕 `type VerificationPolicy uint8`：`VerifyDefault` / `VerifyNone` / `VerifyReport` / `VerifyStrict`；分别为旧行为、完全不执行信任验证、记录失败继续、失败终止。VerifyNone 仍执行协议必需的凭证/签名检查。
