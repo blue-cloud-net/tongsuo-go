@@ -22,6 +22,24 @@
 
 ---
 
+## [0.10.0] - TBD
+
+### 新增功能
+
+- `Config.RFC8998` 提供 RFC 8998 严格 TLS 1.3：SM4 GCM/CCM 套件、curveSM2、sm2sig_sm3、单套 SM2 凭证与 SNI 降级拒绝；信任验证仍独立配置。
+- `Config.Diagnostics` 提供有序且可保留的握手/消息/Alert/验证事件、显式开启的原生 trace 与 keylog。有界暂存，回调/输出错误与短写中断连接并保留错误链。
+- `Config.CaptureSCT`、仅 TLS 扩展来源的 SCT wire 快照与 `ConnectionState.SecureRenegotiation`；采集不执行 CT 策略校验。握手示例新增 RFC 8998 与诊断选项。
+
+### Bug 修复
+
+- 释放套件元数据字符串副本，并以公开 NID setter 设置 SNI 组列表，避免铜锁 8.4 字符串 setter 替换列表时泄漏。
+
+### BREAKING / 已知限制
+
+- `Config`、`ConnectionState` 新增字段影响非键名字面量，请使用带字段名写法。诊断回调及 Writer 须及时返回且不能重入同一连接；共享 Writer 由调用方同步，显式开启的 keylog 输出须妥善保护。
+
+---
+
 ## [0.9.0] - 2026-11-06
 
 ### 新增功能
@@ -902,7 +920,8 @@
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.6.0...v0.7.0

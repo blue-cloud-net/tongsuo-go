@@ -211,7 +211,7 @@ API 的 `config.go` 固定配置和选择规则，`state.go` 提供 DER 值快�
 - C ex_data 只持有 cgo.Handle 整数 ID；每连接所选 ctx 在 SSL_free 回调释放。读缓冲在重试期间 pin，写缓冲复制到 C 并在成功/SSL_free 清零释放；原生写入开始后失败即禁止再次写入。混合模式的 TLS 版本范围在 ClientHello 选择时与 NTLS 范围分离。
 - Stop 先拒绝新操作并 shutdown socket，Close 等 inflight 归零后释放 SSL/fd；Handle 释放函数在显式 Close、构造失败及 finalizer 路径均关闭 fd 副本。ctx.Close 与 SSL_new 通过读写锁隔离。
 - VerifyNone/VerifyReport/VerifyStrict 分别表达不验证/失败继续/失败终止；ClientAuth 独立请求客户端证书。自定义验证错误始终终止；状态分别表达握手完成与未验证/通过/失败，复制证书及失败信息，不暴露原生资源。
-- 配置构造后不可修改，选择回调可能并发执行且不得重入同一连接；基础组受限时，所选配置须显式指定组。示例默认 Report；RFC 8998 严格配置/事件流/trace 仍归 0.10.0。
+- 配置构造后不可修改，选择回调可能并发执行且不得重入同一连接；基础组受限时，所选配置须显式指定组。示例默认 Report；0.10.0 接入 RFC 8998 严格配置、事件流、trace/keylog 与 SCT 快照。
 
 #### tls 包公开 API（v0.2.0+）
 
@@ -334,7 +334,7 @@ tongsuo-go/
 │   ├── forms.go               # 形态入口：MarshalFormat / LoadCertificateSource / MarshalCSRTo
 │   └── helpers.go             # convertEntries / convertExtensions
 ├── tls/                       # 【传输】TLS / NTLS
-│   ├── tls.go  config.go  state.go  chain.go  suites.go  errors.go
+│   ├── tls.go  config.go  rfc8998.go  diagnostics.go  state.go  chain.go  suites.go  errors.go
 │   └── listener.go            # Listener / NewListener（Accept 内握手的 net.Listener）
 ├── asn1/                      # 【格式】DER viewer（纯 Go，cgo-free）
 ├── jwk/                       # 【格式】JWK ↔ PEM / JSON
@@ -360,7 +360,7 @@ tongsuo-go/
 │   │   ├── binding_rand.go    # RAND_bytes
 │   │   ├── binding_bio.go     # BIO 系列
 │   │   ├── binding_ssl.go     # SSL_CTX / SSL / TLS 会话
-│   │   ├── binding_ssl_handshake.go # 参数、ClientHello/ALPN/验证回调与快照
+│   │   ├── binding_ssl_handshake.go  binding_ssl_diagnostics.go # 参数、ClientHello/ALPN/验证回调与快照
 │   │   ├── ssl_handshake.c  ssl_handshake.h # SSL ex_data 整数句柄与 C 写缓冲
 │   │   ├── binding_x509.go    # X509 / X509_REQ / X509_CRL / X509_STORE / PEM / DER
 │   │   ├── binding_pkcs.go    # PKCS#7 / PKCS#12 系列
@@ -376,7 +376,7 @@ tongsuo-go/
 │   │   ├── digest.go  cipher.go  hmac.go  kdf.go
 │   │   ├── mac.go  meta.go
 │   │   ├── pkey.go  pkey_id.go  pkcs.go  ocsp.go
-│   │   ├── x509.go  ssl.go  ssl_config.go  ssl_io.go  rand.go  zero.go
+│   │   ├── x509.go  ssl.go  ssl_config.go  ssl_io.go  ssl_diagnostics.go  rand.go  zero.go
 │   │   └── waitfd_linux.go  waitfd_darwin.go
 │   ├── keyaccess/             # 【桥接】公开密钥对象 → *core.PKey（结构化接口断言，叶子包）
 │   │   └── keyaccess.go       # corePKeyer + PKey(v any)
@@ -580,3 +580,16 @@ go build ./...
 - [版本路线图（`0.7.0` 至 `1.0.0`）](roadmap.md)
 - [开发规范](development-guide.md) · [测试规范](testing-guide.md)
 - [公开 API 清单](api-reference.md) · [内部 API 清单](api-reference-internal.md)
+
+## 0.10.0 TLS 增量实现
+
+`tls/rfc8998.go` 负责配置归一和冲突检查；`tls/diagnostics.go` 只依赖 core，
+提供事件、Writer 和错误接口。`internal/core/ssl_diagnostics.go` 在单次原生调用及
+同线程错误采集之后释放 ioMu，再同步串行派发，fd 等待不持派发锁。
+关闭仍遵循 Stop → inflight → SSL_free，诊断失败先保存无句柄快照再停止连接。
+原生消息/info/keylog 回调仅按整数 cgo.Handle 采集有界副本；trace 使用有界 BIO，
+解码错误与 TLS 错误队列隔离。SNI 新 ctx 保留 keylog 分发器及显式严格模式，
+诊断消费者和 SCT 开关由基础连接配置固定，不随 SNI 改变。
+SCT 经 `SSL_get0_peer_scts`、`SCT_get_source` 与 `i2o_SCT` 复制，过滤非 TLS 扩展来源；
+CT 回调恒允许，getter 补全回调未触发时的已接收数据。无 SM2/CT/trace 的 shim 分支
+分别受编译宏保护；显式请求不可用能力返回 `tls.ErrUnsupported`。

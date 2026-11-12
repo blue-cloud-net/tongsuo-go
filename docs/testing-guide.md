@@ -625,23 +625,23 @@ build/vet 与 TLS/core race 检查通过。独立开发时在 `941ae5b` 基线�
 可运行示例；示例默认记录验证失败后继续，严格验证与完全不验证另行显式选择。
 STARTTLS、外部 PSK、0-RTT、主动重协商不作为本轮交付门槛。
 
-### `0.10.0` 实施验收矩阵（待实现）
+### `0.10.0` 实施验收矩阵
 
-下表是 [路线图 §2.4](roadmap.md#24-0100--rfc-8998-与完整握手诊断规划) 的新增用例要求，
-不表示用例已经存在或已通过。基础单元/回环不依赖外部服务，CLI 用例继续用
+下表是 [路线图 §2.4](roadmap.md#24-0100--rfc-8998-与完整握手诊断已实现待发布) 的新增用例要求，
+对应实现与实测结果见下文。基础单元/回环不依赖外部服务，CLI 用例继续用
 `tongsuocli` 标签及 `internal/testutil`，只在确实缺铜锁 CLI 时按统一工具说明跳过。
 
 | 用例组 | 必须断言 | 拟落点 |
 |--------|----------|--------|
 | RFC 8998 配置 | 零值归一；版本/NTLS/混合/双证书/套件/组/签名冲突在连接前失败；客户端无证书仅在单向认证允许；SNI 不能取消基础严格限制 | `tls/rfc8998_test.go` |
-| RFC 8998 互通 | 两套件 × SDK 客户端/服务端 × 单向/双向认证；双向数据、TLS 1.3、wire 套件 ID、curveSM2/key_share、sm2sig_sm3/CertificateVerify、证书用途与 SM2 ID；错误根/名称/密钥/签名明确失败 | `tls/rfc8998_test.go` / `rfc8998_tongsuocli_test.go` |
+| RFC 8998 互通 | 两套件 × SDK 客户端/服务端 × 单向/双向认证；双向数据、TLS 1.3、wire 套件 ID、curveSM2/key_share、sm2sig_sm3/CertificateVerify、证书用途与 SM2 ID；错误根/名称/密钥/签名明确失败 | `tls/rfc8998_test.go` / `handshake_tongsuocli_test.go` |
 | 事件语义 | 每连接序号严格递增、开始/结束各一次、方向与类型、Alert 原始码、验证深度/码与 DER；VerifyReport 的失败仍为失败，VerifyNone 不虚构成功；未知类型保留原文，重试不重复生命周期事件 | `tls/diagnostics_test.go` |
 | 生命周期 | 回调载荷可保留且不受后续调用/Close 改写；失败握手已派发信息可用；快照深拷贝，Dial 失败无 FD/句柄泄漏，SNI 切换与多连接事件不串线 | API 与 `internal/core` 回归 |
 | 派发与错误 | 顺序/字节限额边界、单项超限、累积超限、短写、回调/Writer 首错可 `errors.Is` 匹配；与协议失败并存时不丢失原始原因；并发读写、取消/Close、WANT 重试与握手后 I/O 无死锁/竞态 | API/core，追加 race |
 | trace / keylog | TLS 1.2/1.3、NTLS ECC/ECDHE、RFC 8998 分别验证；默认零输出；trace 检查稳定结构，不逐字符对拍；keylog 检查格式/标识与连接归属，不把密钥输出到测试日志 | `tls/diagnostics_test.go` / CLI 对拍 |
-| SCT | 关闭不采集；开启无 SCT/多 SCT、重复项和原生顺序、`i2o_SCT` 字节一致及解析往返；验证策略不因 CT 捕获而改变；分别记录各协议实际支持的来源 | `tls/state_test.go` / core/native |
-| 条件编译 | 无 CT/trace 构建能编译，显式启用返回不支持错误，关闭仍正常；构建证据单列，不能用跳过代替 | 两版原生能力探路与构建验证 |
-| 安全重协商 | TLS 1.2 与 NTLS 分别对比原生标志；TLS 1.3 不将该值解释为支持主动重协商 | `tls/state_test.go` |
+| SCT | 关闭不采集；开启无 SCT/多 SCT、重复项和原生顺序、`i2o_SCT` 字节一致及解析往返；验证策略不因 CT 捕获而改变；过滤非 `SCT_SOURCE_TLS_EXTENSION` 项，保留重复；覆盖 CT 回调未触发而 getter 仍可补全的路径，分别记录协议支持边界 | `tls/diagnostics_test.go` / core/native |
+| 条件编译 | 禁用 SM2/CT/trace 的构建均能编译，显式启用返回不支持错误，关闭仍正常；构建证据单列，不能用跳过代替 | 两版原生能力探路与构建验证 |
+| 安全重协商 | TLS 1.2 与 NTLS 分别对比原生标志；TLS 1.3 不将该值解释为支持主动重协商 | `tls/diagnostics_test.go` |
 
 全量矩阵、静态链接及 ASan/LSan 门禁见路线图 §2.4.4；实际执行后补录版本、
 构建选项、平台和结果。原生不触发的事件/协议组合应给出实测边界，不能填充假事件。
@@ -653,3 +653,55 @@ NTLS 握手后读取必须隔离 OS 线程上前次原生调用留下的错误�
 不得改成只检查错误非空。回环另覆盖服务端先等待、客户端延迟发送的时序；
 Linux amd64 的 race 阶段重复该回环 50 次。调查与 act 漏检原因见
 [铜锁 8.5.0 NTLS 调查](ntls-8.5-race-investigation.md)。
+
+## 0.10.0 实际实现与本地验收（2026-11-12）
+
+Linux amd64，分别使用 `/opt/tongsuo-8.4.0`、`/opt/tongsuo-8.5.0` 的头文件与库：
+
+| 检查 | 8.4.0 | 8.5.0 |
+|------|-------|-------|
+| `go vet ./...` / `go build ./...` | 通过 | 通过 |
+| `go test -count=1 ./...` | 通过 | 通过 |
+| `go test -count=1 -tags tongsuocli ./...` | 通过 | 通过 |
+| `go test -count=1 -race ./...` | 通过 | 通过 |
+| `go test -count=1 -tags static ./...` | 通过 | 通过 |
+| `ASAN_OPTIONS=detect_leaks=1 go test -asan -count=1 ./tls ./internal/core` | 通过 | 通过 |
+| 七个独立示例模块构建 | 通过 | 通过 |
+
+静态标签 TLS 测试产物以 `ldd` 检查，未链接动态 libssl/libcrypto。
+双语 `0.10.0` 发布说明抽取通过。macOS/arm64 未在本机运行，仍待实际 CI runner；
+上述结果不能替代完整平台矩阵。
+
+- `tls/rfc8998_test.go`：两个 SM4 wire ID、curveSM2、原生 SM3 摘要 NID与实际
+  CertificateVerify `sm2sig_sm3`（0x0708）；单向/双向认证、双向数据、配置冲突、
+  证书算法/用途/密钥配对、SNI 切换及结束回调失败快照。
+- `tls/handshake_tongsuocli_test.go`：两个套件 × 单向/双向认证 × CLI 客户端/服务端，
+  验证 ALPN、认证状态和请求/响应，原有 TLS/NTLS 矩阵保留。
+- `tls/diagnostics_test.go`：TLS 1.2/1.3、NTLS ECC/ECDHE 的事件、trace/keylog 与
+  并发读写；关闭等待读、取消真实握手；标准库 TLS 服务端提供 SCT，验证开启/关闭、
+  三种验证策略、顺序/重复/深拷贝及过滤证书来源 SCT。
+- `tls/rfc8998_test.go` 的诊断错误用例：事件/trace/keylog 错误、短写、字节/数量超限，
+  以及不可信证书的失败验证与结束事件；保留 `errors.Is` 错误链。
+- LSan 首轮暴露旧套件名称/版本副本未释放及 8.4 SNI 组字符串 setter 覆盖旧列表的问题；
+  本次补对应 OPENSSL_free，并经公开 NID setter 设置 SNI 组列表，最终全量 TLS/core
+  ASan/LSan 无泄漏报告。未通过压制规则或关闭 LSan 绕过。
+
+### 可复现的 P0 探测
+
+`scripts/probes/tls-v010.c` 使用内存 BIO 完成两个套件的原生回环，仅输出套件、版本、
+组及回调数量，不输出 keylog 密钥。两版均有消息/info/keylog 回调，SCT getter 可调用。
+
+```bash
+cc -I"$TONGSUO_HOME/include" scripts/probes/tls-v010.c \
+  -L"$TONGSUO_HOME/lib" -Wl,-rpath,"$TONGSUO_HOME/lib" -lssl -lcrypto -o /tmp/tls-v010
+/tmp/tls-v010 TLS_SM4_GCM_SM3
+/tmp/tls-v010 TLS_SM4_CCM_SM3
+cc -Wno-deprecated-declarations -DOPENSSL_NO_SM2 -DOPENSSL_NO_CT -DOPENSSL_NO_SSL_TRACE \
+  -I"$TONGSUO_HOME/include" -Iinternal/native scripts/probes/tls-capabilities.c \
+  internal/native/ssl_handshake.c -L"$TONGSUO_HOME/lib" \
+  -Wl,-rpath,"$TONGSUO_HOME/lib" -lssl -lcrypto -o /tmp/tls-capabilities
+/tmp/tls-capabilities
+```
+
+能力探测两版均通过正常及禁用宏分支，验证关闭功能仍可构造、开启不可用能力失败。
+这里检查的是 shim 编译保护及返回路径，未重编一套实际禁用 CT/trace/SM2 的铜锁本体。

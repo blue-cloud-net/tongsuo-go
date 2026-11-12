@@ -46,7 +46,7 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 - 🎲 **安全随机数**（`rand`）：基于铜锁 `RAND_bytes`
 - 🗄️ **密钥存储与轮转**（`keystore`）：密钥元数据、内存 / 自定义 Store、版本轮转与历史；`Load` / `LoadAllFromReader` 自动识别本地 PEM 多对象、DER 与 PKCS#12
 - 📜 **X.509 证书管理**（`x509`）：证书 / CSR / CRL / OCSP 解析与签发、一行自签证书（`CreateSelfSigned`）、分步签发 CRL（`CRLBuilder`）、CA 签发证书（SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448）、按 NID 或名字添加任意 X.509 v3 扩展（`AddExtension` / `AddExtensionByName` / `AddExtensions`）、按 CSR 签发（`IssueCertificateFromRequest`）、主机名 / IP / 邮箱校验（`VerifyHostname` / `CheckEmail`）、subject / issuer 名字 hash（`SubjectHash` / `IssuerHash`）与链验证（可用 `Store.SetTime` 指定验证时刻）；OCSP HTTP/nonce、trusted PEM 用途属性、证书/CRL 统一加载与验证错误码常量
-- 🌐 **TLS / NTLS 传输层**（`tls`）：显式 TLS / NTLS 与服务端混合端口、完整凭证链、SNI 选择、ALPN、双向认证、三种验证策略与独立状态快照；独立读写 deadline 与并发 I/O；[可运行握手示例](examples/handshake/)
+- 🌐 **TLS / NTLS 传输层**（`tls`）：显式 TLS / NTLS 与服务端混合端口、完整凭证链、SNI 选择、ALPN、双向认证、三种验证策略与独立状态快照；独立读写 deadline 与并发 I/O；RFC 8998 严格 TLS 1.3、有序诊断、可选 trace/keylog 与 TLS 扩展 SCT 快照；[可运行握手示例](examples/handshake/)
 - 📦 **容器与格式**：PKCS#7 证书/CRL、签验与信封（`pkcs/pkcs7`）、带 PBE/迭代选项及复杂容器无损改密的 PKCS#12（`pkcs/pkcs12`）、PKCS#8 PBE/PRF/PEM/DER 与 RSA PKCS#1 公钥（`asym`）、OKP/oct JWK（`jwk`）、PEM 切分（`meta`）、带可配置限额的 ASN.1 DER 查看（`asn1`）、.NET 风格 RSA XML（`xml/rsa`）
 - 🧪 **标准向量测试**：每个算法包覆盖国标标准向量、往返、边界与错误路径，并与 openssl CLI 双向交叉验证
 
@@ -68,12 +68,12 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 
 ### 实现基线与后续排期
 
-`0.8.0` 发布准备已完成，已实现铜锁 8.4.0/8.5.0 兼容、GCM-SIV、EdDSA 扩展与 SM2DH；尚未发布。AES-SIV 空消息仅在验证过的 8.5.0 路径支持；NTLS 签名/加密证书必须分别声明正确 KeyUsage。
+`0.8.0` 已于 2026-11-05 发布，实现铜锁 8.4.0/8.5.0 兼容、GCM-SIV、EdDSA 扩展与 SM2DH。AES-SIV 空消息仅在验证过的 8.5.0 路径支持；NTLS 签名/加密证书必须分别声明正确 KeyUsage。
 `0.7.0`：可靠性、数据完整性与 PKCS 容器，含句柄释放、解析限额、完整序列号、DER 扩展、信任路径、SM2 压缩输入、复杂 PKCS#12 容器无损改密，以及 PKCS#7 签名、验签、加密与解密。
 
-`0.9.0` 已与 0.8.0 一同合入 dev、待发布，覆盖 TLS / NTLS 握手与认证、混合端口、SNI、ALPN、验证策略、连接状态与客户端/服务端示例。
+`0.9.0` 已于 2026-11-06 发布，覆盖 TLS / NTLS 握手与认证、混合端口、SNI、ALPN、验证策略、连接状态与客户端/服务端示例。
 
-以下其余版本均为规划，不表示功能已可用：
+`0.10.0` 已在特性分支实现、待发布；其后版本仍为规划：
 
 - `0.10.0`：RFC 8998 国密 TLS 1.3、结构化握手诊断、可选详细 trace 与 keylog
 - `0.11.0`：会话复用、缓存、导入导出、票据控制与密钥轮换
@@ -84,6 +84,12 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 传输系列交付 SDK API 与可运行示例，供下游构建类似 `s_client` / `s_server` 的握手测试。
 RFC 8998 在 TLS 1.3 上使用单套签名凭证；NTLS 使用签名与加密双证书。
 保留 SDK 旧入口行为，已新增不验证、记录验证失败后继续、验证失败终止三种显式策略；握手示例默认记录失败后继续，并单独展示验证结果。
+
+
+RFC 8998 客户端使用 `&tls.Config{RFC8998: true, Verification: tls.VerifyStrict, RootCAs: roots}`；
+服务端提供一套 SM2 `Cert` / `Key`。通过 `Diagnostics` 显式启用有序事件、trace 或 keylog，
+输出错误中断连接。`CaptureSCT` 记录 TLS 扩展 SCT 的 wire 字节，不执行 CT 策略校验。
+诊断消费者须及时返回且不能重入同一连接；共享 Writer 由调用方同步，keylog 密钥输出须妥善保护。
 
 STARTTLS、外部 PSK、0-RTT、主动重协商继续暂缓，不承诺版本。
 
