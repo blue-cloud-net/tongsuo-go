@@ -198,7 +198,7 @@ API 层内部存在必须先拿到 `*core.PKey` 才能工作的场景（如 `ecd
 方法虽在 godoc，但外部模块无法 import `internal/core`，拿到也用不了；且 owned 副本语义与
 `tls.peerCertificateChain` 声明的契约「每个返回的证书由调用方各自 `Close`」一致）。
 
-#### `0.9.0` TLS / NTLS 连接模型（已实现，待发布）
+#### `0.9.0` TLS / NTLS 连接模型（已发布，2026-11-06）
 
 API 的 `config.go` 固定配置和选择规则，`state.go` 提供 DER 值快照；core 的
 `ssl_config.go` 编排参数与每连接回调，`ssl_io.go` 管理独立读写与原生错误。

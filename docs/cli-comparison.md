@@ -1,12 +1,13 @@
 # 铜锁 CLI 与本库能力对比
 
-> **`0.9.0` 实施更新（已合入 dev，待发布）**：TLS/NTLS 混合端口、完整凭证链、
-> SNI/ALPN、客户端认证、三种显式验证策略、参数与连接状态已实现；独立读写 deadline、
-> 并发 I/O 与原生错误采集已修复。可运行示例见 [examples/handshake](../examples/handshake/)。
-> RFC 8998/事件流/trace/keylog、会话/票据、HTTP/stapling 仍分别归 0.10/0.11/0.12。
+> **`0.10.0` 实施更新（已发布，2026-11-12）**：RFC 8998 严格 TLS 1.3、有序握手诊断、
+> 可选 trace/keylog 与 TLS 扩展 SCT 快照已交付；`0.9.0` 的 TLS/NTLS 混合端口、完整
+> 凭证链、SNI/ALPN、客户端认证、三种显式验证策略、参数与连接状态已发布。可运行示例
+> 见 [examples/handshake](../examples/handshake/)。
+> 会话/票据、HTTP/stapling 仍分别归 0.11/0.12。
 > 以下采集表保留历史基线；当前逐符号事实见 [公开 API 清单](api-reference.md#11-tls--tls--ntls-传输层)。
 
-> **当前交付更新（`0.8.0`）**：下文采集时的基线表保留原口径；AES 扩展/ZUC、EC 参数、
+> **交付更新（截至 `0.10.0`）**：下文采集时的基线表保留原口径；AES 扩展/ZUC、EC 参数、
 > PKCS#8/12 配置、PKCS#7 CRL、JWK OKP/oct、本地多对象加载、OCSP HTTP/nonce 与
 > 证书信任属性已在 8.4.0 基线上实现，当前逐符号事实见 [api-reference.md](api-reference.md)。
 > `0.8.0` 已实现铜锁 8.4.0/8.5.0 验证、GCM-SIV、EdDSA 上下文/ph、RSA-SM3 与 SM2DH 派生；下文历史缺口以当前 API 清单为准，密钥确认仍延期。
@@ -64,7 +65,7 @@
 |---|---|
 | **对比基线（CLI）** | `/opt/tongsuo/bin/tongsuo`<br>`Tongsuo: Tongsuo 8.5.0-pre2 (Library: Tongsuo 8.5.0-pre2)`<br>`OpenSSL 3.5.4 3 Aug 2026 (Library: OpenSSL 3.5.4 3 Aug 2026)`<br>`platform: linux-x86_64`，`OPENSSLDIR: "/opt/tongsuo/ssl"` |
 | **铜锁源码基线** | `/workspace/opensources/nginx/tongsuo`（`configdata.pm`：`linux-x86_64`，`--prefix=/opt/tongsuo`） |
-| **本库基线** | `github.com/blue-cloud-net/tongsuo-go`，CHANGELOG `0.8.0`（2026-11-05 定版，待标签发布） |
+| **本库基线** | `github.com/blue-cloud-net/tongsuo-go`，CHANGELOG `0.10.0`（2026-11-12 定版，待标签发布） |
 | **CLI 侧检索方式** | 实机采集：`tongsuo version -a`、`tongsuo help`、`tongsuo list -commands -1`、`tongsuo list -<family> -1`（14 个族）、`tongsuo list -options <cmd>`（逐命令）、`tongsuo ciphers -v`；并与 `apps/progs.h`、`apps/progs.pl`、`configdata.pm` 交叉校验 |
 | **本库侧检索方式** | 全仓库检索导出符号 + `internal/native/binding_*.go`（已绑定的 C 函数）+ 逐符号复核（文件:行） |
 | **环境声明** | 本机**已安装铜锁 8.5.0-pre2**，故「CLI 能力」列全部为实机输出；本库侧为**静态检索**，未运行 `go build` / `go vet` / `go test`。 |
