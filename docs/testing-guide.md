@@ -604,7 +604,7 @@ build/vet 与 TLS/core race 检查通过。独立开发时在 `941ae5b` 基线�
   错误版本/组/签名/证书明确失败，不能仅凭套件名判定符合 RFC 8998。
   TLS/NTLS/RFC 8998 分别验证结构化状态、消息、Alert、验证事件、trace 和 keylog，
   覆盖失败握手、回调数据生命周期、输出失败及缺少原生能力；不依赖整段日志文本断言。
-  SCT 采集验证开启/关闭两态、逐项 DER 与构造值一致，`OPENSSL_NO_CT` 构建明确不支持；
+  SCT 采集验证开启/关闭两态、逐项 TLS wire 编码与构造值一致，`OPENSSL_NO_CT` 构建明确不支持；
   `SecureRenegotiation` 在 TLS 1.2 与 NTLS 下分别断言取值。
 - `0.11.0`：在累积协议矩阵上验证实际会话复用、缓存/导入导出、过期、拒绝复用、
   票据开关与密钥轮换、协议/服务身份/客户端身份/验证策略隔离；TLS 1.3 先处理握手后
@@ -624,6 +624,27 @@ build/vet 与 TLS/core race 检查通过。独立开发时在 `941ae5b` 基线�
 分别执行 build、vet、默认/CLI/race 测试、Linux static 与示例构建。SDK 交付 API 与
 可运行示例；示例默认记录验证失败后继续，严格验证与完全不验证另行显式选择。
 STARTTLS、外部 PSK、0-RTT、主动重协商不作为本轮交付门槛。
+
+### `0.10.0` 实施验收矩阵（待实现）
+
+下表是 [路线图 §2.4](roadmap.md#24-0100--rfc-8998-与完整握手诊断规划) 的新增用例要求，
+不表示用例已经存在或已通过。基础单元/回环不依赖外部服务，CLI 用例继续用
+`tongsuocli` 标签及 `internal/testutil`，只在确实缺铜锁 CLI 时按统一工具说明跳过。
+
+| 用例组 | 必须断言 | 拟落点 |
+|--------|----------|--------|
+| RFC 8998 配置 | 零值归一；版本/NTLS/混合/双证书/套件/组/签名冲突在连接前失败；客户端无证书仅在单向认证允许；SNI 不能取消基础严格限制 | `tls/rfc8998_test.go` |
+| RFC 8998 互通 | 两套件 × SDK 客户端/服务端 × 单向/双向认证；双向数据、TLS 1.3、wire 套件 ID、curveSM2/key_share、sm2sig_sm3/CertificateVerify、证书用途与 SM2 ID；错误根/名称/密钥/签名明确失败 | `tls/rfc8998_test.go` / `rfc8998_tongsuocli_test.go` |
+| 事件语义 | 每连接序号严格递增、开始/结束各一次、方向与类型、Alert 原始码、验证深度/码与 DER；VerifyReport 的失败仍为失败，VerifyNone 不虚构成功；未知类型保留原文，重试不重复生命周期事件 | `tls/diagnostics_test.go` |
+| 生命周期 | 回调载荷可保留且不受后续调用/Close 改写；失败握手已派发信息可用；快照深拷贝，Dial 失败无 FD/句柄泄漏，SNI 切换与多连接事件不串线 | API 与 `internal/core` 回归 |
+| 派发与错误 | 顺序/字节限额边界、单项超限、累积超限、短写、回调/Writer 首错可 `errors.Is` 匹配；与协议失败并存时不丢失原始原因；并发读写、取消/Close、WANT 重试与握手后 I/O 无死锁/竞态 | API/core，追加 race |
+| trace / keylog | TLS 1.2/1.3、NTLS ECC/ECDHE、RFC 8998 分别验证；默认零输出；trace 检查稳定结构，不逐字符对拍；keylog 检查格式/标识与连接归属，不把密钥输出到测试日志 | `tls/diagnostics_test.go` / CLI 对拍 |
+| SCT | 关闭不采集；开启无 SCT/多 SCT、重复项和原生顺序、`i2o_SCT` 字节一致及解析往返；验证策略不因 CT 捕获而改变；分别记录各协议实际支持的来源 | `tls/state_test.go` / core/native |
+| 条件编译 | 无 CT/trace 构建能编译，显式启用返回不支持错误，关闭仍正常；构建证据单列，不能用跳过代替 | 两版原生能力探路与构建验证 |
+| 安全重协商 | TLS 1.2 与 NTLS 分别对比原生标志；TLS 1.3 不将该值解释为支持主动重协商 | `tls/state_test.go` |
+
+全量矩阵、静态链接及 ASan/LSan 门禁见路线图 §2.4.4；实际执行后补录版本、
+构建选项、平台和结果。原生不触发的事件/协议组合应给出实测边界，不能填充假事件。
 
 ## NTLS 线程错误队列回归
 

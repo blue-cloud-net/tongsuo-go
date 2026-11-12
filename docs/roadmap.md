@@ -213,7 +213,7 @@ FD/句柄释放通过回归；同一 SSL 对象的原生调用受控，等待 so
 | RFC 8998 | TLS 1.3 单套签名凭证、严格配置入口、`TLS_SM4_GCM_SM3` / `TLS_SM4_CCM_SM3`，约束冲突明确失败 | RFC 8998 / 诊断 |
 | 结构化诊断 | 每连接有序交付握手开始/完成、状态、收发消息/Alert、证书验证事件及可保留的数据副本；失败握手仍可读取已发生的信息（§6.A 43 / 44） | RFC 8998 / 诊断 |
 | trace / keylog | 可选详细 trace 与 keylog，默认关闭；复用铜锁原生解码，未知内容保留类型与原始字节，不承诺 CLI 文本逐字符一致；显式启用不可用能力时返回不支持错误 | RFC 8998 / 诊断 |
-| 连接状态补全 | `ConnectionState.SecureRenegotiation` 报告 RFC 5746 支持；`ConnectionState.SignedCertificateTimestamps` 按握手顺序保留每项 SCT DER；SCT 采集由 `Config.CaptureSCT` 显式开启（默认关闭），回调恒返回允许，本库只记录不执行 CT 策略校验（I-30 / I-32） | TLS 连接状态查询 / CT 回调采集 |
+| 连接状态补全 | `ConnectionState.SecureRenegotiation` 报告 RFC 5746 支持；`ConnectionState.SignedCertificateTimestamps` 按原生 SCT 列表顺序保留每项 SCT 的 TLS wire 编码；SCT 采集由 `Config.CaptureSCT` 显式开启（默认关闭），回调恒返回允许，本库只记录不执行 CT 策略校验（I-30 / I-32） | TLS 连接状态查询 / CT 回调采集 |
 
 RFC 8998 是国密 **TLS 1.3 单证书**配置，与 NTLS/TLCP **签名+加密双证书**分别配置、
 分别验收。协议处理复用铜锁 TLS 状态机，不依赖 SDK 自行编排 SM2DH。
@@ -227,8 +227,95 @@ TLS 1.3、两个 SM4 套件、`curveSM2` 的 supported_groups/key_share、`sm2si
 版本、组、签名与证书配置明确失败。TLS / NTLS / RFC 8998 的消息、状态、Alert、
 验证事件、trace 与 keylog 分别验收。原生消息回调可能经过解密/重组，不作为原始
 网络抓包；诊断不无限积累日志，写入失败明确反馈，不把验证失败覆盖为通过。
-SCT 采集验证开启/关闭两态与逐项 DER 一致，`OPENSSL_NO_CT` 构建明确不支持；
+SCT 采集验证开启/关闭两态与逐项 TLS wire 编码一致，`OPENSSL_NO_CT` 构建明确不支持；
 `SecureRenegotiation` 在 TLS 1.2 与 NTLS 下分别断言取值。
+
+#### 2.4.1 实施基线与范围冻结
+
+`feat/v0.10.0` 从 `dev` 的 `b256d76` 建立；继承已发布 `0.9.0`，
+本节仍为待实施计划，不代表公开接口已存在或原生矩阵已通过。固定铜锁
+8.4.0 / 8.5.0；本机头文件声明只作为探路依据，不能替代两版实际握手验收。
+
+- 复用 `tls/config.go` 的配置验证、`tls/state.go` 的独立快照、
+  `internal/core/ssl_config.go` 的 SNI/验证桥接与 `ssl_io.go` 的原生调用入口。
+  原生扩展放 `internal/native`，API 只能调用 `internal/core`；不新增顶级包。
+- `StrictConfig` 继续表示通用参数/套件严格检查；RFC 8998 增加独立开关，
+  不改变现有 TLS / NTLS 零值行为。新增字段影响非键名字面量，实施时记录迁移说明。
+- 本版不实现会话缓存/票据、OCSP stapling、HTTP 集成、STARTTLS、0-RTT、
+  外部 PSK 或主动重协商；后续版本归属保持 §2.5–2.9。
+- SCT 编码修正：单项采用 `i2o_SCT` 的 TLS wire 格式，与 Go TLS 的字段语义对齐；
+  `i2d_SCT_LIST` 编码的是整个列表，不能称作“每项 SCT DER”。按原生列表顺序保留，
+  不承诺跨证书扩展、TLS 扩展及其他来源的网络到达顺序；来源与适用协议须在探路批核实。
+
+#### 2.4.2 目标 API 与行为约定（🧭 待实现）
+
+以下名称作为实施草案，首次实现时同步 API 清单及双语 GoDoc，再标记已实现。
+
+| 入口 | 目标形态与约定 |
+|------|----------------|
+| `Config.RFC8998 bool` | 显式启用国密 TLS 1.3 严格配置；仅标准 TLS 单证书路径，拒绝 NTLS/混合模式及双证书字段冲突；与通用 `StrictConfig` 正交 |
+| `Config.Diagnostics *DiagnosticsConfig` | nil 默认关闭；包含 `OnEvent func(HandshakeEvent) error`、`TraceWriter io.Writer`、`KeyLogWriter io.Writer` 及缓冲数量/字节限额；事件、trace、keylog 分别按需启用 |
+| `HandshakeEvent` | 每连接单调序号、事件种类、方向、原生版本/内容类型/状态、Alert level/description、验证码/深度和数据副本；未知类型保留数值与原始字节 |
+| `Config.CaptureSCT bool` | 默认关闭；开启后通过 CT 回调复制 `[][]byte`，回调恒允许，不改变链/名称验证与自定义验证回调的决定 |
+| `ConnectionState` 增量 | `SecureRenegotiation bool` 与 `SignedCertificateTimestamps [][]byte`；无原生资源，重复读取深拷贝，关闭连接后已取得的快照仍有效 |
+| `ErrUnsupported` / `ErrDiagnosticLimit` | 缺编译能力与超过诊断限额的可匹配哨兵；输出/回调错误保留 `errors.Is` 链及操作域，不用 panic 传递 |
+
+**RFC 8998 配置决策**：开关开启时，版本零值归一为 TLS 1.3 上下界；非零值须均为
+TLS 1.3。套件未配置时仅启用两个 SM4 套件，显式列表只接受该集合的非空子集；
+组/签名零值分别归一为 `curveSM2` / `sm2sig_sm3`，非空值不得混入其他算法。
+客户端允许无本端证书；服务端和双向认证客户端必须提供一套匹配的 SM2 签名证书/密钥。
+证书扩展用途、签名算法及链验证按 RFC 验收，验证策略仍独立生效，不能把严格协议配置
+当作信任验证开关。SNI 所选配置须再次归一/校验，不得关闭基础配置要求的 RFC 8998
+限制；在设置套件、组及签名列表后复核最终生效值，避免原生严格模式覆盖显式选择。
+
+**诊断交付决策**：握手开始仅发一次，结束事件带成功/失败结果；消息/Alert/状态/
+原生验证事件按原生观察顺序编号，自定义验证结果另发事件，不能把 Report 下的原生
+失败写成通过。重试 WANT_READ/WANT_WRITE 不重复开始/结束事件。消息回调不交付
+应用明文，不把其解密/重组后的数据描述为抓包；原生回调未产生的内容不自行伪造。
+
+原生回调内只复制数据并记录输出意图，不调用用户事件函数或 Writer；复用现有
+`cgo.Handle` 整数 ID 与 ex_data，C 不长期保存 Go 指针。在每次原生调用返回并完成
+同线程错误采集后、释放 `ioMu` 再同步派发；另行串行化“调用与派发”以保持每连接顺序，
+不得在等待 fd 时持锁，也不得让 Close 等待持有它所需锁的回调。派发函数不可重入同一
+连接；可保留数据，跨连接共享 Writer 由调用方同步。诊断开启时慢消费者会拖慢该连接，
+调用方负责使回调/Writer 可返回；库不启动无限后台队列。
+
+限额按事件数量与累计暂存字节计量，默认拟为每次派发最多 256 项 / 1 MiB，允许显式
+正数覆盖；溢出、短写或用户错误均保存首个诊断错误，并使当前操作失败、停止连接，
+已收集事件与协议/验证失败仍可辨识，不静默丢日志。成功/失败握手和握手后 Read/Write
+触发的原生回调均走该路径。`DialContext` 失败会释放连接，调用方通过已交付事件保留
+诊断；`Client` / `Server.Accept` 构造后显式握手失败时还可读取连接快照。
+keylog 仅向显式 Writer 交付，不混入事件数据、错误串或普通日志，示例不默认开启。
+
+#### 2.4.3 分批实施与依赖
+
+| 批次 | 修改位置与工作 | 验收后才能进入下一批 |
+|------|----------------|----------------------|
+| P0 原生探路 | 核对两版头文件/符号/编译宏、严格模式与配置顺序、SNI 切换、消息/info/CT/keylog 回调；用最小回环证实 trace 与 SCT 来源/编码、Report/None/Strict 下 CT 回调可达性 | 记录两版功能矩阵及实际命令；无 CT/trace 时编译保护与不支持错误可设计；若原生限制阻塞需求，先记录证据并修订本节，不以假数据填充 |
+| P1 RFC 8998 | `internal/native` 增加严格模式与所需参数/状态 shim；`internal/core/ssl_config.go` 编排；`tls/config.go` 验证归一与 SNI 约束，补单证书夹具 | 两个套件独立回环与 CLI 双向互通，单向/双向认证、全部冲突失败；断言组/签名及证书约束，不能只检查套件名 |
+| P2 结构化诊断 | 原生消息/info/验证采集，core 有界暂存及错误/生命周期管理，API 事件与失败快照接线；新增文件按职责拆分为 `ssl_diagnostics` / `diagnostics` | 先证明串行派发无锁重入/关闭死锁，再覆盖三种协议的顺序、失败与 WANT 重试；默认关闭不保留诊断载荷 |
+| P3 trace / keylog | 复用消息分发，将 `SSL_trace` 写入受限内存 BIO 再复制；原生 keylog 单独路由到显式 Writer，挂接 SNI 后的新上下文 | TLS / NTLS / RFC 8998 各自实测输出；禁用、不支持、短写、错误、超限和共享配置多连接隔离通过 |
+| P4 连接状态 | 安全重协商宏 shim；受 `OPENSSL_NO_CT` 保护的 CT 回调与逐项 `i2o_SCT` 复制；扩展 core/API 快照深拷贝 | 开关两态、空/多项 SCT、来源/顺序/编码、失败快照与释放回归；无 CT 显式开启报错，关闭仍能构建/握手 |
+| P5 交付回归 | 扩展 `examples/handshake` 的 RFC 8998 和诊断选项，同步全部受影响双语说明、API/架构/测试及 CHANGELOG | 完成 §2.4.4 门禁；所有未通过项有证据与归属，不把规划符号提前标为已实现 |
+
+依赖链为 P0 → P1 → P2 → P3；P4 依赖 P0/P2，P5 汇总全部批次。
+每批只纳入对应实现、测试及必须同步的文档，不下载铜锁本体到仓库，不引入第三方 Go 依赖。
+
+#### 2.4.4 交付门禁与待验证项
+
+测试用例清单见 [测试规范的 0.10.0 实施验收矩阵](testing-guide.md#0100-实施验收矩阵待实现)。
+必须在铜锁 8.4.0 / 8.5.0 分别运行 build/vet、默认全量测试、`tongsuocli` 与 race；
+Linux 增加真实静态链接检查，平台覆盖沿用 CI 的 Linux/macOS × amd64/arm64 矩阵。
+原生采集缓冲的成功/失败/关闭路径执行 ASan/LSan；能力缺失不能用跳过掩盖。
+
+P0 优先解除四项不确定性：严格模式是否重设显式套件/组/签名列表；SNI 换 ctx 后
+回调与严格约束是否保留；CT 在不同验证策略和协议下的实际触发条件；禁用 trace/CT
+的准确编译宏与错误返回。确认后将证据写入本节或测试规范，当前均不声明已通过。
+
+依据：[RFC 8998 §3](https://www.rfc-editor.org/rfc/rfc8998.html#section-3)、
+[原生消息回调语义](https://docs.openssl.org/3.0/man3/SSL_CTX_set_msg_callback/)、
+[CT 回调语义](https://docs.openssl.org/3.0/man3/SSL_CTX_set_ct_validation_callback/)；
+具体可用性以铜锁两版头文件、构建选项与实际操作为准。
 
 ### 2.5 `0.11.0` — 会话复用与票据（规划）
 
@@ -301,7 +388,7 @@ stapling 路径；受控本地测试覆盖缺失、过期、吊销及错误签�
 | TLS 配置与认证 | NTLS 混合模式、证书链、ALPN、SNI/验证回调、客户端 CA、组/签名算法/DH 参数、配置与状态绑定；完善 I/O、deadline 与原生错误采集 | `tls` | `0.9.0` |
 | 主机名校验 flags | `X509_check_host` 的 flags 扩展 / `X509_check_email` 等 | `tls.HostnameOptions` | `0.9.0` |
 | TLS 连接状态查询 | `SSL_get_secure_renegotiation_support`、`SSL_session_reused`、`SSL_get_tlsext_status_ocsp_resp`（`SSL_ctrl` 宏，需 shim）；返回值复制为独立切片，不持有原生指针 | `tls` | `0.10.0` / `0.11.0` / `0.12.0` |
-| CT 回调采集 | `SSL_CTX_set_ct_validation_callback` / `SSL_set_ct_validation_callback`、`STACK_OF(SCT)` → DER、按连接保存捕获缓冲（`SSL_set_ex_data`）；回调内同步拷贝，不让 C 长期持有 Go 指针 | `tls` | `0.10.0` |
+| CT 回调采集 | `SSL_CTX_set_ct_validation_callback` / `SSL_set_ct_validation_callback`、`STACK_OF(SCT)` → `i2o_SCT` 逐项 TLS wire 编码、按连接保存捕获缓冲（`SSL_set_ex_data`）；回调内同步拷贝，不让 C 长期持有 Go 指针 | `tls` | `0.10.0` |
 | RFC 8998 / 诊断 | `SSL_CTX_enable_sm_tls13_strict`、SM4 套件/curveSM2/sm2sig_sm3 配置与状态、消息/状态/验证回调、`SSL_trace`、keylog | `tls` | `0.10.0` |
 | TLS 会话与票据 | `SSL_SESSION_*`、会话新建/缓存回调、复用状态、票据数量与密钥轮换绑定 | `tls` | `0.11.0` |
 | TLS stapling / HTTP 集成 | `SSL_CTX_set_tlsext_status*` / `SSL_get_tlsext_status_ocsp_resp` 等；HTTP 入口复用已有 Listener 与标准库 | `tls` | `0.12.0` |

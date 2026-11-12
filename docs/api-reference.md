@@ -1244,6 +1244,24 @@ VerifyReport 握手成功仍可能 VerificationFailed，不可据此认定可信
 [路线图 §2.4](roadmap.md#24-0100--rfc-8998-与完整握手诊断规划)。
 STARTTLS、外部 PSK、0-RTT、主动重协商继续暂缓，不归入以上四版。
 
+**`0.10.0` 目标 API 草案（🧭，均未实现）**
+
+| 目标形态 | 语义与实施位置 |
+|----------|----------------|
+| `Config.RFC8998 bool` | 独立于 `StrictConfig`；限定 TLS 1.3 单证书、SM4 套件、curveSM2 与 sm2sig_sm3；拒绝冲突及 SNI 降级 |
+| `Config.Diagnostics *DiagnosticsConfig` | nil 关闭；配置事件函数、trace/keylog Writer 与有界暂存限额 |
+| `DiagnosticsConfig.OnEvent func(HandshakeEvent) error` | 每连接同步有序派发，离开原生调用锁后执行；载荷为副本，不可重入同一连接 |
+| `DiagnosticsConfig.TraceWriter` / `KeyLogWriter io.Writer` | 分别显式开启；短写和错误传播；keylog 不进入通用事件或普通日志 |
+| `DiagnosticsConfig.MaxEvents` / `MaxBytes int` | 每次派发暂存上限，零值拟为 256 项 / 1 MiB；负值拒绝，超限使当前操作失败 |
+| `HandshakeEvent` | 序号、种类、方向、原生状态/类型、Alert、验证信息及独立数据；具体字段在实现时补齐双语 GoDoc |
+| `Config.CaptureSCT bool` / `ConnectionState.SignedCertificateTimestamps [][]byte` | 默认关闭；逐项 TLS wire 编码（`i2o_SCT`），按原生列表顺序保留；只采集，不执行 CT 策略校验 |
+| `ConnectionState.SecureRenegotiation bool` | 原生 RFC 5746 支持标志，不提供主动重协商入口 |
+| `ErrUnsupported` / `ErrDiagnosticLimit` | 可匹配错误；区分能力缺失、诊断超限与原生握手/验证失败 |
+
+详细配置归一、输出错误、锁/生命周期及分批依赖以
+[路线图 §2.4.1–2.4.4](roadmap.md#241-实施基线与范围冻结) 为准。
+以上保留 🧭 状态，实施完成后再进入实际公开签名清单。
+
 **破坏性变更**
 
 - `Config` 的 `Key` / `SignKey` / `EncKey` 字段类型由 `*sm2.PrivateKey` 改为 `asym.PrivateKey`
