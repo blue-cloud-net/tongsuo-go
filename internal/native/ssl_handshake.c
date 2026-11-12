@@ -3,6 +3,7 @@
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
 #include <string.h>
+#include <limits.h>
 extern void CgoTLSRelease(uintptr_t);
 extern int CgoTLSSelect(uintptr_t, SSL *, char *, int);
 extern int CgoTLSVerify(uintptr_t, int, int, int, X509 *);
@@ -138,7 +139,29 @@ int X_SSL_name_check(X509 *cert, const char *name, int kind, unsigned int flags)
     return X509_check_host(cert, name, 0, flags, NULL);
 }
 
-int X_SSL_groups(SSL *s, const char *v) { return SSL_set1_groups_list(s,v); }
+int X_SSL_groups(SSL *s, const char *v) {
+    /* Use the public NID setter: 8.4's string setter leaks the previous list. */
+    size_t count = 1;
+    for (const char *p = v; *p; ++p) if (*p == ':') ++count;
+    if (count > INT_MAX || count > SIZE_MAX / sizeof(int)) return 0;
+    int *groups = OPENSSL_malloc(count * sizeof(*groups));
+    char *copy = OPENSSL_strdup(v);
+    if (!groups || !copy) { OPENSSL_free(groups); OPENSSL_free(copy); return 0; }
+    size_t n = 0; char *cursor = copy, *token;
+    int ok = 0;
+    while ((token = strsep(&cursor, ":")) != NULL) {
+        if (!*token) goto done;
+        int nid = OBJ_sn2nid(token);
+        if (nid == NID_undef) nid = OBJ_ln2nid(token);
+        if (nid == NID_undef) nid = EC_curve_nist2nid(token);
+        if (nid == NID_undef && !strcmp(token, "curveSM2")) nid = NID_sm2;
+        if (nid == NID_undef) goto done;
+        groups[n++] = nid;
+    }
+    ok = SSL_set1_groups(s, groups, (int)n);
+done:
+    OPENSSL_free(groups); OPENSSL_free(copy); return ok;
+}
 int X_SSL_sigalgs(SSL *s, const char *v) { return SSL_set1_sigalgs_list(s,v); }
 int X_SSL_group(SSL *s) { return SSL_get_negotiated_group(s); }
 int X_SSL_peer_sig(SSL *s, int *nid) { return SSL_get_peer_signature_nid(s,nid); }
