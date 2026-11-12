@@ -51,6 +51,14 @@ type CertificateVerificationError struct {
 //
 // ConnectionState is an independent snapshot without native handles; DER slices need no Close.
 type ConnectionState struct {
+	// SecureRenegotiation 为原生 RFC 5746 支持标志，不表示支持主动重协商。
+	//
+	// SecureRenegotiation is the native RFC 5746 flag, not active renegotiation support.
+	SecureRenegotiation bool
+	// SignedCertificateTimestamps 为 TLS 扩展 SCT wire 编码的独立副本。
+	//
+	// SignedCertificateTimestamps holds independent TLS extension SCT wire encodings.
+	SignedCertificateTimestamps [][]byte
 	// HandshakeComplete 仅在协议握手及自定义验证均成功后为真。
 	//
 	// HandshakeComplete is true only after protocol and custom verification succeed.
@@ -129,6 +137,7 @@ func cloneDER(in [][]byte) [][]byte {
 }
 func cloneState(in ConnectionState) ConnectionState {
 	out := in
+	out.SignedCertificateTimestamps = cloneDER(in.SignedCertificateTimestamps)
 	out.PeerCertificates = cloneDER(in.PeerCertificates)
 	out.VerifiedChains = nil
 	for _, chain := range in.VerifiedChains {
@@ -146,7 +155,7 @@ func (c *Conn) captureState(success bool) error {
 	if err != nil {
 		return err
 	}
-	state := ConnectionState{HandshakeComplete: success, Version: raw.Version, NTLS: raw.Version == NTLSVersion, CipherSuite: raw.CipherSuite, CipherName: raw.CipherName, ServerName: raw.ServerName, NegotiatedProtocol: raw.Protocol, NegotiatedGroup: raw.Group, PeerSignatureAlgorithm: raw.Signature, PeerCertificates: raw.PeerCertificates}
+	state := ConnectionState{SecureRenegotiation: raw.SecureRenegotiation, SignedCertificateTimestamps: raw.SignedCertificateTimestamps, HandshakeComplete: success, Version: raw.Version, NTLS: raw.Version == NTLSVersion, CipherSuite: raw.CipherSuite, CipherName: raw.CipherName, ServerName: raw.ServerName, NegotiatedProtocol: raw.Protocol, NegotiatedGroup: raw.Group, PeerSignatureAlgorithm: raw.Signature, PeerCertificates: raw.PeerCertificates}
 	if raw.VerifyEnabled && raw.VerificationPerformed && len(raw.PeerCertificates) > 0 {
 		state.Verification = VerificationPassed
 		for _, failure := range raw.Failures {
@@ -166,11 +175,19 @@ func (c *Conn) captureState(success bool) error {
 		cfg = selected
 	}
 	if success && cfg != nil {
-		if cfg.VerifyPeerCertificate != nil {
+		if cfg.RFC8998 {
+			err = checkRFC8998State(state)
+		}
+		if err == nil && cfg.VerifyPeerCertificate != nil {
 			err = cfg.VerifyPeerCertificate(cloneDER(state.PeerCertificates), cloneState(state).VerifiedChains)
 		}
 		if err == nil && cfg.VerifyConnection != nil {
 			err = cfg.VerifyConnection(cloneState(state))
+		}
+	}
+	if success && cfg != nil && (cfg.VerifyPeerCertificate != nil || cfg.VerifyConnection != nil) {
+		if diagnosticErr := c.ssl.ObserveTLSEvent(9, err); diagnosticErr != nil {
+			err = errors.Join(err, diagnosticErr)
 		}
 	}
 	if err != nil {

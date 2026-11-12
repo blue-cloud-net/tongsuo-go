@@ -19,6 +19,10 @@ import (
 // TLSSelection 保存连接独享的 SNI 配置选择。
 // TLSSelection holds a connection-specific SNI configuration selection.
 type TLSSelection struct {
+	// RFC8998 指定所选严格模式。
+	//
+	// RFC8998 selects strict mode.
+	RFC8998 bool
 	// Context 在配置切换期间借用的 SSL_CTX 指针。
 	// Context is an SSL_CTX pointer borrowed during configuration selection.
 	Context unsafe.Pointer
@@ -56,6 +60,34 @@ type TLSVerifyFailure struct {
 // TLSCallbacks 管理一个 SSL 对象的回调及失败信息。
 // TLSCallbacks manages callbacks and failure details for one SSL object.
 type TLSCallbacks struct {
+	// Events 保存本次原生调用的诊断副本。
+	//
+	// Events holds diagnostic copies from the current native operation.
+	Events []TLSEvent
+	// EventBytes 为暂存载荷字节数。
+	//
+	// EventBytes counts buffered payload bytes.
+	EventBytes int
+	// MaxEvents 限制暂存事件数量。
+	//
+	// MaxEvents limits buffered observations.
+	MaxEvents int
+	// MaxBytes 限制暂存载荷字节数。
+	//
+	// MaxBytes limits buffered payload bytes.
+	MaxBytes int
+	// DiagnosticErr 保存首个采集错误。
+	//
+	// DiagnosticErr holds the first collection error.
+	DiagnosticErr error
+	// DiagnosticFlags 指定事件、trace 与 keylog。
+	//
+	// DiagnosticFlags selects events, trace and keylog.
+	DiagnosticFlags int
+	// CaptureSCT 指定 SCT 快照采集。
+	//
+	// CaptureSCT enables SCT snapshots.
+	CaptureSCT bool
 	// VerifyEnabled 指定是否将原生验证结果作为信任验证。
 	// VerifyEnabled reports whether native checks count as trust verification.
 	VerifyEnabled bool
@@ -121,6 +153,9 @@ func CgoTLSSelect(id C.uintptr_t, ssl *C.SSL, name *C.char, ntls C.int) C.int {
 	selection, err := cb.Select(C.GoString(name), ntls != 0)
 	if err == nil && selection != nil {
 		cb.Protocols = selection.Protocols
+		if C.X_SSL_rfc8998(ssl, C.int(boolInt(selection.RFC8998))) != 1 {
+			err = ErrTLSUnsupported
+		}
 		if C.X_SSL_switch_context(ssl, (*C.SSL_CTX)(selection.Context)) != 1 {
 			err = errors.New("tls: switch SNI context")
 		}
@@ -172,6 +207,19 @@ func CgoTLSSelect(id C.uintptr_t, ssl *C.SSL, name *C.char, ntls C.int) C.int {
 //export CgoTLSVerify
 func CgoTLSVerify(id C.uintptr_t, ok, code, depth C.int, cert *C.X509) C.int {
 	cb := cgo.Handle(id).Value().(*TLSCallbacks)
+	if cb.DiagnosticFlags&1 != 0 {
+		size := C.int(0)
+		if cert != nil {
+			size = C.i2d_X509(cert, nil)
+		}
+		if size > 0 && cb.DiagnosticErr == nil && int(size) <= cb.MaxBytes-cb.EventBytes && len(cb.Events) < cb.MaxEvents {
+			data := certificateDER(cert)
+			cb.Events = append(cb.Events, TLSEvent{Kind: 5, Code: int(code), Depth: int(depth), Data: data})
+			cb.EventBytes += len(data)
+		} else if cb.DiagnosticErr == nil {
+			cb.DiagnosticErr = ErrTLSLimit
+		}
+	}
 	if cb.VerifyEnabled {
 		cb.VerificationPerformed = true
 	}

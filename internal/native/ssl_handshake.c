@@ -13,6 +13,8 @@ extern int CgoTLSALPN(uintptr_t, unsigned char *, unsigned int);
  * Go's core layer serializes all access to an SSL and its hooks. */
 typedef struct {
     uintptr_t id;
+    int diagnostics;
+    size_t diagnostic_limit;
     unsigned char *writebuf;
     int writelen;
 } tls_hooks;
@@ -74,6 +76,7 @@ static int alpn_cb(SSL *ssl, const unsigned char **out, unsigned char *outlen,
     *out = in + offset + 1;
     return SSL_TLSEXT_ERR_OK;
 }
+static void diagnostic_keylog(const SSL *ssl, const char *line);
 void X_SSL_CTX_callbacks(SSL_CTX *ctx) {
     SSL_CTX_set_client_hello_cb(ctx, hello_cb, NULL);
     SSL_CTX_set_alpn_select_cb(ctx, alpn_cb, NULL);
@@ -188,3 +191,128 @@ void X_SSL_send_close_notify(SSL *ssl) {
     tls_hooks *hooks = SSL_get_ex_data(ssl, hooks_index);
     if (SSL_is_init_finished(ssl) && (!hooks || !hooks->writebuf)) SSL_shutdown(ssl);
 }
+
+#include <openssl/ct.h>
+#include <limits.h>
+int X_SSL_CTX_rfc8998(SSL_CTX *ctx) {
+#ifndef OPENSSL_NO_SM2
+    SSL_CTX_enable_sm_tls13_strict(ctx); return 1;
+#else
+    return 0;
+#endif
+}
+int X_SSL_rfc8998(SSL *ssl, int enabled) {
+#ifndef OPENSSL_NO_SM2
+    if (enabled) SSL_enable_sm_tls13_strict(ssl);
+    else SSL_disable_sm_tls13_strict(ssl);
+    return 1;
+#else
+    return !enabled;
+#endif
+}
+#ifndef OPENSSL_NO_CT
+static int capture_ct(const CT_POLICY_EVAL_CTX *ctx, const STACK_OF(SCT) *scts, void *arg) { return 1; }
+#endif
+int X_SSL_capture_sct(SSL *ssl) {
+#ifndef OPENSSL_NO_CT
+    return SSL_set_ct_validation_callback(ssl, capture_ct, NULL);
+#else
+    return 0;
+#endif
+}
+int X_SSL_secure_renegotiation(SSL *ssl) { return SSL_get_secure_renegotiation_support(ssl) != 0; }
+int X_SSL_sct_count(SSL *ssl) {
+#ifndef OPENSSL_NO_CT
+    const STACK_OF(SCT) *scts = SSL_get0_peer_scts(ssl);
+    return scts ? sk_SCT_num(scts) : 0;
+#else
+    return 0;
+#endif
+}
+int X_SSL_sct_copy(SSL *ssl, int index, unsigned char **out) {
+#ifndef OPENSSL_NO_CT
+    const STACK_OF(SCT) *scts = SSL_get0_peer_scts(ssl);
+    if (!scts || index < 0 || index >= sk_SCT_num(scts)) return -1;
+    const SCT *sct = sk_SCT_value(scts, index);
+    if (SCT_get_source(sct) != SCT_SOURCE_TLS_EXTENSION) return 0;
+    return i2o_SCT(sct, out);
+#else
+    return -1;
+#endif
+}
+extern size_t CgoTLSTraceBudget(uintptr_t);
+extern void CgoTLSObserve(uintptr_t, int, int, int, int, int, void *, size_t);
+static tls_hooks *diagnostic_hooks(const SSL *ssl) {
+    return hooks_index < 0 ? NULL : SSL_get_ex_data(ssl, hooks_index);
+}
+#ifndef OPENSSL_NO_SSL_TRACE
+typedef struct { unsigned char *data; size_t length, limit; int failed; } trace_buffer;
+static int trace_write(BIO *bio, const char *data, int length) {
+    trace_buffer *b = BIO_get_data(bio);
+    if (length < 0 || (size_t)length > b->limit - b->length) { b->failed = 1; return -1; }
+    unsigned char *next = OPENSSL_realloc(b->data, b->length + (size_t)length + 1);
+    if (!next) { b->failed = 1; return -1; }
+    b->data = next; memcpy(b->data + b->length, data, length); b->length += length;
+    return length;
+}
+static int trace_puts(BIO *bio, const char *text) { return trace_write(bio, text, (int)strlen(text)); }
+static long trace_ctrl(BIO *bio, int cmd, long num, void *ptr) { return cmd == BIO_CTRL_FLUSH ? 1 : 0; }
+static int trace_create(BIO *bio) { BIO_set_init(bio, 1); return 1; }
+static BIO_METHOD *trace_method;
+static CRYPTO_ONCE trace_once = CRYPTO_ONCE_STATIC_INIT;
+static void trace_init(void) {
+    BIO_METHOD *m = BIO_meth_new(BIO_TYPE_SOURCE_SINK | BIO_get_new_index(), "bounded TLS trace");
+    if (!m) return;
+    if (!BIO_meth_set_write(m, trace_write) || !BIO_meth_set_puts(m, trace_puts) || !BIO_meth_set_ctrl(m, trace_ctrl) || !BIO_meth_set_create(m, trace_create)) { BIO_meth_free(m); return; }
+    trace_method = m;
+}
+#endif
+static void diagnostic_message(int write, int version, int type, const void *buf, size_t length, SSL *ssl, void *unused) {
+    tls_hooks *h = diagnostic_hooks(ssl); if (!h) return;
+    if (h->diagnostics & 1) CgoTLSObserve(h->id, 3, write, version, type, 0, (void *)buf, length);
+#ifndef OPENSSL_NO_SSL_TRACE
+    if (h->diagnostics & 2) {
+        size_t remaining = CgoTLSTraceBudget(h->id);
+        if (!remaining) { CgoTLSObserve(h->id, 8, 0, 0, 0, 0, NULL, 0); return; }
+        trace_buffer b = {NULL, 0, remaining, 0};
+        if (!CRYPTO_THREAD_run_once(&trace_once, trace_init) || !trace_method) {
+            CgoTLSObserve(h->id, 8, 0, 0, 0, 0, NULL, 0); return;
+        }
+        BIO *bio = BIO_new(trace_method);
+        if (!bio) { CgoTLSObserve(h->id, 8, 0, 0, 0, 0, NULL, 0); return; }
+        BIO_set_data(bio, &b);
+        /* Decoder/BIO errors must not become TLS protocol errors. */
+        int empty_errors = ERR_peek_error() == 0;
+        if (empty_errors) ERR_raise(ERR_LIB_USER, 1);
+        ERR_set_mark();
+        SSL_trace(write, version, type, buf, length, ssl, bio);
+        ERR_pop_to_mark();
+        if (empty_errors) ERR_get_error();
+        BIO_free(bio);
+        CgoTLSObserve(h->id, b.failed ? 8 : 6, write, version, type, 0, b.data, b.length);
+        OPENSSL_free(b.data);
+    }
+#endif
+}
+static void diagnostic_info(const SSL *ssl, int where, int ret) {
+    tls_hooks *h = diagnostic_hooks(ssl); if (!h || !(h->diagnostics & 1)) return;
+    const char *text = SSL_state_string_long(ssl);
+    CgoTLSObserve(h->id, (where & SSL_CB_ALERT) ? 4 : 2, (where & SSL_CB_WRITE) != 0, SSL_version(ssl), where, ret, (void *)text, strlen(text));
+}
+static void diagnostic_keylog(const SSL *ssl, const char *line) {
+    tls_hooks *h = diagnostic_hooks(ssl); if (!h || !(h->diagnostics & 4)) return;
+    size_t len = strnlen(line, h->diagnostic_limit + 1);
+    CgoTLSObserve(h->id, 7, 0, 0, 0, 0, (void *)line, len);
+}
+int X_SSL_diagnostics(SSL *ssl, int flags, size_t limit) {
+#ifdef OPENSSL_NO_SSL_TRACE
+    if (flags & 2) return 0;
+#endif
+    tls_hooks *h = diagnostic_hooks(ssl); if (!h) return 0;
+    h->diagnostics = flags; h->diagnostic_limit = limit;
+    if (flags & 3) SSL_set_msg_callback(ssl, diagnostic_message);
+    if (flags & 1) SSL_set_info_callback(ssl, diagnostic_info);
+    return 1;
+}
+
+void X_SSL_CTX_keylog(SSL_CTX *ctx, int enabled) { SSL_CTX_set_keylog_callback(ctx, enabled ? diagnostic_keylog : NULL); }

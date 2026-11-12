@@ -410,12 +410,16 @@ func (c *TLSContext) SetDefaultVerifyPaths() error {
 // responsibility. The deadline (unix nano) is set via SetDeadline and
 // bounds the cumulative wait of Connect/Accept/Read/Write retry loops.
 type SSLConn struct {
-	readMu    sync.Mutex
-	writeMu   sync.Mutex
-	writeErr  error
-	callbacks *native.TLSCallbacks
-	handle    *Handle
-	ctx       *TLSContext
+	deliveryMu    sync.Mutex
+	dispatch      TLSAcknowledge
+	diagnosticErr error
+	terminalState *TLSState
+	readMu        sync.Mutex
+	writeMu       sync.Mutex
+	writeErr      error
+	callbacks     *native.TLSCallbacks
+	handle        *Handle
+	ctx           *TLSContext
 
 	// fd 是**本连接持有**的 socket 副本（由 tls 层用 dup(2) 产生，见
 	// internal/core/fd_unix.go 的 DupFD 与 docs/issues/2026-09-24/P1011）。
