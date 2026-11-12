@@ -137,7 +137,7 @@ func (s *SSLConn) runIO(op string, buf []byte) (n int, err error) {
 			return 0, &timeoutError{op: op}
 		}
 		stepped = true
-		ret, code, failure := s.sslStep(op, buf)
+		ret, code, failure := s.diagnosticStep(op, buf)
 		if ret > 0 {
 			return ret, nil
 		}

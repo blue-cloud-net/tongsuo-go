@@ -38,13 +38,13 @@ jobs:
       GOARCH: ${{ matrix.arch }}
       TONGSUO_REF: ${{ matrix.tongsuo }}
       TONGSUO_EXPECT_VERSION: ${{ matrix.tongsuo }}
-      TONGSUO_HOME: ${{ github.workspace }}/.tongsuo-install
-      CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install/include -Wno-deprecated-declarations
-      CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install/lib
-      LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
-      DYLD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install/lib
-      OPENSSL_CONF: ${{ github.workspace }}/.tongsuo-install/ssl/openssl.cnf
-      TONGSUO_OPENSSL_BIN: ${{ github.workspace }}/.tongsuo-install/bin/openssl
+      TONGSUO_HOME: ${{ github.workspace }}/.tongsuo-install-${{ matrix.tongsuo }}
+      CGO_CFLAGS: -I${{ github.workspace }}/.tongsuo-install-${{ matrix.tongsuo }}/include -Wno-deprecated-declarations
+      CGO_LDFLAGS: -L${{ github.workspace }}/.tongsuo-install-${{ matrix.tongsuo }}/lib
+      LD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install-${{ matrix.tongsuo }}/lib
+      DYLD_LIBRARY_PATH: ${{ github.workspace }}/.tongsuo-install-${{ matrix.tongsuo }}/lib
+      OPENSSL_CONF: ${{ github.workspace }}/.tongsuo-install-${{ matrix.tongsuo }}/ssl/openssl.cnf
+      TONGSUO_OPENSSL_BIN: ${{ github.workspace }}/.tongsuo-install-${{ matrix.tongsuo }}/bin/openssl
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -56,8 +56,8 @@ jobs:
         id: cache-tongsuo
         uses: actions/cache@v5
         with:
-          path: .tongsuo-install
-          key: tongsuo-v4-${{ runner.os }}-${{ matrix.arch }}-${{ matrix.tongsuo }}-shared-${{ hashFiles('scripts/build-tongsuo-ci.sh') }}
+          path: .tongsuo-install-${{ matrix.tongsuo }}
+          key: tongsuo-v5-${{ runner.os }}-${{ matrix.arch }}-${{ matrix.tongsuo }}-shared-${{ hashFiles('scripts/build-tongsuo-ci.sh') }}
       - name: Build Tongsuo
         if: steps.cache-tongsuo.outputs.cache-hit != 'true'
         run: bash scripts/build-tongsuo-ci.sh

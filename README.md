@@ -48,7 +48,7 @@ interfaces and a CLI-style by-name entry point; see the
 - 🎲 **Cryptographically secure random** (`rand`): based on Tongsuo `RAND_bytes`
 - 🗄️ **Key storage and rotation** (`keystore`): key metadata, in-memory / custom stores, version rotation and history; `Load` / `LoadAllFromReader` detect local multiple PEM objects, DER and PKCS#12
 - 📜 **X.509 certificate management** (`x509`): parse and issue certificates / CSR / CRL / OCSP, one-line self-signed certificates (`CreateSelfSigned`), step-by-step CRL issuance (`CRLBuilder`), CA-signed certificates (SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448), arbitrary X.509 v3 extensions by NID or name (`AddExtension` / `AddExtensionByName` / `AddExtensions`), CSR-driven issuance (`IssueCertificateFromRequest`), hostname / IP / e-mail verification (`VerifyHostname` / `CheckEmail`), subject / issuer name hashes (`SubjectHash` / `IssuerHash`) and chain verification with an optional pinned verification instant (`Store.SetTime`); OCSP HTTP/nonces, trusted PEM purposes, unified certificate/CRL loading and named verification error codes
-- 🌐 **TLS / NTLS transport** (`tls`): explicit TLS / NTLS and mixed server ports, complete credential chains, SNI selection, ALPN, mutual authentication, three verification policies and copied connection state; independent read/write deadlines and concurrent I/O; [runnable handshake examples](examples/handshake/)
+- 🌐 **TLS / NTLS transport** (`tls`): explicit TLS / NTLS and mixed server ports, complete credential chains, SNI selection, ALPN, mutual authentication, three verification policies and copied connection state; independent read/write deadlines and concurrent I/O; RFC 8998 strict TLS 1.3, ordered diagnostics, optional trace/keylog and TLS-extension SCT snapshots; [runnable handshake examples](examples/handshake/)
 - 📦 **Containers and formats**: PKCS#7 certificates/CRLs, signing/verification and envelopes (`pkcs/pkcs7`), configurable PKCS#12 PBE/iterations and complex lossless password changes (`pkcs/pkcs12`), PKCS#8 PBE/PRF/PEM/DER and RSA PKCS#1 public keys (`asym`), OKP/oct JWK (`jwk`), PEM splitting (`meta`), ASN.1 DER viewer with configurable limits (`asn1`), .NET-style RSA XML (`xml/rsa`)
 - 🧪 **Standard-vector tests**: every algorithm package covers national-standard vectors, round-trips, edge cases and error paths, with bidirectional cross-validation against the openssl CLI
 
@@ -73,12 +73,12 @@ itself, and the Tongsuo installation is a build prerequisite (see [Requirements]
 
 ### Implementation baseline and future releases
 
-The `0.8.0` release candidate implements Tongsuo 8.4.0/8.5.0 compatibility, GCM-SIV, EdDSA extensions and SM2DH; it is not released. AES-SIV empty messages use the verified 8.5.0 path; NTLS signing/encryption certificates must declare their respective KeyUsage.
+The released `0.8.0` implements Tongsuo 8.4.0/8.5.0 compatibility, GCM-SIV, EdDSA extensions and SM2DH (released 2026-11-05). AES-SIV empty messages use the verified 8.5.0 path; NTLS signing/encryption certificates must declare their respective KeyUsage.
 `0.7.0`: reliability, data integrity and PKCS containers: handle release, parser limits, full serial numbers, DER extensions, trust paths, compressed SM2 input, lossless password changes for complex PKCS#12 containers, and PKCS#7 signing, verification, encryption and decryption.
 
-`0.9.0` is implemented alongside 0.8.0 in dev and awaits release; it covers TLS / NTLS handshakes and authentication, mixed ports, SNI, ALPN, verification policies, connection state and client/server examples.
+`0.9.0` was released on 2026-11-06; it covers TLS / NTLS handshakes and authentication, mixed ports, SNI, ALPN, verification policies, connection state and client/server examples.
 
-The remaining releases below are planned capabilities, not currently available features:
+`0.10.0` is implemented on the feature branch and awaits release; later releases remain planned:
 
 - `0.10.0`: RFC 8998 ShangMi TLS 1.3, structured handshake diagnostics, optional detailed trace and keylog
 - `0.11.0`: Session resumption, caches, import/export, ticket controls and key rotation
@@ -89,6 +89,13 @@ The remaining releases below are planned capabilities, not currently available f
 The transport releases deliver SDK APIs and runnable examples for downstream handshake tests similar to `s_client` / `s_server`.
 RFC 8998 uses a single signing credential set over TLS 1.3; NTLS uses signing and encryption certificates.
 Existing SDK entry-point behavior is preserved; explicit policies support no verification, reporting verification failures while continuing, and aborting on verification failure. Handshake examples default to reporting failures while continuing and expose the verification result separately.
+
+
+RFC 8998 clients use `&tls.Config{RFC8998: true, Verification: tls.VerifyStrict, RootCAs: roots}`;
+servers supply one SM2 `Cert` / `Key` pair. `Diagnostics` explicitly enables ordered events,
+trace or keylog; output errors abort the connection. `CaptureSCT` records TLS-extension SCT
+wire bytes without CT policy validation. Diagnostic consumers must return promptly and must
+not reenter the same connection; callers synchronize shared writers and protect keylog secrets.
 
 STARTTLS, external PSK, 0-RTT and active renegotiation remain deferred without a target version.
 

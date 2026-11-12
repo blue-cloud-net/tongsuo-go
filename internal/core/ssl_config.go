@@ -14,6 +14,30 @@ import (
 //
 // TLSSettings describes handshake settings fixed at construction.
 type TLSSettings struct {
+	// RFC8998 启用国密 TLS 1.3 严格模式。
+	//
+	// RFC8998 enables strict ShangMi TLS 1.3.
+	RFC8998 bool
+	// CaptureSCT 开启 TLS 扩展 SCT 快照。
+	//
+	// CaptureSCT enables TLS extension SCT snapshots.
+	CaptureSCT bool
+	// DiagnosticFlags 控制事件、trace 和 keylog。
+	//
+	// DiagnosticFlags controls events, trace and keylog.
+	DiagnosticFlags int
+	// MaxEvents 限制本次调用暂存的事件数量。
+	//
+	// MaxEvents limits observations buffered per operation.
+	MaxEvents int
+	// MaxBytes 限制本次调用暂存的载荷字节数。
+	//
+	// MaxBytes limits payload bytes buffered per operation.
+	MaxBytes int
+	// Dispatch 在原生调用锁外同步派发，不得重入连接。
+	//
+	// Dispatch runs outside the native lock and must not reenter the connection.
+	Dispatch func() TLSAcknowledge
 	// Tag 关联 API 配置的不透明标记。
 	//
 	// Tag is an opaque tag associating the API configuration.
@@ -71,6 +95,9 @@ func (c *TLSContext) ConfigureTLS(settings TLSSettings) error {
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return errors.New("tls: context closed")
 	}
+	if settings.RFC8998 && !native.X_SSL_CTX_rfc8998(c.handle.Ptr()) {
+		return ErrTLSUnsupported
+	}
 	if !native.X_SSL_CTX_parameters(c.handle.Ptr(), settings.Groups, settings.Signatures, settings.DHParameters, settings.Options, settings.Modes) {
 		return NewOpError("tls: handshake parameters", native.PopError())
 	}
@@ -89,6 +116,7 @@ func (c *TLSContext) ConfigureTLS(settings TLSSettings) error {
 		return NewOpError("tls: ALPN", native.PopError())
 	}
 	native.X_SSL_CTX_callbacks(c.handle.Ptr())
+	native.X_SSL_CTX_keylog(c.handle.Ptr(), settings.DiagnosticFlags&4 != 0)
 	c.settings = settings
 	return nil
 }
@@ -173,6 +201,14 @@ func (c *Certificate) CheckName(name string, email bool, flags uint32) error {
 //
 // TLSState is a state snapshot holding no native resources.
 type TLSState struct {
+	// SecureRenegotiation 为原生 RFC 5746 支持标志。
+	//
+	// SecureRenegotiation is the native RFC 5746 support flag.
+	SecureRenegotiation bool
+	// SignedCertificateTimestamps 为 TLS 扩展 SCT 的独立 wire 编码。
+	//
+	// SignedCertificateTimestamps holds independent TLS extension SCT wire encodings.
+	SignedCertificateTimestamps [][]byte
 	// Version 实际协商的协议版本号。
 	//
 	// Version is the actually negotiated wire version.
@@ -250,13 +286,25 @@ type TLSVerificationFailure struct {
 // State copies connection state and is available after a failed handshake.
 func (s *SSLConn) State() (TLSState, error) {
 	if s == nil || !s.begin() {
+		if s != nil {
+			s.mu.Lock()
+			cached := s.terminalState
+			s.mu.Unlock()
+			if cached != nil {
+				return cloneTLSState(*cached), nil
+			}
+		}
 		return TLSState{}, errors.New("tls: connection closed")
 	}
 	defer s.inflight.Done()
 	s.ioMu.Lock()
 	defer s.ioMu.Unlock()
 	n := native.X_SSL_snapshot(s.handle.Ptr())
-	out := TLSState{Version: n.Version, CipherSuite: n.CipherSuite, CipherName: n.CipherName, ServerName: n.ServerName, Protocol: n.Protocol, Group: n.Group, Signature: n.Signature, VerifyCode: n.VerifyCode, PeerCertificates: n.PeerCertificates, VerifiedChain: n.VerifiedChain, VerifyEnabled: s.callbacks.VerifyEnabled, VerificationPerformed: s.callbacks.VerificationPerformed}
+	secure, scts, err := native.X_SSL_extra_state(s.handle.Ptr(), s.callbacks != nil && s.callbacks.CaptureSCT)
+	if err != nil {
+		return TLSState{}, err
+	}
+	out := TLSState{SecureRenegotiation: secure, SignedCertificateTimestamps: scts, Version: n.Version, CipherSuite: n.CipherSuite, CipherName: n.CipherName, ServerName: n.ServerName, Protocol: n.Protocol, Group: n.Group, Signature: n.Signature, VerifyCode: n.VerifyCode, PeerCertificates: n.PeerCertificates, VerifiedChain: n.VerifiedChain, VerifyEnabled: s.callbacks.VerifyEnabled, VerificationPerformed: s.callbacks.VerificationPerformed}
 	if s.callbacks != nil {
 		for _, failure := range s.callbacks.Failures {
 			out.Failures = append(out.Failures, TLSVerificationFailure{failure.Code, failure.Depth, append([]byte(nil), failure.Certificate...)})
@@ -280,6 +328,10 @@ func (s *SSLConn) CallbackError() error {
 func (s *SSLConn) attachCallbacks(ctx *TLSContext) error {
 	settings := ctx.settings
 	cb := &native.TLSCallbacks{Protocols: append([]string(nil), settings.Protocols...), Continue: settings.Continue, VerifyEnabled: settings.VerifyEnabled, Tag: settings.Tag}
+	cb.DiagnosticFlags, cb.MaxEvents, cb.MaxBytes, cb.CaptureSCT = settings.DiagnosticFlags, settings.MaxEvents, settings.MaxBytes, settings.CaptureSCT
+	if settings.Dispatch != nil {
+		s.dispatch = settings.Dispatch()
+	}
 	selected := []*TLSContext{}
 	cb.Select = func(name string, ntls bool) (*native.TLSSelection, error) {
 		if settings.SelectContext == nil {
@@ -294,7 +346,7 @@ func (s *SSLConn) attachCallbacks(ctx *TLSContext) error {
 		cb.Continue = cfg.Continue
 		cb.VerifyEnabled = cfg.VerifyEnabled
 		cb.Tag = cfg.Tag
-		return &native.TLSSelection{Context: next.handle.Ptr(), Protocols: cfg.Protocols, Groups: cfg.Groups, Signatures: cfg.Signatures, LegacyCiphers: cfg.LegacyCiphers, TLS13Ciphers: cfg.TLS13Ciphers}, nil
+		return &native.TLSSelection{RFC8998: cfg.RFC8998, Context: next.handle.Ptr(), Protocols: cfg.Protocols, Groups: cfg.Groups, Signatures: cfg.Signatures, LegacyCiphers: cfg.LegacyCiphers, TLS13Ciphers: cfg.TLS13Ciphers}, nil
 	}
 	cb.Cleanup = func() {
 		for _, c := range selected {
@@ -305,6 +357,9 @@ func (s *SSLConn) attachCallbacks(ctx *TLSContext) error {
 		return NewOpError("tls: attach callbacks", native.PopError())
 	}
 	s.callbacks = cb
+	if !native.X_SSL_diagnostics(s.handle.Ptr(), settings.DiagnosticFlags, settings.MaxBytes, settings.CaptureSCT) {
+		return ErrTLSUnsupported
+	}
 	runtime.KeepAlive(ctx)
 	return nil
 }

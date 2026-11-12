@@ -48,7 +48,7 @@
   并通过 `TONGSUO_HOME` / `CGO_CFLAGS` / `CGO_LDFLAGS` / `LD_LIBRARY_PATH`
   让 cgo 找到头文件与库（详见 §2.1）
 - ✅ 本仓库的发布物**只有 CHANGELOG 文本**，不附任何二进制产物
-  （见 `.github/workflows/release.yml`；CI 中的铜锁是运行时从源码编译到 `.tongsuo-install/`，不入库）
+  （见 `.github/workflows/release.yml`；CI 中的铜锁是运行时从源码编译到 `.tongsuo-install-<ref>/`，不入库）
 - ✅ `go.mod` **无任何第三方依赖**，仅标准库 + cgo
 
 ### 1.3 环境里没有铜锁时，正确的反应
@@ -82,7 +82,7 @@ export CGO_LDFLAGS="-L${TONGSUO_HOME}/lib"
 - `-Wno-deprecated-declarations` 仅用于屏蔽铜锁对部分 OpenSSL 已废弃声明的告警，不影响功能
 - 也可用 pkg-config 方式：`export PKG_CONFIG_PATH=${TONGSUO_HOME}/lib/pkgconfig:${PKG_CONFIG_PATH}`
 - CLI 对拍测试用 `TONGSUO_OPENSSL_BIN` 指定铜锁命令行，默认 `/opt/tongsuo/bin/openssl`
-  （仅适用本地开发机；CI 的 `interop` job 显式指向 `.tongsuo-install/bin/openssl`）
+  （仅适用本地开发机；CI 的 `interop` job 显式指向 `.tongsuo-install-<ref>/bin/openssl`）
 
 ### 2.2 构建与静态检查
 
@@ -564,7 +564,7 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 | 7 | `runtime.LockOSThread()` 仅对 SM2 路径必要 | 不要无差别给所有算法加锁（会显著掉性能，见 `perf(core-pkey)` 修复） |
 | 8 | OCSP 测试依赖外部 responder | 覆盖率脚本默认豁免 `ocsp`；对拍用例缺失环境时统一 `SkipIfNoOpenSSL` |
 | 9 | `.gitignore` 当前包含 `docs/issues` | 在该目录**新增**文件需 `git add -f`，或先调整 `.gitignore` |
-| 10 | CI 固定铜锁 `TONGSUO_REF: 8.4.0`，缓存键为 `tongsuo-v3-<os>-<arch>-<ref>-<workflows hash>` | 升级铜锁版本时必须同步 bump `TONGSUO_REF` 与缓存键前缀 |
+| 10 | CI 固定铜锁 8.4.0 / 8.5.0 矩阵，安装目录按版本隔离为 `.tongsuo-install-<ref>`，缓存键为 `tongsuo-v5-<os>-<arch>-<ref>-<build-script hash>` | 升级铜锁版本或调整缓存布局时必须同步 bump 缓存键前缀，并保持安装目录与 `CGO_CFLAGS` 路径按版本隔离（避免跨版本复用 Go 构建缓存） |
 | 11 | `go test ./...` 默认**不**编译 `*_tongsuocli_test.go` | 需要 CLI 对拍时显式加 `-tags tongsuocli`，否则会误以为「已覆盖」 |
 | 12 | `internal/` 受 Go 机制保护 | 外部包无法 import；新增内部包不要试图对外暴露 |
 | 13 | 铜锁需带 `enable-ntls` 编译才有 NTLS 能力 | CI 配置为 `--prefix=... --libdir=... enable-ntls enable-trace no-shared`，本地安装需一致 |

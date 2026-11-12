@@ -24,7 +24,25 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-## [0.9.0] - TBD
+## [0.10.0] - TBD
+
+### Added
+
+- RFC 8998 strict TLS 1.3 via `Config.RFC8998`: SM4 GCM/CCM suites, curveSM2 and sm2sig_sm3, single SM2 credentials and SNI downgrade rejection. Trust verification remains independently configured.
+- Ordered, copied handshake/message/Alert/verification events, opt-in native trace and keylog via `Config.Diagnostics`. Bounded buffering, callback/output errors and short writes abort the connection while retaining error causes.
+- `Config.CaptureSCT`, TLS-extension-only SCT wire snapshots and `ConnectionState.SecureRenegotiation`; SCT capture does not enforce CT policy. Handshake example options for RFC 8998 and diagnostics.
+
+### Fixed
+
+- Release copied cipher metadata strings and use the public NID setter for SNI groups to avoid the Tongsuo 8.4 string setter leaking a replaced group list.
+
+### BREAKING
+
+- Adding fields to `Config` and `ConnectionState` affects unkeyed struct literals; use keyed literals. Diagnostic callbacks and writers must return promptly and must not reenter the connection. Callers synchronize shared writers and protect explicitly enabled keylog output.
+
+---
+
+## [0.9.0] - 2026-11-06
 
 ### Added
 
@@ -1089,7 +1107,8 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.6.0...v0.7.0

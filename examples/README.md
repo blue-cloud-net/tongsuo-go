@@ -44,7 +44,7 @@ cd examples/ntls-loopback && go run .
 
 ### [handshake](./handshake) — TLS / NTLS 客户端与服务端握手测试
 
-SDK API 示例：显式 TLS/NTLS/混合端口、完整证书链、ALPN、客户端认证及独立 SNI/验证名称。
+SDK API 示例：显式 TLS/NTLS/混合端口、RFC 8998、完整证书链、ALPN、客户端认证及独立 SNI/验证名称；可选事件、trace/keylog 与 SCT 采集。
 默认记录验证失败后继续，另提供 strict / none；显示失败握手的状态与验证错误，最后关闭连接。
 
 ```bash

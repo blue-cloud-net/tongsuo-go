@@ -19,4 +19,12 @@ int X_SSL_peer_sig(SSL *s, int *nid);
 int X_TLS_chain_num(STACK_OF(X509) *sk);
 X509 *X_TLS_chain_value(STACK_OF(X509) *sk, int i);
 void X_SSL_send_close_notify(SSL *ssl);
+void X_SSL_CTX_keylog(SSL_CTX *ctx, int enabled);
+int X_SSL_CTX_rfc8998(SSL_CTX *ctx);
+int X_SSL_rfc8998(SSL *ssl, int enabled);
+int X_SSL_capture_sct(SSL *ssl);
+int X_SSL_secure_renegotiation(SSL *ssl);
+int X_SSL_sct_count(SSL *ssl);
+int X_SSL_sct_copy(SSL *ssl, int index, unsigned char **out);
+int X_SSL_diagnostics(SSL *ssl, int flags, size_t limit);
 #endif
