@@ -17,7 +17,7 @@ go run . -addr 127.0.0.1:4433 -servername route.example -verify-name server.exam
 NTLS 使用不同的签名与加密私钥，两张证书应标识同一服务身份，分别具有正确 KeyUsage。
 签名和加密 PEM 文件可分别包含各自中间链，SDK 合并去重为线上共享证书池。
 严格验证时提供对应 CA 信任根，双向认证时同时提供客户端双证书；ECDHE-SM2 套件要求
-客户端凭证。RFC 8998 国密 TLS 1.3 不属于本示例当前版本，另归 0.10.0。
+客户端凭证。RFC 8998 使用 `-rfc8998` 与单套 SM2 签名证书，不能同时指定 NTLS/混合模式或双证书。
 
 ```bash
 go run . -mode server -protocol ntls -sign-cert sign-chain.pem -sign-key sign-key.pem -enc-cert enc-chain.pem -enc-key enc-key.pem -ciphers ECC-SM2-SM4-GCM-SM3 -once
@@ -39,3 +39,15 @@ SDK 的 SNI 回调可通过 GetCertificate / GetNTLSCertificate 选择凭证，�
 CurvePreferences（可 Clone 基础配置），混合模式的版本范围仅限制 TLS 一侧。
 
 混合模式及 SNI 服务端会在每次 ClientHello 选择时读取源凭证；这些源证书/密钥应保留到服务端关闭且在途选择回调结束，再显式 Close / asym.Close。
+
+## RFC 8998 与诊断
+
+```bash
+go run . -mode server -rfc8998 -cert server-chain.pem -key server-key.pem -once
+go run . -rfc8998 -verify strict -ca ca.pem -verify-name server.example -events -trace -capture-sct -message ping
+```
+
+`-ciphers TLS_SM4_GCM_SM3` 或 `TLS_SM4_CCM_SM3` 固定单套件；默认只启用这两个套件。
+`-events` 输出元数据，`-trace` 输出原生解码。默认均关闭，输出失败中断连接。
+`-keylog <新文件>` 显式创建权限 0600 的会话密钥文件，拒绝覆盖现有文件；仅用于受控诊断。
+`-capture-sct` 只采集 TLS 扩展来源的 SCT wire 字节，不执行 CT 策略校验。

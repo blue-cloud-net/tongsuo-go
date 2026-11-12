@@ -31,6 +31,11 @@ func main() {
 
 func run() error {
 	mode := flag.String("mode", "client", "client or server")
+	rfc8998 := flag.Bool("rfc8998", false, "strict RFC 8998 TLS 1.3 single-certificate profile")
+	captureSCT := flag.Bool("capture-sct", false, "capture TLS extension SCTs without CT policy validation")
+	events := flag.Bool("events", false, "print ordered handshake event metadata")
+	trace := flag.Bool("trace", false, "write native decoded trace to stderr")
+	keylog := flag.String("keylog", "", "explicit keylog output file (session secrets)")
 	protocol := flag.String("protocol", "tls", "tls, ntls, or mixed (server only)")
 	addr := flag.String("addr", "127.0.0.1:4433", "remote or listening TCP address")
 	verify := flag.String("verify", "report", "none, report, or strict")
@@ -66,7 +71,28 @@ func run() error {
 	if *response != "echo" && *response != "http" {
 		return errors.New("response must be echo or http")
 	}
-	cfg := &tls.Config{ServerName: *sni, VerificationName: *verifyName, DisableSNI: *noSNI, NextProtos: split(*alpn), CipherSuites: split(*ciphers), StrictConfig: true, CurvePreferences: split(*groups), SignatureAlgorithms: split(*signatures)}
+	cfg := &tls.Config{RFC8998: *rfc8998, CaptureSCT: *captureSCT, ServerName: *sni, VerificationName: *verifyName, DisableSNI: *noSNI, NextProtos: split(*alpn), CipherSuites: split(*ciphers), StrictConfig: true, CurvePreferences: split(*groups), SignatureAlgorithms: split(*signatures)}
+	if *events || *trace || *keylog != "" {
+		d := &tls.DiagnosticsConfig{}
+		if *events {
+			d.OnEvent = func(e tls.HandshakeEvent) error {
+				_, err := fmt.Fprintf(os.Stderr, "event=%d kind=%s write=%t version=%x type=%d code=%d error=%v\n", e.Sequence, e.Kind, e.Write, e.Version, e.ContentType, e.Code, e.Err)
+				return err
+			}
+		}
+		if *trace {
+			d.TraceWriter = &lockedWriter{writer: os.Stderr}
+		}
+		if *keylog != "" {
+			f, err := os.OpenFile(*keylog, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			d.KeyLogWriter = &lockedWriter{writer: f}
+		}
+		cfg.Diagnostics = d
+	}
 	switch *protocol {
 	case "tls":
 		cfg.Protocol = tls.ProtocolTLS
@@ -329,4 +355,16 @@ func printHandshakeError(err error) {
 	if errors.As(err, &failure) {
 		fmt.Printf("handshake error: ssl-code=%d verify-code=%d native-codes=%#x\n", failure.SSLCode, failure.VerifyCode, failure.NativeErrors)
 	}
+}
+
+// lockedWriter serializes diagnostic output shared by example connections.
+type lockedWriter struct {
+	mu     sync.Mutex
+	writer io.Writer
+}
+
+func (w *lockedWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.writer.Write(p)
 }
