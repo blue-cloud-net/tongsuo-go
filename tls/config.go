@@ -231,6 +231,13 @@ func effectiveVerification(cfg *Config, client bool) VerificationPolicy {
 }
 
 func validateConfig(cfg *Config, client bool) error {
+	cfg = cfg.Clone()
+	if err := normalizeRFC8998(cfg); err != nil {
+		return err
+	}
+	if cfg.Diagnostics != nil && (cfg.Diagnostics.MaxEvents < 0 || cfg.Diagnostics.MaxBytes < 0 || cfg.Diagnostics.MaxBytes > 1<<31-1) {
+		return errors.New("tls: invalid diagnostic limits")
+	}
 	if cfg == nil {
 		return nil
 	}
@@ -291,6 +298,10 @@ func (cfg *Config) Clone() *Config {
 		return &Config{}
 	}
 	out := *cfg
+	if cfg.Diagnostics != nil {
+		d := *cfg.Diagnostics
+		out.Diagnostics = &d
+	}
 	out.CipherSuites = append([]string(nil), cfg.CipherSuites...)
 	out.NextProtos = append([]string(nil), cfg.NextProtos...)
 	out.CurvePreferences = append([]string(nil), cfg.CurvePreferences...)
@@ -317,6 +328,14 @@ func selectServerConfig(base *Config, name string, ntls bool) (*core.TLSContext,
 		}
 	}
 	cfg = cfg.Clone()
+	cfg.Diagnostics = base.Diagnostics
+	cfg.CaptureSCT = base.CaptureSCT
+	if base.RFC8998 && !cfg.RFC8998 {
+		return nil, errors.New("tls: SNI cannot disable RFC 8998")
+	}
+	if err := normalizeRFC8998(cfg); err != nil {
+		return nil, err
+	}
 	if len(base.CurvePreferences) > 0 && len(cfg.CurvePreferences) == 0 {
 		return nil, errors.New("tls: selected configuration must explicitly set CurvePreferences when the base restricts groups")
 	}

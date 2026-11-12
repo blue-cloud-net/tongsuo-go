@@ -1220,18 +1220,18 @@ VerifyReport 握手成功仍可能 VerificationFailed，不可据此认定可信
 [握手示例](../examples/handshake/) 默认 VerifyReport，支持 TLS/NTLS/混合端口、严格/不验证、
 证书链、ALPN、客户端认证和数据回显；这是 SDK 使用示例，不新增正式 CLI 产品。
 
-**规划中（其余传输能力，公开面收敛归 `1.0.0`）**
+**传输能力交付状态（公开面收敛归 `1.0.0`）**
 
-> 下列均未实现；涉及原生能力需新增/扩展绑定，经 core 管理生命周期。
+> 下表 `0.10.0` 条目已实现、待发布；其后版本仍为规划，涉及原生能力经 core 管理生命周期。
 > 交付 SDK API + 可运行示例；候选名称不代表签名冻结。基础状态快照与验证失败记录已在
-> `0.9.0` 提供，事件流、详细 trace 与 RFC 8998 验收仍为后续工作。
+> `0.9.0` 提供；`0.10.0` 增加事件流、详细 trace、keylog 与 RFC 8998 严格模式。
 
 | 符号 / 能力 | 说明 | 版本 | 实施前置 |
 |---|---|---|---|
-| 🧭 RFC 8998 严格配置 | TLS 1.3 单套签名凭证，两个 SM4 套件、curveSM2、sm2sig_sm3 与证书约束，区别于 NTLS 双证书 | `0.10.0` | 原生严格模式及配置/状态验证 |
-| 🧭 结构化握手诊断 | 状态、消息、Alert 与证书验证事件；失败握手仍保留已发生的信息 | `0.10.0` | 消息/状态/验证回调及数据复制 |
-| 🧭 详细 trace / keylog | 可选输出、默认关闭；TLS / NTLS / RFC 8998 分别验收，缺少原生能力明确报错 | `0.10.0` | `SSL_trace`、keylog 回调与输出错误传播 |
-| 🧭 `ConnectionState.SecureRenegotiation` / `SignedCertificateTimestamps` | RFC 5746 支持标志；SCT 列表仅在 `Config.CaptureSCT` 开启时填充，只记录不执行 CT 策略校验 | `0.10.0` | `SSL_get_secure_renegotiation_support`、CT 校验回调 |
+| 🆕 RFC 8998 严格配置 | TLS 1.3 单套签名凭证，两个 SM4 套件、curveSM2、sm2sig_sm3 与证书约束，区别于 NTLS 双证书 | `0.10.0` | 原生严格模式及配置/状态验证 |
+| 🆕 结构化握手诊断 | 状态、消息、Alert 与证书验证事件；失败握手仍保留已发生的信息 | `0.10.0` | 消息/状态/验证回调及数据复制 |
+| 🆕 详细 trace / keylog | 可选输出、默认关闭；TLS / NTLS / RFC 8998 分别验收，缺少原生能力明确报错 | `0.10.0` | `SSL_trace`、keylog 回调与输出错误传播 |
+| 🆕 `ConnectionState.SecureRenegotiation` / `SignedCertificateTimestamps` | RFC 5746 支持标志；SCT 列表仅在 `Config.CaptureSCT` 开启时填充，只记录不执行 CT 策略校验 | `0.10.0` | `SSL_get_secure_renegotiation_support`、`SSL_get0_peer_scts` 与来源过滤 |
 | 🧭 会话复用 / 票据 | `Config.SessionCache`、`Conn.SessionState()` | `0.11.0` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
 | 🧭 会话导入导出、票据控制与密钥轮换 | 处理 TLS 1.3 握手后票据；缓存按协议、服务/客户端身份和验证配置隔离 | `0.11.0` | 新会话回调、序列化、票据与实际复用状态 |
 | 🧭 `ConnectionState.SessionReused` | 区分首次与恢复握手；与 `Conn.SessionState()` 同版交付 | `0.11.0` | `SSL_session_reused` |
@@ -1241,8 +1241,27 @@ VerifyReport 握手成功仍可能 VerificationFailed，不可据此认定可信
 
 示例默认“验证并记录失败后继续”，另提供严格验证与完全不验证选项；连接成功不能
 代替证书可信。RFC 8998 的版本、套件、组、签名、证书及 SM2 ID 验收条件见
-[路线图 §2.4](roadmap.md#24-0100--rfc-8998-与完整握手诊断规划)。
+[路线图 §2.4](roadmap.md#24-0100--rfc-8998-与完整握手诊断已实现待发布)。
 STARTTLS、外部 PSK、0-RTT、主动重协商继续暂缓，不归入以上四版。
+
+**`0.10.0` 新增 API（已实现，待发布）**
+
+| 目标形态 | 语义与实施位置 |
+|----------|----------------|
+| `Config.RFC8998 bool` | 独立于 `StrictConfig`；限定 TLS 1.3 单证书、SM4 套件、curveSM2 与 sm2sig_sm3；拒绝冲突及 SNI 降级 |
+| `Config.Diagnostics *DiagnosticsConfig` | nil 关闭；配置事件函数、trace/keylog Writer 与有界暂存限额 |
+| `DiagnosticsConfig.OnEvent func(HandshakeEvent) error` | 每连接同步有序派发，离开原生调用锁后执行；载荷为副本，不可重入同一连接 |
+| `DiagnosticsConfig.TraceWriter` / `KeyLogWriter io.Writer` | 分别显式开启；短写和错误传播；keylog 不进入通用事件或普通日志 |
+| `DiagnosticsConfig.MaxEvents` / `MaxBytes int` | 每次派发暂存上限，零值为 256 项 / 1 MiB；负值拒绝，超限使当前操作失败 |
+| `HandshakeEvent` | 序号、种类、方向、原生状态/类型、Alert、验证信息及独立数据；字段为 `Sequence uint64`、`Kind string`、`Write bool`、`Version`/`ContentType`/`Code`/`Depth`/`AlertLevel`/`AlertDescription int`、`Data []byte`、`Err error` |
+| `Config.CaptureSCT bool` / `ConnectionState.SignedCertificateTimestamps [][]byte` | 默认关闭；逐项 TLS wire 编码（`i2o_SCT`），按原生列表顺序保留 TLS 扩展来源及重复项；getter 补全快照，只采集，不执行 CT 策略校验 |
+| `ConnectionState.SecureRenegotiation bool` | 原生 RFC 5746 支持标志，不提供主动重协商入口 |
+| `ErrUnsupported` / `ErrDiagnosticLimit` | 可匹配错误；区分能力缺失、诊断超限与原生握手/验证失败 |
+
+详细配置归一、输出错误、锁/生命周期及分批依赖以
+[路线图 §2.4.1–2.4.4](roadmap.md#241-实施基线与范围冻结) 为准。
+`Kind` 为 start/end/state/message/alert/verify/verify_callback；不把 keylog 混入事件。
+诊断和 SCT 选项在连接构造时固定，SNI 替换凭证/验证配置不替换基础诊断消费者。
 
 **破坏性变更**
 

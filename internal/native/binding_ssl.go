@@ -411,6 +411,7 @@ func SSL_CIPHER_get_name(cipher unsafe.Pointer) string {
 	if p == nil {
 		return ""
 	}
+	defer C.X_OPENSSL_free(unsafe.Pointer(p))
 	return C.GoString(p)
 }
 
@@ -454,6 +455,7 @@ func SSL_CIPHER_get_version(cipher unsafe.Pointer) string {
 	if p == nil {
 		return ""
 	}
+	defer C.X_OPENSSL_free(unsafe.Pointer(p))
 	return C.GoString(p)
 }
 

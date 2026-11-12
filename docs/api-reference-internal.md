@@ -603,3 +603,11 @@ C shim 的 X_SSL_write_owned 持有重试写缓冲；C 写缓冲区随成功或 
 
 具体 C 接口与版本以 [roadmap.md](roadmap.md) §3 为准；此处不预先登记尚未实现的
 完整内部函数签名。
+
+## 0.10.0 TLS 内部增量
+
+- core `TLSSettings` 新增 RFC8998、CaptureSCT、DiagnosticFlags、MaxEvents/MaxBytes 与连接独享 Dispatch 工厂。
+- core `TLSEvent` / `TLSAcknowledge`、`SSLConn.ObserveTLSEvent(kind int, cause error) error`，`ErrTLSUnsupported` / `ErrTLSLimit`；均不进入公开 API 签名。
+- core `TLSState` 新增 SecureRenegotiation 与 SignedCertificateTimestamps，诊断失败保留独立快照。
+- native `binding_ssl_diagnostics.go`：`TLSEvent`、`CgoTLSObserve`、`X_SSL_CTX_rfc8998`、`X_SSL_diagnostics`、`X_SSL_extra_state`；TLSCallbacks 增加有界队列和采集标志，TLSSelection 增加 RFC8998。
+- C shim：严格模式 ctx/SSL 开关、CT 开关、SCT getter/来源过滤/编码、消息/info/keylog 桥接及有界 trace BIO；禁用 SM2/CT/SSL_TRACE 有保护分支。

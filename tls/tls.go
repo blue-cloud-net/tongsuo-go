@@ -114,6 +114,18 @@ func coreCertOf(c *x509.Certificate) (*core.Certificate, error) {
 // D1 default-verify policy (方案 A: VERIFY_NONE by default; PEER enabled
 // only when RootCAs is set AND InsecureSkipVerify is false).
 type Config struct {
+	// RFC8998 限定 TLS 1.3、SM4 套件、curveSM2、sm2sig_sm3 与单证书；冲突报错。
+	//
+	// RFC8998 restricts TLS 1.3 to SM4 suites, curveSM2, sm2sig_sm3 and single credentials; conflicts fail.
+	RFC8998 bool
+	// CaptureSCT 采集 TLS 扩展 SCT，不执行 CT 策略校验；默认关闭。
+	//
+	// CaptureSCT collects TLS extension SCTs without CT policy validation; disabled by default.
+	CaptureSCT bool
+	// Diagnostics 配置同步诊断；nil 关闭，输出错误中断连接。
+	//
+	// Diagnostics configures synchronous diagnostics; nil disables it and output errors abort connections.
+	Diagnostics *DiagnosticsConfig
 	// Protocol 显式选择协议；混合模式仅用于服务端。
 	//
 	// Protocol explicitly selects the protocol; mixed mode is server-only.
@@ -559,6 +571,11 @@ func (c *Conn) HandshakeContext(ctx context.Context) error {
 			c.handshakeErr = errors.New("tls: SSL closed")
 			return
 		}
+		if err := c.ssl.ObserveTLSEvent(0, nil); err != nil {
+			c.handshakeErr = err
+			_ = c.captureState(false)
+			return
+		}
 		errCh := make(chan error, 1)
 		go func() {
 			var hsErr error
@@ -604,6 +621,10 @@ func (c *Conn) HandshakeContext(ctx context.Context) error {
 			c.stateMu.Lock()
 			c.state.HandshakeComplete = false
 			c.stateMu.Unlock()
+		}
+		if err := c.ssl.ObserveTLSEvent(1, c.handshakeErr); err != nil {
+			c.handshakeErr = errors.Join(c.handshakeErr, err)
+			_ = c.captureState(false)
 		}
 		if c.handshakeErr == nil {
 			c.handshakeDone.Store(true)
@@ -994,6 +1015,12 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	cfg := config.Clone()
+	if err := normalizeRFC8998(cfg); err != nil {
+		return nil, err
+	}
+	if cfg.Diagnostics != nil && (cfg.Diagnostics.MaxEvents < 0 || cfg.Diagnostics.MaxBytes < 0 || cfg.Diagnostics.MaxBytes > 1<<31-1) {
+		return nil, errors.New("tls: invalid diagnostic limits")
+	}
 	if err := validateConfig(cfg, client); err != nil {
 		return nil, err
 	}
@@ -1022,6 +1049,9 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 		if err := ctx.EnableMixedNTLS(); err != nil {
 			return nil, err
 		}
+	}
+	if cfg.RFC8998 && !client && cfg.Cert == nil && cfg.GetCertificate == nil && cfg.GetConfigForClient == nil {
+		return nil, errors.New("tls: RFC 8998 server requires signing credentials")
 	}
 	if mode != ProtocolNTLS {
 		if err := addCredential(ctx, cfg.Cert, cfg.Key, cfg.CertChain, tlsCredential); err != nil {
@@ -1108,7 +1138,29 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 			return nil, err
 		}
 	}
-	settings := core.TLSSettings{Tag: cfg, Protocols: cfg.NextProtos, Groups: strings.Join(cfg.CurvePreferences, ":"), Signatures: strings.Join(cfg.SignatureAlgorithms, ":"), DHParameters: cfg.DHParameters, Options: cfg.Options, Modes: cfg.Modes, Continue: policy == VerifyNone || policy == VerifyReport, VerifyEnabled: policy != VerifyNone, LegacyCiphers: legacy, TLS13Ciphers: tls13}
+	settings := core.TLSSettings{RFC8998: cfg.RFC8998, CaptureSCT: cfg.CaptureSCT, Tag: cfg, Protocols: cfg.NextProtos, Groups: strings.Join(cfg.CurvePreferences, ":"), Signatures: strings.Join(cfg.SignatureAlgorithms, ":"), DHParameters: cfg.DHParameters, Options: cfg.Options, Modes: cfg.Modes, Continue: policy == VerifyNone || policy == VerifyReport, VerifyEnabled: policy != VerifyNone, LegacyCiphers: legacy, TLS13Ciphers: tls13}
+	if cfg.Diagnostics != nil {
+		d := *cfg.Diagnostics
+		settings.MaxEvents, settings.MaxBytes = d.MaxEvents, d.MaxBytes
+		if settings.MaxEvents == 0 {
+			settings.MaxEvents = defaultDiagnosticMaxEvents
+		}
+		if settings.MaxBytes == 0 {
+			settings.MaxBytes = defaultDiagnosticMaxBytes
+		}
+		if d.OnEvent != nil {
+			settings.DiagnosticFlags |= 1
+		}
+		if d.TraceWriter != nil {
+			settings.DiagnosticFlags |= 2
+		}
+		if d.KeyLogWriter != nil {
+			settings.DiagnosticFlags |= 4
+		}
+		if settings.DiagnosticFlags != 0 {
+			settings.Dispatch = func() core.TLSAcknowledge { delivery := &diagnosticDelivery{config: d}; return delivery.observe }
+		}
+	}
 	if !client && (mode == ProtocolMixed || cfg.GetConfigForClient != nil || cfg.GetCertificate != nil || cfg.GetNTLSCertificate != nil) {
 		settings.SelectContext = func(name string, ntls bool) (*core.TLSContext, error) { return selectServerConfig(cfg, name, ntls) }
 	}

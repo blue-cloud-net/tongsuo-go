@@ -33,11 +33,13 @@ func handshakeCLIFile(t *testing.T, dir, name string, data []byte) string {
 // TestCLIHandshakeAuthentication verifies TLS/NTLS mutual authentication, ALPN and state against the CLI.
 func TestCLIHandshakeAuthentication(t *testing.T) {
 	testutil.SkipIfNoOpenSSL(t)
-	for _, protocol := range []string{"tls12", "tls13", "ntls-ecc", "ntls-ecdhe"} {
+	for _, protocol := range []string{"tls12", "tls13", "ntls-ecc", "ntls-ecdhe", "rfc8998-gcm", "rfc8998-ccm", "rfc8998-gcm-oneway", "rfc8998-ccm-oneway"} {
 		t.Run(protocol, func(t *testing.T) {
 			var sc, cc *Config
 			var serverCA, clientCA *x509.Certificate
 			ntls := strings.HasPrefix(protocol, "ntls")
+			rfc := strings.HasPrefix(protocol, "rfc8998")
+			oneWay := strings.HasSuffix(protocol, "oneway")
 			versionFlag := "-tls1_2"
 			if protocol == "tls13" {
 				versionFlag = "-tls1_3"
@@ -46,7 +48,10 @@ func TestCLIHandshakeAuthentication(t *testing.T) {
 			if protocol == "ntls-ecdhe" {
 				suite = "ECDHE-SM2-SM4-GCM-SM3"
 			}
-			if ntls {
+			if rfc {
+				sc, cc = rfc8998Identity(t), rfc8998Identity(t)
+				serverCA, clientCA = sc.Cert, cc.Cert
+			} else if ntls {
 				sc, serverCA = testNTLSIdentity(t, "ntls.example")
 				cc, clientCA = testNTLSIdentity(t, "client.example")
 			} else {
@@ -73,10 +78,26 @@ func TestCLIHandshakeAuthentication(t *testing.T) {
 				sc.MinVersion = TLS1_3Version
 				cc.MinVersion = TLS1_3Version
 			}
+			if rfc {
+				suite = "TLS_SM4_GCM_SM3"
+				if strings.Contains(protocol, "ccm") {
+					suite = "TLS_SM4_CCM_SM3"
+				}
+				sc.CipherSuites, cc.CipherSuites = []string{suite}, []string{suite}
+				cc.ServerName = "rfc8998.example"
+				if oneWay {
+					sc.ClientAuth = NoClientCert
+					cc.Cert = nil
+					cc.Key = nil
+				}
+			}
 			dir := t.TempDir()
 			caServer := handshakeCLIFile(t, dir, "server-ca.pem", mustPEM(t, serverCA))
 			caClient := handshakeCLIFile(t, dir, "client-ca.pem", mustPEM(t, clientCA))
 			credentials := func(cfg *Config, prefix string) []string {
+				if !cfg.NTLS && cfg.Cert == nil {
+					return nil
+				}
 				if cfg.NTLS {
 					return []string{"-sign_cert", handshakeCLIFile(t, dir, prefix+"-sign.pem", mustPEM(t, cfg.SignCert)), "-sign_key", handshakeCLIFile(t, dir, prefix+"-sign-key.pem", mustKeyPEM(t, cfg.SignKey)), "-enc_cert", handshakeCLIFile(t, dir, prefix+"-enc.pem", mustPEM(t, cfg.EncCert)), "-enc_key", handshakeCLIFile(t, dir, prefix+"-enc-key.pem", mustKeyPEM(t, cfg.EncKey))}
 				}
@@ -84,9 +105,16 @@ func TestCLIHandshakeAuthentication(t *testing.T) {
 				for _, cert := range cfg.CertChain {
 					chain = append(chain, mustPEM(t, cert)...)
 				}
-				return []string{"-cert", handshakeCLIFile(t, dir, prefix+".pem", mustPEM(t, cfg.Cert)), "-key", handshakeCLIFile(t, dir, prefix+"-key.pem", mustKeyPEM(t, cfg.Key)), "-cert_chain", handshakeCLIFile(t, dir, prefix+"-chain.pem", chain)}
+				args := []string{"-cert", handshakeCLIFile(t, dir, prefix+".pem", mustPEM(t, cfg.Cert)), "-key", handshakeCLIFile(t, dir, prefix+"-key.pem", mustKeyPEM(t, cfg.Key))}
+				if len(chain) > 0 {
+					args = append(args, "-cert_chain", handshakeCLIFile(t, dir, prefix+"-chain.pem", chain))
+				}
+				return args
 			}
 			protocolArgs := []string{versionFlag}
+			if rfc {
+				protocolArgs = []string{"-tls1_3", "-enable_sm_tls13_strict", "-ciphersuites", suite, "-groups", "curveSM2", "-sigalgs", "sm2sig_sm3"}
+			}
 			if ntls {
 				protocolArgs = []string{"-ntls", "-enable_ntls", "-cipher", suite}
 			}
@@ -122,7 +150,11 @@ func TestCLIHandshakeAuthentication(t *testing.T) {
 						return
 					}
 					state := c.ConnectionState()
-					if state.Verification != VerificationPassed || state.NegotiatedProtocol != "interop/1" {
+					wantVerification := VerificationPassed
+					if oneWay {
+						wantVerification = VerificationNotPerformed
+					}
+					if state.Verification != wantVerification || state.NegotiatedProtocol != "interop/1" {
 						done <- fmt.Errorf("invalid authentication state: %+v", state)
 						return
 					}
@@ -163,6 +195,17 @@ func TestCLIHandshakeAuthentication(t *testing.T) {
 				addr := reserve.Addr().String()
 				_ = reserve.Close()
 				args := append([]string{"s_server", "-accept", addr, "-quiet", "-www", "-Verify", "4", "-verify_return_error", "-CAfile", caClient, "-alpn", "interop/1"}, protocolArgs...)
+				if oneWay {
+					cleaned := make([]string, 0, len(args))
+					for i := 0; i < len(args); i++ {
+						if args[i] == "-Verify" {
+							i++
+							continue
+						}
+						cleaned = append(cleaned, args[i])
+					}
+					args = cleaned
+				}
 				args = append(args, credentials(sc, "server")...)
 				ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 				defer cancel()
