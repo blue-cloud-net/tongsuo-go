@@ -1,5 +1,7 @@
 # 内部 API 清单（`internal/*`）
 
+HTTP 使用既有 TLS 连接。OCSP 新增 `core.SSLConn.RequestOCSP` 和 `TLSState.OCSPResponse`，由绑定层封装 TLS status 扩展与装订回调。
+
 > **用途**：列出本仓库 `internal/` 下六个包的导出 API（签名 + 一句话说明），供本仓库内部开发（绑定层、核心层、测试）速查。
 >
 > **口径**：

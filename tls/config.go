@@ -231,6 +231,12 @@ func effectiveVerification(cfg *Config, client bool) VerificationPolicy {
 }
 
 func validateConfig(cfg *Config, client bool) error {
+	if cfg != nil && cfg.OCSPPolicy != OCSPUnchecked {
+		if !client || cfg.OCSPPolicy > OCSPRequire || effectiveVerification(cfg, true) != VerifyStrict || cfg.InsecureSkipVerify {
+			return errors.New("tls: OCSP verification requires a strict client configuration")
+		}
+	}
+
 	cfg = cfg.Clone()
 	if cfg.SessionTicketCount != nil {
 		n := *cfg.SessionTicketCount
@@ -309,6 +315,7 @@ func (cfg *Config) Clone() *Config {
 		return &Config{}
 	}
 	out := *cfg
+	out.OCSPStaple = append([]byte(nil), cfg.OCSPStaple...)
 	out.sessionScope = nil
 	if cfg.SessionTicketCount != nil {
 		n := *cfg.SessionTicketCount

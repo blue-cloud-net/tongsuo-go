@@ -1,5 +1,7 @@
 # TLS / NTLS 会话与票据（0.11.0，未发布）
 
+启用 OCSP 装订验证时，会话响应的来源、重新验证和回退规则见 [HTTP/1.1 与 OCSP stapling](tls-http-ocsp.md)。
+
 ## 使用入口
 
 客户端显式配置 `Config.SessionCache`，同一配置实例的多次拨号共享会话：

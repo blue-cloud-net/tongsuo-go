@@ -127,6 +127,7 @@ func (s *SSLConn) ObserveTLSEvent(kind int, cause error) error {
 }
 
 func cloneTLSState(in TLSState) TLSState {
+	in.OCSPResponse = append([]byte(nil), in.OCSPResponse...)
 	copyDER := func(list [][]byte) [][]byte {
 		if list == nil {
 			return nil

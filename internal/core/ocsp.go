@@ -219,18 +219,21 @@ func (r *OCSPResponse) Check(cert, issuer *Certificate) (*CertStatus, error) {
 		if cid == nil {
 			continue
 		}
-		found, status, reason, revTime, thisUpdate, nextUpdate := native.OCSP_resp_find_status(basic, cid)
+		found, status, reason, revTime, thisUpdate, nextUpdate, invalidTime := native.OCSP_resp_find_status(basic, cid)
 		native.OCSP_CERTID_free(cid)
 		if !found {
 			continue
+		}
+		if invalidTime {
+			return nil, fmt.Errorf("ocsp: invalid certificate status time")
 		}
 		st := &CertStatus{
 			Status:     status,
 			StatusText: native.OCSP_cert_status_str(status),
 			ReasonCode: reason,
 			ReasonText: native.OCSP_crl_reason_str(reason),
-			ThisUpdate: time.Unix(thisUpdate, 0).UTC(),
-			NextUpdate: time.Unix(nextUpdate, 0).UTC(),
+			ThisUpdate: ocspTime(thisUpdate),
+			NextUpdate: ocspTime(nextUpdate),
 		}
 		if status == 1 && revTime != 0 {
 			st.RevocationTime = time.Unix(revTime, 0).UTC()
@@ -238,6 +241,13 @@ func (r *OCSPResponse) Check(cert, issuer *Certificate) (*CertStatus, error) {
 		return st, nil
 	}
 	return nil, fmt.Errorf("ocsp: no status for certificate")
+}
+
+func ocspTime(seconds int64) time.Time {
+	if seconds == 0 {
+		return time.Time{}
+	}
+	return time.Unix(seconds, 0).UTC()
 }
 
 // ProducedAt 返回响应产生时间（RFC 6960 producedAt，响应方对响应签名的时间）。
@@ -256,7 +266,7 @@ func (r *OCSPResponse) ProducedAt() time.Time {
 		return time.Time{}
 	}
 	defer native.OCSP_BASICRESP_free(basic)
-	return time.Unix(native.OCSP_resp_get0_produced_at(basic), 0).UTC()
+	return ocspTime(native.OCSP_resp_get0_produced_at(basic))
 }
 
 // ResponderCerts 返回响应内证书（响应方签名链，每项为复制的 X509）。

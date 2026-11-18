@@ -14,6 +14,11 @@ import (
 //
 // TLSSettings describes handshake settings fixed at construction.
 type TLSSettings struct {
+	// Staple 按所选证书 DER 读取装订响应。
+	//
+	// Staple obtains the response for the selected certificate DER.
+	Staple func([]byte) ([]byte, error)
+
 	// RFC8998 启用国密 TLS 1.3 严格模式。
 	//
 	// RFC8998 enables strict ShangMi TLS 1.3.
@@ -201,6 +206,11 @@ func (c *Certificate) CheckName(name string, email bool, flags uint32) error {
 //
 // TLSState is a state snapshot holding no native resources.
 type TLSState struct {
+	// OCSPResponse 为对端装订响应的 DER 副本。
+	//
+	// OCSPResponse is a DER copy of the peer staple.
+	OCSPResponse []byte
+
 	// SecureRenegotiation 为原生 RFC 5746 支持标志。
 	//
 	// SecureRenegotiation is the native RFC 5746 support flag.
@@ -304,7 +314,7 @@ func (s *SSLConn) State() (TLSState, error) {
 	if err != nil {
 		return TLSState{}, err
 	}
-	out := TLSState{SecureRenegotiation: secure, SignedCertificateTimestamps: scts, Version: n.Version, CipherSuite: n.CipherSuite, CipherName: n.CipherName, ServerName: n.ServerName, Protocol: n.Protocol, Group: n.Group, Signature: n.Signature, VerifyCode: n.VerifyCode, PeerCertificates: n.PeerCertificates, VerifiedChain: n.VerifiedChain, VerifyEnabled: s.callbacks.VerifyEnabled, VerificationPerformed: s.callbacks.VerificationPerformed}
+	out := TLSState{OCSPResponse: native.X_SSL_read_ocsp(s.handle.Ptr()), SecureRenegotiation: secure, SignedCertificateTimestamps: scts, Version: n.Version, CipherSuite: n.CipherSuite, CipherName: n.CipherName, ServerName: n.ServerName, Protocol: n.Protocol, Group: n.Group, Signature: n.Signature, VerifyCode: n.VerifyCode, PeerCertificates: n.PeerCertificates, VerifiedChain: n.VerifiedChain, VerifyEnabled: s.callbacks.VerifyEnabled, VerificationPerformed: s.callbacks.VerificationPerformed}
 	if s.callbacks != nil {
 		if len(s.callbacks.ResumedPeers) > 0 {
 			out.PeerCertificates = cloneTLSState(TLSState{PeerCertificates: s.callbacks.ResumedPeers}).PeerCertificates
@@ -334,6 +344,7 @@ func (s *SSLConn) CallbackError() error {
 func (s *SSLConn) attachCallbacks(ctx *TLSContext) error {
 	settings := ctx.settings
 	cb := &native.TLSCallbacks{Protocols: append([]string(nil), settings.Protocols...), Continue: settings.Continue, VerifyEnabled: settings.VerifyEnabled, Tag: settings.Tag}
+	cb.Staple = settings.Staple
 	cb.SessionDomain = ctx.sessionDomain
 	cb.SessionGet, cb.SessionPut, cb.TicketKey = ctx.sessionGet, ctx.sessionPut, ctx.ticketKey
 	cb.DiagnosticFlags, cb.MaxEvents, cb.MaxBytes, cb.CaptureSCT = settings.DiagnosticFlags, settings.MaxEvents, settings.MaxBytes, settings.CaptureSCT
@@ -353,6 +364,7 @@ func (s *SSLConn) attachCallbacks(ctx *TLSContext) error {
 		cb.SessionDomain = next.sessionDomain
 		cb.SessionGet, cb.SessionPut, cb.TicketKey = next.sessionGet, next.sessionPut, next.ticketKey
 		cfg := next.settings
+		cb.Staple = cfg.Staple
 		cb.Continue = cfg.Continue
 		cb.VerifyEnabled = cfg.VerifyEnabled
 		cb.Tag = cfg.Tag
@@ -405,6 +417,22 @@ func (c *TLSContext) RestrictCipherSuites(legacy, tls13 string) error {
 	}
 	if !native.SSL_CTX_set_ciphersuites(c.handle.Ptr(), tls13) {
 		return NewOpError("tls: TLS 1.3 suites", native.PopError())
+	}
+	return nil
+}
+
+// RequestOCSP 在客户端请求服务器装订 OCSP 响应。
+//
+// RequestOCSP asks the server to staple an OCSP response.
+func (s *SSLConn) RequestOCSP() error {
+	if s == nil || !s.begin() {
+		return errors.New("tls: connection closed")
+	}
+	defer s.inflight.Done()
+	s.ioMu.Lock()
+	defer s.ioMu.Unlock()
+	if !native.X_SSL_request_ocsp(s.handle.Ptr()) {
+		return NewOpError("tls: request OCSP", native.PopError())
 	}
 	return nil
 }

@@ -18,6 +18,8 @@
 
 ---
 
+将 `tls.NewHTTPTransport` 的返回值配置到 `http.Client`，即可通过 HTTP/1.1 直连 HTTPS。服务端可将 `http.Server` 传给 `tls.ServeTLS` 或 `tls.ListenAndServeTLS`。客户端可设置 `Config.RequestOCSP`，从 `ConnectionState` 取得装订响应并显式验证。
+
 ## 功能
 
 API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `sym` / `asym` / `ecdh` /
