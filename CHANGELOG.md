@@ -24,11 +24,15 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-## [0.12.0] - TBD
+## [0.12.0] - 2026-11-18
 
 ### Added
 
 - HTTP/1.1 client transport and server helpers backed by Tongsuo, plus OCSP stapling, optional strict validation, and revalidation on session resumption.
+
+### Compatibility
+
+- Use named fields in `tls.Config` and `tls.ConnectionState` literals because these structs now include OCSP fields.
 
 ## [0.11.0] - 2026-11-18
 
@@ -1131,7 +1135,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.12.0...HEAD
 [0.12.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.9.0...v0.10.0

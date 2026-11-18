@@ -93,7 +93,7 @@ RFC 8998 客户端使用 `&tls.Config{RFC8998: true, Verification: tls.VerifyStr
 输出错误中断连接。`CaptureSCT` 记录 TLS 扩展 SCT 的 wire 字节，不执行 CT 策略校验。
 诊断消费者须及时返回且不能重入同一连接；共享 Writer 由调用方同步，keylog 密钥输出须妥善保护。
 
-`0.11.0` 已实现（尚未发布）会话缓存、原生 DER/PEM 导入导出、TLS 1.3 握手后票据等待与密钥轮换。
+`0.11.0` 已发布，支持会话缓存、原生 DER/PEM 导入导出、TLS 1.3 握手后票据等待与密钥轮换。
 配置 `SessionCache` 并复用同一 `Config`，通过 `ConnectionState.SessionReused` 判断实际恢复；
 恢复后仍执行两个验证回调。详见[会话规则](docs/tls-sessions.md)和
 [可运行恢复示例](examples/session-resumption/)。
@@ -410,7 +410,7 @@ API 层（16 个顶级包）          ← 对外高层 API，仅此层可被外�
 - **并发模型**：不同句柄可并行使用；普通单句柄由调用方串行化，`tls.Conn` 支持并发读写与 Close，内部串行原生调用
 - **内部实现隐藏**：`internal/` 受 Go `internal` 机制保护，外部不可导入；公开签名中不出现 `internal/` 类型
 
-详细设计与依赖方向见 [docs/architecture.md](docs/architecture.md)，`0.11.0`–`1.0.0` 的版本规划见 [docs/roadmap.md](docs/roadmap.md)。
+详细设计与依赖方向见 [docs/architecture.md](docs/architecture.md)，`0.13.0`–`1.0.0` 的版本规划见 [docs/roadmap.md](docs/roadmap.md)。
 
 ## 协议
 

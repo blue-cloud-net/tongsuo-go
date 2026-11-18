@@ -99,7 +99,7 @@ trace or keylog; output errors abort the connection. `CaptureSCT` records TLS-ex
 wire bytes without CT policy validation. Diagnostic consumers must return promptly and must
 not reenter the same connection; callers synchronize shared writers and protect keylog secrets.
 
-`0.11.0` implementation (not yet released) adds session caches, native DER/PEM import/export,
+`0.11.0` adds session caches, native DER/PEM import/export,
 TLS 1.3 post-handshake ticket waiting and ticket key rotation. Configure `SessionCache`, reuse the
 same `Config`, and inspect `ConnectionState.SessionReused`; both verification callbacks still run
 on resumed handshakes. See [session rules](docs/tls-sessions.md) and the
@@ -416,7 +416,7 @@ Binding layer (internal/native/)   ← cgo + inline C shim; maps directly to Ton
 - **Concurrency model**: distinct handles can be used in parallel; serialize ordinary handles, while `tls.Conn` supports concurrent reads, writes and Close with serialized native calls
 - **Internal implementation is hidden**: `internal/` is protected by Go's `internal` mechanism and cannot be imported from outside; no `internal/` type appears in a public signature
 
-See [docs/architecture.md](docs/architecture.md) for the detailed design and the dependency graph, and [docs/roadmap.md](docs/roadmap.md) for the `0.11.0`–`1.0.0` version plan.
+See [docs/architecture.md](docs/architecture.md) for the detailed design and the dependency graph, and [docs/roadmap.md](docs/roadmap.md) for the `0.13.0`–`1.0.0` version plan.
 
 ## License
 

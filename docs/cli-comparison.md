@@ -1,6 +1,6 @@
 # 铜锁 CLI 与 tongsuo-go 能力对比
 
-> 复核日期：2026-11-18 ｜ 本库基线：`0.11.0` 定版，待标签发布。
+> 复核日期：2026-11-18 ｜ 本库基线：`0.12.0` 定版，待标签发布。
 > CLI 基线：本机 `/opt/tongsuo-8.4.0/bin/openssl` 与 `/opt/tongsuo-8.5.0/bin/openssl`。
 > 本次核对公开源码并重新执行版本、命令及算法枚举；未重新执行全部密码学操作或互通测试。
 > 已交付能力的验收证据见 [测试规范](testing-guide.md)，不把本次静态核对写成测试通过。
@@ -65,8 +65,8 @@
 | RFC 8998 | `Config.RFC8998`，两套 SM4 TLS 1.3 套件 | 已有严格配置与互通记录；不把 SM2 证书或套件枚举当作完整 RFC 8998 支持 |
 | `-msg` / `-state` / `-trace` / `-keylogfile` | `Config.Diagnostics`，有界事件、trace/keylog Writer | 已交付；keylog 必须显式开启，输出错误会终止连接 |
 | SCT / 安全重协商状态 | `CaptureSCT`、`SignedCertificateTimestamps`、`SecureRenegotiation` | 已交付；仅捕获 SCT，不实施 CT 信任策略；状态查询不是主动重协商 |
-| `sess_id` / 会话缓存 / 票据 | 0.11.0 已实现，待发布 | 缓存、原生 DER/PEM、过期/实际复用、票据轮换与 SDK/CLI 双向恢复；[会话规则](tls-sessions.md)，I-31 |
-| `-www` / `-HTTP` / OCSP stapling | Listener 已有，HTTP 便捷集成及 staple 未交付 | 0.12.0，I-29；示例与真实 HTTP 集成分别验收 |
+| `sess_id` / 会话缓存 / 票据 | 0.11.0 已实现 | 缓存、原生 DER/PEM、过期/实际复用、票据轮换与 SDK/CLI 双向恢复；[会话规则](tls-sessions.md)，I-31 |
+| `-www` / `-HTTP` / OCSP stapling | 0.12.0 已实现 HTTP/1.1 和 OCSP stapling | [接入与验证规则](tls-http-ocsp.md)，I-29 |
 | STARTTLS、外部 PSK、0-RTT、主动重协商 | 未提供对应公开流程 | 暂缓，I-43；不作为普通会话恢复的隐含交付 |
 
 ## 5. 值得做的缺口与决策
@@ -75,7 +75,7 @@
 
 | 需求 | 价值与决策 | 目标 |
 |---|---|---|
-| I-31 / I-29 | 会话恢复降低握手成本，HTTP/OCSP 完成典型客户端与服务端集成 | 保持 0.11.0 / 0.12.0 |
+| I-31 / I-29 | 会话恢复降低握手成本，HTTP/OCSP 完成典型客户端与服务端集成 | 已在 0.11.0 / 0.12.0 实现 |
 | I-38 | PQC 密钥生命周期、ML-KEM、混合组实测，避免只提供算法名发现 | 0.13.0 |
 | I-37 / I-39 | CMS 与 RFC 3161 有标准格式和现成 CLI 互通对象；CMS 补摘要封装/验证 | 0.14.0 |
 | I-34 | SSHKDF / PKCS12KDF 填补已存在原生接口的协议派生缺口，可独立验向量 | 0.15.0 |

@@ -9,11 +9,11 @@
 > 4. 类型给出导出字段；未导出字段以「（内部字段）」表示其存在；
 > 5. 本文描述的是**重构后的目标形态**：`crypto/` 整目录与 `key/` 已被 `digest` / `mac` / `sym` / `asym` / `ecdh` / `kdf` / `rand` / `keystore` 取代；`csr` / `crl` / `ocsp` **未拆**，全部留在 `x509`。
 >
-> **范围**：**16 个包**。实现基线：`0.11.0`（2026-11-18 定版，待标签发布）；未来目标均以 🧭 标注。
+> **范围**：**16 个包**。实现基线：`0.12.0`（2026-11-18 定版，待标签发布）；未来目标均以 🧭 标注。
 > **版本归属**：本文件不负责版本分配，哪个 🧭 符号落在哪个版本见 [roadmap.md](roadmap.md) §2。
 >
 > **状态标记**：
-> - ✅ **已有** — 已实现（`0.11.0` 及之前；发布状态以版本标签为准）；
+> - ✅ **已有** — 已实现（`0.12.0` 及之前；发布状态以版本标签为准）；
 > - 🚧 **变更中** — 目标版本另标，尚不可用；
 > - 🧭 **规划中** — 仅表达**目标 API 形态**，尚不可用；**目标版本以 [roadmap.md](roadmap.md) §2 为准**，
 >   下表的版本列仅为速查，若与该文冲突以 roadmap 为准。
@@ -1228,7 +1228,7 @@ VerifyReport 握手成功仍可能 VerificationFailed，不可据此认定可信
 | 🆕 结构化握手诊断 | 状态、消息、Alert 与证书验证事件；失败握手仍保留已发生的信息 | `0.10.0` | 消息/状态/验证回调及数据复制 |
 | 🆕 详细 trace / keylog | 可选输出、默认关闭；TLS / NTLS / RFC 8998 分别验收，缺少原生能力明确报错 | `0.10.0` | `SSL_trace`、keylog 回调与输出错误传播 |
 | 🆕 `ConnectionState.SecureRenegotiation` / `SignedCertificateTimestamps` | RFC 5746 支持标志；SCT 列表仅在 `Config.CaptureSCT` 开启时填充，只记录不执行 CT 策略校验 | `0.10.0` | `SSL_get_secure_renegotiation_support`、`SSL_get0_peer_scts` 与来源过滤 |
-| 🆕 会话复用 / 票据（已实现，未发布） | `Config.SessionCache`、`Conn.SessionState()` | `0.11.0` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
+| 🆕 会话复用 / 票据 | `Config.SessionCache`、`Conn.SessionState()` | `0.11.0` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
 | 🆕 DER/PEM 会话导入导出、只读元数据、票据控制与密钥轮换 | 处理 TLS 1.3 握手后票据；缓存按协议、服务/客户端身份和验证配置隔离 | `0.11.0` | 新会话回调、序列化、票据与实际复用状态 |
 | 🧭 PQC / 混合 TLS 组支持矩阵与真实协商验收（I-38） | 原生可用组的握手、状态与错误边界，含 X25519MLKEM768 / 可用的 curveSM2MLKEM768 | `0.13.0` | Groups 名称透传不是已完成验收 |
 | 🆕 `ConnectionState.SessionReused` | 区分首次与恢复握手；与 `Conn.SessionState()` 同版交付 | `0.11.0` | `SSL_session_reused` |
@@ -1450,7 +1450,7 @@ SPKI PEM 往返 + `asym.Load*KeyPEM` 落地，**零新增 API、零新增 cgo**�
 > 非 RSA 密钥（`Params().Type != "RSA"`）返回错误。包名仍为 `rsa`，与**标准库**
 > `crypto/rsa` 同名，调用方同时使用时需给其中之一取别名。
 
-## 0.11.0 会话 API（已实现，未发布）
+## 0.11.0 会话 API
 
 | 入口 | 说明 |
 |------|------|
