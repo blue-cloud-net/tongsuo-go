@@ -86,7 +86,7 @@ python3 scripts/extract_release_notes.py <ver>   # 生成 release-notes.md（已
 | `docs/api-reference-internal.md` | 生成基线日期 |
 | `docs/cli-comparison.md` | 「本库基线」 |
 | `docs/official-sdk-comparison.md` | 「本库基线」 |
-| `docs/roadmap.md` | 顶部基线与「只写未做的事」口径、§3「已在 `x.y.z` 落地的相关绑定」 |
+| `docs/roadmap.md` | 顶部基线与「只写未做的事」口径，移除已交付范围与绑定前置，保留延期事项并修正引用 |
 
 纯文档改动**不写进 CHANGELOG**（AGENTS §6.3）。
 

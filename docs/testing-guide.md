@@ -599,7 +599,7 @@ build/vet 与 TLS/core race 检查通过。独立开发时在 `941ae5b` 基线�
   名称/IP、缺中间链/客户端凭证及 NTLS 两套身份。独立读写 deadline、双向并发 I/O、
   取消/关闭、原生错误归因和 FD/句柄释放通过回归；保留 SDK 旧入口行为与既有 Listener。
 - `0.10.0`：RFC 8998 的 `TLS_SM4_GCM_SM3` / `TLS_SM4_CCM_SM3` 分别完成单向/双向
-  认证和 CLI 双向互通，按路线图 §2.4 核对 TLS 1.3、curveSM2 的组/key_share、
+  认证和 CLI 双向互通，核对 TLS 1.3、curveSM2 的组/key_share、
   sm2sig_sm3 的协商/CertificateVerify、证书约束及握手签名/证书验证的 SM2 ID；
   错误版本/组/签名/证书明确失败，不能仅凭套件名判定符合 RFC 8998。
   TLS/NTLS/RFC 8998 分别验证结构化状态、消息、Alert、验证事件、trace 和 keylog，
@@ -627,7 +627,7 @@ STARTTLS、外部 PSK、0-RTT、主动重协商不作为本轮交付门槛。
 
 ### `0.10.0` 实施验收矩阵
 
-下表是 [路线图 §2.4](roadmap.md#24-0100--rfc-8998-与完整握手诊断已发布2026-11-12) 的新增用例要求，
+下表是 `0.10.0` 已交付范围的新增用例要求，
 对应实现与实测结果见下文。基础单元/回环不依赖外部服务，CLI 用例继续用
 `tongsuocli` 标签及 `internal/testutil`，只在确实缺铜锁 CLI 时按统一工具说明跳过。
 
@@ -643,7 +643,8 @@ STARTTLS、外部 PSK、0-RTT、主动重协商不作为本轮交付门槛。
 | 条件编译 | 禁用 SM2/CT/trace 的构建均能编译，显式启用返回不支持错误，关闭仍正常；构建证据单列，不能用跳过代替 | 两版原生能力探路与构建验证 |
 | 安全重协商 | TLS 1.2 与 NTLS 分别对比原生标志；TLS 1.3 不将该值解释为支持主动重协商 | `tls/diagnostics_test.go` |
 
-全量矩阵、静态链接及 ASan/LSan 门禁见路线图 §2.4.4；实际执行后补录版本、
+铜锁 8.4.0 / 8.5.0 分别运行 build/vet、默认全量测试、CLI 与 race，Linux 增加真实静态链接；
+平台覆盖 Linux/macOS × amd64/arm64，原生采集缓冲成功/失败/关闭路径执行 ASan/LSan。记录版本、
 构建选项、平台和结果。原生不触发的事件/协议组合应给出实测边界，不能填充假事件。
 
 ## NTLS 线程错误队列回归
@@ -651,8 +652,52 @@ STARTTLS、外部 PSK、0-RTT、主动重协商不作为本轮交付门槛。
 NTLS 握手后读取必须隔离 OS 线程上前次原生调用留下的错误。
 `internal/core/ssl_error_queue_test.go` 在同一线程注入旧错误并验证读取超时，
 不得改成只检查错误非空。回环另覆盖服务端先等待、客户端延迟发送的时序；
-Linux amd64 的 race 阶段重复该回环 50 次。调查与 act 漏检原因见
-[铜锁 8.5.0 NTLS 调查](ntls-8.5-race-investigation.md)。
+Linux amd64 的 race 阶段重复该回环 50 次。偶发 Broken pipe 的根因与
+act 漏检原因见下一节。
+
+## NTLS 偶发 Broken pipe 调查（2026-11-05）
+
+GitHub Actions 的 Linux amd64 / 铜锁 8.5.0 在 `go test -count=1 -race ./...` 中出现
+`TestNTLSLoopback` 握手成功、应用数据写入报 `Broken pipe`。8.4.0 及该次运行的其余
+矩阵未失败，不代表其他运行不会受线程状态污染。
+
+**复现与根因**：本地铜锁 8.5.0 下原始 NTLS 回环重复 200 次、整个 TLS 包重复 30 次
+均通过；让客户端握手后等待 20ms 再发送数据，使服务端先进入非阻塞读的 WANT_READ
+路径后，100 次回环出现 21 次失败；客户端读写和服务端读取均观察到了 Broken pipe。
+铜锁的原生错误队列属于 OS 线程，不属于 Go goroutine 或某条 SSL 连接，而
+`SSL_get_error` 的前置条件是本次 SSL 操作开始前该
+线程队列为空。核心层此前锁定了线程却未清空前次原生调用留下的错误，8.5.0 的 NTLS
+读取路径受这些残留错误影响，把正常的 WANT_READ 判为故障；服务端因读取错误退出并
+关闭连接，客户端随后报 Broken pipe。队列中残留错误的具体来源可能因调度不同而不同，
+不能仅凭客户端 EPIPE 推断最初的失败操作。
+
+**确定性回归**：`internal/core/ssl_error_queue_test.go` 构造独立 NTLS 双证书连接，
+握手后锁定线程，用非法 cipher 产生可识别的旧错误，再对没有应用数据的连接读取——
+修复前立即报 `SSL_read: ... no cipher match`，证明把无关旧错误当作读取故障；修复后
+等待至设置的 deadline 并返回超时，证明正确走 WANT_READ 重试。相同注入方式的普通
+TLS 测试没有复现，说明该路径上的 NTLS 行为差异值得单独覆盖。
+
+**修复方式**：Connect / Accept / Read / Write 在锁定的同一 OS 线程上、每次原生操作前
+调用 `ERR_clear_error`；失败时仍读取该次操作产生的错误，没有忽略真实失败。保留双向
+回环断言，增加客户端延迟发送场景和服务端错误诊断。
+
+**act 漏检原因**：此前 act 的 Linux amd64 两个版本确实执行了 race 测试，并非跳过该
+步骤，但每组只执行一次 `-count=1`，arm64 按工作流设置不执行 race。act 容器与 GitHub
+VM 的调度和负载不同，原始回环通常在服务端读取前就发送了数据，未触发这个窗口。
+`-race` 检查 Go 内存访问，不检查铜锁 C 库的线程错误队列语义。因此不能把 act 一次
+成功视为偶发时序缺陷不存在的证据；确定性注入测试让缺陷检测不再依赖碰巧出现的
+runner 调度。
+
+**修复后验证（2026-11-05）**：本机铜锁 8.4.0 / 8.5.0 的 `go vet ./...` 与全量
+`go test -count=1 -race ./...` 通过；8.5.0 下放大时序的 NTLS 回环 100 次、错误注入
+回归 100 次均通过；act（Go 1.21.13，Linux amd64）8.4.0 / 8.5.0 两组完整通过，包含
+build/vet、单元测试、真实 static 链接测试、全量 race、50 次 NTLS 回环及 CLI 对拍。
+本轮未重跑 arm64 或 macOS。
+
+**act 缓存配置（独立问题）**：铜锁缓存可包含旧 worktree 的编译时 `OPENSSLDIR`，导致
+主目录复用缓存时 CLI 找不到 `openssl.cnf`。CI 显式设置 `OPENSSL_CONF` 指向当前工作区
+`.tongsuo-install/ssl/openssl.cnf`，使配置随缓存安装目录定位。该问题与 NTLS Broken
+pipe 无关；此前 act 的 race 阶段确实执行成功。
 
 ## 0.10.0 实际实现与本地验收（2026-11-12）
 
