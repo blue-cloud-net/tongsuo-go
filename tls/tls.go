@@ -114,6 +114,36 @@ func coreCertOf(c *x509.Certificate) (*core.Certificate, error) {
 // D1 default-verify policy (方案 A: VERIFY_NONE by default; PEER enabled
 // only when RootCAs is set AND InsecureSkipVerify is false).
 type Config struct {
+	sessionScope *sessionScope
+	// SessionCache 保存跨连接客户端会话；nil 禁用客户端缓存。
+	//
+	// SessionCache stores client sessions across connections; nil disables client caching.
+	SessionCache SessionCache
+	// ServerSessionCache 保存服务端有状态会话；nil 使用容量 256 的内存缓存。
+	//
+	// ServerSessionCache stores stateful server sessions; nil uses a 256-entry memory cache.
+	ServerSessionCache ServerSessionCache
+	// SessionPolicyID 标识共享验证策略；空值按配置实例隔离，调用方须在策略变化时更换标识。
+	//
+	// SessionPolicyID identifies a shared verification policy; empty isolates configuration instances, and callers must change it when policy changes.
+	SessionPolicyID string
+	// Session 显式提供导入会话；恢复后仍执行当前身份验证，过期会话忽略。
+	//
+	// Session explicitly supplies an imported session; current identity validation still runs after resumption and expired sessions are ignored.
+	Session *SessionState
+	// SessionTicketsDisabled 禁止票据签发和客户端票据扩展，不禁止有状态会话缓存。
+	//
+	// SessionTicketsDisabled disables ticket issuance and the client ticket extension without disabling stateful caching.
+	SessionTicketsDisabled bool
+	// SessionTicketCount 指定 TLS 1.3 票据数量（0..16）；nil 保留原生默认值。
+	//
+	// SessionTicketCount specifies the TLS 1.3 ticket count (0..16); nil preserves the native default.
+	SessionTicketCount *int
+	// TicketKeys 为可跨实例共享的服务端密钥管理器；nil 使用独立自动轮换管理器。
+	//
+	// TicketKeys is a shareable server key manager; nil uses an independent automatically rotating manager.
+	TicketKeys *TicketKeyManager
+
 	// RFC8998 限定 TLS 1.3、SM4 套件、curveSM2、sm2sig_sm3 与单证书；冲突报错。
 	//
 	// RFC8998 restricts TLS 1.3 to SM4 suites, curveSM2, sm2sig_sm3 and single credentials; conflicts fail.
@@ -446,6 +476,10 @@ func (s *Server) Close() error {
 //
 // Since 0.9.0, the serialization description below is historical: reads and writes progress independently, with serialized native steps and unlocked readiness waits.
 type Conn struct {
+	sessionKey     string
+	sessionPending []byte
+	resuming       *SessionState
+
 	config    *Config
 	stateMu   sync.RWMutex
 	state     ConnectionState
@@ -628,6 +662,10 @@ func (c *Conn) HandshakeContext(ctx context.Context) error {
 		}
 		if c.handshakeErr == nil {
 			c.handshakeDone.Store(true)
+			if e := c.cacheSession(); e != nil {
+				c.handshakeErr = e
+				c.handshakeDone.Store(false)
+			}
 		}
 	})
 	if c.handshakeErr == nil {
@@ -709,7 +747,15 @@ func (c *Conn) Read(b []byte) (int, error) {
 	if c.closed.Load() {
 		return 0, io.EOF
 	}
+	if len(c.sessionPending) > 0 {
+		n := copy(b, c.sessionPending)
+		c.sessionPending = c.sessionPending[n:]
+		return n, nil
+	}
 	n, err := c.ssl.Read(b)
+	if sessionErr := c.cacheSession(); sessionErr != nil {
+		return n, errors.Join(err, sessionErr)
+	}
 	if err != nil && c.closed.Load() {
 		// 关闭后读返回 io.EOF，便于 io.Copy 等感知对端正常关闭。
 		return n, io.EOF
@@ -753,6 +799,9 @@ func (c *Conn) Write(b []byte) (int, error) {
 	for written < len(b) {
 		n, err := c.ssl.Write(b[written:])
 		written += n
+		if e := c.cacheSession(); e != nil {
+			return written, errors.Join(err, e)
+		}
 		if err != nil {
 			return written, err
 		}
@@ -1014,7 +1063,7 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 	// Configuration failures must read the same native thread's error queue.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	cfg := config.Clone()
+	cfg := config.cloneRuntime()
 	if err := normalizeRFC8998(cfg); err != nil {
 		return nil, err
 	}
@@ -1163,6 +1212,9 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 	}
 	if !client && (mode == ProtocolMixed || cfg.GetConfigForClient != nil || cfg.GetCertificate != nil || cfg.GetNTLSCertificate != nil) {
 		settings.SelectContext = func(name string, ntls bool) (*core.TLSContext, error) { return selectServerConfig(cfg, name, ntls) }
+	}
+	if err := configureSessions(ctx, cfg, client); err != nil {
+		return nil, err
 	}
 	if err := ctx.ConfigureTLS(settings); err != nil {
 		return nil, err

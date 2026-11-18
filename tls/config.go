@@ -232,6 +232,15 @@ func effectiveVerification(cfg *Config, client bool) VerificationPolicy {
 
 func validateConfig(cfg *Config, client bool) error {
 	cfg = cfg.Clone()
+	if cfg.SessionTicketCount != nil {
+		n := *cfg.SessionTicketCount
+		if n < 0 || n > 16 {
+			return errors.New("tls: ticket count outside 0..16")
+		}
+		if cfg.SessionTicketsDisabled && n != 0 {
+			return errors.New("tls: disabled tickets conflict with positive ticket count")
+		}
+	}
 	if err := normalizeRFC8998(cfg); err != nil {
 		return err
 	}
@@ -294,10 +303,17 @@ func validateConfig(cfg *Config, client bool) error {
 //
 // Clone copies configuration containers; callers retain certificates and keys, and callbacks may run concurrently.
 func (cfg *Config) Clone() *Config {
+	sessionConfigMu.Lock()
+	defer sessionConfigMu.Unlock()
 	if cfg == nil {
 		return &Config{}
 	}
 	out := *cfg
+	out.sessionScope = nil
+	if cfg.SessionTicketCount != nil {
+		n := *cfg.SessionTicketCount
+		out.SessionTicketCount = &n
+	}
 	if cfg.Diagnostics != nil {
 		d := *cfg.Diagnostics
 		out.Diagnostics = &d
@@ -327,7 +343,13 @@ func selectServerConfig(base *Config, name string, ntls bool) (*core.TLSContext,
 			cfg = next
 		}
 	}
-	cfg = cfg.Clone()
+	cfg = cfg.cloneRuntime()
+	if cfg.TicketKeys == nil {
+		cfg.TicketKeys = base.TicketKeys
+	}
+	if cfg.ServerSessionCache == nil {
+		cfg.ServerSessionCache = base.ServerSessionCache
+	}
 	cfg.Diagnostics = base.Diagnostics
 	cfg.CaptureSCT = base.CaptureSCT
 	if base.RFC8998 && !cfg.RFC8998 {

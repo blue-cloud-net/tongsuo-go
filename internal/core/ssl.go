@@ -46,10 +46,14 @@ const waitFDTimeout = 250 * time.Millisecond
 // value; callers must invoke Close to release it once they are done with
 // the context.
 type TLSContext struct {
-	mu       sync.RWMutex
-	settings TLSSettings
-	handle   *Handle
-	ntls     bool // 构造时一次性锁定；IsNTLS() 使用。
+	sessionDomain []byte
+	sessionGet    func([]byte) []byte
+	sessionPut    func([]byte, []byte)
+	ticketKey     func([]byte, bool) ([]byte, int)
+	mu            sync.RWMutex
+	settings      TLSSettings
+	handle        *Handle
+	ntls          bool // 构造时一次性锁定；IsNTLS() 使用。
 }
 
 // NewClientTLSContext 创建 TLS 客户端上下文。

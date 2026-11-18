@@ -91,6 +91,11 @@ RFC 8998 客户端使用 `&tls.Config{RFC8998: true, Verification: tls.VerifyStr
 输出错误中断连接。`CaptureSCT` 记录 TLS 扩展 SCT 的 wire 字节，不执行 CT 策略校验。
 诊断消费者须及时返回且不能重入同一连接；共享 Writer 由调用方同步，keylog 密钥输出须妥善保护。
 
+`0.11.0` 已实现（尚未发布）会话缓存、原生 DER/PEM 导入导出、TLS 1.3 握手后票据等待与密钥轮换。
+配置 `SessionCache` 并复用同一 `Config`，通过 `ConnectionState.SessionReused` 判断实际恢复；
+恢复后仍执行两个验证回调。详见[会话规则](docs/tls-sessions.md)和
+[可运行恢复示例](examples/session-resumption/)。
+
 STARTTLS、外部 PSK、0-RTT、主动重协商继续暂缓，不承诺版本。
 
 功能需求、技术判断与验收边界见 [docs/requirements.md](docs/requirements.md)。

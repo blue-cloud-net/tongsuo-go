@@ -9,8 +9,8 @@
 ## 1. 结论与方法
 
 典型 TLS/NTLS 的 SNI、ALPN、认证、证书链、参数配置、Listener 与诊断不再是本库的
-历史缺口。官方已有而本库仍值得补齐的主要能力是会话缓存/恢复、票据管理及 HTTP
-便捷服务入口，分别保持 0.11.0、0.12.0 排期。另有两个具体边界：官方传输通过 BIO
+历史缺口。会话缓存/恢复与票据管理已在 0.11.0 实现（待发布），
+HTTP 便捷服务入口保持 0.12.0 排期。另有两个具体边界：官方传输通过 BIO
 接入 `net.Conn`，本库目前要求 TCP；官方支持自定义 RSA 公钥指数，本库固定 65537。
 两项先保留候选需求，不为符号对齐扩大公开面。
 
@@ -39,8 +39,8 @@ AES/SHA-512 包便判为缺失。相反，存在算法常量或原生指针出�
 | 信任、组、签名、DH 参数、Options/Modes | 原生风格 Ctx 配置 | Config 受约束字段、严格参数检查、HostnameOptions | 核心场景已有；不映射任意控制码 |
 | Listener | `Listen` / `NewListener` | `net.Listen` + `tls.NewListener` | 均有入口，握手与 Accept 错误语义以各自文档为准 |
 | 底层连接 | `Client` / `Server` 存储 net.Conn，经 ReadBio/WriteBio 传输 | API 接收 net.Conn，但 `connFD` 只接受 `*net.TCPConn` | 真正的剩余差异；I-40 暂缓通用流后端 |
-| 会话恢复 | `SetSessionCacheMode`、大小/超时/ID、`GetSession` / `DialSession` / `SessionReused` | 尚无公开会话缓存与导入导出 | I-31，0.11.0；独立验证 TLS 1.3 握手后票据，不能由官方存在这些符号推断其完整行为 |
-| 票据轮换 | `TicketStore` / `TicketKeyManager` / `SetTicketStore` | 尚无公开票据密钥管理 | I-31，0.11.0；复用能力，不照搬原生 CipherCtx/HMAC_CTX |
+| 会话恢复 | `SetSessionCacheMode`、大小/超时/ID、`GetSession` / `DialSession` / `SessionReused` | 0.11.0 已实现公开缓存、DER/PEM 与实际恢复（待发布） | I-31，0.11.0；独立验证 TLS 1.3 握手后票据，不能由官方存在这些符号推断其完整行为 |
+| 票据轮换 | `TicketStore` / `TicketKeyManager` / `SetTicketStore` | 0.11.0 已实现共享密钥管理与自动/显式轮换（待发布） | I-31，0.11.0；复用能力，不照搬原生 CipherCtx/HMAC_CTX |
 | HTTP 服务 | `ListenAndServeTLS` / `ServerListenAndServeTLS`；客户端仍为 TODO | Listener 可供组合，尚无专用 HTTP 便捷入口 | 0.12.0 补 HTTP/1.1 客户端/服务端；不把官方 server helper 描述成全套 HTTP 集成 |
 | 超时、取消、错误与状态 | net.Conn deadline、Handshake、ConnectionState、UnderlyingConn | 独立 deadline、HandshakeContext / DialContext、HandshakeError 与验证状态 | 两者均有基础传输接口，本库另有显式 context 入口 |
 | RFC 8998、结构化事件、trace/keylog、SCT | 本次未见对应的专用高层配置/诊断交付面 | `RFC8998` / `Diagnostics` / `CaptureSCT` / `SecureRenegotiation` | 本库已有专门 API；不据此否定官方底层扩展或原生库能力 |

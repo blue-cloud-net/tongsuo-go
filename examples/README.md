@@ -51,6 +51,14 @@ SDK API 示例：显式 TLS/NTLS/混合端口、RFC 8998、完整证书链、ALP
 cd examples/handshake && go run . -h
 ```
 
+### [session-resumption](./session-resumption) — TLS 1.3 会话恢复
+
+同一客户端配置共享缓存，等待握手后票据，保留应用数据并断言第二次连接实际复用。
+
+```bash
+cd examples/session-resumption && go run .
+```
+
 ### [ed25519](./ed25519) — Ed25519 签名 / 验签与 PEM 序列化
 
 Ed25519（RFC 8032）密钥生成、32B 原始种子 / 公钥互操作、64B 签名、PKCS#8 / SPKI PEM 往返。

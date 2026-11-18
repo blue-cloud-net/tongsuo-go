@@ -97,6 +97,12 @@ trace or keylog; output errors abort the connection. `CaptureSCT` records TLS-ex
 wire bytes without CT policy validation. Diagnostic consumers must return promptly and must
 not reenter the same connection; callers synchronize shared writers and protect keylog secrets.
 
+`0.11.0` implementation (not yet released) adds session caches, native DER/PEM import/export,
+TLS 1.3 post-handshake ticket waiting and ticket key rotation. Configure `SessionCache`, reuse the
+same `Config`, and inspect `ConnectionState.SessionReused`; both verification callbacks still run
+on resumed handshakes. See [session rules](docs/tls-sessions.md) and the
+[runnable resumption example](examples/session-resumption/).
+
 STARTTLS, external PSK, 0-RTT and active renegotiation remain deferred without a target version.
 
 See [docs/requirements.md](docs/requirements.md) for functional requirements, technical decisions and acceptance criteria.

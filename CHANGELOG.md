@@ -24,6 +24,24 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
+## [0.11.0] - TBD
+
+### Added
+
+- TLS/NTLS/RFC 8998 session resumption: client and server cache interfaces, bounded concurrent LRU storage, native DER/PEM import/export, immutable session metadata and `ConnectionState.SessionReused`.
+- `Conn.WaitSession(ctx)` for post-handshake TLS 1.3 tickets, preserving application data and read deadlines; normal I/O collects sessions automatically. Runnable session-resumption example.
+- Ticket disable/count controls, shared ticket key managers, daily automatic rotation with seven-day key retention and explicit key-ring replacement for shared deployments.
+
+### Changed
+
+- Resumed handshakes revalidate peer identities under current policy and run both verification callbacks. Cache/configuration domains, selected credentials, SNI, client identity and protocol isolate resumption. Native imports require current verification and separate chain material where needed.
+
+### BREAKING
+
+- Fields added to `Config` and `ConnectionState` affect unkeyed struct literals; migrate to keyed literals. Existing verification-policy semantics and native default ticket counts remain unchanged.
+
+---
+
 ## [0.10.0] - 2026-11-12
 
 ### Added
@@ -1107,7 +1125,8 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.7.0...v0.8.0

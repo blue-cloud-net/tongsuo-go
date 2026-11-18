@@ -611,3 +611,13 @@ C shim 的 X_SSL_write_owned 持有重试写缓冲；C 写缓冲区随成功或 
 - core `TLSState` 新增 SecureRenegotiation 与 SignedCertificateTimestamps，诊断失败保留独立快照。
 - native `binding_ssl_diagnostics.go`：`TLSEvent`、`CgoTLSObserve`、`X_SSL_CTX_rfc8998`、`X_SSL_diagnostics`、`X_SSL_extra_state`；TLSCallbacks 增加有界队列和采集标志，TLSSelection 增加 RFC8998。
 - C shim：严格模式 ctx/SSL 开关、CT 开关、SCT getter/来源过滤/编码、消息/info/keylog 桥接及有界 trace BIO；禁用 SM2/CT/SSL_TRACE 有保护分支。
+
+## 0.11.0 TLS 会话增量
+
+- `core.DecodeSession` / `SessionInfo`：有界完整 DER 校验、元数据副本，不保留原生资源。
+- `TLSContext.ConfigureSessions`：会话域、缓存回调、票据数量与密钥策略；仅构造期调用。
+- `SSLConn.SetSession` / `SessionDER` / `SessionReused`：独立会话设置、快照与实际复用查询。
+- `SSLConn.ReverifySession` / `PumpSession`：恢复后当前验证与受 context/deadline 控制的握手后消息驱动。
+- native：`SSL_SESSION_decode`、`SSL_set_session`、`SSL_session_reused`、
+  `X_SSL_CTX_sessions` / `X_SSL_reverify` 及整数句柄分发的会话/缓存/票据回调。
+  所有 `SSL_SESSION` 独立引用均在绑定调用内释放，C 端仅持有整数回调句柄。

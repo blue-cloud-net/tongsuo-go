@@ -65,7 +65,7 @@
 | RFC 8998 | `Config.RFC8998`，两套 SM4 TLS 1.3 套件 | 已有严格配置与互通记录；不把 SM2 证书或套件枚举当作完整 RFC 8998 支持 |
 | `-msg` / `-state` / `-trace` / `-keylogfile` | `Config.Diagnostics`，有界事件、trace/keylog Writer | 已交付；keylog 必须显式开启，输出错误会终止连接 |
 | SCT / 安全重协商状态 | `CaptureSCT`、`SignedCertificateTimestamps`、`SecureRenegotiation` | 已交付；仅捕获 SCT，不实施 CT 信任策略；状态查询不是主动重协商 |
-| `sess_id` / 会话缓存 / 票据 | 未提供公开会话管理 | 0.11.0：缓存、DER/PEM 导入导出、过期/复用与票据轮换，I-31 |
+| `sess_id` / 会话缓存 / 票据 | 0.11.0 已实现，待发布 | 缓存、原生 DER/PEM、过期/实际复用、票据轮换与 SDK/CLI 双向恢复；[会话规则](tls-sessions.md)，I-31 |
 | `-www` / `-HTTP` / OCSP stapling | Listener 已有，HTTP 便捷集成及 staple 未交付 | 0.12.0，I-29；示例与真实 HTTP 集成分别验收 |
 | STARTTLS、外部 PSK、0-RTT、主动重协商 | 未提供对应公开流程 | 暂缓，I-43；不作为普通会话恢复的隐含交付 |
 
