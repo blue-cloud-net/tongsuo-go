@@ -43,7 +43,7 @@
 
 ## 2. 分版本范围
 
-### 2.1 `0.11.0` — 会话复用与票据（规划）
+### 2.1 `0.11.0` — 会话复用与票据（已实现，待发布）
 
 | 能力 | 交付内容与边界 | 前置（§3） |
 |------|----------------|-------------|
@@ -54,6 +54,10 @@
 **完成条件**：在已交付的 TLS / NTLS / RFC 8998 协议矩阵上验证首次/恢复握手、拒绝复用、过期、密钥轮换与
 跨身份隔离；不以“握手成功”代替“实际复用”。TLS 1.3 测试与示例必须处理握手后
 到达的票据，再进行恢复连接，不能握手后立即断开并假定已有可用会话。
+
+实现与使用细则见 [TLS 会话规则](tls-sessions.md)。公开入口包括 `SessionCache` /
+`ServerSessionCache`、`SessionState`、`WaitSession`、`SessionPolicyID`、票据配置与
+`TicketKeyManager`；原生 CLI 格式保持兼容，完整链材料单独保留用于恢复后验证。
 
 ### 2.2 `0.12.0` — HTTP/1.1 集成与 OCSP stapling（规划）
 
@@ -115,11 +119,10 @@ KRB5KDF、hybrid 点形式和额外曲线扩容不隐含纳入，后两项仅在
 
 ## 3. 绑定实现与后续实施前置
 
-下表仅列后续实施前置，不表示已绑定；已实现绑定见 [内部 API 清单](api-reference-internal.md)。
+`0.11.0` 会话与票据绑定已实现。下表仅列后续实施前置，不表示已绑定；已实现绑定见 [内部 API 清单](api-reference-internal.md)。
 
 | 家族 | 需要的 C 接口或扩展 | 服务对象 | 目标版本 |
 |------|--------------------|----------|----------|
-| TLS 会话与票据 | `SSL_session_reused`、`SSL_SESSION_*`、会话新建/缓存回调、复用状态、票据数量与密钥轮换绑定 | `tls` | `0.11.0` |
 | TLS stapling / HTTP 集成 | `SSL_CTX_set_tlsext_status*` / `SSL_get_tlsext_status_ocsp_resp` 等；HTTP 入口复用已有 Listener 与标准库 | `tls` | `0.12.0` |
 | PQC / KEM | 原生 PQC 密钥、签验、序列化路径；`EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate`，TLS 组配置与实际协商状态 | `asym`、`tls` | `0.13.0` |
 | CMS / TS | `CMS_*`（含摘要封装/验证）/ `TS_*`、验证与 HTTP 编排 | `pkcs/pkcs7`、`ts` | `0.14.0` |

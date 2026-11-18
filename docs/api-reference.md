@@ -1228,10 +1228,10 @@ VerifyReport 握手成功仍可能 VerificationFailed，不可据此认定可信
 | 🆕 结构化握手诊断 | 状态、消息、Alert 与证书验证事件；失败握手仍保留已发生的信息 | `0.10.0` | 消息/状态/验证回调及数据复制 |
 | 🆕 详细 trace / keylog | 可选输出、默认关闭；TLS / NTLS / RFC 8998 分别验收，缺少原生能力明确报错 | `0.10.0` | `SSL_trace`、keylog 回调与输出错误传播 |
 | 🆕 `ConnectionState.SecureRenegotiation` / `SignedCertificateTimestamps` | RFC 5746 支持标志；SCT 列表仅在 `Config.CaptureSCT` 开启时填充，只记录不执行 CT 策略校验 | `0.10.0` | `SSL_get_secure_renegotiation_support`、`SSL_get0_peer_scts` 与来源过滤 |
-| 🧭 会话复用 / 票据 | `Config.SessionCache`、`Conn.SessionState()` | `0.11.0` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
-| 🧭 DER/PEM 会话导入导出、只读元数据、票据控制与密钥轮换 | 处理 TLS 1.3 握手后票据；缓存按协议、服务/客户端身份和验证配置隔离 | `0.11.0` | 新会话回调、序列化、票据与实际复用状态 |
+| 🆕 会话复用 / 票据（已实现，未发布） | `Config.SessionCache`、`Conn.SessionState()` | `0.11.0` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
+| 🆕 DER/PEM 会话导入导出、只读元数据、票据控制与密钥轮换 | 处理 TLS 1.3 握手后票据；缓存按协议、服务/客户端身份和验证配置隔离 | `0.11.0` | 新会话回调、序列化、票据与实际复用状态 |
 | 🧭 PQC / 混合 TLS 组支持矩阵与真实协商验收（I-38） | 原生可用组的握手、状态与错误边界，含 X25519MLKEM768 / 可用的 curveSM2MLKEM768 | `0.13.0` | Groups 名称透传不是已完成验收 |
-| 🧭 `ConnectionState.SessionReused` | 区分首次与恢复握手；与 `Conn.SessionState()` 同版交付 | `0.11.0` | `SSL_session_reused` |
+| 🆕 `ConnectionState.SessionReused` | 区分首次与恢复握手；与 `Conn.SessionState()` 同版交付 | `0.11.0` | `SSL_session_reused` |
 | 🧭 `ListenAndServeTLS` / `ServeTLS`、HTTP/1.1 客户端/服务端集成 | 复用现有 `NewListener`；不承诺 HTTP/2 集成 | `0.12.0` | 标准库 HTTP 集成 |
 | 🧭 OCSP stapling | 配置、请求与读取 staple；提供响应有效性与证书状态验证示例 | `0.12.0` | status 回调与 OCSP 响应绑定 |
 | 🧭 `ConnectionState.OCSPStapled` / `OCSPResponse` | 装订标志与 DER 原文，可直接交 `x509.ParseOCSPResponse` | `0.12.0` | `SSL_get_tlsext_status_ocsp_resp` |
@@ -1449,3 +1449,22 @@ SPKI PEM 往返 + `asym.Load*KeyPEM` 落地，**零新增 API、零新增 cgo**�
 > 参数读取经 `asym.Params`（`N/E/D/P/Q/Dmp1/Dmq1/Iqmp`），与 `asym` 不再「解耦」；
 > 非 RSA 密钥（`Params().Type != "RSA"`）返回错误。包名仍为 `rsa`，与**标准库**
 > `crypto/rsa` 同名，调用方同时使用时需给其中之一取别名。
+
+## 0.11.0 会话 API（已实现，未发布）
+
+| 入口 | 说明 |
+|------|------|
+| `Config.SessionCache` / `ServerSessionCache` | 客户端跨连接缓存 / 服务端有状态缓存，接口均为 `Get(string) (*SessionState, bool)`、`Put(string, *SessionState)` |
+| `NewSessionCache(int) (SessionCache, error)` | 并发有界 LRU；nil 条目删除，过期条目淘汰 |
+| `Config.SessionPolicyID` / `Session` | 显式共享验证策略域 / 原生导入会话；默认按配置实例隔离 |
+| `Config.SessionTicketsDisabled` / `SessionTicketCount *int` / `TicketKeys` | 票据开关、TLS 1.3 数量（nil 默认，0..16）、共享管理器 |
+| `Conn.SessionState() (*SessionState, error)` / `WaitSession(context.Context) (*SessionState, error)` | 最新可恢复快照 / 有界等待握手后票据；无快照返回 `ErrNoSession` |
+| `ParseSessionDER([]byte)` / `ParseSessionPEM([]byte)` | 返回 `(*SessionState, error)`；原生 CLI 格式 |
+| `SessionState.MarshalDER()` / `MarshalPEM()` | 返回含秘密的独立 `([]byte, error)` |
+| `SessionState.Metadata() SessionMetadata` | Version、CreatedAt、ExpiresAt、HasTicket、Resumable、ID |
+| `SessionState.WithPeerCertificates([][]byte) (*SessionState, error)` | 附加叶证书匹配的独立链；不授予信任 |
+| `GenerateTicketKey() (TicketKey, error)` | 生成 64 字节票据密钥 |
+| `NewTicketKeyManager() (*TicketKeyManager, error)` / `SetKeys([]TicketKey) error` | 自动每日轮换 / 原子替换显式环 |
+| `ConnectionState.SessionReused bool` | 原生实际恢复标志 |
+
+所有权、隔离、验证与持久化要求见 [TLS 会话规则](tls-sessions.md)。

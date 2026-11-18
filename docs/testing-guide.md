@@ -751,3 +751,17 @@ cc -Wno-deprecated-declarations -DOPENSSL_NO_SM2 -DOPENSSL_NO_CT -DOPENSSL_NO_SS
 
 能力探测两版均通过正常及禁用宏分支，验证关闭功能仍可构造、开启不可用能力失败。
 这里检查的是 shim 编译保护及返回路径，未重编一套实际禁用 CT/trace/SM2 的铜锁本体。
+
+## 0.11.0 会话实施验收矩阵
+
+| 领域 | 必测内容 |
+|------|----------|
+| 协议 | 两版铜锁分别跑 TLS 1.2、TLS 1.3、NTLS、RFC 8998 GCM/CCM 的首次与实际恢复；同端口 TLS/NTLS 隔离 |
+| 票据 | 握手后等待、禁用/零张、旧密钥过渡、移除、每日轮换、七天保留窗口 |
+| 身份 | 配置实例、SNI、协议、验证策略域、客户端身份与根证书隔离；恢复后两个回调、双向链验证、NTLS 加密证书过期拒绝及诊断顺序/错误传播 |
+| 缓存 | 有状态缓存、LRU、删除、过期、跨实例显式共享与独立副本 |
+| 编码 | 完整 DER/单块 PEM、损坏/超限/尾随输入；CLI sess_id 编码与 s_client 双向恢复 |
+| 并发与生命周期 | 读写并行、等待取消/deadline、应用数据保留、缓存/密钥环并发访问、Close 释放；race 回归 |
+
+实现测试位于 `tls/session_test.go` 与带 `tongsuocli` 标签的会话互通测试；
+可运行示例见 `examples/session-resumption`。缺少票据不是跳过恢复断言的理由。
