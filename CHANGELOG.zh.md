@@ -22,6 +22,14 @@
 
 ---
 
+## [0.10.1] - TBD
+
+### Bug 修复
+
+- 将 ClientHello 配置选择延后到原生握手返回后执行，避免并发 TLS/NTLS 连接在握手回调内嵌套创建 SSL_CTX。
+
+---
+
 ## [0.10.0] - 2026-11-12
 
 ### 新增功能
@@ -920,7 +928,8 @@
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.7.0...v0.8.0

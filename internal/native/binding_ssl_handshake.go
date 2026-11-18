@@ -437,17 +437,24 @@ func X_SSL_operation(ssl unsafe.Pointer, op string, data []byte) (int, error) {
 	if len(data) > 0 {
 		buf = unsafe.Pointer(&data[0])
 	}
-	switch op {
-	case "SSL_connect":
-		ret, err = C.SSL_connect((*C.SSL)(ssl))
-	case "SSL_accept":
-		ret, err = C.SSL_accept((*C.SSL)(ssl))
-	case "SSL_read":
-		ret, err = C.SSL_read((*C.SSL)(ssl), buf, C.int(len(data)))
-	case "SSL_write":
-		ret, err = C.X_SSL_write_owned((*C.SSL)(ssl), buf, C.int(len(data)))
-	default:
-		return -1, errors.New("tls: unknown SSL operation")
+	for {
+		switch op {
+		case "SSL_connect":
+			ret, err = C.SSL_connect((*C.SSL)(ssl))
+		case "SSL_accept":
+			ret, err = C.SSL_accept((*C.SSL)(ssl))
+		case "SSL_read":
+			ret, err = C.SSL_read((*C.SSL)(ssl), buf, C.int(len(data)))
+		case "SSL_write":
+			ret, err = C.X_SSL_write_owned((*C.SSL)(ssl), buf, C.int(len(data)))
+		default:
+			return -1, errors.New("tls: unknown SSL operation")
+		}
+		if ret > 0 || C.SSL_get_error((*C.SSL)(ssl), ret) != C.SSL_ERROR_WANT_CLIENT_HELLO_CB {
+			break
+		}
+		// Run configuration selection after the native handshake has unwound.
+		C.X_SSL_select_pending((*C.SSL)(ssl))
 	}
 	return int(ret), err
 }

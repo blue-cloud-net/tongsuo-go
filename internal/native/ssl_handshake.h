@@ -3,6 +3,7 @@
 #include <openssl/ssl.h>
 #include <stdint.h>
 int X_SSL_write_owned(SSL *ssl, const void *buf, int len);
+void X_SSL_select_pending(SSL *ssl);
 int X_SSL_attach(SSL *ssl, uintptr_t id);
 void X_SSL_CTX_callbacks(SSL_CTX *ctx);
 int X_SSL_switch_context(SSL *ssl, SSL_CTX *ctx);

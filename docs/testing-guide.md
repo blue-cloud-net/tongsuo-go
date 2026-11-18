@@ -706,3 +706,7 @@ cc -Wno-deprecated-declarations -DOPENSSL_NO_SM2 -DOPENSSL_NO_CT -DOPENSSL_NO_SS
 
 能力探测两版均通过正常及禁用宏分支，验证关闭功能仍可构造、开启不可用能力失败。
 这里检查的是 shim 编译保护及返回路径，未重编一套实际禁用 CT/trace/SM2 的铜锁本体。
+
+### ClientHello 配置选择回归
+
+`TestHandshakeSelectionRetry` 验证握手暂停后配置选择只执行一次、选择中可创建并释放上下文，且选择失败保留原始错误并令双方握手失败；`TestHandshakeMixedPortConcurrent` 覆盖同端口并发 TLS/NTLS。macOS arm64 须在真实 runner 上复跑。

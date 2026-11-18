@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -817,5 +819,46 @@ func TestNTLSIndependentIntermediateChains(t *testing.T) {
 		if ce == nil && se == nil {
 			t.Fatal("missing client encryption intermediate accepted")
 		}
+	}
+}
+
+// TestHandshakeSelectionRetry 验证暂停握手后只选择一次配置并保留选择错误。
+//
+// TestHandshakeSelectionRetry verifies selection runs once after suspension and preserves errors.
+func TestHandshakeSelectionRetry(t *testing.T) {
+	for _, reject := range []bool{false, true} {
+		t.Run(fmt.Sprint(reject), func(t *testing.T) {
+			sc := testServerConfig(t)
+			var calls atomic.Int32
+			selectionErr := errors.New("selection rejected")
+			sc.GetConfigForClient = func(*ClientHelloInfo) (*Config, error) {
+				calls.Add(1)
+				// Exercise context construction during selection, including cleanup.
+				probeConfig := *sc
+				probeConfig.GetConfigForClient = nil
+				probe, err := NewServer(&probeConfig)
+				if err != nil {
+					return nil, err
+				}
+				if err := probe.Close(); err != nil {
+					return nil, err
+				}
+				if reject {
+					return nil, selectionErr
+				}
+				return nil, nil
+			}
+			_, _, ce, se := handshakePair(t, sc, &Config{Verification: VerifyNone})
+			if calls.Load() != 1 {
+				t.Fatalf("selection calls=%d, want 1", calls.Load())
+			}
+			if reject {
+				if ce == nil || !errors.Is(se, selectionErr) {
+					t.Fatalf("client=%v server=%v", ce, se)
+				}
+			} else if ce != nil || se != nil {
+				t.Fatalf("client=%v server=%v", ce, se)
+			}
+		})
 	}
 }

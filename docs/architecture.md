@@ -212,6 +212,7 @@ API 的 `config.go` 固定配置和选择规则，`state.go` 提供 DER 值快�
 - Stop 先拒绝新操作并 shutdown socket，Close 等 inflight 归零后释放 SSL/fd；Handle 释放函数在显式 Close、构造失败及 finalizer 路径均关闭 fd 副本。ctx.Close 与 SSL_new 通过读写锁隔离。
 - VerifyNone/VerifyReport/VerifyStrict 分别表达不验证/失败继续/失败终止；ClientAuth 独立请求客户端证书。自定义验证错误始终终止；状态分别表达握手完成与未验证/通过/失败，复制证书及失败信息，不暴露原生资源。
 - 配置构造后不可修改，选择回调可能并发执行且不得重入同一连接；基础组受限时，所选配置须显式指定组。示例默认 Report；0.10.0 接入 RFC 8998 严格配置、事件流、trace/keylog 与 SCT 快照。
+- ClientHello 回调用 `SSL_CLIENT_HELLO_RETRY` 暂停原生握手；绑定层在原生调用返回后执行配置选择，再恢复握手，避免在握手栈内嵌套构造 SSL_CTX。
 
 #### tls 包公开 API（v0.2.0+）
 
