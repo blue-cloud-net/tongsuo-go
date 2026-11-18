@@ -622,3 +622,11 @@ C shim 的 X_SSL_write_owned 持有重试写缓冲；C 写缓冲区随成功或 
 - native：`SSL_SESSION_decode`、`SSL_set_session`、`SSL_session_reused`、
   `X_SSL_CTX_sessions` / `X_SSL_reverify` 及整数句柄分发的会话/缓存/票据回调。
   所有 `SSL_SESSION` 独立引用均在绑定调用内释放，C 端仅持有整数回调句柄。
+
+### 0.13.0 PQC 绑定
+
+`internal/native` 使用 `EVP_PKEY_CTX_new_from_name`、`EVP_PKEY_keygen` 和
+`EVP_PKEY_get0_type_name` 生成并识别 provider 密钥。签验用
+`EVP_DigestSignInit_ex` / `EVP_DigestVerifyInit_ex` 配置上下文和消息编码后一次性执行。
+独立 KEM 通过 `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` 实现。
+`internal/core` 管理每次操作的上下文、线程错误栈和密钥生命周期。

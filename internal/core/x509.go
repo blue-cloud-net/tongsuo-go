@@ -2442,6 +2442,8 @@ func (r *CertificateRequest) Verify() error {
 	switch {
 	case pkey.TypeID() == native.EvpPkeySM2:
 		return pkey.Verify(info, sig, nil)
+	case pkey.isPQCSigner():
+		return pkey.VerifyPQC(info, sig, nil, false)
 	case pkey.TypeID() == native.EvpPkeyED25519, pkey.TypeID() == native.EvpPkeyED448:
 		return pkey.VerifyMessage(info, sig)
 	default:

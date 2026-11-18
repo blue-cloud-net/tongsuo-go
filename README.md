@@ -30,6 +30,7 @@ interfaces and a CLI-style by-name entry point; see the
 [version roadmap](docs/roadmap.md) for what comes next and
 [docs/architecture.md](docs/architecture.md) for the layered design.
 
+- **Post-quantum cryptography** (`asym`, `x509`, `tls`): ML-DSA and SLH-DSA signatures with context and prehashing, PKCS#8 / SPKI PEM and DER, ML-KEM encapsulation, and PQC certificates and CSRs. Tongsuo 8.5.0 supports pure and hybrid ML-KEM TLS 1.3 groups and ML-DSA certificate authentication. Use `asym.PQCAvailable` to check key generation.
 - 🔐 **SM2 asymmetric algorithm** (GB/T 32918, `asym`): key generation, PEM serialization, encrypt/decrypt (ASN.1 DER, C1C3C2 internal order),
   SM2withSM3 sign/verify, customizable userId
 - 🔑 **SM3 hash algorithm** (GB/T 32905-2016, `digest`): `hash.Hash` interface + fixed-size `SumSM3` + by-name `Sum("SM3", d)`
@@ -277,6 +278,30 @@ func main() {
 	}
 	fmt.Printf("%s\n", pt)
 }
+```
+
+### ML-KEM
+
+On Tongsuo 8.5.0, generate a key, encapsulate to its public key, and decapsulate with the private key. Check `asym.PQCAvailable(asym.AlgMLKEM768)` when supporting multiple Tongsuo versions.
+
+```go
+key, err := asym.GenerateKey(asym.AlgMLKEM768, nil)
+if err != nil {
+    return err
+}
+defer asym.Close(key)
+
+ciphertext, senderSecret, err := asym.Encapsulate(key.Public())
+if err != nil {
+    return err
+}
+defer clear(senderSecret)
+
+receiverSecret, err := asym.Decapsulate(key, ciphertext)
+if err != nil {
+    return err
+}
+defer clear(receiverSecret)
 ```
 
 ### SM2 Asymmetric Algorithm

@@ -17,7 +17,8 @@ func wrapPrivateKey(k *core.PKey) (PrivateKey, error) {
 	if k == nil {
 		return nil, fmt.Errorf("%w: nil key handle", ErrInvalidKey)
 	}
-	switch k.Algorithm() {
+	alg := Algorithm(k.Algorithm())
+	switch string(alg) {
 	case string(AlgSM2):
 		return &sm2PrivateKey{key: k}, nil
 	case string(AlgRSA):
@@ -33,7 +34,10 @@ func wrapPrivateKey(k *core.PKey) (PrivateKey, error) {
 	case string(AlgX448):
 		return &x448PrivateKey{key: k}, nil
 	default:
-		return nil, fmt.Errorf("%w: private key algorithm %q", ErrUnknownAlgorithm, k.Algorithm())
+		if pqcVariant(alg) {
+			return &pqcPrivateKey{pqcKey{key: k, alg: alg}}, nil
+		}
+		return nil, fmt.Errorf("%w: private key algorithm %q", ErrUnknownAlgorithm, alg)
 	}
 }
 
@@ -48,7 +52,8 @@ func wrapPublicKey(k *core.PKey) (PublicKey, error) {
 	if k == nil {
 		return nil, fmt.Errorf("%w: nil key handle", ErrInvalidKey)
 	}
-	switch k.Algorithm() {
+	alg := Algorithm(k.Algorithm())
+	switch string(alg) {
 	case string(AlgSM2):
 		return &sm2PublicKey{key: k}, nil
 	case string(AlgRSA):
@@ -64,7 +69,10 @@ func wrapPublicKey(k *core.PKey) (PublicKey, error) {
 	case string(AlgX448):
 		return &x448PublicKey{key: k}, nil
 	default:
-		return nil, fmt.Errorf("%w: public key algorithm %q", ErrUnknownAlgorithm, k.Algorithm())
+		if pqcVariant(alg) {
+			return &pqcPublicKey{pqcKey{key: k, alg: alg}}, nil
+		}
+		return nil, fmt.Errorf("%w: public key algorithm %q", ErrUnknownAlgorithm, alg)
 	}
 }
 

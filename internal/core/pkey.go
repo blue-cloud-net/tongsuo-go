@@ -104,6 +104,9 @@ func (k *PKey) Algorithm() string {
 	case native.EvpPkeyX448:
 		return "X448"
 	default:
+		if name := k.pqcAlgorithm(); name != "" {
+			return name
+		}
 		return fmt.Sprintf("id:%d", k.BaseID())
 	}
 }
@@ -1553,6 +1556,9 @@ func isAllZero(b []byte) bool {
 // digest-less SignMessage / VerifyMessage path (or use EVP_MD_CTX-based
 // signatures such as X509_sign_ctx). RSA / EC remain on SHA-256.
 func digestForSigner(k *PKey) *Digest {
+	if k.isPQCSigner() {
+		return nil
+	}
 	if k != nil && k.TypeID() == native.EvpPkeySM2 {
 		return SM3()
 	}

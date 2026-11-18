@@ -24,6 +24,14 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
+## [0.13.0] - TBD
+
+### Added
+
+- Added `asym.GenerateKey` for named key generation and `MarshalSPKI` / `LoadSPKI` for PEM and DER public keys.
+- Added native ML-DSA and SLH-DSA key generation and signature operations, including context, standard prehashing, X.509 certificates and CSRs. Added native ML-KEM encapsulation and decapsulation. PQC key generation can be probed at runtime.
+- Validated TLS 1.3 negotiation with three pure ML-KEM and four hybrid groups, and server and mutual certificate authentication with ML-DSA on Tongsuo 8.5.0.
+
 ## [0.12.0] - 2026-11-18
 
 ### Added
@@ -1135,7 +1143,8 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.9.0...v0.10.0
