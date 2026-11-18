@@ -9,7 +9,7 @@
 > 4. 类型给出导出字段；未导出字段以「（内部字段）」表示其存在；
 > 5. 本文描述的是**重构后的目标形态**：`crypto/` 整目录与 `key/` 已被 `digest` / `mac` / `sym` / `asym` / `ecdh` / `kdf` / `rand` / `keystore` 取代；`csr` / `crl` / `ocsp` **未拆**，全部留在 `x509`。
 >
-> **范围**：**16 个包**。实现基线：`0.10.0`（2026-11-12 定版，待标签发布）；未来目标均以 🧭 标注。
+> **范围**：**16 个包**。实现基线：已发布 `0.10.0`（2026-11-12）；未来目标均以 🧭 标注。
 > **版本归属**：本文件不负责版本分配，哪个 🧭 符号落在哪个版本见 [roadmap.md](roadmap.md) §2。
 >
 > **状态标记**：
@@ -73,10 +73,6 @@
 ✅ **已有**｜整包新增（`0.3.0`）
 
 承载 CLI 的 `version` / `info` / `errstr` / `list` 所对应的**元信息查询**能力：运行库版本、构建与运行环境快照、原生错误码解析、可用算法枚举。本包**只做查询**，不含任何密码学运算，也不持有原生句柄，因此**无需 `Close`**。
-
-> 与 `docs/cli-comparison-todo.md` 的两处差异（该文 §1 列 4 条版本 API）：
-> 1. 该文的 `meta.LibraryVersion()` 由本包的 `Version()`（完整 banner）+ `VersionString()`（纯版本号）覆盖；
-> 2. 该文的 `meta.BuildInfo() BuildInfo` 与类型名 `BuildInfo` **同名冲突**（Go 不允许同包内类型与函数同名），故读取函数改名 `ReadBuildInfo()`，对齐标准库 `debug.ReadBuildInfo` 惯例。
 
 **函数（版本）**
 
@@ -342,13 +338,12 @@
 - 🆕 `func KBKDFCounterWidthSupported() bool` — 本构建的 KBKDF 是否接受 `R`
   （计数器宽度）参数；仅 OpenSSL 3.2+ 支持，Tongsuo 8.4.0 下 `R` 被忽略（固定 32 位）
 
-**规划中（后续版本）**
+**规划中**
 
-> 下列 KDF 是未分配版本的候选，不列入本轮已确认的交付范围；已排期能力见 [roadmap.md](roadmap.md) §2。
-
-| 符号 | 前置（需新增 `internal/native` 绑定） |
-|---|---|
-| 🧭 `KRB5KDF`、`PKCS12KDF`、`SSHKDF` | 同类 `EVP_KDF_fetch`，无需新 shim，仅补参数映射与向量 |
+| 目标形态 | 目标版本 / 处置 | 前置与边界 |
+|---|---|---|
+| 🧭 `SSHKDF` / `PKCS12KDF` 类型化与按名派生入口（I-34） | `0.15.0` | 复用 EVP_KDF，补 SSH 类型/session ID、P12 diversifier/口令编码及独立向量；最终签名实施时确定 |
+| 🧭 `KRB5KDF`（I-46） | 暂缓，不承诺版本 | 明确 Kerberos 互通对象与参数后评估，见需求台账 |
 
 **破坏性变更**
 
@@ -655,9 +650,10 @@
 | 🆕 ED25519ph / ED25519ctx / ED448ph / Ed448 上下文 | `0.8.0` | 独立 Sign/Verify 函数，原消息输入；SupportsEdDSAInstance(key Key, instance string, context []byte) (bool, error) |
 | 🧭 ML-DSA-44 / 65 / 87 | `0.13.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
 | 🧭 SLH-DSA 12 变体 | `0.13.0` | 同上 |
-| 🧭 `func Encapsulate` / `func Decapsulate`（KEM） | `0.13.0` | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
+| 🧭 ML-KEM-512/768/1024 与 `Encapsulate` / `Decapsulate`（I-38） | `0.13.0` | 原生 KEM 密钥生成/编码、封装与解封装；不以算法枚举代替实际操作 |
+| 🧭 EC/SM2 公钥压缩/未压缩 SPKI PEM/DER 输出（I-35） | `0.15.0` | 复用 asym 密钥并保持源对象与旧默认不变；最终选项签名实施时确定 |
 
-> 明确不做：DSA、DH、EC-ElGamal、Paillier（见 `docs/cli-comparison.md` §9）。
+> 明确不做：DSA、DH、EC-ElGamal、Paillier（见 `docs/roadmap.md` §4）。
 
 **破坏性变更**
 
@@ -953,7 +949,7 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
 - 🆕 `func (c *Certificate) PublicKey() (asym.PublicKey, error)` — 以 `asym.PublicKey` 返回公钥（**替代原 `PublicKey() (*sm2.PublicKey, error)` 与 `PublicKeyPKey() (*core.PKey, error)`，修复 E1-9**）
 - ♻️ `func (c *Certificate) Signature() []byte` — 原始签名值
 - ♻️ `func (c *Certificate) SignatureAlgorithm() string` / `SignatureAlgorithmOID() string` — 签名算法名 / OID
-- 🆕 `func (c *Certificate) VerifyHostname(host string) error` — 主机名 / IP 校验（对应 `verify -verify_hostname`；`cli-comparison.md` §6.B B8，P1）
+- 🆕 `func (c *Certificate) VerifyHostname(host string) error` — 主机名 / IP 校验（对应 `verify -verify_hostname`）
 - ✨ `func (c *Certificate) ToCertificateRequest(priv asym.PrivateKey) (*CertificateRequest, error)` — 证书转 CSR（对应 `x509 -x509toreq`；**不迁移扩展**，与 openssl 一致）
 
 **CSR**
@@ -1066,7 +1062,7 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
 来自标准库 `math/big`。现有 `CreateCertificate` / `CreateSelfSigned` 的 int64 签名保留，
 大整数签发使用 `NewCertificate` → `SetSerialBigInt` → Set/Add → `Sign`；
 不为每个便捷函数平行扩充所有序列号表示。输入边界与兼容性验收见
-[功能需求记录 §3](requirements.md#3-crl-与完整序列号职责判断与排期)。
+[0.7.0 交付记录](../CHANGELOG.zh.md#070---2026-11-04)。
 
 **破坏性变更**
 
@@ -1233,7 +1229,8 @@ VerifyReport 握手成功仍可能 VerificationFailed，不可据此认定可信
 | 🆕 详细 trace / keylog | 可选输出、默认关闭；TLS / NTLS / RFC 8998 分别验收，缺少原生能力明确报错 | `0.10.0` | `SSL_trace`、keylog 回调与输出错误传播 |
 | 🆕 `ConnectionState.SecureRenegotiation` / `SignedCertificateTimestamps` | RFC 5746 支持标志；SCT 列表仅在 `Config.CaptureSCT` 开启时填充，只记录不执行 CT 策略校验 | `0.10.0` | `SSL_get_secure_renegotiation_support`、`SSL_get0_peer_scts` 与来源过滤 |
 | 🧭 会话复用 / 票据 | `Config.SessionCache`、`Conn.SessionState()` | `0.11.0` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
-| 🧭 会话导入导出、票据控制与密钥轮换 | 处理 TLS 1.3 握手后票据；缓存按协议、服务/客户端身份和验证配置隔离 | `0.11.0` | 新会话回调、序列化、票据与实际复用状态 |
+| 🧭 DER/PEM 会话导入导出、只读元数据、票据控制与密钥轮换 | 处理 TLS 1.3 握手后票据；缓存按协议、服务/客户端身份和验证配置隔离 | `0.11.0` | 新会话回调、序列化、票据与实际复用状态 |
+| 🧭 PQC / 混合 TLS 组支持矩阵与真实协商验收（I-38） | 原生可用组的握手、状态与错误边界，含 X25519MLKEM768 / 可用的 curveSM2MLKEM768 | `0.13.0` | Groups 名称透传不是已完成验收 |
 | 🧭 `ConnectionState.SessionReused` | 区分首次与恢复握手；与 `Conn.SessionState()` 同版交付 | `0.11.0` | `SSL_session_reused` |
 | 🧭 `ListenAndServeTLS` / `ServeTLS`、HTTP/1.1 客户端/服务端集成 | 复用现有 `NewListener`；不承诺 HTTP/2 集成 | `0.12.0` | 标准库 HTTP 集成 |
 | 🧭 OCSP stapling | 配置、请求与读取 staple；提供响应有效性与证书状态验证示例 | `0.12.0` | status 回调与 OCSP 响应绑定 |
@@ -1241,7 +1238,7 @@ VerifyReport 握手成功仍可能 VerificationFailed，不可据此认定可信
 
 示例默认“验证并记录失败后继续”，另提供严格验证与完全不验证选项；连接成功不能
 代替证书可信。RFC 8998 的版本、套件、组、签名、证书及 SM2 ID 验收条件见
-[路线图 §2.4](roadmap.md#24-0100--rfc-8998-与完整握手诊断已发布2026-11-12)。
+[测试规范的 0.10.0 实施验收矩阵](testing-guide.md#0100-实施验收矩阵)。
 STARTTLS、外部 PSK、0-RTT、主动重协商继续暂缓，不归入以上四版。
 
 **`0.10.0` 新增 API（已发布，2026-11-12）**
@@ -1258,8 +1255,8 @@ STARTTLS、外部 PSK、0-RTT、主动重协商继续暂缓，不归入以上四
 | `ConnectionState.SecureRenegotiation bool` | 原生 RFC 5746 支持标志，不提供主动重协商入口 |
 | `ErrUnsupported` / `ErrDiagnosticLimit` | 可匹配错误；区分能力缺失、诊断超限与原生握手/验证失败 |
 
-详细配置归一、输出错误、锁/生命周期及分批依赖以
-[路线图 §2.4.1–2.4.4](roadmap.md#241-实施基线与范围冻结) 为准。
+详细验收条件与原生能力边界见
+[测试规范](testing-guide.md#0100-实施验收矩阵) 与 [实测记录](testing-guide.md#0100-实际实现与本地验收2026-11-12)。
 `Kind` 为 start/end/state/message/alert/verify/verify_callback；不把 keylog 混入事件。
 诊断和 SCT 选项在连接构造时固定，SNI 替换凭证/验证配置不替换基础诊断消费者。
 
@@ -1370,7 +1367,7 @@ _（本包已无待实现项）_
 | 🆕 `Decrypt(data []byte, opts *DecryptOptions) ([]byte, error)` | `0.7.0` | RecipientCert/RecipientKey，失败无输出 |
 | 🆕 `SignOptions` / `VerifyOptions` / `EncryptOptions` / `DecryptOptions` | `0.7.0` | 证书用 x509.Certificate，私钥用 asym.PrivateKey，Roots 用 x509.Store；不暴露 internal 类型 |
 | 🆕 `SignedData` 与幂等 `Close() error` | `0.7.0` | Content、Signers、TrustVerified；返回证书资源归结果持有者释放 |
-| 🧭 CMS 族（`cms` 命令） | `0.14.0` | 新增 `CMS_*` 绑定 |
+| 🧭 CMS 签验/信封、DigestedData 生成/验证（I-37） | `0.14.0` | 新增 `CMS_*` 绑定；摘要校验不等于身份认证 |
 
 `0.7.0` 覆盖附带/分离签名和多接收者 EnvelopedData。Verify 默认要求显式 Roots，
 验证全部签名者及其信任；SignatureOnly=true 时仍验签，结果 TrustVerified=false。
@@ -1382,7 +1379,7 @@ Verify/Decrypt 接受 DER/PKCS7 PEM，二进制输入不做换行转换；分离
 
 **规划中｜新顶级包 `ts`（`0.14.0`，尚不存在）**
 
-- 🧭 RFC 3161 时间戳请求/响应与 HTTP 传输；需新增 `TS_*` 绑定并复用 CMS 基础设施。
+- 🧭 RFC 3161 时间戳请求/响应、验证与 HTTP 传输（I-39）；需新增 `TS_*` 绑定并复用 CMS 基础设施。
 - 实施时同步包索引、依赖图与逐符号 API；当前公开包数仍为 16。
 
 
