@@ -28,10 +28,12 @@ var ErrNoSession = errors.New("tls: no resumable session")
 //
 // SessionState holds an immutable session; serialized output contains secrets that callers must protect and clear.
 type SessionState struct {
-	der     []byte
-	info    core.SessionInfo
-	binding string
-	peers   [][]byte
+	der       []byte
+	info      core.SessionInfo
+	binding   string
+	peers     [][]byte
+	ocsp      []byte
+	ocspChain [][]byte
 }
 
 // ParseSessionDER 解析最大 1 MiB 的完整原生会话 DER；不授予信任，过期会话不能恢复。
@@ -134,6 +136,8 @@ func copySession(s *SessionState) *SessionState {
 	out.der = append([]byte(nil), s.der...)
 	out.info.ID = append([]byte(nil), s.info.ID...)
 	out.peers = cloneDER(s.peers)
+	out.ocsp = append([]byte(nil), s.ocsp...)
+	out.ocspChain = cloneDER(s.ocspChain)
 	return &out
 }
 
@@ -335,7 +339,12 @@ func (c *Conn) SessionState() (*SessionState, error) {
 		return nil, ErrNoSession
 	}
 	s.binding = c.sessionKey
-	s.peers = c.ConnectionState().PeerCertificates
+	state := c.ConnectionState()
+	s.peers = state.PeerCertificates
+	if state.OCSPVerification == VerificationPassed && len(state.VerifiedChains) > 0 {
+		s.ocsp = state.OCSPResponse
+		s.ocspChain = state.VerifiedChains[0]
+	}
 	if c.config != nil && c.config.SessionCache != nil && c.sessionKey != "" {
 		c.config.SessionCache.Put(c.sessionKey, copySession(s))
 	}
@@ -450,7 +459,7 @@ func sessionDomain(cfg *Config, endpoint string) (string, error) {
 		Parameters   []any
 		Certificates [][][]byte
 	}{
-		scope, endpoint, []any{cfg.Protocol, cfg.NTLS, cfg.RFC8998, cfg.MinVersion, cfg.MaxVersion, cfg.ServerName, cfg.VerificationName, cfg.DisableSNI, cfg.Verification, cfg.InsecureSkipVerify, cfg.ClientAuth, cfg.HostnameOptions, cfg.CipherSuites, cfg.NextProtos, cfg.CurvePreferences, cfg.SignatureAlgorithms, cfg.Options, cfg.Modes, cfg.StrictConfig, cfg.DHParameters}, certificates,
+		scope, endpoint, []any{cfg.Protocol, cfg.NTLS, cfg.RFC8998, cfg.MinVersion, cfg.MaxVersion, cfg.ServerName, cfg.VerificationName, cfg.DisableSNI, cfg.Verification, cfg.InsecureSkipVerify, cfg.ClientAuth, cfg.HostnameOptions, cfg.CipherSuites, cfg.NextProtos, cfg.CurvePreferences, cfg.SignatureAlgorithms, cfg.Options, cfg.Modes, cfg.StrictConfig, cfg.DHParameters, cfg.OCSPPolicy, cfg.RequestOCSP}, certificates,
 	}
 	data, err := json.Marshal(identity)
 	if err != nil {
@@ -525,6 +534,12 @@ func (c *Conn) installSession(addr string) error {
 	}
 	if s.binding != "" && s.binding != key {
 		return nil
+	}
+
+	if cfg.OCSPPolicy != OCSPUnchecked {
+		if len(s.ocsp) == 0 || verifySessionStaple(cfg, s) != nil {
+			return nil
+		}
 	}
 	if err := c.ssl.SetSession(s.der); err != nil {
 		return err

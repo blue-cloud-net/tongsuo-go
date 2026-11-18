@@ -765,3 +765,7 @@ cc -Wno-deprecated-declarations -DOPENSSL_NO_SM2 -DOPENSSL_NO_CT -DOPENSSL_NO_SS
 
 实现测试位于 `tls/session_test.go` 与带 `tongsuocli` 标签的会话互通测试；
 可运行示例见 `examples/session-resumption`。缺少票据不是跳过恢复断言的理由。
+
+## ClientHello 配置选择回归
+
+`TestHandshakeSelectionRetry` 验证握手暂停后配置选择只执行一次、选择中可创建并释放上下文，且选择失败保留原始错误并令双方握手失败；`TestHandshakeMixedPortConcurrent` 覆盖同端口并发 TLS/NTLS。macOS arm64 须在真实 runner 上复跑。

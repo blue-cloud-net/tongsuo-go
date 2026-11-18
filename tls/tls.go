@@ -114,6 +114,25 @@ func coreCertOf(c *x509.Certificate) (*core.Certificate, error) {
 // D1 default-verify policy (方案 A: VERIFY_NONE by default; PEER enabled
 // only when RootCAs is set AND InsecureSkipVerify is false).
 type Config struct {
+	// OCSPPolicy 控制客户端装订验证。
+	//
+	// OCSPPolicy controls client staple verification.
+	OCSPPolicy OCSPPolicy
+
+	// OCSPStaple 为服务器默认装订响应的 DER。
+	//
+	// OCSPStaple holds the server's default DER-encoded response.
+	OCSPStaple []byte
+	// GetOCSPStaple 获取当前所选服务器证书的响应，参数为证书 DER 副本。
+	//
+	// GetOCSPStaple obtains a response for the selected server certificate, passed as copied DER.
+	GetOCSPStaple func([]byte) ([]byte, error)
+
+	// RequestOCSP 请求服务器装订 OCSP 响应。
+	//
+	// RequestOCSP asks the server to staple an OCSP response.
+	RequestOCSP bool
+
 	sessionScope *sessionScope
 	// SessionCache 保存跨连接客户端会话；nil 禁用客户端缓存。
 	//
@@ -1188,6 +1207,14 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 		}
 	}
 	settings := core.TLSSettings{RFC8998: cfg.RFC8998, CaptureSCT: cfg.CaptureSCT, Tag: cfg, Protocols: cfg.NextProtos, Groups: strings.Join(cfg.CurvePreferences, ":"), Signatures: strings.Join(cfg.SignatureAlgorithms, ":"), DHParameters: cfg.DHParameters, Options: cfg.Options, Modes: cfg.Modes, Continue: policy == VerifyNone || policy == VerifyReport, VerifyEnabled: policy != VerifyNone, LegacyCiphers: legacy, TLS13Ciphers: tls13}
+	if !client {
+		settings.Staple = cfg.GetOCSPStaple
+		if settings.Staple == nil && len(cfg.OCSPStaple) > 0 {
+			staple := append([]byte(nil), cfg.OCSPStaple...)
+			settings.Staple = func([]byte) ([]byte, error) { return staple, nil }
+		}
+	}
+
 	if cfg.Diagnostics != nil {
 		d := *cfg.Diagnostics
 		settings.MaxEvents, settings.MaxBytes = d.MaxEvents, d.MaxBytes

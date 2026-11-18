@@ -52,6 +52,24 @@ type CertificateVerificationError struct {
 //
 // ConnectionState is an independent snapshot without native handles; DER slices need no Close.
 type ConnectionState struct {
+	// OCSPVerification 表示装订验证结果。
+	//
+	// OCSPVerification reports staple verification.
+	OCSPVerification VerificationState
+	// OCSPFromSession 表示响应来自会话缓存。
+	//
+	// OCSPFromSession reports that the response came from the session cache.
+	OCSPFromSession bool
+
+	// OCSPStapled 表示本次客户端握手收到了装订响应。
+	//
+	// OCSPStapled reports whether this client handshake received a staple.
+	OCSPStapled bool
+	// OCSPResponse 是装订响应的独立 DER 副本，存在响应不代表验证通过。
+	//
+	// OCSPResponse is an independent DER copy; its presence does not imply validation.
+	OCSPResponse []byte
+
 	// SessionReused 表示原生握手实际恢复了会话。
 	//
 	// SessionReused reports actual native session resumption.
@@ -143,6 +161,7 @@ func cloneDER(in [][]byte) [][]byte {
 }
 func cloneState(in ConnectionState) ConnectionState {
 	out := in
+	out.OCSPResponse = append([]byte(nil), in.OCSPResponse...)
 	out.SignedCertificateTimestamps = cloneDER(in.SignedCertificateTimestamps)
 	out.PeerCertificates = cloneDER(in.PeerCertificates)
 	out.VerifiedChains = nil
@@ -181,6 +200,11 @@ func (c *Conn) captureState(success bool) error {
 		raw.PeerCertificates = cloneDER(c.resuming.peers)
 	}
 	state := ConnectionState{SessionReused: reused, SecureRenegotiation: raw.SecureRenegotiation, SignedCertificateTimestamps: raw.SignedCertificateTimestamps, HandshakeComplete: success, Version: raw.Version, NTLS: raw.Version == NTLSVersion, CipherSuite: raw.CipherSuite, CipherName: raw.CipherName, ServerName: raw.ServerName, NegotiatedProtocol: raw.Protocol, NegotiatedGroup: raw.Group, PeerSignatureAlgorithm: raw.Signature, PeerCertificates: raw.PeerCertificates}
+	if !c.isServer && len(raw.OCSPResponse) > 0 {
+		state.OCSPStapled = true
+		state.OCSPResponse = raw.OCSPResponse
+	}
+
 	if raw.VerifyEnabled && raw.VerificationPerformed && len(raw.PeerCertificates) > 0 {
 		state.Verification = VerificationPassed
 		for _, failure := range raw.Failures {
@@ -208,6 +232,10 @@ func (c *Conn) captureState(success bool) error {
 	if success && cfg != nil {
 		if cfg.RFC8998 && err == nil {
 			err = checkRFC8998State(state)
+		}
+
+		if err == nil && !c.isServer && cfg.OCSPPolicy != OCSPUnchecked {
+			err = c.verifyConnectionOCSP(&state, cfg.OCSPPolicy)
 		}
 		if err == nil && cfg.VerifyPeerCertificate != nil {
 			err = cfg.VerifyPeerCertificate(cloneDER(state.PeerCertificates), cloneState(state).VerifiedChains)
@@ -266,6 +294,12 @@ func newClient(raw net.Conn, config *Config, addr string) (*Conn, error) {
 	}
 	c := wrapped.(*Conn)
 	c.config = cfg
+	if cfg.RequestOCSP || cfg.OCSPPolicy != OCSPUnchecked {
+		if err := c.ssl.RequestOCSP(); err != nil {
+			_ = c.Close()
+			return nil, err
+		}
+	}
 	if effectiveVerification(cfg, true) != VerifyNone {
 		if err := c.ssl.SetVerifyName(name, cfg.HostnameOptions.Email, cfg.HostnameOptions.Flags); err != nil {
 			_ = c.Close()

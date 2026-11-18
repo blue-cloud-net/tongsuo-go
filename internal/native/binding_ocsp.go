@@ -140,12 +140,17 @@ func OCSP_resp_get0_certs(bs unsafe.Pointer) unsafe.Pointer {
 // OCSP_resp_find_status 查找证书 ID 的状态（good/revoked/unknown）。
 // OCSP_resp_find_status looks up the certificate status entry for cid inside
 // bs. It returns (found, status, reason, revocationTime, thisUpdate,
-// nextUpdate). Times are unix seconds, 0 when not set.
-func OCSP_resp_find_status(bs, cid unsafe.Pointer) (found bool, status, reason int, revTime, thisUpdate, nextUpdate int64) {
+// nextUpdate, invalidTime). Times are unix seconds, 0 when not set.
+func OCSP_resp_find_status(bs, cid unsafe.Pointer) (found bool, status, reason int, revTime, thisUpdate, nextUpdate int64, invalidTime bool) {
 	var s, r C.int
 	var rev, thisu, nextu *C.ASN1_GENERALIZEDTIME
 	f := C.OCSP_resp_find_status((*C.OCSP_BASICRESP)(bs), (*C.OCSP_CERTID)(cid),
 		&s, &r, &rev, &thisu, &nextu)
+	for _, value := range []*C.ASN1_GENERALIZEDTIME{rev, thisu, nextu} {
+		if value != nil && C.ASN1_TIME_check((*C.ASN1_TIME)(unsafe.Pointer(value))) != 1 {
+			return f == 1, int(s), int(r), 0, 0, 0, true
+		}
+	}
 	if rev != nil {
 		revTime = asn1TimeToUnix((*C.ASN1_TIME)(unsafe.Pointer(rev)))
 	}
@@ -155,7 +160,7 @@ func OCSP_resp_find_status(bs, cid unsafe.Pointer) (found bool, status, reason i
 	if nextu != nil {
 		nextUpdate = asn1TimeToUnix((*C.ASN1_TIME)(unsafe.Pointer(nextu)))
 	}
-	return f == 1, int(s), int(r), revTime, thisUpdate, nextUpdate
+	return f == 1, int(s), int(r), revTime, thisUpdate, nextUpdate, false
 }
 
 // OCSP_basic_verify 验证响应签名（certs 为响应证书/中间证书栈，store 为信任锚）。

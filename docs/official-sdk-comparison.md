@@ -1,6 +1,6 @@
 # 官方 tongsuo-go-sdk 与本库能力对比
 
-> 复核日期：2026-11-18 ｜ 本库：`0.11.0` 定版，待标签发布。
+> 复核日期：2026-11-18 ｜ 本库：`0.12.0` 定版，待标签发布。
 > 官方基线：`Tongsuo-Project/tongsuo-go-sdk` main @
 > [`002a09631de785f2d984d9e0b3a7f1e9a169940c`](https://github.com/Tongsuo-Project/tongsuo-go-sdk/tree/002a09631de785f2d984d9e0b3a7f1e9a169940c)。
 > 本次用 `git ls-remote` 确认远端 main 未变，并只读核对该提交源码；未运行官方 SDK。
@@ -9,8 +9,8 @@
 ## 1. 结论与方法
 
 典型 TLS/NTLS 的 SNI、ALPN、认证、证书链、参数配置、Listener 与诊断不再是本库的
-历史缺口。会话缓存/恢复与票据管理已在 0.11.0 实现（待发布），
-HTTP 便捷服务入口保持 0.12.0 排期。另有两个具体边界：官方传输通过 BIO
+历史缺口。会话缓存/恢复与票据管理已在 0.11.0 实现，
+HTTP/1.1 与 OCSP stapling 已在 0.12.0 实现。另有两个具体边界：官方传输通过 BIO
 接入 `net.Conn`，本库目前要求 TCP；官方支持自定义 RSA 公钥指数，本库固定 65537。
 两项先保留候选需求，不为符号对齐扩大公开面。
 
@@ -30,7 +30,7 @@ AES/SHA-512 包便判为缺失。相反，存在算法常量或原生指针出�
 [tickets.go](https://github.com/Tongsuo-Project/tongsuo-go-sdk/blob/002a09631de785f2d984d9e0b3a7f1e9a169940c/tickets.go)
 与 [http.go](https://github.com/Tongsuo-Project/tongsuo-go-sdk/blob/002a09631de785f2d984d9e0b3a7f1e9a169940c/http.go)。
 
-| 能力 | 官方固定基线 | 本库 `0.11.0` | 结论 / 后续 |
+| 能力 | 官方固定基线 | 本库 `0.12.0` | 结论 / 后续 |
 |---|---|---|---|
 | TLS / TLCP 双证书 | Ctx、UseSign/EncryptCertificate、Dial / Server | `tls.Config` 单证书/双证书、Dial / Client / Server | 均有公开入口；各自协议与构建支持需实际验收 |
 | SNI 多证书 / 配置切换 | `SetTLSExtServernameCallback` / `SetSSLCtx` | `GetCertificate` / `GetConfigForClient` | 本库已交付，不再作为缺口 |
@@ -39,8 +39,8 @@ AES/SHA-512 包便判为缺失。相反，存在算法常量或原生指针出�
 | 信任、组、签名、DH 参数、Options/Modes | 原生风格 Ctx 配置 | Config 受约束字段、严格参数检查、HostnameOptions | 核心场景已有；不映射任意控制码 |
 | Listener | `Listen` / `NewListener` | `net.Listen` + `tls.NewListener` | 均有入口，握手与 Accept 错误语义以各自文档为准 |
 | 底层连接 | `Client` / `Server` 存储 net.Conn，经 ReadBio/WriteBio 传输 | API 接收 net.Conn，但 `connFD` 只接受 `*net.TCPConn` | 真正的剩余差异；I-40 暂缓通用流后端 |
-| 会话恢复 | `SetSessionCacheMode`、大小/超时/ID、`GetSession` / `DialSession` / `SessionReused` | 0.11.0 已实现公开缓存、DER/PEM 与实际恢复（待发布） | I-31，0.11.0；独立验证 TLS 1.3 握手后票据，不能由官方存在这些符号推断其完整行为 |
-| 票据轮换 | `TicketStore` / `TicketKeyManager` / `SetTicketStore` | 0.11.0 已实现共享密钥管理与自动/显式轮换（待发布） | I-31，0.11.0；复用能力，不照搬原生 CipherCtx/HMAC_CTX |
+| 会话恢复 | `SetSessionCacheMode`、大小/超时/ID、`GetSession` / `DialSession` / `SessionReused` | 0.11.0 已实现公开缓存、DER/PEM 与实际恢复 | I-31，0.11.0；独立验证 TLS 1.3 握手后票据，不能由官方存在这些符号推断其完整行为 |
+| 票据轮换 | `TicketStore` / `TicketKeyManager` / `SetTicketStore` | 0.11.0 已实现共享密钥管理与自动/显式轮换 | I-31，0.11.0；复用能力，不照搬原生 CipherCtx/HMAC_CTX |
 | HTTP 服务 | `ListenAndServeTLS` / `ServerListenAndServeTLS`；客户端仍为 TODO | Listener 可供组合，尚无专用 HTTP 便捷入口 | 0.12.0 补 HTTP/1.1 客户端/服务端；不把官方 server helper 描述成全套 HTTP 集成 |
 | 超时、取消、错误与状态 | net.Conn deadline、Handshake、ConnectionState、UnderlyingConn | 独立 deadline、HandshakeContext / DialContext、HandshakeError 与验证状态 | 两者均有基础传输接口，本库另有显式 context 入口 |
 | RFC 8998、结构化事件、trace/keylog、SCT | 本次未见对应的专用高层配置/诊断交付面 | `RFC8998` / `Diagnostics` / `CaptureSCT` / `SecureRenegotiation` | 本库已有专门 API；不据此否定官方底层扩展或原生库能力 |
@@ -55,7 +55,7 @@ AES/SHA-512 包便判为缺失。相反，存在算法常量或原生指针出�
 [ciphers.go](https://github.com/Tongsuo-Project/tongsuo-go-sdk/blob/002a09631de785f2d984d9e0b3a7f1e9a169940c/crypto/ciphers.go)、
 [cert.go](https://github.com/Tongsuo-Project/tongsuo-go-sdk/blob/002a09631de785f2d984d9e0b3a7f1e9a169940c/crypto/cert.go)。
 
-| 能力 | 官方固定基线 | 本库 `0.11.0` | 判断 |
+| 能力 | 官方固定基线 | 本库 `0.12.0` | 判断 |
 |---|---|---|---|
 | 摘要 | SM3/MD5/SHA1/SHA256 便利包，通用摘要描述符 | `digest.New` / `Sum`、XOF 与流式/形态入口 | API 形态与封装范围不同，不按子包数量计能力 |
 | 对称与 AES-192-GCM | 按名 Cipher、加解密上下文、GCM 上下文，含 AES 三种位宽 | `sym` 按名与类型化入口，Block/AEAD 及扩展模式 | 本库 AES-192 已交付；官方有通用 AES 能力，旧文档“官方无 AES”撤销 |
