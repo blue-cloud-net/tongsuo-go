@@ -40,11 +40,11 @@
 
 ---
 
-## [0.10.0] - 2026-11-12
+## [0.10.0] - 2026-11-18
 
 ### 新增功能
 
-- `Config.RFC8998` 提供 RFC 8998 严格 TLS 1.3：SM4 GCM/CCM 套件、curveSM2、sm2sig_sm3、单套 SM2 凭证与 SNI 降级拒绝；信任验证仍独立配置。
+- `Config.RFC8998` 提供 RFC 8998 严格 TLS 1.3：SM4 GCM/CCM 套件、curveSM2、sm2sig_sm3、单套 SM2 凭证与 SNI 降级拒绝；信任验证仍独立配置。ClientHello 配置选择在原生握手暂停返回后执行，避免并发 TLS/NTLS 握手中嵌套创建 SSL_CTX。
 - `Config.Diagnostics` 提供有序且可保留的握手/消息/Alert/验证事件、显式开启的原生 trace 与 keylog。有界暂存，回调/输出错误与短写中断连接并保留错误链。
 - `Config.CaptureSCT`、仅 TLS 扩展来源的 SCT wire 快照与 `ConnectionState.SecureRenegotiation`；采集不执行 CT 策略校验。握手示例新增 RFC 8998 与诊断选项。
 

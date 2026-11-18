@@ -17,6 +17,8 @@ typedef struct {
     size_t diagnostic_limit;
     unsigned char *writebuf;
     int writelen;
+    int selection_result;
+    int selection_alert;
 } tls_hooks;
 static int hooks_index = -1;
 static CRYPTO_ONCE hooks_once = CRYPTO_ONCE_STATIC_INIT;
@@ -42,7 +44,7 @@ static int verify_cb(int ok, X509_STORE_CTX *store) {
     return CgoTLSVerify(id, ok, X509_STORE_CTX_get_error(store),
                         X509_STORE_CTX_get_error_depth(store), X509_STORE_CTX_get_current_cert(store));
 }
-static int hello_cb(SSL *ssl, int *alert, void *unused) {
+static int select_hello(SSL *ssl, int *alert) {
     uintptr_t id = hooks_id(ssl);
     if (!id) return SSL_CLIENT_HELLO_SUCCESS;
     const unsigned char *ext = NULL;
@@ -64,6 +66,24 @@ static int hello_cb(SSL *ssl, int *alert, void *unused) {
     OPENSSL_free(name);
     if (!ok) { *alert = SSL_AD_INTERNAL_ERROR; return SSL_CLIENT_HELLO_ERROR; }
     return SSL_CLIENT_HELLO_SUCCESS;
+}
+/* Suspend the native handshake before invoking Go configuration code.
+ * SSL_CTX construction and provider work must run outside SSL_accept's stack. */
+static int hello_cb(SSL *ssl, int *alert, void *unused) {
+    uintptr_t id = hooks_id(ssl);
+    if (!id) return SSL_CLIENT_HELLO_SUCCESS;
+    tls_hooks *hooks = SSL_get_ex_data(ssl, hooks_index);
+    int result = hooks->selection_result;
+    hooks->selection_result = 0;
+    if (result == 0) return SSL_CLIENT_HELLO_RETRY;
+    if (result < 0) { *alert = hooks->selection_alert; return SSL_CLIENT_HELLO_ERROR; }
+    return SSL_CLIENT_HELLO_SUCCESS;
+}
+void X_SSL_select_pending(SSL *ssl) {
+    tls_hooks *hooks = SSL_get_ex_data(ssl, hooks_index);
+    int alert = SSL_AD_INTERNAL_ERROR;
+    hooks->selection_result = select_hello(ssl, &alert) == SSL_CLIENT_HELLO_SUCCESS ? 1 : -1;
+    hooks->selection_alert = alert;
 }
 static int alpn_cb(SSL *ssl, const unsigned char **out, unsigned char *outlen,
                    const unsigned char *in, unsigned int inlen, void *unused) {
