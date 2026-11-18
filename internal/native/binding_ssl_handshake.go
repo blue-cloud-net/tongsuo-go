@@ -10,9 +10,11 @@ package native
 import "C"
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"runtime/cgo"
+	"strings"
 	"unsafe"
 )
 
@@ -60,6 +62,34 @@ type TLSVerifyFailure struct {
 // TLSCallbacks 管理一个 SSL 对象的回调及失败信息。
 // TLSCallbacks manages callbacks and failure details for one SSL object.
 type TLSCallbacks struct {
+	// ResumedPeers 为恢复后保留的完整对端身份材料。
+	// ResumedPeers holds complete peer identity material retained after resumption.
+	ResumedPeers [][]byte
+
+	// ReverifiedChain 为当前验证通过的证书链副本。
+	// ReverifiedChain is a copy of the currently verified certificate chain.
+	ReverifiedChain [][]byte
+
+	// SessionDomain 为配置隔离域。
+	// SessionDomain is the configuration isolation domain.
+	SessionDomain []byte
+	// SessionName 为按 SNI 与实际协议绑定的缓存命名空间。
+	// SessionName is the cache namespace bound to SNI and actual protocol.
+	SessionName []byte
+
+	// Session 是最新会话的独立 DER 副本。
+	// Session is an independent DER copy of the newest session.
+	Session []byte
+	// SessionPut 保存服务端缓存条目，不得重入连接。
+	// SessionPut stores server cache entries and must not reenter the connection.
+	SessionPut func([]byte, []byte)
+	// SessionGet 查找服务端缓存条目，不得重入连接。
+	// SessionGet looks up server cache entries and must not reenter the connection.
+	SessionGet func([]byte) []byte
+	// TicketKey 选择票据密钥，不得重入连接。
+	// TicketKey selects ticket keys and must not reenter the connection.
+	TicketKey func([]byte, bool) ([]byte, int)
+
 	// Events 保存本次原生调用的诊断副本。
 	//
 	// Events holds diagnostic copies from the current native operation.
@@ -147,10 +177,11 @@ func CgoTLSRelease(id C.uintptr_t) {
 //export CgoTLSSelect
 func CgoTLSSelect(id C.uintptr_t, ssl *C.SSL, name *C.char, ntls C.int) C.int {
 	cb := cgo.Handle(id).Value().(*TLSCallbacks)
-	if cb.Select == nil {
-		return 1
+	var selection *TLSSelection
+	var err error
+	if cb.Select != nil {
+		selection, err = cb.Select(C.GoString(name), ntls != 0)
 	}
-	selection, err := cb.Select(C.GoString(name), ntls != 0)
 	if err == nil && selection != nil {
 		cb.Protocols = selection.Protocols
 		if C.X_SSL_rfc8998(ssl, C.int(boolInt(selection.RFC8998))) != 1 {
@@ -194,6 +225,16 @@ func CgoTLSSelect(id C.uintptr_t, ssl *C.SSL, name *C.char, ntls C.int) C.int {
 			}
 		}
 	}
+	if err == nil && len(cb.SessionDomain) == 32 {
+		identity := append(append([]byte(nil), cb.SessionDomain...), []byte(strings.ToLower(C.GoString(name)))...)
+		identity = append(identity, byte(ntls))
+		domain := sha256.Sum256(identity)
+		cb.SessionName = append([]byte(nil), domain[:]...)
+		if C.SSL_set_session_id_context(ssl, (*C.uchar)(unsafe.Pointer(&domain[0])), 32) != 1 {
+			err = errors.New("tls: session identity context")
+		}
+	}
+
 	if err != nil {
 		cb.Err = err
 		return 0

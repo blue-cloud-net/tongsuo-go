@@ -268,7 +268,7 @@ docs/testing-guide.md         # 测试组织、各算法必测用例、向量来
 docs/bilingual-doc-guide.md   # 双语 GoDoc 段式规则与检查清单
 docs/api-reference.md         # 公开 API 清单（重构后 16 包，三态标记）
 docs/api-reference-internal.md# 内部 API 清单（internal/* 五个包）
-docs/roadmap.md                 # 版本路线图（0.7.0–1.0.0：范围 / 前置绑定 / 不做）
+docs/roadmap.md                 # 版本路线图（0.11.0–1.0.0：范围 / 前置绑定 / 不做）
 docs/requirements.md # 功能需求复核、技术判断与交付边界
 docs/cli-comparison.md        # 铜锁 CLI 与本库能力对比（能力级）
 docs/official-sdk-comparison.md # 与官方 SDK 对比
@@ -468,6 +468,18 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 - ❌ 反例：`update code`、`fix bug`、`临时提交`、`WIP` 这类无信息量的 message
 - ❌ 反例：一次提交同时改 `sym` 算法与 README 排版
 
+合并到 `main` 时，必须显式填写有意义的合并说明：标题采用
+`chore(merge): 合并 <版本号> 发布定版到 main`，正文用简短条目说明主要交付内容、
+发布定版改动与验证结果。不得仅使用默认的 `Merge branch 'dev'`。例如：
+
+```text
+chore(merge): 合并 0.10.0 发布定版到 main
+
+- 汇总本版本主要功能与行为变化
+- 同步双语 CHANGELOG 与发布基线文档
+- 说明已完成的验证及仍需 GitHub runner 验证的范围
+```
+
 ### 6.2 分支
 
 - `main` 为发布分支；日常开发在 `dev`（或特性分支）上进行
@@ -651,7 +663,7 @@ go test -count=1 ./...    # 必须 ok（无铜锁环境则如实说明未能运�
 | 双语注释规则 | `docs/bilingual-doc-guide.md` |
 | 三层边界与目录 | `docs/architecture.md` §2 / §3 / §5 |
 | 生命周期与所有权 | `docs/architecture.md` §7 / §8 |
-| **版本路线图（0.7.0–1.0.0：范围 / 前置绑定 / 不做）** | `docs/roadmap.md` |
+| **版本路线图（0.11.0–1.0.0：范围 / 前置绑定 / 不做）** | `docs/roadmap.md` |
 | 功能需求复核与排期依据 | `docs/requirements.md` |
 | **公开 API 逐符号清单（三态）** | `docs/api-reference.md` |
 | **内部 API 清单（`internal/*`）** | `docs/api-reference-internal.md` |

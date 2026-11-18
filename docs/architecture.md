@@ -334,7 +334,7 @@ tongsuo-go/
 │   ├── forms.go               # 形态入口：MarshalFormat / LoadCertificateSource / MarshalCSRTo
 │   └── helpers.go             # convertEntries / convertExtensions
 ├── tls/                       # 【传输】TLS / NTLS
-│   ├── tls.go  config.go  rfc8998.go  diagnostics.go  state.go  chain.go  suites.go  errors.go
+│   ├── tls.go  config.go  rfc8998.go  diagnostics.go  state.go  chain.go  suites.go  errors.go  session.go
 │   └── listener.go            # Listener / NewListener（Accept 内握手的 net.Listener）
 ├── asn1/                      # 【格式】DER viewer（纯 Go，cgo-free）
 ├── jwk/                       # 【格式】JWK ↔ PEM / JSON
@@ -360,6 +360,7 @@ tongsuo-go/
 │   │   ├── binding_rand.go    # RAND_bytes
 │   │   ├── binding_bio.go     # BIO 系列
 │   │   ├── binding_ssl.go     # SSL_CTX / SSL / TLS 会话
+│   │   ├── binding_ssl_session.go  ssl_session.c # 会话序列化、缓存、票据与恢复后验证
 │   │   ├── binding_ssl_handshake.go  binding_ssl_diagnostics.go # 参数、ClientHello/ALPN/验证回调与快照
 │   │   ├── ssl_handshake.c  ssl_handshake.h # SSL ex_data 整数句柄与 C 写缓冲
 │   │   ├── binding_x509.go    # X509 / X509_REQ / X509_CRL / X509_STORE / PEM / DER
@@ -376,7 +377,7 @@ tongsuo-go/
 │   │   ├── digest.go  cipher.go  hmac.go  kdf.go
 │   │   ├── mac.go  meta.go
 │   │   ├── pkey.go  pkey_id.go  pkcs.go  ocsp.go
-│   │   ├── x509.go  ssl.go  ssl_config.go  ssl_io.go  ssl_diagnostics.go  rand.go  zero.go
+│   │   ├── x509.go  ssl.go  ssl_config.go  ssl_io.go  ssl_diagnostics.go  ssl_session.go  rand.go  zero.go
 │   │   └── waitfd_linux.go  waitfd_darwin.go
 │   ├── keyaccess/             # 【桥接】公开密钥对象 → *core.PKey（结构化接口断言，叶子包）
 │   │   └── keyaccess.go       # corePKeyer + PKey(v any)
@@ -462,8 +463,8 @@ P7 BIO/证书资源。绑定在 `binding_reliability.go` / `binding_pkcs7_ops.go
 不经 Bundle 丢失属性。复杂 P12 默认测试在临时目录用 cgo 已要求的 C 编译器编译
 `pkcs/pkcs12/testdata/complex.c`，不需要额外库或 CLI。
 
-具体排期见 [roadmap.md](roadmap.md) §2；功能需求与验收边界见
-[requirements.md](requirements.md)。本节 0.7.0 / 0.8.0 能力已落地，0.9.0 及以后仍为规划。
+具体排期见 [roadmap.md](roadmap.md) §2；未完成需求与暂缓理由见
+[requirements.md](requirements.md)。0.10.0 及之前的交付范围已完成，0.11.0 起仍为规划。
 
 ---
 
@@ -577,7 +578,7 @@ go build ./...
 - [参考项目（C# 封装）](https://github.com/blue-cloud-net/tongsuo-csharp)
 - [官方 Go SDK](https://github.com/tongsuo-project/tongsuo-go-sdk)
 - [与官方 SDK 的功能对比与对齐路线图](official-sdk-comparison.md)
-- [版本路线图（`0.7.0` 至 `1.0.0`）](roadmap.md)
+- [版本路线图（`0.11.0` 至 `1.0.0`）](roadmap.md)
 - [开发规范](development-guide.md) · [测试规范](testing-guide.md)
 - [公开 API 清单](api-reference.md) · [内部 API 清单](api-reference-internal.md)
 
@@ -593,3 +594,15 @@ go build ./...
 SCT 经 `SSL_get0_peer_scts`、`SCT_get_source` 与 `i2o_SCT` 复制，过滤非 TLS 扩展来源；
 CT 回调恒允许，getter 补全回调未触发时的已接收数据。无 SM2/CT/trace 的 shim 分支
 分别受编译宏保护；显式请求不可用能力返回 `tls.ErrUnsupported`。
+
+## 0.11.0 会话生命周期与隔离
+
+公开层 `SessionState` 仅持有不可变 Go 数据和独立证书链；原生 `SSL_SESSION` 在绑定层
+解码、设置或序列化后立即释放，不向公开签名泄露句柄。回调沿用 SSL 的整数 cgo.Handle
+分发与释放机制；核心层继续用准入计数和原生操作互斥保护 Close、I/O、票据处理。
+服务端上下文保存缓存回调及密钥管理器；客户端配置在内部克隆间保留隔离域，
+公开 Clone 创建新域。新文件集中在各层的 ssl_session/session 文件及既有回调 shim。
+
+恢复后重新执行当前原生链/用途/名称验证再进入 API 回调，已验证链独立复制。
+WaitSession 与读取串行，fd 等待时释放原生锁，允许写入；最多暂存 64 KiB 应用数据。
+详细公开行为、默认值与持久化边界见 [TLS 会话规则](tls-sessions.md)。

@@ -8,7 +8,7 @@
 > 3. 每项格式为「完整签名 — 中文一句话」；未导出（小写）符号不列；
 > 4. 公开 API 签名禁止出现 `internal/` 类型；下文的原生句柄仅供核心层及现有桥接使用。
 >
-> **范围**：**6 个包**。生成基线：`0.10.0`（2026-11-12 定版，待标签发布）。
+> **范围**：**6 个包**。生成基线：`0.11.0`（2026-11-18 定版，待标签发布）。
 
 ---
 
@@ -596,7 +596,6 @@ C shim 的 X_SSL_write_owned 持有重试写缓冲；C 写缓冲区随成功或 
 
 | 目标版本 | core/native 工作 | 边界 |
 |---|---|---|
-| `0.11.0` | `SSL_SESSION_*`、会话缓存/序列化、票据与密钥轮换 | 握手后票据处理、实际复用及身份隔离 |
 | `0.12.0` | OCSP status 回调与响应读取；HTTP/1.1 集成复用 Listener | 取得 staple 不等于验证通过；不支持组合明确报告 |
 | `0.13.0` | PQC 密钥/签验/序列化与 KEM | 不可用能力明确报错 |
 | `0.14.0` | CMS / TS | 复用容器基础设施 |
@@ -611,3 +610,13 @@ C shim 的 X_SSL_write_owned 持有重试写缓冲；C 写缓冲区随成功或 
 - core `TLSState` 新增 SecureRenegotiation 与 SignedCertificateTimestamps，诊断失败保留独立快照。
 - native `binding_ssl_diagnostics.go`：`TLSEvent`、`CgoTLSObserve`、`X_SSL_CTX_rfc8998`、`X_SSL_diagnostics`、`X_SSL_extra_state`；TLSCallbacks 增加有界队列和采集标志，TLSSelection 增加 RFC8998。
 - C shim：严格模式 ctx/SSL 开关、CT 开关、SCT getter/来源过滤/编码、消息/info/keylog 桥接及有界 trace BIO；禁用 SM2/CT/SSL_TRACE 有保护分支。
+
+## 0.11.0 TLS 会话增量
+
+- `core.DecodeSession` / `SessionInfo`：有界完整 DER 校验、元数据副本，不保留原生资源。
+- `TLSContext.ConfigureSessions`：会话域、缓存回调、票据数量与密钥策略；仅构造期调用。
+- `SSLConn.SetSession` / `SessionDER` / `SessionReused`：独立会话设置、快照与实际复用查询。
+- `SSLConn.ReverifySession` / `PumpSession`：恢复后当前验证与受 context/deadline 控制的握手后消息驱动。
+- native：`SSL_SESSION_decode`、`SSL_set_session`、`SSL_session_reused`、
+  `X_SSL_CTX_sessions` / `X_SSL_reverify` 及整数句柄分发的会话/缓存/票据回调。
+  所有 `SSL_SESSION` 独立引用均在绑定调用内释放，C 端仅持有整数回调句柄。

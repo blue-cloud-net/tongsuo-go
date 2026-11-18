@@ -86,7 +86,7 @@ python3 scripts/extract_release_notes.py <ver>   # 生成 release-notes.md（已
 | `docs/api-reference-internal.md` | 生成基线日期 |
 | `docs/cli-comparison.md` | 「本库基线」 |
 | `docs/official-sdk-comparison.md` | 「本库基线」 |
-| `docs/roadmap.md` | 顶部基线与「只写未做的事」口径、§3「已在 `x.y.z` 落地的相关绑定」 |
+| `docs/roadmap.md` | 顶部基线与「只写未做的事」口径，移除已交付范围与绑定前置，保留延期事项并修正引用 |
 
 纯文档改动**不写进 CHANGELOG**（AGENTS §6.3）。
 
@@ -143,11 +143,18 @@ x86 主机上使用 QEMU 和对应架构的镜像 digest。macOS 必须交给真
 ```bash
 git switch main
 git status --porcelain                # 必须为空
-git merge --no-ff dev -m "chore(merge): 合并 0.8.0 发布准备到 main"
+git merge --no-ff dev \
+  -m "chore(merge): 合并 <ver> 发布定版到 main" \
+  -m "- 简述本版本主要交付内容
+- 简述双语 CHANGELOG 与发布基线同步情况
+- 简述已完成的验证及待 GitHub runner 验证的范围"
 git rev-list --count main..dev        # 必须为 0
 git diff --stat dev main              # 必须为空（树一致）
 # 由维护者手动执行：git push origin main
 ```
+
+合并提交必须使用上述中文标题，并在正文中填写本次发布的简单说明；
+将 `<ver>` 与条目替换为实际版本和内容，不得只写默认的 `Merge branch 'dev'`。
 
 main 接受从 dev 的非快进合并；保留已有历史，不 reset 或 rebase。agent 完成本地合并后停止，由维护者推送。
 

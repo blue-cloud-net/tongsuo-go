@@ -1,6 +1,7 @@
 package tls
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
@@ -51,6 +52,11 @@ type CertificateVerificationError struct {
 //
 // ConnectionState is an independent snapshot without native handles; DER slices need no Close.
 type ConnectionState struct {
+	// SessionReused 表示原生握手实际恢复了会话。
+	//
+	// SessionReused reports actual native session resumption.
+	SessionReused bool
+
 	// SecureRenegotiation 为原生 RFC 5746 支持标志，不表示支持主动重协商。
 	//
 	// SecureRenegotiation is the native RFC 5746 flag, not active renegotiation support.
@@ -151,11 +157,30 @@ func cloneState(in ConnectionState) ConnectionState {
 }
 
 func (c *Conn) captureState(success bool) error {
+	reused := c.ssl.SessionReused()
+	var reverifyErr error
+	if success && reused {
+		var peers [][]byte
+		if c.resuming != nil {
+			peers = c.resuming.peers
+		}
+		if len(peers) == 0 {
+			before, e := c.ssl.State()
+			if e != nil {
+				return e
+			}
+			peers = before.PeerCertificates
+		}
+		reverifyErr = c.ssl.ReverifySession(peers)
+	}
 	raw, err := c.ssl.State()
 	if err != nil {
 		return err
 	}
-	state := ConnectionState{SecureRenegotiation: raw.SecureRenegotiation, SignedCertificateTimestamps: raw.SignedCertificateTimestamps, HandshakeComplete: success, Version: raw.Version, NTLS: raw.Version == NTLSVersion, CipherSuite: raw.CipherSuite, CipherName: raw.CipherName, ServerName: raw.ServerName, NegotiatedProtocol: raw.Protocol, NegotiatedGroup: raw.Group, PeerSignatureAlgorithm: raw.Signature, PeerCertificates: raw.PeerCertificates}
+	if reused && c.resuming != nil && len(c.resuming.peers) > 0 && len(raw.PeerCertificates) > 0 && bytes.Equal(raw.PeerCertificates[0], c.resuming.peers[0]) {
+		raw.PeerCertificates = cloneDER(c.resuming.peers)
+	}
+	state := ConnectionState{SessionReused: reused, SecureRenegotiation: raw.SecureRenegotiation, SignedCertificateTimestamps: raw.SignedCertificateTimestamps, HandshakeComplete: success, Version: raw.Version, NTLS: raw.Version == NTLSVersion, CipherSuite: raw.CipherSuite, CipherName: raw.CipherName, ServerName: raw.ServerName, NegotiatedProtocol: raw.Protocol, NegotiatedGroup: raw.Group, PeerSignatureAlgorithm: raw.Signature, PeerCertificates: raw.PeerCertificates}
 	if raw.VerifyEnabled && raw.VerificationPerformed && len(raw.PeerCertificates) > 0 {
 		state.Verification = VerificationPassed
 		for _, failure := range raw.Failures {
@@ -174,8 +199,14 @@ func (c *Conn) captureState(success bool) error {
 	if selected, ok := c.ssl.SelectedConfiguration().(*Config); ok {
 		cfg = selected
 	}
+	if success && reused && reverifyErr != nil && cfg != nil && effectiveVerification(cfg, !c.isServer) != VerifyNone {
+		policy := effectiveVerification(cfg, !c.isServer)
+		if policy != VerifyReport {
+			err = reverifyErr
+		}
+	}
 	if success && cfg != nil {
-		if cfg.RFC8998 {
+		if cfg.RFC8998 && err == nil {
 			err = checkRFC8998State(state)
 		}
 		if err == nil && cfg.VerifyPeerCertificate != nil {
@@ -211,7 +242,7 @@ func Client(raw net.Conn, config *Config) (*Conn, error) {
 }
 
 func newClient(raw net.Conn, config *Config, addr string) (*Conn, error) {
-	cfg := config.Clone()
+	cfg := config.cloneRuntime()
 	ctx, err := newContext(cfg, true)
 	if err != nil {
 		return nil, err
@@ -240,6 +271,10 @@ func newClient(raw net.Conn, config *Config, addr string) (*Conn, error) {
 			_ = c.Close()
 			return nil, err
 		}
+	}
+	if err := c.installSession(addr); err != nil {
+		_ = c.Close()
+		return nil, err
 	}
 	return c, nil
 }

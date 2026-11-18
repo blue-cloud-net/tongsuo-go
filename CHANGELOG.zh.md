@@ -22,6 +22,24 @@
 
 ---
 
+## [0.11.0] - 2026-11-18
+
+### 新增功能
+
+- TLS/NTLS/RFC 8998 会话恢复：客户端与服务端缓存接口、有界并发 LRU、原生 DER/PEM 导入导出、不可变会话元数据与 `ConnectionState.SessionReused`。
+- `Conn.WaitSession(ctx)` 处理 TLS 1.3 握手后票据，保留应用数据与读取期限；正常 I/O 自动收集会话。新增可运行的 session-resumption 示例。
+- 票据开关/数量控制、共享票据密钥管理器、每日自动轮换与七天保留窗口，以及共享部署的显式密钥环替换。
+
+### 行为变化与重构
+
+- 恢复握手按当前策略重新验证身份并执行两个验证回调。缓存/配置域、选定凭证、SNI、客户端身份与协议共同隔离恢复。原生导入仍须当前验证，必要时单独补充证书链材料。
+
+### BREAKING / 已知限制
+
+- `Config` 与 `ConnectionState` 新增字段影响无字段名字面量，请改用带字段名字面量。既有验证策略语义与原生默认票据数量保持不变。
+
+---
+
 ## [0.10.0] - 2026-11-12
 
 ### 新增功能
@@ -920,7 +938,8 @@
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.7.0...v0.8.0

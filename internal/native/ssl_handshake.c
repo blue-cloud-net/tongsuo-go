@@ -34,6 +34,7 @@ static uintptr_t hooks_id(SSL *ssl) {
     tls_hooks *hooks = SSL_get_ex_data(ssl, hooks_index);
     return hooks ? hooks->id : 0;
 }
+uintptr_t X_SSL_hooks_id(SSL *ssl) { return hooks_id(ssl); }
 static int verify_cb(int ok, X509_STORE_CTX *store) {
     SSL *ssl = X509_STORE_CTX_get_ex_data(store, SSL_get_ex_data_X509_STORE_CTX_idx());
     uintptr_t id = hooks_id(ssl);
@@ -92,6 +93,7 @@ int X_SSL_attach(SSL *ssl, uintptr_t id) {
 }
 int X_SSL_switch_context(SSL *ssl, SSL_CTX *ctx) {
     if (!SSL_set_SSL_CTX(ssl, ctx)) return 0;
+    if (!SSL_set_num_tickets(ssl, SSL_CTX_get_num_tickets(ctx))) return 0;
     SSL_set_verify(ssl, SSL_CTX_get_verify_mode(ctx), verify_cb);
     SSL_set_verify_depth(ssl, SSL_CTX_get_verify_depth(ctx));
     if (!SSL_set1_verify_cert_store(ssl, SSL_CTX_get_cert_store(ctx))) return 0;

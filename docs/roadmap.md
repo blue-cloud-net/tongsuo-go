@@ -1,15 +1,16 @@
-# 版本路线图（`0.7.0` 至 `1.0.0`）
+# 版本路线图（`0.11.0` 至 `1.0.0`）
 
 > **用途**：本文件是本仓库**唯一的版本归属来源**。未来能力的目标版本以 §2 为准；
 > 逐符号目标形态见 [api-reference.md](api-reference.md) 的 🧭 行，实施前置见 §3。
 >
-> **基线**：`0.10.0` 已于 2026-11-12 发布；固定验证铜锁 8.4.0/8.5.0。
-> §2.1 保留已发布 `0.7.0` 的范围与验收结果，§2.2 记录已发布 `0.8.0` 的交付，§2.3 记录已发布 `0.9.0` 的握手与认证能力；§2.4 记录已发布 `0.10.0` 的 RFC 8998 与诊断能力，其后版本仍为规划。
-> 当前公开面见 [公开 API 清单](api-reference.md) 与 [CHANGELOG](../CHANGELOG.md#0100---2026-11-12)；
+> **基线**：`0.11.0` 于 2026-11-18 定版，待标签发布；`0.10.0` 已发布；固定验证铜锁 8.4.0/8.5.0。
+> 本文件仅保留 `0.11.0` 及以后的规划与未完成事项；`0.10.0` 及之前的交付范围已完成，
+> 历史交付与验收记录见双语 CHANGELOG 和 [测试规范](testing-guide.md)。
+> 当前公开面见 [公开 API 清单](api-reference.md) 与 [CHANGELOG](../CHANGELOG.md#0110---2026-11-18)；
 > 发布状态以版本标签为准。
 >
 > **相关文档**：功能需求的复核与验收边界见
-> [功能需求复核记录](requirements.md)；CLI 与官方 SDK 的缺口编号分别见
+> [功能需求复核记录](requirements.md)；CLI 与官方 SDK 的能力证据分别见
 > [cli-comparison.md](cli-comparison.md)、[official-sdk-comparison.md](official-sdk-comparison.md)。
 
 ---
@@ -18,31 +19,23 @@
 
 | 版本 | 主题 | 关键内容 | 破坏性 |
 |------|------|----------|--------|
-| `0.7.0` | **可靠性、数据完整性与 PKCS 容器** | 显式释放、解析限额、完整序列号、DER 扩展、信任路径、SM2 压缩输入、复杂 PKCS#12 无损改密、PKCS#7 签验与加解密 | **是**：ECDH Public 签名调整、序列号校验收紧与改密行为变化 |
-| `0.8.0` | **铜锁 8.5 兼容与经典算法扩展** | 8.4.0/8.5.0 矩阵、NTLS 用途适配、RSA-SM3、GCM-SIV、SIV 空消息、EdDSA 上下文/ph、SM2DH 派生与通用 KEX | 否 |
-| `0.9.0` | **TLS / NTLS 握手与认证** | 连接可靠性、参数配置、证书链、混合端口、SNI、ALPN、客户端认证、验证策略、连接状态与示例 | **是**：新增字段影响非键名字面量，首次 I/O 自动握手与独立 deadline |
-| `0.10.0` | **RFC 8998 与完整握手诊断** | 国密 TLS 1.3 严格配置、两个 SM4 套件、结构化事件、详细 trace、keylog、连接状态补全（SCT、安全重协商） | 轻微：导出结构体扩容 |
 | `0.11.0` | **会话复用与票据** | 客户端/服务端缓存、会话导入导出、票据控制、密钥轮换、握手后票据处理、身份隔离与复用标志 | 轻微：导出结构体扩容 |
 | `0.12.0` | **HTTP/1.1 集成与 OCSP stapling** | 客户端/服务端集成、便捷服务入口、staple 配置、读取与状态快照、状态验证示例 | 轻微：导出结构体扩容 |
 | `0.13.0` | **PQC** | ML-DSA、SLH-DSA、原生 KEM，密钥生命周期与序列化、能力探测 | 否 |
-| `0.14.0` | **CMS 与时间戳** | CMS 扩展、独立顶级包 `ts` 的 RFC 3161 能力 | 否 |
+| `0.14.0` | **CMS 与时间戳** | CMS 签验/信封、DigestedData、独立顶级包 `ts` 的 RFC 3161 能力 | 否 |
+| `0.15.0` | **标准派生与公钥编码互通** | SSHKDF / PKCS12KDF、EC/SM2 公钥压缩与未压缩编码 | 否 |
 | `1.0.0` | **公开 API 收敛与稳定** | 统一 Options、应用级组合入口、CRL 配置式签发、迁移指南与兼容性承诺 | **是** |
 
-**节奏原则**：在 `0.7.0` 可靠性与容器基础上，先完成 `0.8.0` 原生兼容与经典算法，
-再按四版交付传输能力，随后扩展 PQC 与 CMS；各版本按验收条件交付，不承诺日历日期。
+**节奏原则**：以 `0.11.0` 定版为基线，下一步完成 HTTP/1.1 集成，
+随后扩展 PQC、CMS 与标准派生/公钥编码互通；各版本按验收条件交付，不承诺日历日期。
 `0.x` 优先增补 API，`1.0.0` 集中收敛公开面。
 安全或一致性修复若改变既有行为，必须在实际交付版本的双语 CHANGELOG 中写明
 `BREAKING` 与迁移方式；纯排期调整不新增 CHANGELOG 条目。
 
-**版本调整**：PKCS#7 基础流程已合入 `0.7.0`；`0.8.0` 兼容与经典算法范围保持不变。
-原集中在 `0.11.0` 的 TLS 计划前移并拆为 `0.9.0` 至 `0.12.0`，纳入 RFC 8998 与
-完整握手诊断；PQC 延后至 `0.13.0`，CMS/时间戳延后至 `0.14.0`，`1.0.0` 范围保持不变。
-
-**兼容原则**：`0.7.0` 保持铜锁 **8.4.0** 发布基线。`0.8.0` 增加固定
-8.5.0 版本构建与运行验证，保留 8.4 构建兼容；新能力须通过编译保护与运行时探测报告
+**兼容原则**：保持铜锁 **8.4.0** 发布基线，固定验证 **8.5.0**，保留 8.4 构建兼容；新能力须通过编译保护与运行时探测报告
 支持情况，不以 master、替代密码实现或自动加载 legacy provider 兜底。
 
-`0.10.0` 至 `0.12.0` 的破坏性列为「轻微」：只向 `ConnectionState` / `Config` 追加导出
+`0.11.0` 至 `0.12.0` 的破坏性列为「轻微」：只向 `ConnectionState` / `Config` 追加导出
 字段，未改变既有字段与默认行为；影响范围限于无字段名的复合字面量，迁移方式随交付
 写入双语 CHANGELOG。
 
@@ -50,328 +43,75 @@
 
 ## 2. 分版本范围
 
-### 2.1 `0.7.0` — 可靠性、数据完整性与 PKCS 容器（已发布）
-
-| 领域 | 交付内容与边界 | 需求编号 | 前置（§3） |
-|------|----------------|----------|-------------|
-| 生命周期 | ECDH 公私钥与 CSR 公开幂等 `Close()`；ECDH `PrivateKey.Public()` 改为返回独立副本与 error，公私钥及原 `asym` 密钥独立释放，关闭后可失败操作返回错误 | I-09 / I-15 | 复用 core 句柄关闭与 `EVP_PKEY_dup` |
-| `asn1` | `ParseWithLimits` 与可识别的深度/节点数超限错误；保留 `Parse` 的固定 128 层保护和既有行为 | I-16 | 无（纯 Go） |
-| `x509` 序列号与 CRL | 新增 `Certificate.SerialBigInt` / `SetSerialBigInt`、`IssueOptions.SerialBigInt`、`CRLBuilder.RevokeSerial(*big.Int, …)`、`RevokedEntry.SerialBigInt`，保留规划的 `SerialHex` / `RevokeSerialHex` 适配。旧 int64 入口保留为受限兼容接口；证书设置、CSR 签发、`Revoke(cert)`、CRL 读写、`IsRevoked` / `RevocationCheck` 均贯通完整值，覆盖 RFC 5280 的 20 octets 边界 | I-18 / I-20、I-23 / I-24 | 完整 ASN.1 INTEGER 读写与比较 |
-| `x509` 扩展 | 公开按 OID 写入 DER 的入口，支持已知和自定义 OID；`Data` 保留原始扩展值，不还原任意配置串，不放开签名后修改 | I-19 | 按 OID 构造 DER 扩展 |
-| `x509` 信任路径 | `Store.SetDefaultPaths`、`LoadLocations`；默认路径属于铜锁配置，不等同于各平台原生信任库，不隐式信任输入链的自签根 | I-17 | 默认路径与 CA 文件/目录加载 |
-| `asym` SM2 | 经 native → core → API 解码、校验压缩 C1，支持转换与解密；保持既有输出形式，不新增压缩输出选项 | I-10 | EC 点解码与校验 |
-| `pkcs/pkcs12` | 两个改密入口均在 safe/bag 层重加密，支持多私钥、多 safe 与嵌套 safeContentsBag，保留内容、顺序及属性；覆盖 PBES2/AES 与可用 3DES，不用解析后重打包兜底 | I-22 | PKCS#12 safe/bag 重加密 |
-| 文档与互通 | 说明 RSA 签名为模数长度字节串并补双向互验；补带扩展的分步签发示例，保留签名后不可变约束 | I-08 / I-21 | 无 |
-
-RSA 的签名格式符合 [RFC 8017 §8](https://www.rfc-editor.org/rfc/rfc8017.html#section-8)，
-不改成 SM2/ECDSA 的 `SEQUENCE { r, s }`。`0.6.0` 的 PKCS#12
-`ChangePasswordWithOptions` 是解析后重打包，不代表已经完成 I-22 的无损改密。
-0.7.0 已替换两个改密入口，保留复杂内容与属性；不支持的算法/保护方式明确失败。
-
-**CRL 与序列号需求的取舍**：直接按序列号吊销与完整
-大整数接口均属 SDK 的基础数据封装，接受并合入现有序列号工作项，作为同版验收条件。
-不能只新增 int64 的 `RevokeSerial` 后把完整匹配推迟；序列号归属、授权与持久化仍由
-调用方负责，数据库化 CA 工作流继续按 §4 暂缓。新旧写入口统一校验正整数及长度，读取外部
-值不得静默截断；兼容策略、错误路径与可变 `big.Int` 的复制语义见
-[需求台账 §3](requirements.md#3-crl-与完整序列号职责判断与排期)。
-
-#### PKCS#7 签名与加密
-
-| 领域 | 内容 | 对应缺口 | 前置（§3） |
-|------|------|----------|-------------|
-| `pkcs/pkcs7` | `Sign` / `Verify`：带 signerInfo 的 SignedData，附带与分离签名，明确区分签名有效与证书受信任 | I-11、§6.A 32 / §6.B B12 | PKCS#7 签名族 |
-| `pkcs/pkcs7` | `Encrypt` / `Decrypt`：EnvelopedData，覆盖错误密钥与篡改检测，不宣称非认证加密可检测所有篡改 | I-11、§6.A 32 | PKCS#7 加密族 |
-
-复用现有证书袋与 CRL 容器能力；CMS 扩展留给 `0.14.0`，不以一个模糊的
-“CMS/PKCS#7”格式参数混同两阶段的交付。算法支持以铜锁原生能力和互通验收为准。
-
-#### 兼容策略与确定的默认行为
-
-- **生命周期**：`PrivateKey.Public() (*PublicKey, error)` 使用独立句柄；复制失败返回
-  error，不返回借用别名。ECDH/CSR 的 Close 对 nil、零值和已关闭对象幂等；关闭后
-  可失败操作报错，查询类操作返回约定零值。同步所有调用点与释放示例，不承诺 Close
-  与密码学操作并发安全；调用方须先结束使用再释放。
-- **解析限额**：`ParseWithLimits` 两个限额必须为正数；深度沿用现有构造类型层数，
-  节点数包含根与叶。用 `ErrDepthLimit` / `ErrNodeLimit` 区分超限，可经 `errors.Is`
-  识别。原 Parse 保留 128 层保护、既有接受范围及错误文本；遍历不得因调高限额而
-  触发递归栈溢出。
-- **序列号**：旧 SetSerial 等 int64 写入口保留签名，但统一拒绝零和负数；完整值写入
-  以 DER INTEGER 内容不超过 20 octets 为界，包含必要的符号补零。读取外部值不截断。
-  Public 签名变化、校验收紧及公开结构体新增字段须提供 BREAKING 与迁移说明。
-- **复杂 P12**：两入口均先验证 MAC，再按 safe/bag 遍历重加密，保留多私钥、证书链、
-  CRL、其他可保留 bag、嵌套层级、内部顺序及全部属性。普通 ChangePassword 保留原
-  算法、派生参数与 MAC 策略，更新口令并重新生成必要的盐/IV；WithOptions 应用现有
-  PBE、迭代及读写口令参数，仍保留全部内容。空 FriendlyName 保留名称；非空仅在
-  单密钥身份明确时修改关联密钥/证书名称，多密钥时拒绝歧义。必须覆盖 AES-128/192/256
-  的 PBES2 与可用 3DES；无 MAC、不同 MAC/加密口令、签名保护或其他无法完整处理的
-  算法/结构明确失败。失败无输出并释放资源，不加载 legacy、不降级为 Bundle 重打包。
-- **P7 默认值**：Sign 默认 SHA-256、附带内容、DER 输出；Encrypt 默认 AES-256-CBC，
-  支持多个 RSA 接收者。Verify/Decrypt 接受 DER 或 PKCS7 PEM，内容按二进制处理，
-  不转换换行。Verify 默认要求显式信任存储，校验全部签名者；仅显式 SignatureOnly
-  才跳过证书链验证，结果标记 TrustVerified=false。未完成要求的验证不返回内容。
-- **P7 原生边界**：8.4.0 本地 CLI 探测确认 RSA/ECDSA 签名、RSA 接收者加密可用；
-  SM2 签名/加密和 EC 接收者加密明确报不支持。其余组合不默认承诺，不借 CMS 或
-  第三方算法冒充 PKCS#7 支持；CMS 仍归 0.14.0。CLI 互验使用 smime 的签验/加解密
-  子流程，不使用不存在的 pkcs7 -sign/-encrypt 选项。
-
-#### 开发批次与完成条件
-
-| 批次 | 内容与依赖 | 本批完成条件 |
-|---|---|---|
-| 1 | ECDH/CSR 生命周期、ASN.1 限额 | 独立释放、关闭后使用、限额边界、深/宽树与迁移示例通过 |
-| 2 | 完整序列号与 CRL 全链路 | 读写/签发/吊销/匹配无 int64 中转，边界与 CLI 互通通过 |
-| 3 | DER 扩展、信任路径、SM2 压缩输入 | 扩展原值、显式信任与两种密文顺序验收通过 |
-| 4 | 复杂 PKCS#12 无损改密 | 两入口、多密钥、嵌套与属性结构保留，错误路径及互通通过 |
-| 5 | PKCS#7 签名与验签 | 附带/分离、全部签名者、信任/仅验签及资源释放通过 |
-| 6 | PKCS#7 加解密、示例及全量回归 | 多接收者、CLI 双向互通、build/vet/test/race 与 Linux static 通过 |
-
-六批能力已实现，双语 GoDoc、API/架构/测试文档与示例已同步；双语 CHANGELOG 维护
-`0.7.0 - 2026-11-04`。8.4.0 的 build/vet、默认/CLI/race 全量测试与 Linux static 标签构建
-通过；六个独立示例模块已检查。复杂 P12 原生成功/失败路径通过 ASan/LSan 检查。
-
-### 2.2 `0.8.0` — 铜锁 8.5 兼容与经典算法扩展（已发布，2026-11-05）
-
-本版在保留 8.4.0 构建与既有能力的基础上，固定验证 8.5.0；新增能力按实际原生
-支持返回结果，不以算法枚举替代真实操作验证。无第三方 Go 依赖，不自动加载 legacy。
-
-| 领域 | 交付内容与边界 | 前置（§3） |
-|------|----------------|-------------|
-| 兼容与 CI | 8.4.0 / 8.5.0 × Linux/macOS × amd64/arm64；显式 shared 构建，Linux static 标签实际链接 .a；版本/架构/构建配置隔离缓存，头文件、运行库和 CLI 同源校验 | 固定安装与编译期版本读取 |
-| NTLS 升级适配 | 测试与可运行示例显式设置签名/加密证书各自 KeyUsage；8.5 用途错误必须被拒绝，保留原生安全检查 | 复用分步签发与既有握手 |
-| `sym` GCM-SIV | AES-128/256 遵循 RFC 8452，补 AES-192 原生扩展；NewAESGCMSIV / EncryptAESGCMSIV / DecryptAESGCMSIV 与按名 AEAD 入口 | EVP_CIPHER_fetch 与现有 AEAD 上下文 |
-| `sym` SIV | 8.5.0 支持经独立 EVP 验证的空消息加密与认证；8.4.0 仍返回 ErrUnsupported；不以空载荷为由绕过 tag 校验 | 新版 provider 的空载荷路径 |
-| `asym` EdDSA | Ed25519ctx / Ed25519ph / Ed448ph 各自独立签验函数，补 Ed448WithContext；原消息输入，ph 由铜锁完成，复用原密钥编码；SupportsEdDSAInstance 探测实际初始化 | instance / context-string 编译保护 |
-| `asym` RSA-SM3 | 既有 PKCS#1 v1.5 / PSS 在 8.5.0 可运行；8.4.0 明确不支持，OAEP-SM3 两版均可用；新增 SupportsRSAPSSDigest，单独设置 PSS/MGF1/盐长探测 | 固定版本 RSA provider 验证 |
-| `ecdh` 通用适配 | DeriveSharedSecret(asym.PrivateKey, asym.PublicKey)，覆盖现有六条曲线；复制并释放临时句柄，拒绝跨曲线、关闭密钥及低阶点 | 现有桥接及 derive |
-| `ecdh` SM2DH | DeriveSM2DH + SM2DHOptions / SM2DHRole，显式给出双方静态/临时密钥、双方 ID、角色、长度，固定 SM3；不作为 CurveByName 的伪曲线入口 | 原生参数化 EVP_PKEY_derive_init_ex |
-
-#### 默认行为与兼容边界
-
-- **GCM-SIV**：密钥 16/24/32 字节，nonce 固定 12 字节，tag 固定 16 字节；
-  空消息必须生成并验证 tag。192 位是原生扩展，不宣称属于 RFC 8452 的两个套件。
-  Seal 追加 tag，Open 认证失败不返回明文；一次性 API 分离 tag，流式入口明确拒绝。
-- **EdDSA**：旧 SignEd25519 / SignEd448 保持 pure、空上下文行为；新函数的 context
-  最长 255 字节，Ed25519ctx 必须非空。禁止调用方预哈希 ph 消息；变体不新增密钥类型，
-  不承诺用于证书/CSR/CRL 签发。8.4.0 不引用不存在的宏，不支持时返回 ErrUnsupported。
-- **能力探测**：sym.Supports 继续只判断算法/填充合法性；Available 表示 provider
-  可获取描述符。EdDSA 检查原生可设置参数表并初始化实际实例；RSA-PSS 探测应用
-  digest、PSS、MGF1 与盐长，均不代替实际签验或消息参数校验。
-- **SM2DH**：ID 显式提供，长度 1..8191 字节；角色零值非法，输出长度为正数且不超过
-  原生有符号 32 位范围。静态公钥的身份认证由调用方负责，临时私钥每次重新生成，
-  调用期间不得并发 Close 输入密钥；返回密钥由调用方负责清零。
-- **密钥确认单独登记**：GB/T 32918.3 的确认值生成、对端校验及确认失败后的密钥禁用
-  是独立交付项。固定 8.5.0 provider 仅输出派生密钥，未暴露确认值，确认流程延期至
-  原生能力可用，不承诺版本；派生成功不等于对端已认证或已完成密钥确认。
-- **CLI 差异**：8.5.0 的 enc 拒绝 WRAP/WRAP-PAD；测试明确断言该拒绝，再用独立
-  EVP 驱动保持双向逐字节比较。GCM-SIV 亦以标准向量和独立 EVP 验收，不假设 enc 支持 AEAD。
-
-#### 开发批次与验收
-
-| 批次 | 交付 | 完成条件 |
-|---|---|---|
-| 1 | 固定双版本、NTLS 证书用途与示例 | 正常握手、错误用途拒绝、头文件/运行库/CLI 同源校验 |
-| 2 | GCM-SIV 与 SIV 空消息 | 50 组 RFC 8452 向量、独立 EVP、空输入及 tag/AAD/nonce/密钥篡改 |
-| 3 | EdDSA 与 RSA-SM3 | 8 组 RFC 8032 向量、上下文边界/错配、CLI 双向互验、PSS 独立探测 |
-| 4 | 通用 KEX 与 SM2DH | 六条曲线等价性、GB/T 32918.5-2017 附录 B.2、角色/ID 绑定及资源释放 |
-| 5 | 文档、示例与全量回归 | 双版本 build/vet、默认/CLI/race、Linux static，文档状态与实际能力一致 |
-
-Linux amd64 本机已通过两版 build/vet、默认与 CLI/race 全量测试、真实 static 全量测试和六个示例模块；新 shim 经 ASan/LSan 成功/失败路径检查。act 的 Linux amd64/arm64 × 铜锁 8.4.0/8.5.0 四组均通过，其中 amd64 另含 race 与 CLI；macOS 矩阵仍待真实 GitHub runner 验收。
-`0.9.0` 起的 TLS 新接口、RFC 8998、HPKE、PQC 与 CMS 保持后续排期。
-
-### 2.3 `0.9.0` — TLS / NTLS 握手与认证（已发布，2026-11-06）
+### 2.1 `0.11.0` — 会话复用与票据（已实现，待发布）
 
 | 能力 | 交付内容与边界 | 前置（§3） |
 |------|----------------|-------------|
-| 连接可靠性与入口 | 修复读写互相阻塞、独立读写 deadline、取消/关闭竞争及错误归因；新增包装已连接 TCP socket 的客户端入口，保留 `Server.Accept` 惰性握手与 `NewListener` 自动握手语义 | TLS 配置与认证 |
-| 协议与凭证 | 显式 TLS、NTLS、服务端同端口混合模式；完整 TLS 证书链及 NTLS 签名/加密双证书链；客户端显式选择协议，不自动失败重试另一协议 | TLS 配置与认证 |
-| SNI / ALPN | `GetCertificate` / `GetConfigForClient`、`NextProtos` 与协商协议读取；NTLS 按完整双证书身份切换；SNI 发送名称与验证名称分别配置（§6.B A1 / A2） | TLS 配置与认证 |
-| 认证与验证策略 | `ClientAuth` / `ClientCAs`、`VerifyPeerCertificate` / `VerifyConnection`；新增不验证、验证并记录失败后继续、验证失败终止三种显式策略（§6.B A5 / A8） | TLS 配置与认证 |
-| 参数与状态 | 版本、套件、组/曲线、签名算法、DH 参数、`Options` / `Modes`；严格配置方式拒绝无效/不支持参数；`ConnectionState`、`VerifyHostname` / `UnderlyingConn`、错误码常量（§6.B A6 / A7 / A10 / B3） | TLS 配置与认证 |
-| 名称校验 | `HostnameOptions`、邮箱与主机名校验 flags、IP 校验（§6.B B5） | 主机名校验 flags |
-
-**下游交付**：SDK API + 可运行客户端/服务端示例，下游可构建类似铜锁
-`s_client` / `s_server` 的握手测试；不新增正式 CLI 产品。保留 SDK 旧入口实际行为，
-统一其文档口径；示例默认验证并记录失败后继续，另提供严格验证和完全不验证选项。
-握手完成、验证通过分别表达，验证状态区分未验证/通过/失败；自定义验证回调返回
-错误始终终止连接，不能以诊断模式吞掉。NTLS 套件自身的客户端凭证要求仍须满足。
-
-**完成条件**：TLS 1.2 / 1.3、NTLS ECC / ECDHE 分别通过回环和 CLI 双向互通，
-断言协商结果与双向数据；覆盖混合端口、SNI/ALPN、缺凭证/中间链、错误信任/名称、
-三种验证策略及 NTLS 两套身份的失败路径。并发读写、独立 deadline、取消/关闭和
-FD/句柄释放通过回归；同一 SSL 对象的原生调用受控，等待 socket 就绪时不阻塞另一方向。
-
-**实现边界**：新增 `tls.Client` 与 `examples/handshake`；保留 `Server.Accept` 惰性构造，首次 I/O 自动握手。
-`StrictConfig` 精确限制套件集合，参数不支持时失败；`Options` / `Modes` 仅接受公开命名常量。
-基础配置限制组时，SNI 所选配置必须显式给出 `CurvePreferences`，不能隐式继承残留限制；
-配置和源凭证的并发/生命周期约定见 API 清单。原生写入开始后出错须关闭连接。
-8.4.0 的 TLS/NTLS 回环、CLI 双向认证和全仓库检查结果见测试规范；详细事件流仍归下一版。
-
-### 2.4 `0.10.0` — RFC 8998 与完整握手诊断（已发布，2026-11-12）
-
-| 能力 | 交付内容与边界 | 前置（§3） |
-|------|----------------|-------------|
-| RFC 8998 | TLS 1.3 单套签名凭证、严格配置入口、`TLS_SM4_GCM_SM3` / `TLS_SM4_CCM_SM3`，约束冲突明确失败 | RFC 8998 / 诊断 |
-| 结构化诊断 | 每连接有序交付握手开始/完成、状态、收发消息/Alert、证书验证事件及可保留的数据副本；失败握手仍可读取已发生的信息（§6.A 43 / 44） | RFC 8998 / 诊断 |
-| trace / keylog | 可选详细 trace 与 keylog，默认关闭；复用铜锁原生解码，未知内容保留类型与原始字节，不承诺 CLI 文本逐字符一致；显式启用不可用能力时返回不支持错误 | RFC 8998 / 诊断 |
-| 连接状态补全 | `ConnectionState.SecureRenegotiation` 报告 RFC 5746 支持；`ConnectionState.SignedCertificateTimestamps` 按原生 SCT 列表顺序保留每项 SCT 的 TLS wire 编码；SCT 采集由 `Config.CaptureSCT` 显式开启（默认关闭），回调恒返回允许，本库只记录不执行 CT 策略校验（I-30 / I-32） | TLS 连接状态查询 / CT 回调采集 |
-
-RFC 8998 是国密 **TLS 1.3 单证书**配置，与 NTLS/TLCP **签名+加密双证书**分别配置、
-分别验收。协议处理复用铜锁 TLS 状态机，不依赖 SDK 自行编排 SM2DH。
-依据 [RFC 8998 §2–3](https://www.rfc-editor.org/rfc/rfc8998.html#section-3)，验收
-TLS 1.3、两个 SM4 套件、`curveSM2` 的 supported_groups/key_share、`sm2sig_sm3` 的
-签名协商/CertificateVerify、证书的 SM2 公钥/SM2-SM3 签名/签名用途及客户端认证约束；
-握手签名使用 `TLSv1.3+GM+Cipher+Suite`，证书验证按 RFC 8998 §3.2.1 核对 SM2 ID
-`1234567812345678` 与 CA 实际签发约定。仅枚举或协商出 SM4 套件不算完整验收。
-
-**完成条件**：两个套件分别完成客户端/服务端、单向/双向认证和 CLI 双向互通；错误
-版本、组、签名与证书配置明确失败。TLS / NTLS / RFC 8998 的消息、状态、Alert、
-验证事件、trace 与 keylog 分别验收。原生消息回调可能经过解密/重组，不作为原始
-网络抓包；诊断不无限积累日志，写入失败明确反馈，不把验证失败覆盖为通过。
-SCT 采集验证开启/关闭两态与逐项 TLS wire 编码一致，`OPENSSL_NO_CT` 构建明确不支持；
-`SecureRenegotiation` 在 TLS 1.2 与 NTLS 下分别断言取值。
-
-#### 2.4.1 实施基线与范围冻结
-
-`feat/v0.10.0` 从 `dev` 的 `b256d76` 建立；继承已发布 `0.9.0`，
-下述接口已实现；分批清单保留实施约定，实际验收状态见测试规范。固定铜锁
-8.4.0 / 8.5.0；本机头文件声明只作为探路依据，不能替代两版实际握手验收。
-
-- 复用 `tls/config.go` 的配置验证、`tls/state.go` 的独立快照、
-  `internal/core/ssl_config.go` 的 SNI/验证桥接与 `ssl_io.go` 的原生调用入口。
-  原生扩展放 `internal/native`，API 只能调用 `internal/core`；不新增顶级包。
-- `StrictConfig` 继续表示通用参数/套件严格检查；RFC 8998 增加独立开关，
-  不改变现有 TLS / NTLS 零值行为。新增字段影响非键名字面量，实施时记录迁移说明。
-- 本版不实现会话缓存/票据、OCSP stapling、HTTP 集成、STARTTLS、0-RTT、
-  外部 PSK 或主动重协商；后续版本归属保持 §2.5–2.9。
-- SCT 编码修正：单项采用 `i2o_SCT` 的 TLS wire 格式，与 Go TLS 的字段语义对齐；
-  `i2d_SCT_LIST` 编码的是整个列表，不能称作“每项 SCT DER”。按原生列表顺序保留，
-  仅保留 `SCT_SOURCE_TLS_EXTENSION` 项及重复项，不混入证书或 OCSP 来源。两版均有
-  `SSL_get0_peer_scts`，不能只依赖 CT 回调；在成功/失败快照中通过 getter 补全已接收数据。
-  CT 回调恒允许，仍需在探路批验证各协议及验证策略的实际支持边界。
-
-#### 2.4.2 API 与行为约定（已实现）
-
-以下接口已接入三层封装，API 清单与双语 GoDoc 同步维护。
-
-| 入口 | 目标形态与约定 |
-|------|----------------|
-| `Config.RFC8998 bool` | 显式启用国密 TLS 1.3 严格配置；仅标准 TLS 单证书路径，拒绝 NTLS/混合模式及双证书字段冲突；与通用 `StrictConfig` 正交 |
-| `Config.Diagnostics *DiagnosticsConfig` | nil 默认关闭；包含 `OnEvent func(HandshakeEvent) error`、`TraceWriter io.Writer`、`KeyLogWriter io.Writer` 及缓冲数量/字节限额；事件、trace、keylog 分别按需启用 |
-| `HandshakeEvent` | 每连接单调序号、事件种类、方向、原生版本/内容类型/状态、Alert level/description、验证码/深度和数据副本；未知类型保留数值与原始字节 |
-| `Config.CaptureSCT bool` | 默认关闭；开启后通过 `SSL_get0_peer_scts` 补全快照，按 `SCT_SOURCE_TLS_EXTENSION` 筛选并复制 `[][]byte`，回调恒允许，不改变链/名称验证与自定义验证回调的决定 |
-| `ConnectionState` 增量 | `SecureRenegotiation bool` 与 `SignedCertificateTimestamps [][]byte`；无原生资源，重复读取深拷贝，关闭连接后已取得的快照仍有效 |
-| `ErrUnsupported` / `ErrDiagnosticLimit` | 缺编译能力与超过诊断限额的可匹配哨兵；输出/回调错误保留 `errors.Is` 链及操作域，不用 panic 传递 |
-
-**RFC 8998 配置决策**：开关开启时，版本零值归一为 TLS 1.3 上下界；非零值须均为
-TLS 1.3。套件未配置时仅启用两个 SM4 套件，显式列表只接受该集合的非空子集；
-组/签名零值分别归一为 `curveSM2` / `sm2sig_sm3`，非空值不得混入其他算法。
-客户端允许无本端证书；服务端和双向认证客户端必须提供一套匹配的 SM2 签名证书/密钥。
-证书扩展用途、签名算法及链验证按 RFC 验收，验证策略仍独立生效，不能把严格协议配置
-当作信任验证开关。SNI 所选配置须再次归一/校验，不得关闭基础配置要求的 RFC 8998
-限制；在设置套件、组及签名列表后复核最终生效值，避免原生严格模式覆盖显式选择。
-
-**诊断交付决策**：握手开始仅发一次，结束事件带成功/失败结果；消息/Alert/状态/
-原生验证事件按原生观察顺序编号，自定义验证结果另发事件，不能把 Report 下的原生
-失败写成通过。重试 WANT_READ/WANT_WRITE 不重复开始/结束事件。消息回调不交付
-应用明文，不把其解密/重组后的数据描述为抓包；原生回调未产生的内容不自行伪造。
-
-原生回调内只复制数据并记录输出意图，不调用用户事件函数或 Writer；复用现有
-`cgo.Handle` 整数 ID 与 ex_data，C 不长期保存 Go 指针。在每次原生调用返回并完成
-同线程错误采集后、释放 `ioMu` 再同步派发；另行串行化“调用与派发”以保持每连接顺序，
-不得在等待 fd 时持锁，也不得让 Close 等待持有它所需锁的回调。派发函数不可重入同一
-连接；可保留数据，跨连接共享 Writer 由调用方同步。诊断开启时慢消费者会拖慢该连接，
-调用方负责使回调/Writer 可返回；库不启动无限后台队列。
-
-限额按事件数量与累计暂存字节计量，默认为每次派发最多 256 项 / 1 MiB，允许显式
-正数覆盖，负值拒绝，分配前检查限额；溢出、短写或用户错误均保存首个诊断错误，并使当前操作失败、停止连接，
-已收集事件与协议/验证失败仍可辨识，不静默丢日志。成功/失败握手和握手后 Read/Write
-触发的原生回调均走该路径。`DialContext` 失败会释放连接，调用方通过已交付事件保留
-诊断；`Client` / `Server.Accept` 构造后显式握手失败时还可读取连接快照。
-keylog 仅向显式 Writer 交付，不混入事件数据、错误串或普通日志，示例不默认开启。
-
-#### 2.4.3 分批实施与依赖
-
-| 批次 | 修改位置与工作 | 验收后才能进入下一批 |
-|------|----------------|----------------------|
-| P0 原生探路 | 核对两版头文件/符号/编译宏、严格模式与配置顺序、SNI 切换、消息/info/CT/keylog 回调；用最小回环证实 trace 与 SCT 来源/编码、Report/None/Strict 下 CT 回调可达性 | 记录两版功能矩阵及实际命令；无 CT/trace 时编译保护与不支持错误可设计；若原生限制阻塞需求，先记录证据并修订本节，不以假数据填充 |
-| P1 RFC 8998 | `internal/native` 增加严格模式与所需参数/状态 shim；`internal/core/ssl_config.go` 编排；`tls/config.go` 验证归一与 SNI 约束，补单证书夹具 | 两个套件独立回环与 CLI 双向互通，单向/双向认证、全部冲突失败；断言组/签名及证书约束，不能只检查套件名 |
-| P2 结构化诊断 | 原生消息/info/验证采集，core 有界暂存及错误/生命周期管理，API 事件与失败快照接线；新增文件按职责拆分为 `ssl_diagnostics` / `diagnostics` | 先证明串行派发无锁重入/关闭死锁，再覆盖三种协议的顺序、失败与 WANT 重试；默认关闭不保留诊断载荷 |
-| P3 trace / keylog | 复用消息分发，将 `SSL_trace` 写入受限内存 BIO 再复制；原生 keylog 单独路由到显式 Writer，挂接 SNI 后的新上下文 | TLS / NTLS / RFC 8998 各自实测输出；禁用、不支持、短写、错误、超限和共享配置多连接隔离通过 |
-| P4 连接状态 | 安全重协商宏 shim；受 `OPENSSL_NO_CT` 保护的 CT 开关/getter、TLS 扩展来源过滤与逐项 `i2o_SCT` 复制；扩展 core/API 快照深拷贝 | 开关两态、空/多项 SCT、来源/顺序/编码、失败快照与释放回归；无 CT 显式开启报错，关闭仍能构建/握手 |
-| P5 交付回归 | 扩展 `examples/handshake` 的 RFC 8998 和诊断选项，同步全部受影响双语说明、API/架构/测试及 CHANGELOG | 完成 §2.4.4 门禁；所有未通过项有证据与归属，不把规划符号提前标为已实现 |
-
-依次执行 P0 → P1 → P2 → P3 → P4 → P5；每批验收通过后进入下一批。
-每批只纳入对应实现、测试及必须同步的文档，不下载铜锁本体到仓库，不引入第三方 Go 依赖。
-
-#### 2.4.4 交付门禁与待验证项
-
-两版铜锁的 Linux amd64 本地检查与原生探测结果见
-[0.10.0 实测记录](testing-guide.md#0100-实际实现与本地验收2026-11-12)。
-诊断错误中断连接，已实现的 API 不再标记为规划；`main`（`1b75d55`）上的完整 CI 平台
-矩阵（Linux/macOS × amd64/arm64 × 铜锁 8.4.0/8.5.0）已于 2026-11-12 全部通过。
-
-测试用例清单见 [测试规范的 0.10.0 实施验收矩阵](testing-guide.md#0100-实施验收矩阵)。
-必须在铜锁 8.4.0 / 8.5.0 分别运行 build/vet、默认全量测试、`tongsuocli` 与 race；
-Linux 增加真实静态链接检查，平台覆盖沿用 CI 的 Linux/macOS × amd64/arm64 矩阵。
-原生采集缓冲的成功/失败/关闭路径执行 ASan/LSan；能力缺失不能用跳过掩盖。
-
-P0 优先解除四项不确定性：严格模式是否重设显式套件/组/签名列表；SNI 换 ctx 后
-回调与严格约束是否保留；CT 在不同验证策略和协议下的实际触发条件及 getter 补全；禁用 SM2/trace/CT
-的编译保护（`OPENSSL_NO_SM2` / `OPENSSL_NO_SSL_TRACE` / `OPENSSL_NO_CT`）与错误返回。确认后将证据写入本节或测试规范，验证证据按实际结果记录于测试规范，不将本地验证替代完整 CI 平台矩阵。
-
-依据：[RFC 8998 §3](https://www.rfc-editor.org/rfc/rfc8998.html#section-3)、
-[原生消息回调语义](https://docs.openssl.org/3.0/man3/SSL_CTX_set_msg_callback/)、
-[CT 回调语义](https://docs.openssl.org/3.0/man3/SSL_CTX_set_ct_validation_callback/)；
-具体可用性以铜锁两版头文件、构建选项与实际操作为准。
-
-### 2.5 `0.11.0` — 会话复用与票据（规划）
-
-| 能力 | 交付内容与边界 | 前置（§3） |
-|------|----------------|-------------|
-| 会话缓存与状态 | 跨连接客户端缓存、服务端缓存、`Conn.SessionState()`、`ConnectionState.SessionReused`、导入导出、过期及实际复用结果（§6.B A3）（I-31） | TLS 会话与票据 |
-| 票据 | 开关、数量控制、密钥管理与轮换、TLS 1.3 握手后票据处理（§6.B A4） | TLS 会话与票据 |
+| 会话缓存与状态 | 跨连接客户端缓存、服务端缓存、`Conn.SessionState()`、`ConnectionState.SessionReused`、DER/PEM 导入导出、只读会话元数据、过期及实际复用结果（I-31） | TLS 会话与票据 |
+| 票据 | 开关、数量控制、密钥管理与轮换、TLS 1.3 握手后票据处理（I-31） | TLS 会话与票据 |
 | 身份隔离 | 按协议、服务身份、客户端身份和验证配置隔离缓存，复用后仍执行约定的验证回调 | TLS 会话与票据 |
 
-**完成条件**：在前两版协议矩阵上验证首次/恢复握手、拒绝复用、过期、密钥轮换与
+**完成条件**：在已交付的 TLS / NTLS / RFC 8998 协议矩阵上验证首次/恢复握手、拒绝复用、过期、密钥轮换与
 跨身份隔离；不以“握手成功”代替“实际复用”。TLS 1.3 测试与示例必须处理握手后
 到达的票据，再进行恢复连接，不能握手后立即断开并假定已有可用会话。
 
-### 2.6 `0.12.0` — HTTP/1.1 集成与 OCSP stapling（规划）
+实现与使用细则见 [TLS 会话规则](tls-sessions.md)。公开入口包括 `SessionCache` /
+`ServerSessionCache`、`SessionState`、`WaitSession`、`SessionPolicyID`、票据配置与
+`TicketKeyManager`；原生 CLI 格式保持兼容，完整链材料单独保留用于恢复后验证。
+
+### 2.2 `0.12.0` — HTTP/1.1 集成与 OCSP stapling（规划）
 
 | 能力 | 交付内容与边界 | 前置（§3） |
 |------|----------------|-------------|
-| HTTP/1.1 | 客户端/服务端集成、`ListenAndServeTLS` / `ServeTLS`、握手/回显/HTTP 响应示例，复用已有 `NewListener`（§6.A 9 / 43 / 44） | TLS stapling / HTTP 集成 |
+| HTTP/1.1 | 客户端/服务端集成、`ListenAndServeTLS` / `ServeTLS`、握手/回显/HTTP 响应示例，复用已有 `NewListener`（I-29） | TLS stapling / HTTP 集成 |
 | OCSP stapling | 配置、请求、读取 staple 与状态验证示例，分别表达“取得响应”和“验证响应有效”；`ConnectionState.OCSPStapled` / `OCSPResponse` 提供连接级快照，DER 可直接交 `x509.ParseOCSPResponse`（I-29） | TLS stapling / HTTP 集成 |
 
 **完成条件**：在已有 TLS / NTLS / RFC 8998 协议矩阵上验证 HTTP/1.1 与适用的
 stapling 路径；受控本地测试覆盖缺失、过期、吊销及错误签名/身份的响应。不支持的
 协议/原生组合明确报告能力边界；ALPN 能协商 `h2` 不等于已交付 HTTP/2 集成。
 
-### 2.7 `0.13.0` — PQC
+### 2.3 `0.13.0` — PQC（I-38）
 
 | 领域 | 内容 | 前置（§3） |
 |------|------|-------------|
 | `asym` 签名 | ML-DSA-44 / 65 / 87、SLH-DSA 12 变体 | PQC 密钥生成、签验与序列化路径 |
-| `asym` KEM | 原生 `Encapsulate` / `Decapsulate` | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
+| `asym` KEM | ML-KEM-512/768/1024 与原生 `Encapsulate` / `Decapsulate`，明确算法/模式支持范围 | `EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` |
+| `tls` PQC / 混合组 | 对原生可用的 ML-KEM 与经典/PQC 混合组明确支持矩阵并实际握手；至少验证 X25519MLKEM768 与原生可用的 curveSM2MLKEM768，不能以 Groups 字符串配置替代验收 | 原生组配置与协商状态 |
 
 本版独立验收密钥生命周期、编码往返、算法/参数不匹配和能力探测；8.4 构建不能
 引用不存在的符号，不可用能力明确报错，不引入第三方算法替代实现。
 
-### 2.8 `0.14.0` — CMS 与时间戳
+### 2.4 `0.14.0` — CMS 与时间戳
 
 | 领域 | 内容 | 对应缺口 | 前置（§3） |
 |------|------|----------|-------------|
-| `pkcs/pkcs7` | CMS 族（`cms` 命令），复用 `0.7.0` 容器基础设施 | §6.A 5 | CMS |
-| 新顶级包 `ts` | RFC 3161：ASN.1 请求/响应与 HTTP 传输 | §6.A 53 | CMS / TS |
+| `pkcs/pkcs7` | CMS 签验、信封与 DigestedData 生成/验证，复用既有容器基础设施 | I-37 | CMS |
+| 新顶级包 `ts` | RFC 3161：请求/响应、验证与 HTTP 传输 | I-39 | CMS / TS |
 
 `ts` 与 `x509` 平级，实施时同步包索引与依赖图；当前仍为 16 个公开包。
 数据库化、文件系统绑定的 CA 工作流不属于本版，继续按 §4 暂缓。
 
-### 2.9 `1.0.0` — 公开 API 收敛与稳定
+**完成条件**：CMS 与 CLI 双向互通，附带/分离内容、信任与多签名者、篡改和错误密钥均验收；
+DigestedData 仅验证摘要完整性，不代表签名认证。时间戳覆盖 imprint/nonce/policy、
+TSA 签名、证书用途、链与时间校验，区分解析成功和验证通过；HTTP 失败与资源释放可回归。
 
-- **E2 原语公开面**：统一按名分发的 Options，集中处理公开签名收敛。
+### 2.5 `0.15.0` — 标准派生与公钥编码互通
+
+| 领域 | 范围与价值 | 需求 | 前置（§3） |
+|------|------------|------|-------------|
+| `kdf` | SSHKDF / PKCS12KDF 的类型化与按名入口，补标准派生参数而不引入 SSH 协议栈 | I-34 | EVP_KDF 参数映射 |
+| `asym` | EC/SM2 公钥 SPKI PEM/DER 的压缩/未压缩输出选择，旧默认保持不变；不扩成 SM2 密文压缩输出 | I-35 | 原生公钥点形式与编码 |
+
+**完成条件**：两版铜锁独立标准向量及适用 CLI 对拍；SSHKDF 覆盖类型字节与 session ID，
+PKCS12KDF 明确 Unicode 编码、diversifier 与空/缺失口令语义，非法参数不能静默默认。
+公钥编码覆盖 EC 与 SM2 的往返、压缩点合法性和源对象不变；不支持的密钥或原生组合明确失败。
+KRB5KDF、hybrid 点形式和额外曲线扩容不隐含纳入，后两项仅在有互通需求时重新评估。
+
+### 2.6 `1.0.0` — 公开 API 收敛与稳定（I-36）
+
+- **E2 原语公开面**：统一按名分发的 Options，补非对称按名密钥生成入口（当前只有算法专用 Generate 函数），集中处理公开签名收敛。
 - **E3 应用级组合**：复用已有内存签发流程，补应用级组合与 CRL 配置式签发入口
-  （§6.A 6 / §6.B B9）；不承接文件系统 CA 数据库。
+  （I-36）；不承接文件系统 CA 数据库。
 - 给出迁移对照、双语 CHANGELOG 的 `BREAKING` 与兼容性承诺，完成全量回归；
   不以新增大批算法/协议作为本版交付前提。
 
@@ -379,50 +119,15 @@ stapling 路径；受控本地测试覆盖缺失、过期、吊销及错误签�
 
 ## 3. 绑定实现与后续实施前置
 
-下表 `0.7.0` 至 `0.10.0` 行已实现；`0.11.0` 及以后仍为实施前置，不表示已绑定。
-纯 Go 限额与现有句柄 Close 复用不新增 cgo。
+`0.11.0` 会话与票据绑定已实现。下表仅列后续实施前置，不表示已绑定；已实现绑定见 [内部 API 清单](api-reference-internal.md)。
 
 | 家族 | 需要的 C 接口或扩展 | 服务对象 | 目标版本 |
 |------|--------------------|----------|----------|
-| 完整序列号 | ASN.1 INTEGER / BIGNUM 无损转换、`X509_set_serialNumber` / `X509_REVOKED_set_serialNumber` 的完整值路径及无损比较；复用已有证书 hex 读取，不经 C long/int64 中转 | `x509` 证书/CSR 签发、CRL 读写与吊销匹配 | `0.7.0` |
-| DER 扩展 | `OBJ_txt2obj`、`X509_EXTENSION_create_by_OBJ` 与对应释放；复用已有扩展提交路径 | `x509` | `0.7.0` |
-| 信任路径 | `X509_STORE_set_default_paths` / `X509_STORE_load_locations` | `x509.Store` | `0.7.0` |
-| SM2 压缩点 | `EC_POINT_oct2point`、`EC_POINT_is_on_curve` / `EC_POINT_is_at_infinity`、仿射坐标读取 | `asym` 经 `core` 校验与展开 | `0.7.0` |
-| PKCS#12 改密 | `PKCS12_unpack_authsafes` / `unpack_p7data` / `unpack_p7encdata`、多密钥与嵌套 safe/bag 重加密与打包、完整属性保留、MAC 校验及重建 | `pkcs/pkcs12` | `0.7.0` |
-| PKCS#7 签名/加密族 | `PKCS7_sign` / `sign_add_signer` / `final` / `verify` / `get0_signers` / `encrypt` / `decrypt`，补分离内容与选项绑定 | `pkcs/pkcs7` | `0.7.0` |
-| 上下文签名 | `EVP_DigestSignInit_ex` / Verify 的 `instance` / `context-string`，参数表检查与编译保护（已实现） | `asym` | `0.8.0` |
-| SM2DH | `EVP_PKEY_derive_init_ex` 的双方静态密钥指针、ID、角色、SM3 与长度参数（已实现） | `ecdh` | `0.8.0` |
-| TLS 配置与认证 | NTLS 混合模式、证书链、ALPN、SNI/验证回调、客户端 CA、组/签名算法/DH 参数、配置与状态绑定；完善 I/O、deadline 与原生错误采集 | `tls` | `0.9.0` |
-| 主机名校验 flags | `X509_check_host` 的 flags 扩展 / `X509_check_email` 等 | `tls.HostnameOptions` | `0.9.0` |
-| TLS 连接状态查询 | `SSL_get_secure_renegotiation_support`、`SSL_session_reused`、`SSL_get_tlsext_status_ocsp_resp`（`SSL_ctrl` 宏，需 shim）；返回值复制为独立切片，不持有原生指针 | `tls` | `0.10.0` / `0.11.0` / `0.12.0` |
-| CT 回调采集 | `SSL_CTX_set_ct_validation_callback` / `SSL_set_ct_validation_callback`、`SSL_get0_peer_scts` → `SCT_get_source` 筛选 `SCT_SOURCE_TLS_EXTENSION` → `i2o_SCT` 逐项 TLS wire 编码、按连接保存捕获缓冲（`SSL_set_ex_data`）；回调内同步拷贝，不让 C 长期持有 Go 指针 | `tls` | `0.10.0` |
-| RFC 8998 / 诊断 | `SSL_CTX_enable_sm_tls13_strict`、SM4 套件/curveSM2/sm2sig_sm3 配置与状态、消息/状态/验证回调、`SSL_trace`、keylog | `tls` | `0.10.0` |
-| TLS 会话与票据 | `SSL_SESSION_*`、会话新建/缓存回调、复用状态、票据数量与密钥轮换绑定 | `tls` | `0.11.0` |
 | TLS stapling / HTTP 集成 | `SSL_CTX_set_tlsext_status*` / `SSL_get_tlsext_status_ocsp_resp` 等；HTTP 入口复用已有 Listener 与标准库 | `tls` | `0.12.0` |
-| PQC / KEM | 原生 PQC 密钥、签验、序列化路径；`EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate` | `asym` | `0.13.0` |
-| CMS / TS | `CMS_*` / `TS_*` | `pkcs/pkcs7`、`ts` | `0.14.0` |
-
-**已落地的相关绑定**（列此便于对照，避免重复规划）：
-
-- `0.6.0`：扩展摘要与 XOF；`EVP_CIPHER_fetch` 复用覆盖 AES 扩展模式与 ZUC；
-  `EVP_CIPHER_CTX_set_flags`（WRAP）、空载荷 update 修正；EC 参数 PEM 编解码、
-  `EVP_PKEY_check` / `EVP_PKEY_public_check`；PKCS#8 PBE/PRF 与 PKCS#1 公钥编解码；
-  OCSP nonce 与请求 CertID 匹配；X509 AUX 信任属性；PKCS#12 PBE/iter shim。
-- `0.3.0`：`OpenSSLVersionWithIndex`（`meta` 版本/构建信息）、`X509_REVOKED_*` /
-  `X509_CRL_add0_revoked` / `X509_CRL_sort`（`x509.CRLBuilder`）、`X509_check_host` /
-  `X509_check_ip_asc`（`Certificate.VerifyHostname`）、`X509_STORE_set_verify_time`（`Store.SetTime`）；
-- `0.5.0`：`EVP_MAC_*` 全家族（`mac`）、`EVP_aes_192_*` / `EVP_sm4_ccm` / `EVP_sm4_xts` /
-  `EVP_chacha20*`（`sym`）、泛化 `EVP_KDF_fetch` + `EVP_KDF_derive`（`kdf` 10 种）、
-  `EVP_*_do_all_provided` 与 `OSSL_PROVIDER_*` / `OPENSSL_info(SEED_SOURCE)` /
-  `SSL_CTX_get0_implemented_groups`（`meta` 枚举，注：TLS 组枚举需 OpenSSL 3.2+）。
-
-**`0.4.0` 未新增 C 接口**：本版只修正既有 `X509_sk_X509_EXTENSION_push` / `X509_sk_X509_push`
-的返回值语义（OpenSSL 3 的 `sk_TYPE_push` 返回压入后的**栈长度**，原实现按 0/1 布尔判断），
-未引入新的绑定。
-
-**已在 `0.4.0` 落地的相关绑定**：`X_X509_EXTENSION_create_by_NID_der`（按调用方给出的
-DER 值构造扩展，绕开 OpenSSL 的扩展配置语法）、`X509_CRL_add_ext`（向 CRL 追加扩展）、
-`OBJ_nid2oid`（NID → 点分 OID）——均服务于 `x509` 的类型化 certificatePolicies 入口。
+| PQC / KEM | 原生 PQC 密钥、签验、序列化路径；`EVP_PKEY_encapsulate` / `EVP_PKEY_decapsulate`，TLS 组配置与实际协商状态 | `asym`、`tls` | `0.13.0` |
+| CMS / TS | `CMS_*`（含摘要封装/验证）/ `TS_*`、验证与 HTTP 编排 | `pkcs/pkcs7`、`ts` | `0.14.0` |
+| SSHKDF / PKCS12KDF | `EVP_KDF_fetch` / derive 参数类型、编码及所有权，复用现有泛化绑定并补缺失参数 | `kdf` | `0.15.0` |
+| EC/SM2 公钥点形式 | 原生公钥 point-format 设置、SPKI 编码与独立句柄复制，避免修改源密钥 | `asym` | `0.15.0` |
 
 ---
 
@@ -434,9 +139,9 @@ DER 值构造扩展，绕开 OpenSSL 的扩展配置语法）、`X509_CRL_add_ex
 | 2 | 数据库化、文件系统绑定的 CA 工作流 | **暂缓，不承诺版本** | 本质是持久化状态机；继续复用既有内存签发流程，不以 `OpenCA` / index.txt 工作流作为协议版本交付条件 |
 | 3 | DSA / 独立 DH 密钥交换算法 | 不做 | 非国密目标场景；TLS 的 DH 参数加载归 `0.9.0` |
 | 4 | EC-ElGamal / Paillier | 不做 | 非国密目标场景 |
-| 5 | 需重编铜锁方可验证的六项 | 不做（标注保留） | 白盒 SM4、Bulletproofs、SM2 门限、SDF、SMTC、Delegated Credential；见 CLI 对比 §6.D |
+| 5 | 特殊扩展与设备能力 | 不做（按构建记录） | 白盒 SM4、Bulletproofs、SM2 门限、SDF、SMTC、Delegated Credential；是否可用依具体构建与实测，不能从命令存在或缺失推断；见 [CLI 对比 §6](cli-comparison.md#6-不纳入与特殊构建能力) |
 | 6 | 提升 `internal/core` 原生句柄为公开类型 | 不做 | 跨包取句柄须走现有桥接，公开签名不得出现 internal 类型 |
-| 7 | 公开 BIO、原生 HMAC_CTX、NID 常量表 | 不做 | 维持 Go 惯例封装；见官方 SDK 对比 §9 |
+| 7 | 公开 BIO、原生 HMAC_CTX、NID 常量表 | 不做 | 维持 Go 惯例封装；见 [官方 SDK 对比 §4](official-sdk-comparison.md#4-设计差异与不对齐项) |
 | 8 | `crypto/*` deprecated 转发包 | 不做 | `0.3.0` 已完成迁移，不重新扩大公开面 |
 | 9 | ECIES / 私有混合加密容器 | **暂缓，不承诺版本** | 尚无明确的互通格式与对象；不自行定义容器。出现明确互通对象或 HPKE/JWE 等标准协议需求后重新立项；原生 HPKE 可用不等于本库已封装 |
 | 10 | 库内自动加载 legacy provider | 不做 | 保持默认原生能力边界；单 DES 已在 `0.6.0` 以 `K‖K‖K` 驱动 DES-EDE3 等价实现，仅用于存量数据兼容 |
@@ -444,40 +149,14 @@ DER 值构造扩展，绕开 OpenSSL 的扩展配置语法）、`X509_CRL_add_ex
 | 12 | STARTTLS、外部 PSK、0-RTT、主动重协商 | **暂缓，不承诺版本** | 不作为四版 TLS 系列或 1.0 稳定版的交付前提；RFC 8998 已单独归入 `0.10.0` |
 | 13 | 报文级裸握手 / 心跳发包（`RawHandshake` / `SendRecord`） | 不做 | 需绕过铜锁状态机自行拼装 TLS 记录层，等于在本库内自研协议栈；Heartbleed / ROBOT / CCS-Injection / POODLE / Ticketbleed 一类主动探测属渗透与漏洞扫描工具职责，不作为 SDK 能力（I-33） |
 | 14 | TLS 压缩与 heartbeat 状态查询 | 不做 | 本库构建未启用 ZLIB / BROTLI / ZSTD，压缩恒不可协商，字段恒为 false 无诊断价值；heartbeat 无公开原生状态接口；配置侧已由 `OptionNoCompression` 表达（I-32） |
+| 15 | SM2DH 密钥确认 | **暂缓，不承诺版本** | 固定 8.5.0 provider 仅输出派生密钥，未暴露确认值；确认值生成、对端校验及失败后禁用密钥待原生能力可用后实施，派生成功不等于对端认证或密钥确认；见 [需求复核 §3](requirements.md#3-sm2dh-密钥确认的原生限制) |
+
+其他候选（通用流传输、provider/硬件 URI、标准混合加密、KRB5KDF 等）的限制与重开条件
+统一见 [需求台账 §2](requirements.md#2-暂缓需求与重开条件)，未分配版本。
 
 ---
 
-## 附录 A. 包结构重构决策记录（`0.3.0` 已落地，历史归档）
-
-> 以下决策是 `0.3.0` 把 27 个 API 层包收敛为 **16 个顶级包**（取消 `crypto/` 整目录与 `key/`）的依据。
-> **已全部实施完毕**，保留于此仅为解释现状形态的由来，不再构成待办。逐符号清单见
-> [api-reference.md](api-reference.md) §0 / §0.1，依赖方向见 [architecture.md](architecture.md) §2。
-
-| # | 决策项 | 结论 | 理由 |
-|---|--------|------|------|
-| 1 | 重构力度 | **一步到位迁移并删除旧包**，不做 deprecated 转发 | 转发层会让「公开面收敛」永远做不完；`0.3.0` 尚未发布，可直接改 |
-| 2 | 命名与层级 | **Go 惯例名 + 全部顶级**，`crypto/` 与 `key/` 取消 | 现有 `crypto/` 下既有算法也有组合层，边界已经模糊；扁平后职责清晰 |
-| 3 | 对称包名 | `sym` | 与 `asym` 对称、3 字母等长；避免与标准库 `crypto/cipher` 同名 |
-| 4 | `ec` 与 `ecdh` | **不拆**：曲线密钥生成归 `asym`，密钥协商归 `ecdh` | 避免为「曲线参数」单独建包 |
-| 5 | 非对称包 | 单个 `asym`，按算法名分发 | 合并 `genpkey` / `pkey` / `pkeyutl` 三命令的职责 |
-| 6 | `x25519` / `x448` | **删除包**：生成 → `asym`，协商 → `ecdh` | `ecdh.Curve` 已覆盖 OKP 曲线，独立包只剩重复 |
-| 7 | `mac` 范围 | **仅 MAC**（HMAC / CMAC / GMAC / KMAC / SipHash / Poly1305 / EIA3） | 签名/验签归 `asym`；MAC 管「带密钥的摘要」 |
-| 8 | `rand` / `kdf` | 各自保留顶级包 | 两者都是 CLI 子命令，且无更合适的归属 |
-| 9 | PKI 家族 | **不拆**：`csr` / `crl` / `ocsp` 全部留在 `x509` | 拆分会让 `x509 ↔ crl` 成环（`Store.AddCRL` 需 `crl`，`crl.NewBuilder` 需 `x509`），Go 无法编译；改用文件维度拆开缓解体量 |
-| 10 | `key` 归宿 | 拆四块：`asym` + `sym` + `keystore` + `kdf` | 「各自抽象、各自实现」，不再有一个包同时持有对称与非对称 |
-| 11 | Go 惯例接口 | **保留** `hash.Hash` / `cipher.Block` / `cipher.AEAD`，同时叠加 CLI 式按名入口 | 保住 Go 生态可组合性，又不丢「一次调用完成一件事」 |
-| 12 | 内部类型泄露 | **E1 十二项全部收敛** | 公开签名不得出现 `internal/core` 类型；这是重构的硬约束 |
-| 13 | 跨包取句柄 | **`internal/keyaccess` + 结构化接口断言**（无注册表） | 见 [architecture.md](architecture.md) §3.3 |
-| 14 | 命名收尾 | `tongsuo` → `meta`；`symmetric` → `sym` | 前者避免 `tongsuo-go/tongsuo` 的 stutter；后者见决策 3 |
-| 15 | `pkcs/` | **不扁平**，保留 `pkcs/pkcs7`、`pkcs/pkcs12` | 为将来 `pkcs/#8` 等预留命名空间 |
-| 16 | 版本归属 | 全部并入 **`0.3.0`** | 一次性落地破坏性变更，避免分批 |
-| 17 | 路线图口径 | 全列（含需新增 cgo 绑定 / 需重编铜锁的项） | 便于排期时不遗漏前置条件 |
-
-**副作用（正向）**：`crypto/rand` 与标准库 `crypto/rand` 的「同路径同名」问题消失。
-
----
-
-## 附录 B. 相关文档
+## 附录 A. 相关文档
 
 | 用途 | 文档 |
 |------|------|
@@ -485,8 +164,8 @@ DER 值构造扩展，绕开 OpenSSL 的扩展配置语法）、`X509_CRL_add_ex
 | 内部 API 清单（`internal/*`） | [api-reference-internal.md](api-reference-internal.md) |
 | 分层、目录、依赖方向、桥接设计 | [architecture.md](architecture.md) |
 | 功能需求复核与处置 | [requirements.md](requirements.md) |
-| 与铜锁 CLI 的能力对比（缺口编号来源） | [cli-comparison.md](cli-comparison.md) |
-| 待实现 API 逐条清单 | [cli-comparison-todo.md](cli-comparison-todo.md) |
+| 与铜锁 CLI 的能力对比（能力证据） | [cli-comparison.md](cli-comparison.md) |
+| 对比缺口处置索引 | [cli-comparison-todo.md](cli-comparison-todo.md) |
 | 与官方 SDK 的能力对比 | [official-sdk-comparison.md](official-sdk-comparison.md) |
 | 开发规范 / 测试规范 | [development-guide.md](development-guide.md) · [testing-guide.md](testing-guide.md) |
 | 变更记录 | [CHANGELOG.md](../CHANGELOG.md) · [CHANGELOG.zh.md](../CHANGELOG.zh.md) |

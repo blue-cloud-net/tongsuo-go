@@ -67,6 +67,11 @@ func (s *SSLConn) diagnosticStep(op string, buf []byte) (int, int, error) {
 	s.deliveryMu.Lock()
 	defer s.deliveryMu.Unlock()
 	n, code, nativeErr := s.sslStep(op, buf)
+	return s.finishDiagnosticStep(n, code, nativeErr)
+}
+
+// finishDiagnosticStep requires deliveryMu and an admitted operation, but not ioMu.
+func (s *SSLConn) finishDiagnosticStep(n, code int, nativeErr error) (int, int, error) {
 	// The caller is admitted via begin/inflight; Close cannot release callbacks.
 	s.ioMu.Lock()
 	cb := s.callbacks

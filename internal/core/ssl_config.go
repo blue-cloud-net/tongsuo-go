@@ -306,6 +306,12 @@ func (s *SSLConn) State() (TLSState, error) {
 	}
 	out := TLSState{SecureRenegotiation: secure, SignedCertificateTimestamps: scts, Version: n.Version, CipherSuite: n.CipherSuite, CipherName: n.CipherName, ServerName: n.ServerName, Protocol: n.Protocol, Group: n.Group, Signature: n.Signature, VerifyCode: n.VerifyCode, PeerCertificates: n.PeerCertificates, VerifiedChain: n.VerifiedChain, VerifyEnabled: s.callbacks.VerifyEnabled, VerificationPerformed: s.callbacks.VerificationPerformed}
 	if s.callbacks != nil {
+		if len(s.callbacks.ResumedPeers) > 0 {
+			out.PeerCertificates = cloneTLSState(TLSState{PeerCertificates: s.callbacks.ResumedPeers}).PeerCertificates
+		}
+		if len(s.callbacks.ReverifiedChain) > 0 {
+			out.VerifiedChain = cloneTLSState(TLSState{VerifiedChain: s.callbacks.ReverifiedChain}).VerifiedChain
+		}
 		for _, failure := range s.callbacks.Failures {
 			out.Failures = append(out.Failures, TLSVerificationFailure{failure.Code, failure.Depth, append([]byte(nil), failure.Certificate...)})
 		}
@@ -328,6 +334,8 @@ func (s *SSLConn) CallbackError() error {
 func (s *SSLConn) attachCallbacks(ctx *TLSContext) error {
 	settings := ctx.settings
 	cb := &native.TLSCallbacks{Protocols: append([]string(nil), settings.Protocols...), Continue: settings.Continue, VerifyEnabled: settings.VerifyEnabled, Tag: settings.Tag}
+	cb.SessionDomain = ctx.sessionDomain
+	cb.SessionGet, cb.SessionPut, cb.TicketKey = ctx.sessionGet, ctx.sessionPut, ctx.ticketKey
 	cb.DiagnosticFlags, cb.MaxEvents, cb.MaxBytes, cb.CaptureSCT = settings.DiagnosticFlags, settings.MaxEvents, settings.MaxBytes, settings.CaptureSCT
 	if settings.Dispatch != nil {
 		s.dispatch = settings.Dispatch()
@@ -342,6 +350,8 @@ func (s *SSLConn) attachCallbacks(ctx *TLSContext) error {
 			return nil, err
 		}
 		selected = append(selected, next)
+		cb.SessionDomain = next.sessionDomain
+		cb.SessionGet, cb.SessionPut, cb.TicketKey = next.sessionGet, next.sessionPut, next.ticketKey
 		cfg := next.settings
 		cb.Continue = cfg.Continue
 		cb.VerifyEnabled = cfg.VerifyEnabled

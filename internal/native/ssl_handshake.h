@@ -4,6 +4,7 @@
 #include <stdint.h>
 int X_SSL_write_owned(SSL *ssl, const void *buf, int len);
 int X_SSL_attach(SSL *ssl, uintptr_t id);
+uintptr_t X_SSL_hooks_id(SSL *ssl);
 void X_SSL_CTX_callbacks(SSL_CTX *ctx);
 int X_SSL_switch_context(SSL *ssl, SSL_CTX *ctx);
 int X_SSL_CTX_parameters(SSL_CTX *ctx, const char *groups, const char *sigalgs,
@@ -27,4 +28,6 @@ int X_SSL_secure_renegotiation(SSL *ssl);
 int X_SSL_sct_count(SSL *ssl);
 int X_SSL_sct_copy(SSL *ssl, int index, unsigned char **out);
 int X_SSL_diagnostics(SSL *ssl, int flags, size_t limit);
+int X_SSL_CTX_sessions(SSL_CTX *ctx, int server, int disabled, int tickets, const unsigned char *domain);
+int X_SSL_reverify(SSL *ssl, const unsigned char *extra, size_t extra_len);
 #endif
