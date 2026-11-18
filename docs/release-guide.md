@@ -143,11 +143,18 @@ x86 主机上使用 QEMU 和对应架构的镜像 digest。macOS 必须交给真
 ```bash
 git switch main
 git status --porcelain                # 必须为空
-git merge --no-ff dev -m "chore(merge): 合并 0.8.0 发布准备到 main"
+git merge --no-ff dev \
+  -m "chore(merge): 合并 <ver> 发布定版到 main" \
+  -m "- 简述本版本主要交付内容
+- 简述双语 CHANGELOG 与发布基线同步情况
+- 简述已完成的验证及待 GitHub runner 验证的范围"
 git rev-list --count main..dev        # 必须为 0
 git diff --stat dev main              # 必须为空（树一致）
 # 由维护者手动执行：git push origin main
 ```
+
+合并提交必须使用上述中文标题，并在正文中填写本次发布的简单说明；
+将 `<ver>` 与条目替换为实际版本和内容，不得只写默认的 `Merge branch 'dev'`。
 
 main 接受从 dev 的非快进合并；保留已有历史，不 reset 或 rebase。agent 完成本地合并后停止，由维护者推送。
 

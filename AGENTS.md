@@ -468,6 +468,18 @@ scripts/check-coverage.sh  scripts/extract_release_notes.py
 - ❌ 反例：`update code`、`fix bug`、`临时提交`、`WIP` 这类无信息量的 message
 - ❌ 反例：一次提交同时改 `sym` 算法与 README 排版
 
+合并到 `main` 时，必须显式填写有意义的合并说明：标题采用
+`chore(merge): 合并 <版本号> 发布定版到 main`，正文用简短条目说明主要交付内容、
+发布定版改动与验证结果。不得仅使用默认的 `Merge branch 'dev'`。例如：
+
+```text
+chore(merge): 合并 0.10.0 发布定版到 main
+
+- 汇总本版本主要功能与行为变化
+- 同步双语 CHANGELOG 与发布基线文档
+- 说明已完成的验证及仍需 GitHub runner 验证的范围
+```
+
 ### 6.2 分支
 
 - `main` 为发布分支；日常开发在 `dev`（或特性分支）上进行
