@@ -403,7 +403,7 @@ API 层（16 个顶级包）          ← 对外高层 API，仅此层可被外�
 - **并发模型**：不同句柄可并行使用；普通单句柄由调用方串行化，`tls.Conn` 支持并发读写与 Close，内部串行原生调用
 - **内部实现隐藏**：`internal/` 受 Go `internal` 机制保护，外部不可导入；公开签名中不出现 `internal/` 类型
 
-详细设计与依赖方向见 [docs/architecture.md](docs/architecture.md)，`0.7.0`–`1.0.0` 的版本规划见 [docs/roadmap.md](docs/roadmap.md)。
+详细设计与依赖方向见 [docs/architecture.md](docs/architecture.md)，`0.11.0`–`1.0.0` 的版本规划见 [docs/roadmap.md](docs/roadmap.md)。
 
 ## 协议
 

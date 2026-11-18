@@ -462,8 +462,8 @@ P7 BIO/证书资源。绑定在 `binding_reliability.go` / `binding_pkcs7_ops.go
 不经 Bundle 丢失属性。复杂 P12 默认测试在临时目录用 cgo 已要求的 C 编译器编译
 `pkcs/pkcs12/testdata/complex.c`，不需要额外库或 CLI。
 
-具体排期见 [roadmap.md](roadmap.md) §2；功能需求与验收边界见
-[requirements.md](requirements.md)。本节 0.7.0 / 0.8.0 能力已落地，0.9.0 及以后仍为规划。
+具体排期见 [roadmap.md](roadmap.md) §2；未完成需求与暂缓理由见
+[requirements.md](requirements.md)。0.10.0 及之前的交付范围已完成，0.11.0 起仍为规划。
 
 ---
 
@@ -577,7 +577,7 @@ go build ./...
 - [参考项目（C# 封装）](https://github.com/blue-cloud-net/tongsuo-csharp)
 - [官方 Go SDK](https://github.com/tongsuo-project/tongsuo-go-sdk)
 - [与官方 SDK 的功能对比与对齐路线图](official-sdk-comparison.md)
-- [版本路线图（`0.7.0` 至 `1.0.0`）](roadmap.md)
+- [版本路线图（`0.11.0` 至 `1.0.0`）](roadmap.md)
 - [开发规范](development-guide.md) · [测试规范](testing-guide.md)
 - [公开 API 清单](api-reference.md) · [内部 API 清单](api-reference-internal.md)
 
