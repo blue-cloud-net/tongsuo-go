@@ -73,9 +73,12 @@ func (r *OCSPResponse) CheckRequest(req *OCSPRequest) (*CertStatus, error) {
 		return nil, NewOpError("ocsp: basic response", native.PopError())
 	}
 	defer native.OCSP_BASICRESP_free(basic)
-	found, status, reason, rev, this, next := native.OCSP_resp_find_status(basic, id)
+	found, status, reason, rev, this, next, invalidTime := native.OCSP_resp_find_status(basic, id)
 	if !found {
 		return nil, fmt.Errorf("ocsp: no status for request")
+	}
+	if invalidTime {
+		return nil, fmt.Errorf("ocsp: invalid certificate status time")
 	}
 	s := &CertStatus{Status: status, StatusText: native.OCSP_cert_status_str(status), ReasonCode: reason, ReasonText: native.OCSP_crl_reason_str(reason)}
 	if rev != 0 {

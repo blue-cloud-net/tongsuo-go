@@ -62,6 +62,11 @@ type TLSVerifyFailure struct {
 // TLSCallbacks 管理一个 SSL 对象的回调及失败信息。
 // TLSCallbacks manages callbacks and failure details for one SSL object.
 type TLSCallbacks struct {
+	// Staple 按所选证书 DER 读取装订响应。
+	//
+	// Staple obtains the response for the selected certificate DER.
+	Staple func([]byte) ([]byte, error)
+
 	// ResumedPeers 为恢复后保留的完整对端身份材料。
 	// ResumedPeers holds complete peer identity material retained after resumption.
 	ResumedPeers [][]byte

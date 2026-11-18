@@ -19,6 +19,8 @@ building, testing or running (see [Requirements](#requirements)).
 
 ---
 
+Use `tls.NewHTTPTransport` with `http.Client` for direct HTTPS over HTTP/1.1. On the server, pass an `http.Server` to `tls.ServeTLS` or `tls.ListenAndServeTLS`. Clients can set `Config.RequestOCSP` to retrieve the staple via `ConnectionState` for explicit validation.
+
 ## Features
 
 The API layer is **16 top-level packages** (`meta` / `digest` / `mac` / `kdf` / `rand` / `sym` /

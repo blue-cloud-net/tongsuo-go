@@ -97,8 +97,15 @@ static int alpn_cb(SSL *ssl, const unsigned char **out, unsigned char *outlen,
     *out = in + offset + 1;
     return SSL_TLSEXT_ERR_OK;
 }
+extern int CgoTLSStaple(uintptr_t, SSL *);
+static int staple_cb(SSL *ssl, void *arg) {
+    if (!SSL_is_server(ssl)) return 1;
+    uintptr_t id = hooks_id(ssl);
+    return id ? CgoTLSStaple(id, ssl) : SSL_TLSEXT_ERR_NOACK;
+}
 static void diagnostic_keylog(const SSL *ssl, const char *line);
 void X_SSL_CTX_callbacks(SSL_CTX *ctx) {
+    SSL_CTX_set_tlsext_status_cb(ctx, staple_cb);
     SSL_CTX_set_client_hello_cb(ctx, hello_cb, NULL);
     SSL_CTX_set_alpn_select_cb(ctx, alpn_cb, NULL);
 }

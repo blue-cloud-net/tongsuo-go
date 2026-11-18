@@ -1,5 +1,7 @@
 # 项目架构
 
+HTTP/1.1 通过标准库 `net/http` 复用铜锁连接。HTTP 监听器将 TLS 握手放入单连接处理流程，OCSP 回调及响应内存由既有 SSL 生命周期管理。参见 [HTTP/1.1 与 OCSP stapling](tls-http-ocsp.md)。
+
 本文档描述 `tongsuo-go` 的整体架构、目录结构、构建依赖与运行模型。开发规范见
 [development-guide.md](development-guide.md)，测试规范见 [testing-guide.md](testing-guide.md)。
 

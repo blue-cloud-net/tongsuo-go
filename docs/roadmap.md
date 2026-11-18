@@ -59,7 +59,7 @@
 `ServerSessionCache`、`SessionState`、`WaitSession`、`SessionPolicyID`、票据配置与
 `TicketKeyManager`；原生 CLI 格式保持兼容，完整链材料单独保留用于恢复后验证。
 
-### 2.2 `0.12.0` — HTTP/1.1 集成与 OCSP stapling（规划）
+### 2.2 `0.12.0` — HTTP/1.1 集成与 OCSP stapling（待验收）
 
 | 能力 | 交付内容与边界 | 前置（§3） |
 |------|----------------|-------------|

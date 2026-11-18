@@ -1232,9 +1232,9 @@ VerifyReport 握手成功仍可能 VerificationFailed，不可据此认定可信
 | 🆕 DER/PEM 会话导入导出、只读元数据、票据控制与密钥轮换 | 处理 TLS 1.3 握手后票据；缓存按协议、服务/客户端身份和验证配置隔离 | `0.11.0` | 新会话回调、序列化、票据与实际复用状态 |
 | 🧭 PQC / 混合 TLS 组支持矩阵与真实协商验收（I-38） | 原生可用组的握手、状态与错误边界，含 X25519MLKEM768 / 可用的 curveSM2MLKEM768 | `0.13.0` | Groups 名称透传不是已完成验收 |
 | 🆕 `ConnectionState.SessionReused` | 区分首次与恢复握手；与 `Conn.SessionState()` 同版交付 | `0.11.0` | `SSL_session_reused` |
-| 🧭 `ListenAndServeTLS` / `ServeTLS`、HTTP/1.1 客户端/服务端集成 | 复用现有 `NewListener`；不承诺 HTTP/2 集成 | `0.12.0` | 标准库 HTTP 集成 |
-| 🧭 OCSP stapling | 配置、请求与读取 staple；提供响应有效性与证书状态验证示例 | `0.12.0` | status 回调与 OCSP 响应绑定 |
-| 🧭 `ConnectionState.OCSPStapled` / `OCSPResponse` | 装订标志与 DER 原文，可直接交 `x509.ParseOCSPResponse` | `0.12.0` | `SSL_get_tlsext_status_ocsp_resp` |
+| 🆕 `ListenAndServeTLS` / `ServeTLS`、HTTP/1.1 客户端/服务端集成 | `NewHTTPTransport` 提供 HTTPS 直连，`HTTPConnectionState` 从服务端请求读取状态 | `0.12.0` | 标准库 HTTP 集成 |
+| 🆕 OCSP stapling | 静态和动态装订、客户端请求、严格验证策略与恢复会话重新验证 | `0.12.0` | status 回调与 OCSP 响应绑定 |
+| 🆕 `Config.RequestOCSP`、`ConnectionState.OCSPStapled` / `OCSPResponse` | 装订标志与 DER 原文，可直接交 `x509.ParseOCSPResponse` | `0.12.0` | `SSL_get_tlsext_status_ocsp_resp` |
 
 示例默认“验证并记录失败后继续”，另提供严格验证与完全不验证选项；连接成功不能
 代替证书可信。RFC 8998 的版本、套件、组、签名、证书及 SM2 ID 验收条件见
