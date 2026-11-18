@@ -1,6 +1,6 @@
 # 官方 tongsuo-go-sdk 与本库能力对比
 
-> 复核日期：2026-11-17 ｜ 本库：已发布 `0.10.0`。
+> 复核日期：2026-11-18 ｜ 本库：`0.11.0` 定版，待标签发布。
 > 官方基线：`Tongsuo-Project/tongsuo-go-sdk` main @
 > [`002a09631de785f2d984d9e0b3a7f1e9a169940c`](https://github.com/Tongsuo-Project/tongsuo-go-sdk/tree/002a09631de785f2d984d9e0b3a7f1e9a169940c)。
 > 本次用 `git ls-remote` 确认远端 main 未变，并只读核对该提交源码；未运行官方 SDK。
@@ -30,7 +30,7 @@ AES/SHA-512 包便判为缺失。相反，存在算法常量或原生指针出�
 [tickets.go](https://github.com/Tongsuo-Project/tongsuo-go-sdk/blob/002a09631de785f2d984d9e0b3a7f1e9a169940c/tickets.go)
 与 [http.go](https://github.com/Tongsuo-Project/tongsuo-go-sdk/blob/002a09631de785f2d984d9e0b3a7f1e9a169940c/http.go)。
 
-| 能力 | 官方固定基线 | 本库 `0.10.0` | 结论 / 后续 |
+| 能力 | 官方固定基线 | 本库 `0.11.0` | 结论 / 后续 |
 |---|---|---|---|
 | TLS / TLCP 双证书 | Ctx、UseSign/EncryptCertificate、Dial / Server | `tls.Config` 单证书/双证书、Dial / Client / Server | 均有公开入口；各自协议与构建支持需实际验收 |
 | SNI 多证书 / 配置切换 | `SetTLSExtServernameCallback` / `SetSSLCtx` | `GetCertificate` / `GetConfigForClient` | 本库已交付，不再作为缺口 |
@@ -55,7 +55,7 @@ AES/SHA-512 包便判为缺失。相反，存在算法常量或原生指针出�
 [ciphers.go](https://github.com/Tongsuo-Project/tongsuo-go-sdk/blob/002a09631de785f2d984d9e0b3a7f1e9a169940c/crypto/ciphers.go)、
 [cert.go](https://github.com/Tongsuo-Project/tongsuo-go-sdk/blob/002a09631de785f2d984d9e0b3a7f1e9a169940c/crypto/cert.go)。
 
-| 能力 | 官方固定基线 | 本库 `0.10.0` | 判断 |
+| 能力 | 官方固定基线 | 本库 `0.11.0` | 判断 |
 |---|---|---|---|
 | 摘要 | SM3/MD5/SHA1/SHA256 便利包，通用摘要描述符 | `digest.New` / `Sum`、XOF 与流式/形态入口 | API 形态与封装范围不同，不按子包数量计能力 |
 | 对称与 AES-192-GCM | 按名 Cipher、加解密上下文、GCM 上下文，含 AES 三种位宽 | `sym` 按名与类型化入口，Block/AEAD 及扩展模式 | 本库 AES-192 已交付；官方有通用 AES 能力，旧文档“官方无 AES”撤销 |
