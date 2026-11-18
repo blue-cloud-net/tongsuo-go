@@ -1,6 +1,6 @@
 # 铜锁 CLI 与 tongsuo-go 能力对比
 
-> 复核日期：2026-11-18 ｜ 本库基线：`0.12.0` 定版，待标签发布。
+> 复核日期：2026-11-18 ｜ 本库基线：`0.13.0` 待发布。
 > CLI 基线：本机 `/opt/tongsuo-8.4.0/bin/openssl` 与 `/opt/tongsuo-8.5.0/bin/openssl`。
 > 本次核对公开源码并重新执行版本、命令及算法枚举；未重新执行全部密码学操作或互通测试。
 > 已交付能力的验收证据见 [测试规范](testing-guide.md)，不把本次静态核对写成测试通过。
@@ -34,7 +34,7 @@
 | `pkeyutl -derive` | [ecdh/derive.go](../ecdh/derive.go)、[ecdh.go](../ecdh/ecdh.go) | 已有六条 ECDH 曲线、`DeriveSharedSecret`、显式参数 SM2DH；SM2DH 不提供密钥确认，不等于任意原生 DH 参数均被公开支持 |
 | `ecparam` / `pkeyparam` | [ecdh/parameters.go](../ecdh/parameters.go) 的参数读写、生成与 `Curve.Check` | 部分覆盖：已有命名/显式 EC 参数 PEM 和文件入口，范围受 `CurveByName` 限制；`Curves` 列 SDK 支持集，非铜锁所有曲线；不再规划重复的 `key.Parameters` 类型 |
 | `ec -conv_form` / 公钥压缩编码 | 现有公钥 PEM/DER 与 SM2 密文格式转换 | 部分覆盖：SM2 压缩 C1 输入已有支持，但不能代替公钥输出点形式控制；见 I-35 |
-| PQC 签名、KEM 与 TLS 混合组 | `meta` 可发现原生算法，`tls.Config.Groups` 可配置组名 | 部分覆盖：没有专用 PQC 密钥/签验/KEM API；组名透传不等于已完成 PQC 握手验收，目标见 I-38 |
+| PQC 签名、KEM 与 TLS 混合组 | `asym` 支持 PQC 密钥、签验和 ML-KEM，`tls.Config.CurvePreferences` 可配置 TLS 组 | 已覆盖：铜锁 8.5.0 实测七组 TLS 1.3 握手，并支持 ML-DSA 证书认证 |
 
 ## 3. 证书、容器与输入输出
 
@@ -76,7 +76,6 @@
 | 需求 | 价值与决策 | 目标 |
 |---|---|---|
 | I-31 / I-29 | 会话恢复降低握手成本，HTTP/OCSP 完成典型客户端与服务端集成 | 已在 0.11.0 / 0.12.0 实现 |
-| I-38 | PQC 密钥生命周期、ML-KEM、混合组实测，避免只提供算法名发现 | 0.13.0 |
 | I-37 / I-39 | CMS 与 RFC 3161 有标准格式和现成 CLI 互通对象；CMS 补摘要封装/验证 | 0.14.0 |
 | I-34 | SSHKDF / PKCS12KDF 填补已存在原生接口的协议派生缺口，可独立验向量 | 0.15.0 |
 | I-35 | EC/SM2 压缩/未压缩公钥导出用于标准密钥交换与存储互通 | 0.15.0 |
@@ -115,7 +114,7 @@
 
 8.4.0 不接受 `list -tls-groups`，本次命令明确报 unknown option；这不等于该版本没有
 TLS 组或不能通过其他原生入口查询。8.5.0 枚举可见 ML-KEM、ML-DSA、SLH-DSA 与混合组，
-只记录发现结果，实际操作仍按后续版本门禁验收。
+0.13.0 的 SDK 操作与握手验收范围见上表及 API 清单。
 
 更新实现后同步本表状态与 API 清单，删除已完成需求；历史验收保留于测试规范与
 CHANGELOG。新发现的候选只进需求台账，决定交付后再进入路线图，避免维护另一套 Phase 排期。

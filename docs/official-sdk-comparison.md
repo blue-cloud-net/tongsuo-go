@@ -1,6 +1,6 @@
 # 官方 tongsuo-go-sdk 与本库能力对比
 
-> 复核日期：2026-11-18 ｜ 本库：`0.12.0` 定版，待标签发布。
+> 复核日期：2026-11-18 ｜ 本库：`0.13.0` 待发布。
 > 官方基线：`Tongsuo-Project/tongsuo-go-sdk` main @
 > [`002a09631de785f2d984d9e0b3a7f1e9a169940c`](https://github.com/Tongsuo-Project/tongsuo-go-sdk/tree/002a09631de785f2d984d9e0b3a7f1e9a169940c)。
 > 本次用 `git ls-remote` 确认远端 main 未变，并只读核对该提交源码；未运行官方 SDK。
@@ -63,7 +63,7 @@ AES/SHA-512 包便判为缺失。相反，存在算法常量或原生指针出�
 | RSA / EC / Ed25519 与编码 | 通用密钥接口、RSA、EC、Ed25519、PKCS#1/8/SPKI | `asym` 加 RSA-PSS/OAEP、Ed448、EdDSA 变体与密钥检查 | 只比较专门公开入口，不推断官方原生指针路径能或不能完成全部算法 |
 | RSA 自定义指数 | `GenerateRSAKeyWithExponent` | `GenerateRSA` 固定 65537 | I-44 暂缓，有明确存量互通对象后评估 |
 | 通用 derive | `crypto.DeriveSharedSecret`，直接调用 EVP_PKEY_derive | `ecdh.DeriveSharedSecret` 与六曲线 ECDH、专门 SM2DH | 已补通用适配；本库不承诺任意 DH/SM2 参数可由同一个裸 derive 入口推断 |
-| KDF / KEM / PQC | 本次未见专门公开 KDF/KEM/PQC 工作流 | KDF 已有；KEM/PQC 仍规划 | KDF 对比见 CLI 文档；PQC 以 0.13.0 实现验收为准 |
+| KDF / KEM / PQC | 本次未见专门公开 KDF/KEM/PQC 工作流 | KDF、KEM 和 PQC 签验已实现 | KDF 对比见 CLI 文档；PQC 见 0.13.0 API 与铜锁版本要求 |
 | 证书、扩展与名称校验 | Certificate / Name、按 NID 扩展、CheckHost/Email/IP | `x509` 证书、配置/DER 扩展、名称校验、完整序列号及验证存储 | 常用场景均有；本库新增 DER 扩展等，不能将官方 TLS 链验证误写成不存在 |
 | CSR / CRL / OCSP / PKCS 容器 | 本次未见与本库相同的独立高层流程 | `x509` CSR/CRL/OCSP、PKCS#7 签验/信封、PKCS#12 无损改密 | 本库已有专门模块；不承诺其覆盖原生所有格式与算法 |
 | PEM / 文件工具 | `SplitPEM`、证书文件读写 | `meta.SplitPEM` / `DecodePEMFirst` 等、Source/Sink 与本地多对象加载 | 已覆盖工具需求，不再创建重复 API |
