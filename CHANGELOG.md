@@ -24,19 +24,11 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-## [0.10.1] - TBD
-
-### Fixed
-
-- Defer ClientHello configuration selection until the native handshake returns, avoiding nested SSL_CTX construction in the handshake callback during concurrent TLS/NTLS connections.
-
----
-
-## [0.10.0] - 2026-11-12
+## [0.10.0] - 2026-11-18
 
 ### Added
 
-- RFC 8998 strict TLS 1.3 via `Config.RFC8998`: SM4 GCM/CCM suites, curveSM2 and sm2sig_sm3, single SM2 credentials and SNI downgrade rejection. Trust verification remains independently configured.
+- RFC 8998 strict TLS 1.3 via `Config.RFC8998`: SM4 GCM/CCM suites, curveSM2 and sm2sig_sm3, single SM2 credentials and SNI downgrade rejection. Trust verification remains independently configured. ClientHello configuration selection runs after the native handshake yields, avoiding nested SSL_CTX construction during concurrent TLS/NTLS handshakes.
 - Ordered, copied handshake/message/Alert/verification events, opt-in native trace and keylog via `Config.Diagnostics`. Bounded buffering, callback/output errors and short writes abort the connection while retaining error causes.
 - `Config.CaptureSCT`, TLS-extension-only SCT wire snapshots and `ConnectionState.SecureRenegotiation`; SCT capture does not enforce CT policy. Handshake example options for RFC 8998 and diagnostics.
 
@@ -1115,8 +1107,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.10.1...HEAD
-[0.10.1]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.10.0...v0.10.1
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.10.0...HEAD
 [0.10.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.7.0...v0.8.0
