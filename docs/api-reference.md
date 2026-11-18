@@ -546,7 +546,7 @@
 
 **函数｜密钥生成**
 
-- 🆕 `func GenerateKey(alg Algorithm, opts *Options) (PrivateKey, error)` — 按算法名生成（对应 `genpkey -algorithm`）
+- 🆕 `func GenerateKey(alg Algorithm, opts *Options) (PrivateKey, error)`（0.13.0）按算法名生成。RSA 默认为 2048 位，EC 默认为 P-256，可用 `Options.Bits` 或 `Options.Curve` 覆盖。
 - ♻️ `func GenerateRSA(bits int) (PrivateKey, error)` — 原 `crypto/rsa.GenerateKey` / `key.GenerateRSAKey`（`bits` 必须 ≥ 1024）
 - ♻️ `func GenerateSM2() (PrivateKey, error)` — 原 `crypto/sm2.GenerateKey` / `key.GenerateSM2Key`
 - ♻️ `func GenerateEC(curve string) (PrivateKey, error)` — 原 `crypto/ecdsa.GenerateKey` / `key.GenerateECKey`（`curve` 取 `"prime256v1"` / `"secp384r1"` / `"secp521r1"` / `"secp256k1"` / `"sm2"`）
@@ -554,6 +554,9 @@
 - ♻️ `func GenerateX25519() (PrivateKey, error)` / ♻️ `func GenerateX448() (PrivateKey, error)` — 原 `crypto/x25519|x448.GenerateKey`
 - 🆕 `func GenerateKeyFromSeed(alg Algorithm, seed []byte) (PrivateKey, error)` — 由原始种子/字节构造（Ed25519 32B / Ed448 57B / X25519 32B / X448 56B；原 4 个包的 `PrivateKeyFromSeed` / `PrivateKeyFromBytes`）
 - 🆕 `func PublicKeyFromBytes(alg Algorithm, raw []byte) (PublicKey, error)` — 由原始公钥字节构造（同上四算法）
+
+- 🆕 `PQCAvailable(alg Algorithm) bool`（0.13.0）探测指定 PQC 密钥变体。铜锁 8.4.0 默认 provider 下不可用的变体在生成时返回 `ErrUnsupported`。
+- 🆕 `MarshalSPKI(pub PublicKey, format meta.Format)` / `LoadSPKI(data []byte, format meta.Format)`（0.13.0）读写 PEM 或 DER 公钥，覆盖经典和 PQC 密钥。
 
 **函数｜PEM 解析与口令**
 
@@ -648,9 +651,9 @@
 | 🆕 RSA 签名格式说明与双向互验 | `0.7.0` | 保持模数长度字节串，不能改成 SM2/ECDSA DER |
 | 🆕 现有 PKCS#1 v1.5 / PSS 的 SM3 签名可运行支持 | `0.8.0` | 8.5.0 签验与 CLI 双向互验通过；8.4.0 返回 ErrUnsupported；新增 SupportsRSAPSSDigest(key Key, hash string, saltLen int) (bool, error) |
 | 🆕 ED25519ph / ED25519ctx / ED448ph / Ed448 上下文 | `0.8.0` | 独立 Sign/Verify 函数，原消息输入；SupportsEdDSAInstance(key Key, instance string, context []byte) (bool, error) |
-| 🧭 ML-DSA-44 / 65 / 87 | `0.13.0` | 铜锁已启用（`signature-algorithms`），需新增 `EVP_PKEY` 解封装路径 |
-| 🧭 SLH-DSA 12 变体 | `0.13.0` | 同上 |
-| 🧭 ML-KEM-512/768/1024 与 `Encapsulate` / `Decapsulate`（I-38） | `0.13.0` | 原生 KEM 密钥生成/编码、封装与解封装；不以算法枚举代替实际操作 |
+| 🆕 ML-DSA-44 / 65 / 87 | `0.13.0` | `SignPQC` / `VerifyPQC` 支持纯消息、上下文和标准预哈希 |
+| 🆕 SLH-DSA 12 变体 | `0.13.0` | 同上 |
+| 🆕 ML-KEM-512/768/1024 与 `Encapsulate` / `Decapsulate`（I-38） | `0.13.0` | 原生 KEM 密钥生成/编码、封装与解封装；不以算法枚举代替实际操作 |
 | 🧭 EC/SM2 公钥压缩/未压缩 SPKI PEM/DER 输出（I-35） | `0.15.0` | 复用 asym 密钥并保持源对象与旧默认不变；最终选项签名实施时确定 |
 
 > 明确不做：DSA、DH、EC-ElGamal、Paillier（见 `docs/roadmap.md` §4）。
@@ -1230,7 +1233,7 @@ VerifyReport 握手成功仍可能 VerificationFailed，不可据此认定可信
 | 🆕 `ConnectionState.SecureRenegotiation` / `SignedCertificateTimestamps` | RFC 5746 支持标志；SCT 列表仅在 `Config.CaptureSCT` 开启时填充，只记录不执行 CT 策略校验 | `0.10.0` | `SSL_get_secure_renegotiation_support`、`SSL_get0_peer_scts` 与来源过滤 |
 | 🆕 会话复用 / 票据 | `Config.SessionCache`、`Conn.SessionState()` | `0.11.0` | `SSL_SESSION_*`、`SSL_CTX_set_tlsext_ticket_key_cb` |
 | 🆕 DER/PEM 会话导入导出、只读元数据、票据控制与密钥轮换 | 处理 TLS 1.3 握手后票据；缓存按协议、服务/客户端身份和验证配置隔离 | `0.11.0` | 新会话回调、序列化、票据与实际复用状态 |
-| 🧭 PQC / 混合 TLS 组支持矩阵与真实协商验收（I-38） | 原生可用组的握手、状态与错误边界，含 X25519MLKEM768 / 可用的 curveSM2MLKEM768 | `0.13.0` | Groups 名称透传不是已完成验收 |
+| 🆕 PQC / 混合 TLS 组与 ML-DSA 认证（I-38） | 通过 `CurvePreferences` 选择 `MLKEM512`、`MLKEM768`、`MLKEM1024`、`X25519MLKEM768`、`SecP256r1MLKEM768`、`SecP384r1MLKEM1024`、`curveSM2MLKEM768`。通过 `SignatureAlgorithms` 选择 `mldsa44`、`mldsa65`、`mldsa87` | `0.13.0` | 铜锁 8.5.0，TLS 1.3 |
 | 🆕 `ConnectionState.SessionReused` | 区分首次与恢复握手；与 `Conn.SessionState()` 同版交付 | `0.11.0` | `SSL_session_reused` |
 | 🆕 `ListenAndServeTLS` / `ServeTLS`、HTTP/1.1 客户端/服务端集成 | `NewHTTPTransport` 提供 HTTPS 直连，`HTTPConnectionState` 从服务端请求读取状态 | `0.12.0` | 标准库 HTTP 集成 |
 | 🆕 OCSP stapling | 静态和动态装订、客户端请求、严格验证策略与恢复会话重新验证 | `0.12.0` | status 回调与 OCSP 响应绑定 |

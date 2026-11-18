@@ -28,6 +28,7 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 分层设计与依赖方向见 [docs/architecture.md](docs/architecture.md)，后续版本规划见
 [版本路线图](docs/roadmap.md)。
 
+- **后量子密码**（`asym`、`x509`、`tls`）：ML-DSA 和 SLH-DSA 签验、签名上下文与预哈希、PKCS#8 / SPKI PEM 和 DER、ML-KEM 封装解封装及 PQC 证书和 CSR。铜锁 8.5.0 支持纯 ML-KEM 和混合 TLS 1.3 组及 ML-DSA 证书认证。使用 `asym.PQCAvailable` 探测密钥生成能力。
 - 🔐 **SM2 非对称算法**（GB/T 32918，`asym`）：密钥生成、PEM 序列化、加密/解密（ASN.1 DER，内含 C1C3C2）、
   SM2withSM3 签名/验签、自定义 userId
 - 🔑 **SM3 哈希算法**（GB/T 32905-2016，`digest`）：`hash.Hash` 接口 + 定长 `SumSM3` + 按名 `Sum("SM3", d)`
@@ -270,6 +271,30 @@ func main() {
 	}
 	fmt.Printf("%s\n", pt)
 }
+```
+
+### ML-KEM
+
+在铜锁 8.5.0 上生成密钥，再用公钥封装、私钥解封装。兼容多个铜锁版本时，可用 `asym.PQCAvailable(asym.AlgMLKEM768)` 探测能力。
+
+```go
+key, err := asym.GenerateKey(asym.AlgMLKEM768, nil)
+if err != nil {
+    return err
+}
+defer asym.Close(key)
+
+ciphertext, senderSecret, err := asym.Encapsulate(key.Public())
+if err != nil {
+    return err
+}
+defer clear(senderSecret)
+
+receiverSecret, err := asym.Decapsulate(key, ciphertext)
+if err != nil {
+    return err
+}
+defer clear(receiverSecret)
 ```
 
 ### SM2 非对称算法
