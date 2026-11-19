@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"syscall"
+
+	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
 
 // DupFD 复制一个文件描述符，返回由调用方持有的**新**描述符。
@@ -18,7 +20,7 @@ import (
 //
 // 契约：返回的 fd 所有权归调用方，必须由调用方 `CloseFD`（本仓库由
 // `(*SSLConn).Close` 负责）。`dup(2)` 共享同一 open file description，因此
-// O_NONBLOCK 等状态不变。
+// O_NONBLOCK 等状态不变。副本在创建时设置 close-on-exec。
 //
 // DupFD duplicates a file descriptor and returns a new descriptor owned by the
 // caller.
@@ -32,9 +34,9 @@ import (
 //
 // The returned descriptor is owned by the caller and must be released with
 // CloseFD. dup(2) shares the same open file description, so flags such as
-// O_NONBLOCK are preserved.
+// O_NONBLOCK are preserved. The duplicate is created with close-on-exec set.
 func DupFD(fd int) (int, error) {
-	dup, err := syscall.Dup(fd)
+	dup, err := native.X_fcntl_dupfd_cloexec(fd)
 	if err != nil {
 		return -1, fmt.Errorf("tls: dup fd %d: %w", fd, err)
 	}

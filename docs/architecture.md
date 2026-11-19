@@ -363,6 +363,7 @@ tongsuo-go/
 │   │   ├── binding_rand.go    # RAND_bytes
 │   │   ├── binding_bio.go     # BIO 系列
 │   │   ├── binding_ssl.go     # SSL_CTX / SSL / TLS 会话
+│   │   ├── binding_fd.go      # 原子复制 close-on-exec 文件描述符
 │   │   ├── binding_ssl_session.go  ssl_session.c # 会话序列化、缓存、票据与恢复后验证
 │   │   ├── binding_ssl_handshake.go  binding_ssl_diagnostics.go # 参数、ClientHello/ALPN/验证回调与快照
 │   │   ├── ssl_handshake.c  ssl_handshake.h # SSL ex_data 整数句柄与 C 写缓冲

@@ -28,6 +28,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - Typed PBKDF2 rejects iteration counts that exceed the native integer range.
 - Random byte generation now passes the full buffer length to Tongsuo.
 - OCSP status matching rejects closed certificate and issuer handles.
+- TLS marks duplicated connection descriptors close-on-exec when creating them.
 
 ---
 

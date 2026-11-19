@@ -230,6 +230,7 @@ internal/native/               # 绑定层：cgo + shim
 ├── binding_rand.go            # RAND_bytes 系列
 ├── binding_bio.go             # BIO 系列
 ├── binding_ssl.go             # SSL_CTX / SSL / TLS 会话
+├── binding_fd.go      # 原子复制 close-on-exec 文件描述符
 ├── binding_x509.go            # X509 / X509_CRL / X509_STORE / PEM / DER 系列
 ├── binding_pkcs.go            # PKCS#7 / PKCS#12 系列
 ├── binding_pkcs7_ops.go       # PKCS#7 签验、信封与空内容处理
