@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"runtime"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
@@ -33,6 +34,8 @@ type HmacCtx struct {
 // A nil d or an already-closed d yields the error "hmac: invalid digest";
 // failures from the binding layer are wrapped as OpError.
 func NewHmacCtx(d *Digest, key []byte) (*HmacCtx, error) {
+	defer runtime.KeepAlive(d)
+
 	if d == nil || d.handle == nil || d.handle.IsClosed() {
 		return nil, fmt.Errorf("hmac: invalid digest")
 	}
@@ -57,6 +60,8 @@ func NewHmacCtx(d *Digest, key []byte) (*HmacCtx, error) {
 // "hmac: context closed" when the context has been released and wraps
 // any underlying OpenSSL failure as OpError.
 func (c *HmacCtx) Update(data []byte) error {
+	defer runtime.KeepAlive(c)
+
 	if c.handle.IsClosed() {
 		return fmt.Errorf("hmac: context closed")
 	}
@@ -75,6 +80,8 @@ func (c *HmacCtx) Update(data []byte) error {
 // with the same key and digest) or Close before any further Update call;
 // otherwise subsequent operations are undefined.
 func (c *HmacCtx) Final() ([]byte, error) {
+	defer runtime.KeepAlive(c)
+
 	if c.handle.IsClosed() {
 		return nil, fmt.Errorf("hmac: context closed")
 	}
@@ -94,6 +101,8 @@ func (c *HmacCtx) Final() ([]byte, error) {
 // internally so that Final may still be invoked afterwards. The slice
 // has length Digest.Size().
 func (c *HmacCtx) Sum() ([]byte, error) {
+	defer runtime.KeepAlive(c)
+
 	if c.handle.IsClosed() {
 		return nil, fmt.Errorf("hmac: context closed")
 	}
@@ -121,6 +130,8 @@ func (c *HmacCtx) Sum() ([]byte, error) {
 // for a new HMAC computation. Passing nil as the key to HMAC_Init_ex
 // preserves the previous key per OpenSSL semantics.
 func (c *HmacCtx) Reset() error {
+	defer runtime.KeepAlive(c)
+
 	if c.handle.IsClosed() {
 		return fmt.Errorf("hmac: context closed")
 	}

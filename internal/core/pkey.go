@@ -46,6 +46,8 @@ type PKey struct {
 // in both cases it returns native.NidUndef. Otherwise it returns the value
 // produced by EVP_PKEY_get_base_id.
 func (k *PKey) BaseID() int {
+	defer runtime.KeepAlive(k)
+
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return native.NidUndef
 	}
@@ -63,6 +65,8 @@ func (k *PKey) BaseID() int {
 // in both cases it returns native.NidUndef. Otherwise it returns the value
 // produced by EVP_PKEY_get_id.
 func (k *PKey) TypeID() int {
+	defer runtime.KeepAlive(k)
+
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return native.NidUndef
 	}
@@ -209,6 +213,8 @@ func (k *PKey) MarshalPublicKeyPEM() ([]byte, error) {
 // writer and returns the PEM bytes. On failure it returns an error
 // wrapping an OpError that names the underlying OpenSSL operation.
 func (k *PKey) marshalPEM(op string, write func(bio, pkey unsafe.Pointer) bool) ([]byte, error) {
+	defer runtime.KeepAlive(k)
+
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil, fmt.Errorf("pkey: key closed")
 	}
@@ -254,6 +260,8 @@ func (k *PKey) marshalPEM(op string, write func(bio, pkey unsafe.Pointer) bool) 
 // the Go stdlib rsa package). This shared path does not reject empty
 // input; the underlying EVP_PKEY_CTX and the algorithm wrapper decide.
 func (k *PKey) Encrypt(data []byte) ([]byte, error) {
+	defer runtime.KeepAlive(k)
+
 	// 同一密钥上下文的多次 cgo 调用需固定到同一 OS 线程（Tongsuo SM2 provider 对线程敏感）；
 	// 仅 SM2 真正需要加锁，其他算法 (RSA/ECDSA/EdDSA/X25519) 的 provider 已是线程安全。
 	lockOSThreadForKey(k)
@@ -293,6 +301,8 @@ func (k *PKey) Encrypt(data []byte) ([]byte, error) {
 // is thread-sensitive. Errors from the underlying EVP_PKEY_CTX are wrapped
 // as OpError.
 func (k *PKey) Decrypt(data []byte) ([]byte, error) {
+	defer runtime.KeepAlive(k)
+
 	lockOSThreadForKey(k)
 	defer unlockOSThreadForKey(k)
 	ctx := native.EVP_PKEY_CTX_new_from_pkey(k.handle.Ptr())
@@ -331,6 +341,8 @@ func (k *PKey) Decrypt(data []byte) ([]byte, error) {
 // digest sign fails, the returned error is wrapped as OpError carrying
 // the OpenSSL error code.
 func (k *PKey) Sign(data, id []byte) ([]byte, error) {
+	defer runtime.KeepAlive(k)
+
 	lockOSThreadForKey(k)
 	defer unlockOSThreadForKey(k)
 	mdctx := native.EVP_MD_CTX_new()
@@ -380,6 +392,8 @@ func (k *PKey) Sign(data, id []byte) ([]byte, error) {
 // must therefore inspect the error to distinguish a malformed signature
 // from a verification failure).
 func (k *PKey) Verify(data, sig, id []byte) error {
+	defer runtime.KeepAlive(k)
+
 	lockOSThreadForKey(k)
 	defer unlockOSThreadForKey(k)
 	mdctx := native.EVP_MD_CTX_new()
@@ -601,6 +615,8 @@ func (k *PKey) SignDigest(data []byte, md *Digest) ([]byte, error) {
 // The method only applies to RSA keys; other key types return an error
 // from the underlying EVP_PKEY_CTX.
 func (k *PKey) SignDigestPSS(data []byte, md *Digest, saltLen int) ([]byte, error) {
+	defer runtime.KeepAlive(md)
+
 	return k.signDigest(data, md, func(pctx unsafe.Pointer) error {
 		if !native.EVP_PKEY_CTX_set_rsa_padding(pctx, native.RsaPaddingPSS) {
 			return NewOpError("pkey: EVP_PKEY_CTX_set_rsa_padding(PSS)", native.PopError())
@@ -622,6 +638,9 @@ func (k *PKey) SignDigestPSS(data []byte, md *Digest, saltLen int) ([]byte, erro
 // padding (e.g. PSS) before signing; it is invoked under the OS thread
 // lock taken by signDigest.
 func (k *PKey) signDigest(data []byte, md *Digest, setOpts func(unsafe.Pointer) error) ([]byte, error) {
+	defer runtime.KeepAlive(k)
+	defer runtime.KeepAlive(md)
+
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil, fmt.Errorf("pkey: key closed")
 	}
@@ -687,6 +706,8 @@ func (k *PKey) VerifyDigest(data, sig []byte, md *Digest) error {
 // the MGF1 hash. The method only applies to RSA keys; other key types
 // return an error from the underlying EVP_PKEY_CTX.
 func (k *PKey) VerifyDigestPSS(data, sig []byte, md *Digest, saltLen int) error {
+	defer runtime.KeepAlive(md)
+
 	return k.verifyDigest(data, sig, md, func(pctx unsafe.Pointer) error {
 		if !native.EVP_PKEY_CTX_set_rsa_padding(pctx, native.RsaPaddingPSS) {
 			return NewOpError("pkey: EVP_PKEY_CTX_set_rsa_padding(PSS)", native.PopError())
@@ -708,6 +729,9 @@ func (k *PKey) VerifyDigestPSS(data, sig []byte, md *Digest, saltLen int) error 
 // algorithm-specific padding (e.g. PSS) before verification; it is
 // invoked under the OS thread lock taken by verifyDigest.
 func (k *PKey) verifyDigest(data, sig []byte, md *Digest, setOpts func(unsafe.Pointer) error) error {
+	defer runtime.KeepAlive(k)
+	defer runtime.KeepAlive(md)
+
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return fmt.Errorf("pkey: key closed")
 	}
@@ -779,6 +803,8 @@ func (k *PKey) DecryptPKCS1v15(data []byte) ([]byte, error) {
 // RSA public key. Empty plaintext is accepted (matching the Go stdlib
 // rsa.EncryptOAEP). Returns the wrapped OpError on failure.
 func (k *PKey) EncryptOAEP(data []byte, md *Digest) ([]byte, error) {
+	defer runtime.KeepAlive(md)
+
 	return k.encryptWithOpts(data, func(ctx unsafe.Pointer) error {
 		if !native.EVP_PKEY_CTX_set_rsa_padding(ctx, native.RsaPaddingOAEP) {
 			return NewOpError("pkey: EVP_PKEY_CTX_set_rsa_padding(OAEP)", native.PopError())
@@ -807,6 +833,8 @@ func (k *PKey) EncryptOAEP(data []byte, md *Digest) ([]byte, error) {
 // key must be an RSA private key; other key types return an error from
 // the underlying EVP_PKEY_CTX. Returns the wrapped OpError on failure.
 func (k *PKey) DecryptOAEP(data []byte, md *Digest) ([]byte, error) {
+	defer runtime.KeepAlive(md)
+
 	return k.decryptWithOpts(data, func(ctx unsafe.Pointer) error {
 		if !native.EVP_PKEY_CTX_set_rsa_padding(ctx, native.RsaPaddingOAEP) {
 			return NewOpError("pkey: EVP_PKEY_CTX_set_rsa_padding(OAEP)", native.PopError())
@@ -830,6 +858,8 @@ func (k *PKey) DecryptOAEP(data []byte, md *Digest) ([]byte, error) {
 // policy is left to the algorithm wrapper (RSA PKCS#1 v1.5 / OAEP accept
 // it, matching stdlib).
 func (k *PKey) encryptWithOpts(data []byte, setOpts func(unsafe.Pointer) error) ([]byte, error) {
+	defer runtime.KeepAlive(k)
+
 	lockOSThreadForKey(k)
 	defer unlockOSThreadForKey(k)
 	ctx := native.EVP_PKEY_CTX_new_from_pkey(k.handle.Ptr())
@@ -861,6 +891,8 @@ func (k *PKey) encryptWithOpts(data []byte, setOpts func(unsafe.Pointer) error) 
 // decryptWithOpts wraps EVP_PKEY_decrypt, allowing the caller to apply
 // algorithm-specific options (e.g. padding) via setOpts.
 func (k *PKey) decryptWithOpts(data []byte, setOpts func(unsafe.Pointer) error) ([]byte, error) {
+	defer runtime.KeepAlive(k)
+
 	lockOSThreadForKey(k)
 	defer unlockOSThreadForKey(k)
 	ctx := native.EVP_PKEY_CTX_new_from_pkey(k.handle.Ptr())
@@ -934,6 +966,8 @@ type KeyParams struct {
 // missing or the underlying call fails; the caller must treat a nil
 // result as "absent".
 func bnParam(k *PKey, name string) *big.Int {
+	defer runtime.KeepAlive(k)
+
 	b, ok := native.EVP_PKEY_get_bn_param(k.handle.Ptr(), name)
 	if !ok {
 		return nil
@@ -1016,6 +1050,8 @@ func (k *PKey) PublicParams() *KeyParams {
 }
 
 func (k *PKey) params(includePrivate bool) *KeyParams {
+	defer runtime.KeepAlive(k)
+
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil
 	}
@@ -1100,6 +1136,8 @@ func (k *PKey) MarshalEncryptedPEM(pass string) ([]byte, error) {
 // if the key has been closed via Close, or if the underlying OpenSSL
 // write fails (errors are wrapped as OpError).
 func (k *PKey) MarshalEncryptedPEMWithCipher(cipher, pass string) ([]byte, error) {
+	defer runtime.KeepAlive(k)
+
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil, fmt.Errorf("pkey: key closed")
 	}
@@ -1188,6 +1226,8 @@ func ChangePrivateKeyPasswordWithCipher(pemBytes []byte, newCipher, oldPass, new
 // the key has been closed via Close, or if the underlying OpenSSL
 // i2d_PrivateKey call fails (wrapped as OpError).
 func (k *PKey) MarshalPrivateKeyPKCS1PEM() ([]byte, error) {
+	defer runtime.KeepAlive(k)
+
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil, fmt.Errorf("pkey: key closed")
 	}
@@ -1235,6 +1275,9 @@ func LoadPrivateKeyPKCS1PEM(pemBytes []byte) (*PKey, error) {
 // EVP_PKEY_eq and is therefore constant-time when the underlying key
 // type supports it (RSA, EC, Ed25519, ...).
 func (k *PKey) Equal(other *PKey) bool {
+	defer runtime.KeepAlive(k)
+	defer runtime.KeepAlive(other)
+
 	if k == nil || other == nil || k.handle == nil || other.handle == nil {
 		return false
 	}
@@ -1254,6 +1297,9 @@ func (k *PKey) Equal(other *PKey) bool {
 // The comparison ignores private parameters, so a private key matches
 // its embedded public key (and vice versa).
 func (k *PKey) PublicEqual(other *PKey) bool {
+	defer runtime.KeepAlive(k)
+	defer runtime.KeepAlive(other)
+
 	if k == nil || other == nil || k.handle == nil || other.handle == nil {
 		return false
 	}
@@ -1283,6 +1329,8 @@ func (k *PKey) PublicEqual(other *PKey) bool {
 // No OS-thread lock is taken (the EdDSA provider is not thread-sensitive
 // the way the SM2 provider is).
 func (k *PKey) SignMessage(msg []byte) ([]byte, error) {
+	defer runtime.KeepAlive(k)
+
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil, fmt.Errorf("pkey: key closed")
 	}
@@ -1327,6 +1375,8 @@ func (k *PKey) SignMessage(msg []byte) ([]byte, error) {
 // wrapped OpError is returned; callers must inspect it to distinguish a
 // malformed signature from a verification failure.
 func (k *PKey) VerifyMessage(msg, sig []byte) error {
+	defer runtime.KeepAlive(k)
+
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return fmt.Errorf("pkey: key closed")
 	}
@@ -1368,6 +1418,8 @@ func (k *PKey) VerifyMessage(msg, sig []byte) error {
 // The returned bytes originate from OpenSSL; the caller is responsible
 // for zeroising sensitive memory.
 func (k *PKey) RawPrivateKey() ([]byte, error) {
+	defer runtime.KeepAlive(k)
+
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil, fmt.Errorf("pkey: key closed")
 	}
@@ -1397,6 +1449,8 @@ func (k *PKey) RawPrivateKey() ([]byte, error) {
 // Sizes match RawPrivateKey; the returned bytes are not sensitive and
 // need not be zeroised.
 func (k *PKey) RawPublicKey() ([]byte, error) {
+	defer runtime.KeepAlive(k)
+
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil, fmt.Errorf("pkey: key closed")
 	}
@@ -1495,6 +1549,9 @@ func rawKeySize(typeID int) (int, bool) {
 // Go's crypto/ecdh semantics. On failure an OpError-wrapped error is
 // returned; the caller is responsible for zeroising the returned secret.
 func (k *PKey) Derive(peer *PKey) ([]byte, error) {
+	defer runtime.KeepAlive(k)
+	defer runtime.KeepAlive(peer)
+
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil, fmt.Errorf("pkey: key closed")
 	}
@@ -1647,6 +1704,8 @@ func unlockOSThreadForKey(k *PKey) {
 // buffers, so we follow the two-call query-then-fill pattern of
 // EVP_PKEY_get_raw_private_key.
 func (k *PKey) RawPrivate() ([]byte, bool) {
+	defer runtime.KeepAlive(k)
+
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil, false
 	}
@@ -1674,6 +1733,8 @@ func (k *PKey) RawPrivate() ([]byte, bool) {
 // the implementation follows the two-call query-then-fill pattern of
 // EVP_PKEY_get_raw_public_key to avoid guessing the buffer size.
 func (k *PKey) RawPublic() ([]byte, bool) {
+	defer runtime.KeepAlive(k)
+
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil, false
 	}
