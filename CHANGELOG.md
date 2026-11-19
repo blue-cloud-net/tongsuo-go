@@ -64,6 +64,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - OCSP parsing and fetching release intermediate responder certificates and fail cleanly on partial conversion.
 - Local certificate and key loaders reject malformed PEM blocks instead of skipping them.
 - SumReader streams directly to the native MAC context without retaining a copy of its input.
+- Cipher suite enumeration returns suites for the requested TLS or NTLS protocol and reports their version range.
 
 ---
 

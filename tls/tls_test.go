@@ -1298,34 +1298,29 @@ func TestPeerEncCertificatesNTLS(t *testing.T) {
 	}
 }
 
-// TestCipherSuitesEnumerated 验证：每个版本都能枚举出至少一个套件。
+// TestCipherSuitesEnumerated 验证各版本均只返回适用的密码套件。
 //
-// 注意：Tongsuo 的 SSL_CTX_get_ciphers 返回已配置的全量套件（不限版本过
-// 滤）；本测试只验证枚举本身工作正常，版本差异在 c->min_tls 字符串里
-// 反映，不在列表规模上。
-//
-// CipherSuitesEnumerated verifies that every supported version returns at
-// least one cipher. Note: Tongsuo's SSL_CTX_get_ciphers does not filter
-// by min/max_proto_version, so the probe enumerates the configured set.
-// Per-version coverage is reflected in each CipherInfo.MinVersion /
-// MinVersion string, not in list size.
+// TestCipherSuitesEnumerated verifies that each catalog is restricted to its protocol.
 func TestCipherSuitesEnumerated(t *testing.T) {
 	for _, v := range []uint16{TLS1Version, TLS1_1Version, TLS1_2Version, TLS1_3Version, NTLSVersion} {
-		cs := CipherSuites(v)
-		if len(cs) == 0 {
+		suites := CipherSuites(v)
+		if len(suites) == 0 {
 			t.Fatalf("version=0x%04x: empty", v)
 		}
-		t.Logf("version=0x%04x: %d ciphers (first=%q)", v, len(cs), cs[0].Name)
-		// 至少有 1 个套件的 MinVersion 落在请求的版本上。
-		found := false
-		for _, c := range cs {
-			if c.MinVersion == v {
-				found = true
-				break
+		for _, suite := range suites {
+			if suite.MinVersion > v || suite.MaxVersion < v {
+				t.Errorf("version=0x%04x: suite %s has an incompatible range", v, suite.Name)
 			}
-		}
-		if !found {
-			t.Fatalf("version=0x%04x: no cipher has MinVersion=0x%04x", v, v)
+			switch v {
+			case NTLSVersion:
+				if suite.MinVersion != NTLSVersion || suite.MaxVersion != NTLSVersion {
+					t.Errorf("NTLS catalog includes a TLS suite: %s", suite.Name)
+				}
+			case TLS1_3Version:
+				if suite.MinVersion != TLS1_3Version {
+					t.Errorf("TLS 1.3 catalog includes a legacy cipher: %s", suite.Name)
+				}
+			}
 		}
 	}
 }

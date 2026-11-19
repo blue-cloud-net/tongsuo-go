@@ -935,35 +935,11 @@ func (c *TLSContext) CipherList() []CipherInfo {
 // identifier without importing the binding layer.
 const NTLSVersion uint16 = native.NTLSVersion
 
-// ProbeCipherSuites 返回指定协议版本下铜锁原生支持的密码套件清单（临时 ctx 探测）。
+// ProbeCipherSuites 返回指定版本适用的已构建套件目录。
 //
-// version 取 TLS1Version / TLS1_1Version / TLS1_2Version / TLS1_3Version /
-// NTLSVersion；未识别或探测失败返回 nil。
-//
-// 与 `(*TLSContext).CipherList` 的差异：后者报告「某个已存在 ctx 上启用的」套件，
-// 而本函数自行建一个临时 ctx 并令 min = max = version，因此得到的是「该版本下
-// 可用的全部套件」。OpenSSL 没有按版本过滤 `SSL_CTX_get_ciphers` 的接口，临时
-// ctx 是唯一可靠办法；NTLS 走 `NTLS_method` + `SSL_CTX_enable_ntls`。
-//
-// 探测 ctx 刻意**不经** `core.Handle` 包装（不注册终结器），用毕立即
-// `SSL_CTX_free`：它是瞬时对象，不应进入 Go 的终结器队列。`MinVersion` 为
-// OpenSSL 的 min_tls 字符串（如 "TLSv1.2" / "NTLSv1.1"）。
-//
-// ProbeCipherSuites returns the cipher suites Tongsuo natively supports at the
-// given protocol version, using a scratch probe context.
-//
-// version is one of TLS1Version / TLS1_1Version / TLS1_2Version /
-// TLS1_3Version / NTLSVersion; unknown values, or a failed probe, return nil.
-//
-// Unlike (*TLSContext).CipherList, which reports the suites enabled on an
-// existing context, this function builds a scratch context with
-// min = max = version, so it yields every suite usable at that version. OpenSSL
-// offers no version filter for SSL_CTX_get_ciphers, making the scratch context
-// the only reliable approach; NTLS uses NTLS_method + SSL_CTX_enable_ntls.
-//
-// The probe context deliberately bypasses the core.Handle wrapper (no
-// finalizer) and is released with SSL_CTX_free immediately: it is
-// short-lived and must not enter Go's finalizer queue.
+// ProbeCipherSuites returns the compiled suite catalog filtered to the
+// requested protocol version. Connection credentials and security policy
+// may constrain the catalog further during negotiation.
 func ProbeCipherSuites(version uint16) []CipherInfo {
 	if CipherVersionToUint16(version) == 0 {
 		return nil
@@ -984,7 +960,15 @@ func ProbeCipherSuites(version uint16) []CipherInfo {
 	if !native.SSL_CTX_set_cipher_list(ctx.handle, "ALL:eNULL") {
 		return nil
 	}
-	return ctx.cipherList()
+	all := ctx.cipherList()
+	out := all[:0]
+	for _, cipher := range all {
+		minVersion, maxVersion := CipherProtocolRange(cipher.MinVersion)
+		if minVersion != 0 && version >= minVersion && version <= maxVersion {
+			out = append(out, cipher)
+		}
+	}
+	return out
 }
 
 // probeSSLCTX 包装一个临时的 SSH_CTX 指针，让 defer 直接调用
@@ -1135,4 +1119,21 @@ func (s *SSLConn) PeerCertificates() ([]*Certificate, error) {
 		out = append(out, &Certificate{handle: NewHandle(dup, true, native.X509_free)})
 	}
 	return out, nil
+}
+
+// CipherProtocolRange 将原生套件协议名映射为本库支持的协议范围。
+//
+// CipherProtocolRange maps a native cipher protocol name to the supported version range.
+func CipherProtocolRange(name string) (uint16, uint16) {
+	version := VersionNameToUint16(name)
+	switch version {
+	case native.NTLSVersion, native.TLS1_3Version:
+		return version, version
+	case native.TLS1Version, native.TLS1_1Version, native.TLS1_2Version:
+		return version, native.TLS1_2Version
+	}
+	if name == "SSLv3" {
+		return native.TLS1Version, native.TLS1_2Version
+	}
+	return 0, 0
 }
