@@ -20,7 +20,12 @@ func D2i_OCSP_REQUEST(data []byte) unsafe.Pointer {
 	}
 	defer C.free(buf)
 	p := (*C.uchar)(buf)
-	return unsafe.Pointer(C.d2i_OCSP_REQUEST(nil, &p, C.long(len(data))))
+	interpreted := C.d2i_OCSP_REQUEST(nil, &p, C.long(len(data)))
+	if interpreted != nil && unsafe.Pointer(p) != unsafe.Add(buf, len(data)) {
+		C.OCSP_REQUEST_free(interpreted)
+		return nil
+	}
+	return unsafe.Pointer(interpreted)
 }
 
 // OCSP_request_add1_nonce 复制 nonce 到请求。

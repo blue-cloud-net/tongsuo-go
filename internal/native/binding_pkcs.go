@@ -102,7 +102,12 @@ func D2i_PKCS12(der []byte) unsafe.Pointer {
 	defer C.free(buf)
 	C.memcpy(buf, unsafe.Pointer(&der[0]), C.size_t(len(der)))
 	p := (*C.uchar)(buf)
-	return unsafe.Pointer(C.d2i_PKCS12(nil, &p, C.long(len(der))))
+	interpreted := C.d2i_PKCS12(nil, &p, C.long(len(der)))
+	if interpreted != nil && unsafe.Pointer(p) != unsafe.Add(buf, len(der)) {
+		C.PKCS12_free(interpreted)
+		return nil
+	}
+	return unsafe.Pointer(interpreted)
 }
 
 // PKCS12_newpass 修改 PKCS12 口令。
@@ -220,7 +225,12 @@ func D2i_PKCS7(der []byte) unsafe.Pointer {
 	defer C.free(buf)
 	C.memcpy(buf, unsafe.Pointer(&der[0]), C.size_t(len(der)))
 	p := (*C.uchar)(buf)
-	return unsafe.Pointer(C.d2i_PKCS7(nil, &p, C.long(len(der))))
+	interpreted := C.d2i_PKCS7(nil, &p, C.long(len(der)))
+	if interpreted != nil && unsafe.Pointer(p) != unsafe.Add(buf, len(der)) {
+		C.PKCS7_free(interpreted)
+		return nil
+	}
+	return unsafe.Pointer(interpreted)
 }
 
 // X_PKCS12_create_options 使用显式 PBE 与迭代次数打包。
