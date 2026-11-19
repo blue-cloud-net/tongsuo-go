@@ -1180,6 +1180,9 @@ func (k *PKey) MarshalEncryptedPEM(pass string) ([]byte, error) {
 // if the key has been closed via Close, or if the underlying OpenSSL
 // write fails (errors are wrapped as OpError).
 func (k *PKey) MarshalEncryptedPEMWithCipher(cipher, pass string) ([]byte, error) {
+	if len(pass) > native.PEMPassphraseLimit {
+		return nil, fmt.Errorf("pkey: PEM passphrase exceeds %d bytes", native.PEMPassphraseLimit)
+	}
 	defer nativeErrorScope()()
 
 	defer runtime.KeepAlive(k)
@@ -1212,6 +1215,9 @@ func (k *PKey) MarshalEncryptedPEMWithCipher(cipher, pass string) ([]byte, error
 // *PKey owns the underlying EVP_PKEY and the caller must invoke Close
 // to release it.
 func LoadPrivateKeyPEMEncrypted(pemBytes []byte, pass string) (*PKey, error) {
+	if len(pass) > native.PEMPassphraseLimit {
+		return nil, fmt.Errorf("pkey: PEM passphrase exceeds %d bytes", native.PEMPassphraseLimit)
+	}
 	defer nativeErrorScope()()
 
 	bio := native.X_BIO_new_input(pemBytes)

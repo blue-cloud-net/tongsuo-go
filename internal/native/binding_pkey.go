@@ -328,13 +328,18 @@ func X_EVP_PKEY_Q_keygen_x448() unsafe.Pointer {
 	return unsafe.Pointer(C.X_EVP_PKEY_Q_keygen_x448())
 }
 
+// PEMPassphraseLimit 为铜锁 PEM 回调可用的最大口令字节数。
+//
+// PEMPassphraseLimit is the passphrase capacity of Tongsuo's PEM callback.
+const PEMPassphraseLimit = C.PEM_BUFSIZE
+
 // X_PEM_read_bio_PrivateKey_pass 从 BIO 读取用口令加密的 PEM 私钥。
 // X_PEM_read_bio_PrivateKey_pass (shim) reads an encrypted PEM private key
 // from bio using pass. Returns NULL on failure; caller owns the EVP_PKEY.
 func X_PEM_read_bio_PrivateKey_pass(bio unsafe.Pointer, pass string) unsafe.Pointer {
 	c := C.CString(pass)
 	defer C.free(unsafe.Pointer(c))
-	return unsafe.Pointer(C.X_PEM_read_bio_PrivateKey_pass((*C.BIO)(bio), c))
+	return unsafe.Pointer(C.X_PEM_read_bio_PrivateKey_pass((*C.BIO)(bio), c, C.int(len(pass))))
 }
 
 // X_PEM_write_bio_PrivateKey_enc 将私钥以 AES-256-CBC 加密写入 PEM。
@@ -343,7 +348,7 @@ func X_PEM_read_bio_PrivateKey_pass(bio unsafe.Pointer, pass string) unsafe.Poin
 func X_PEM_write_bio_PrivateKey_enc(bio, pkey unsafe.Pointer, pass string) bool {
 	c := C.CString(pass)
 	defer C.free(unsafe.Pointer(c))
-	return C.X_PEM_write_bio_PrivateKey_enc((*C.BIO)(bio), (*C.EVP_PKEY)(pkey), c) == 1
+	return C.X_PEM_write_bio_PrivateKey_enc((*C.BIO)(bio), (*C.EVP_PKEY)(pkey), c, C.int(len(pass))) == 1
 }
 
 // X_PEM_write_bio_PrivateKey_enc_cipher 同 enc，多带 cipher 名称（NULL/"" 兜底 AES-256-CBC）。
@@ -358,7 +363,7 @@ func X_PEM_write_bio_PrivateKey_enc_cipher(bio, pkey unsafe.Pointer, cipher, pas
 	}
 	cPass := C.CString(pass)
 	defer C.free(unsafe.Pointer(cPass))
-	return C.X_PEM_write_bio_PrivateKey_enc_cipher((*C.BIO)(bio), (*C.EVP_PKEY)(pkey), cCipher, cPass) == 1
+	return C.X_PEM_write_bio_PrivateKey_enc_cipher((*C.BIO)(bio), (*C.EVP_PKEY)(pkey), cCipher, cPass, C.int(len(pass))) == 1
 }
 
 // X_PEM_read_bio_RSAPrivateKey 从 BIO 读取 PKCS#1 PEM 私钥（返回 RSA*）。

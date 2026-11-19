@@ -275,14 +275,14 @@ unsigned char *X_X509_CRL_get_akid_keyid(X509_CRL *crl, int *out_len);
  */
 EVP_PKEY *X_EVP_PKEY_Q_keygen_rsa(int bits);
 EVP_PKEY *X_EVP_PKEY_Q_keygen_ec(const char *curve);
-EVP_PKEY *X_PEM_read_bio_PrivateKey_pass(BIO *bp, const char *pass);
-int X_PEM_write_bio_PrivateKey_enc(BIO *bp, EVP_PKEY *x, const char *pass);
+EVP_PKEY *X_PEM_read_bio_PrivateKey_pass(BIO *bp, const char *pass, int pass_len);
+int X_PEM_write_bio_PrivateKey_enc(BIO *bp, EVP_PKEY *x, const char *pass, int pass_len);
 /*
  * X_PEM_write_bio_PrivateKey_enc_cipher 同 enc，多带 cipher 名称参数。
  * cipher 为 NULL/"" 时兜底 EVP_aes_256_cbc()，保持向后兼容；非法 cipher 名返回 0。
  */
 int X_PEM_write_bio_PrivateKey_enc_cipher(BIO *bp, EVP_PKEY *x,
-                                          const char *cipher, const char *pass);
+                                          const char *cipher, const char *pass, int pass_len);
 RSA *X_PEM_read_bio_RSAPrivateKey(BIO *bp);
 int X_PEM_write_bio_RSAPrivateKey(BIO *bp, RSA *rsa);
 

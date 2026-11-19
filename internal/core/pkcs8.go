@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"runtime"
 	"unsafe"
 
@@ -11,6 +12,9 @@ import (
 //
 // MarshalPKCS8PEM encodes a private key using explicit PBE version, PRF and iterations.
 func (k *PKey) MarshalPKCS8PEM(pass, cipher, prf string, version, iter int, encrypt bool) ([]byte, error) {
+	if encrypt && len(pass) > native.PEMPassphraseLimit {
+		return nil, fmt.Errorf("pkey: PEM passphrase exceeds %d bytes", native.PEMPassphraseLimit)
+	}
 	defer runtime.KeepAlive(k)
 	return k.marshalPEM("pkey: write PKCS8", func(bio, key unsafe.Pointer) bool {
 		return native.X_PKEY_write_pkcs8(bio, key, pass, cipher, prf, version, iter, encrypt)
