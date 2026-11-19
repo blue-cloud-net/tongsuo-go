@@ -199,6 +199,12 @@ func X509_NAME_new() unsafe.Pointer {
 	return unsafe.Pointer(C.X509_NAME_new())
 }
 
+// X509_NAME_dup 复制 X509_NAME；调用方负责释放返回的副本。
+// X509_NAME_dup returns an owned copy of an X509_NAME.
+func X509_NAME_dup(name unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X509_NAME_dup((*C.X509_NAME)(name)))
+}
+
 // X509_NAME_free 释放 X509_NAME。
 // X509_NAME_free releases n. Safe on NULL; the pointer must not be used
 // after free.

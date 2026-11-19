@@ -841,6 +841,7 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
 - ✨ `type UserNotice struct { Organization string; NoticeNumbers []int; ExplicitText string }` — certificatePolicies 的 userNotice 限定符（RFC 5280 §4.2.1.4）
 - ♻️ `type Name struct { …（内部字段） }` — 证书 subject / issuer 名字（RDN 值按 **UTF-8** 写入，非 ASCII 字符原样保存为 `UTF8String`；非法 UTF-8 报错；`Add` 按**调用顺序追加**，DER 顺序 = 书写顺序，与 `openssl -subj` 一致；`Entries()` / `Get()` 不再受 256 字节缓冲限制）
 - ♻️ `type NameEntry struct { Nid int; Field string; Value string }` — 名字中的单个 RDN 条目
+- ➕ `func (n *Name) Close() error` — 关闭独立名称对象，可重复调用
 
 **类型｜CSR / CRL / OCSP**
 
@@ -887,7 +888,7 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
 - ♻️ `func (c *Certificate) Subject() string` / `Issuer() string` — 单行 subject / issuer
 - ♻️ `func (c *Certificate) NotBefore() time.Time` / `NotAfter() time.Time` — 有效期
 - ♻️ `func (c *Certificate) Serial() int64` / `Version() int` — 序列号与版本
-- ♻️ `func (c *Certificate) SubjectName() *Name` / `IssuerName() *Name` — 结构化名字
+- ♻️ `func (c *Certificate) SubjectName() *Name` / `IssuerName() *Name` — 独立的结构化名字，调用方负责 `Name.Close`
 - ♻️ `func (c *Certificate) SubjectEntries() []NameEntry` / `IssuerEntries() []NameEntry` — RDN 条目
 - ♻️ `func (c *Certificate) SubjectText() string` / `IssuerText() string` — OpenSSL 风格文本
 - ♻️ `func (c *Certificate) SAN() []string` — 主题备用名

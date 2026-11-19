@@ -161,6 +161,7 @@ func IssueCertificateFromRequest(req *CertificateRequest, issuer *Certificate,
 	if subject == nil {
 		return nil, fmt.Errorf("x509: request has no subject name")
 	}
+	defer subject.Close()
 
 	cert := NewCertificate()
 	defer func() {
@@ -181,7 +182,9 @@ func IssueCertificateFromRequest(req *CertificateRequest, issuer *Certificate,
 	if err := cert.SetSerialBigInt(serial); err != nil {
 		return nil, err
 	}
-	if err := cert.SetIssuer(issuer.SubjectName()); err != nil {
+	issuerName := issuer.SubjectName()
+	defer issuerName.Close()
+	if err := cert.SetIssuer(issuerName); err != nil {
 		return nil, err
 	}
 	if err := cert.SetSubject(subject); err != nil {

@@ -56,6 +56,7 @@ package x509
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -339,14 +340,30 @@ func (c *Certificate) IssuerHash() uint32 { return c.cert.IssuerHash() }
 func (c *Certificate) Version() int { return c.cert.Version() }
 
 // SubjectName 返回主题的完整名字（含全部 RDN 条目，可配合 Entries/Get/String 使用）。
+// 返回独立副本，调用方负责 Close。无名称、原对象已关闭或复制失败时返回 nil。
 //
 // SubjectName returns the full subject name containing all RDN entries; inspect it with Entries, Get, or String.
-func (c *Certificate) SubjectName() *Name { return &Name{name: c.cert.SubjectName()} }
+// The caller owns the copy and must Close it. An absent, closed or unavailable name returns nil.
+func (c *Certificate) SubjectName() *Name {
+	if c == nil {
+		return nil
+	}
+	defer runtime.KeepAlive(c)
+	return copiedName(c.cert.SubjectName())
+}
 
 // IssuerName 返回签发者的完整名字（含全部 RDN 条目）。
+// 返回独立副本，调用方负责 Close。无名称、原对象已关闭或复制失败时返回 nil。
 //
 // IssuerName returns the full issuer name containing all RDN entries; inspect it with Entries, Get, or String.
-func (c *Certificate) IssuerName() *Name { return &Name{name: c.cert.IssuerName()} }
+// The caller owns the copy and must Close it. An absent, closed or unavailable name returns nil.
+func (c *Certificate) IssuerName() *Name {
+	if c == nil {
+		return nil
+	}
+	defer runtime.KeepAlive(c)
+	return copiedName(c.cert.IssuerName())
+}
 
 // SubjectEntries 返回主题的完整 RDN 条目。
 //

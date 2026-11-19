@@ -205,6 +205,21 @@ func (n *Name) String() string {
 	return s
 }
 
+// Copy 返回独立的名称副本。名称为空、已关闭或复制失败时返回 nil。
+//
+// Copy returns an independent Name, or nil when the source is absent, closed or cannot be copied.
+func (n *Name) Copy() *Name {
+	if n == nil || n.handle == nil || n.handle.IsClosed() {
+		return nil
+	}
+	defer runtime.KeepAlive(n)
+	ptr := native.X509_NAME_dup(n.handle.Ptr())
+	if ptr == nil {
+		return nil
+	}
+	return &Name{handle: NewHandle(ptr, true, native.X509_NAME_free)}
+}
+
 // Close 释放底层 X509_NAME 句柄。
 //
 // 调用是幂等的：对 nil 接收者或已关闭的 Name 调用返回 nil，不产生副作用；Close 返回后，

@@ -725,3 +725,29 @@ func TestCertificateCloseContract(t *testing.T) {
 		t.Fatal("MarshalDER on a closed certificate should return an error")
 	}
 }
+
+// TestNameOutlivesCertificate 验证关闭证书后名称副本仍可读取。
+//
+// TestNameOutlivesCertificate verifies the independent lifetime of a name snapshot.
+func TestNameOutlivesCertificate(t *testing.T) {
+	cert := NewCertificate()
+	original := NewName().Add("CN", "fixture")
+	defer original.Close()
+	if err := cert.SetSubject(original); err != nil {
+		t.Fatal(err)
+	}
+	name := cert.SubjectName()
+	defer name.Close()
+	if err := cert.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := name.Get("CN"); got != "fixture" {
+		t.Fatalf("independent name lost subject: %q", got)
+	}
+	if err := name.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := name.Close(); err != nil || name.Len() != 0 {
+		t.Fatalf("name close contract: %v", err)
+	}
+}
