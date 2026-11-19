@@ -160,10 +160,13 @@ func (s *SSLConn) ReverifySession(chain [][]byte) error {
 	return err
 }
 
-// PumpSession 处理握手后消息并返回已读取的应用数据；不修改期限。
+// PumpSession 处理握手后消息，最多读取 maxRead 字节应用数据；不修改期限。
 //
-// PumpSession processes post-handshake messages and returns consumed application data without changing deadlines.
-func (s *SSLConn) PumpSession(ctx context.Context) ([]byte, error) {
+// PumpSession reads up to maxRead application bytes while processing post-handshake messages without changing deadlines.
+func (s *SSLConn) PumpSession(ctx context.Context, maxRead int) ([]byte, error) {
+	if maxRead <= 0 {
+		return nil, errors.New("tls: session wait application buffer limit")
+	}
 	if ctx == nil {
 		return nil, errors.New("tls: nil session context")
 	}
@@ -173,7 +176,7 @@ func (s *SSLConn) PumpSession(ctx context.Context) ([]byte, error) {
 		return nil, errors.New("tls: connection closed")
 	}
 	defer s.inflight.Done()
-	buf := make([]byte, 16*1024)
+	buf := make([]byte, min(maxRead, 16*1024))
 	var pin runtime.Pinner
 	pin.Pin(&buf[0])
 	defer pin.Unpin()

@@ -711,11 +711,21 @@ func TestSessionWaitBufferLimit(t *testing.T) {
 	}
 	data := bytes.Repeat([]byte("x"), 65537)
 	written := make(chan error, 1)
-	go func() { _, err := s.conn.Write(data); written <- err }()
+	go func() {
+		if _, err := s.conn.Write(data[:17]); err != nil {
+			written <- err
+			return
+		}
+		_, err := s.conn.Write(data[17:])
+		written <- err
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if _, err := c.WaitSession(ctx); err == nil || !strings.Contains(err.Error(), "buffer limit") {
 		t.Fatalf("wait=%v", err)
+	}
+	if len(c.sessionPending) != 64*1024 {
+		t.Fatalf("pending=%d, want 64 KiB", len(c.sessionPending))
 	}
 	got := make([]byte, len(data))
 	if _, err := io.ReadFull(c, got); err != nil {
