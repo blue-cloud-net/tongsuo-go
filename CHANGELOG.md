@@ -27,6 +27,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - Public key views returned by `Public()` now expose only public parameters in `asym.Params` and JWK exports.
 - Typed PBKDF2 rejects iteration counts that exceed the native integer range.
 - Random byte generation now passes the full buffer length to Tongsuo.
+- OCSP status matching rejects closed certificate and issuer handles.
 
 ---
 

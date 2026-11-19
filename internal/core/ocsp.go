@@ -202,7 +202,8 @@ func (r *OCSPResponse) Check(cert, issuer *Certificate) (*CertStatus, error) {
 	if r.Status() != 0 {
 		return nil, fmt.Errorf("ocsp: response status %d (%s)", r.Status(), r.StatusText())
 	}
-	if cert == nil || issuer == nil || cert.handle == nil || issuer.handle == nil {
+	if cert == nil || cert.handle == nil || cert.handle.IsClosed() ||
+		issuer == nil || issuer.handle == nil || issuer.handle.IsClosed() {
 		return nil, fmt.Errorf("ocsp: invalid cert or issuer")
 	}
 	basic := native.OCSP_response_get1_basic(r.handle.Ptr())

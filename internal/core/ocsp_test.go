@@ -40,3 +40,30 @@ func TestOCSPResponseClose(t *testing.T) {
 		t.Fatalf("typed nil Close: %v", err)
 	}
 }
+
+func TestOCSPCheckRejectsClosedCertificate(t *testing.T) {
+	// Successful response status with no per-certificate data.
+	response, err := LoadOCSPResponseDER([]byte{0x30, 0x03, 0x0a, 0x01, 0x00})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Close()
+	open, err := NewCertificate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer open.Close()
+	closed, err := NewCertificate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := closed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, pair := range [][2]*Certificate{{closed, open}, {open, closed}} {
+		status, err := response.Check(pair[0], pair[1])
+		if status != nil || err == nil || err.Error() != "ocsp: invalid cert or issuer" {
+			t.Fatalf("Check = (%v, %v), want invalid cert or issuer", status, err)
+		}
+	}
+}
