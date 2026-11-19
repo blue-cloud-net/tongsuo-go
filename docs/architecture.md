@@ -48,7 +48,7 @@ API 层（16 个顶级包：meta / digest / mac / sym / asym / ecdh / kdf / rand
 - 严格分层，**禁止跨层调用**：API 层不得直接调用绑定层；绑定层不得包含业务逻辑
 - 依赖方向**单向向下**，各层边界清晰，便于测试与替换
 - API 层内部：`ecdh → asym`（加载 `asym` 密钥对象）、`x509 → asym`（公钥/私钥接口）、
-  `tls/jwk/pkcs7/pkcs12 → x509` + `asym`；算法原语包只依赖 `internal/core`，不互相依赖
+  `tls/pkcs7/pkcs12 → x509` + `asym`，`jwk → asym` + `sym`。算法原语使用核心层与下述形态入口。
 - **唯一例外（`0.5.0` 起）**：`digest` / `mac` / `sym` / `kdf` / `asym` / `x509`
   → `meta`。`meta` 是**形态词汇的叶子包**（只依赖 `internal/core`），提供
   `Source` / `Sink` / `Encoding` / `Format` / `Passphrase`，供各原语包的「CLI 式
@@ -102,6 +102,8 @@ graph TD
   tls --> asym
   tls --> core
   jwk --> asym
+  jwk --> sym
+  jwk --> core
   pkcs12 --> x509
   pkcs12 --> asym
   pkcs7 --> x509
@@ -314,6 +316,7 @@ tongsuo-go/
 │   ├── params.go              # KeyParams
 │   ├── pkcs8.go  check.go      # PKCS#8 PBE/PRF/PEM/DER、PKCS#1 公钥与密钥检查
 │   ├── signature.go           # 签名 DER ↔ 裸 r‖s：SignatureParts / SignatureDER / FormatSignature
+│   ├── pqc.go  pqc_signature.go  kem.go  spki.go    # PQC 签验、KEM 和公开密钥编码
 │   └── forms.go               # 形态入口：LoadPrivateKeySource / MarshalPrivateKeyTo …
 ├── ecdh/                      # 【密钥】密钥协商
 │   ├── ecdh.go                # Curve / LoadPrivateKey / LoadPublicKey / SharedSecret
@@ -338,6 +341,7 @@ tongsuo-go/
 │   └── helpers.go             # convertEntries / convertExtensions
 ├── tls/                       # 【传输】TLS / NTLS
 │   ├── tls.go  config.go  rfc8998.go  diagnostics.go  state.go  chain.go  suites.go  errors.go  session.go
+│   ├── http.go  ocsp.go        # HTTP/1.1 和 OCSP 装订
 │   └── listener.go            # Listener / NewListener（Accept 内握手的 net.Listener）
 ├── asn1/                      # 【格式】DER viewer（纯 Go，cgo-free）
 ├── jwk/                       # 【格式】JWK ↔ PEM / JSON
@@ -363,6 +367,7 @@ tongsuo-go/
 │   │   ├── binding_rand.go    # RAND_bytes
 │   │   ├── binding_bio.go     # BIO 系列
 │   │   ├── binding_ssl.go     # SSL_CTX / SSL / TLS 会话
+│   │   ├── binding_pqc.go    # PQC 绑定
 │   │   ├── binding_fd.go      # 原子复制 close-on-exec 文件描述符
 │   │   ├── binding_ssl_session.go  ssl_session.c # 会话序列化、缓存、票据与恢复后验证
 │   │   ├── binding_ssl_handshake.go  binding_ssl_diagnostics.go # 参数、ClientHello/ALPN/验证回调与快照
@@ -405,7 +410,7 @@ tongsuo-go/
 > `internal/certaccess`（证书，断言 + DER 往返）供 `tls` / `pkcs7` / `pkcs12` 与 `x509`
 > 包内的 `ocsp` 使用。
 > 依赖方向单向：算法原语包只依赖 `internal/core`；`ecdh → asym`；`x509 → asym`；
-> `tls` / `jwk` / `pkcs12` → `x509` + `asym`。
+> `tls` / `pkcs12` → `x509` + `asym`，`jwk` → `asym` + `sym`。
 > `0.5.0` 起新增一条**叶子边**：`digest` / `mac` / `sym` / `kdf` / `asym` / `x509`
 > → `meta`，`0.6.0` 增加 `keystore → meta`（`meta` 只依赖 `internal/core`，提供 `Source` / `Sink` / `Encoding` /
 > `Format` / `Passphrase` 形态词汇）。该边单向、无环，不得反向（`meta` 不得

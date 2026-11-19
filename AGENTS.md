@@ -129,7 +129,7 @@ API 层（16 个顶级包：meta / digest / mac / sym / asym / ecdh / kdf / rand
 
 - `crypto/` 整目录与 `key/` 已在 `0.3.0` 的包结构重构中**取消**；当前 16 包形态与依赖方向见 `docs/architecture.md` §2 / §3
 - API 层内部依赖：算法原语包只依赖 `internal/core`；`ecdh → asym`；`x509 → asym`；
-  `tls` / `jwk` / `pkcs7` / `pkcs12` → `x509` + `asym`；`0.6.0` 的统一加载器新增
+  `tls` / `pkcs7` / `pkcs12` → `x509` + `asym`；`jwk` → `asym` + `sym`；`0.6.0` 的统一加载器新增
   `keystore → asym` + `pkcs/pkcs12`（单向，无环）
 - **唯一例外（`0.5.0` 起）**：`digest` / `mac` / `sym` / `kdf` / `asym` / `x509`
   → `meta`；`0.6.0` 新增 `keystore → meta`（统一加载的口令参数）。`meta` 是形态词汇的**叶子包**（只依赖 `internal/core`），提供
@@ -201,6 +201,7 @@ tls/                # TLS / NTLS 传输层
 ├── tls.go          # Dial / DialContext / Server / Conn
 ├── chain.go        # 证书链构建
 ├── suites.go       # 套件枚举与命名
+├── http.go  ocsp.go # HTTP/1.1 和 OCSP 装订
 ├── listener.go     # Listener / NewListener（Accept 内完成握手）
 └── errors.go       # 错误分类
 
@@ -230,6 +231,7 @@ internal/native/               # 绑定层：cgo + shim
 ├── binding_rand.go            # RAND_bytes 系列
 ├── binding_bio.go             # BIO 系列
 ├── binding_ssl.go             # SSL_CTX / SSL / TLS 会话
+├── binding_pqc.go            # PQC 绑定
 ├── binding_fd.go      # 原子复制 close-on-exec 文件描述符
 ├── binding_x509.go            # X509 / X509_CRL / X509_STORE / PEM / DER 系列
 ├── binding_pkcs.go            # PKCS#7 / PKCS#12 系列
