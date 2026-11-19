@@ -62,6 +62,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - Streaming encryption and decryption reject identical input and destination files, including aliases.
 - Certificate, CSR and CRL name snapshots retain independent native resources and support Close.
 - OCSP parsing and fetching release intermediate responder certificates and fail cleanly on partial conversion.
+- Local certificate and key loaders reject malformed PEM blocks instead of skipping them.
 
 ---
 

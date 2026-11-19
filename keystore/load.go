@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/blue-cloud-net/tongsuo-go/internal/core"
+
 	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/meta"
 	"github.com/blue-cloud-net/tongsuo-go/pkcs/pkcs12"
@@ -82,11 +84,11 @@ func LoadWithPassphrase(uri string, pass *meta.Passphrase) (asym.Key, error) {
 func LoadFromReader(r io.Reader) (asym.Key, error) { return oneLoadedKey(LoadAllFromReader(r, nil)) }
 
 // LoadAllFromReader 自动识别 PEM 多对象、PKCS#8/PKCS#1/SEC1/SPKI DER 或 PKCS#12。
-// PEM 中的证书与 CRL 被忽略；不支持的块或畸形输入返回错误且释放已解析密钥。
+// PEM 块之间只允许空白，证书与 CRL 被忽略；不支持的块或畸形输入返回错误且释放已解析密钥。
 // 不关闭 reader；调用方负责 asym.Close 以及输入和口令缓冲清零。
 //
 // LoadAllFromReader detects multiple PEM objects, PKCS#8/PKCS#1/SEC1/SPKI DER or PKCS#12.
-// Certificates and CRLs in PEM are ignored; unsupported blocks or malformed input return errors and release parsed keys.
+// Only whitespace may appear between PEM blocks. Certificates and CRLs in PEM are ignored; unsupported blocks or malformed input return errors and release parsed keys.
 // It does not close the reader; callers must call asym.Close and wipe input/password buffers.
 func LoadAllFromReader(r io.Reader, pass *meta.Passphrase) (keys []asym.Key, retErr error) {
 	if r == nil {
@@ -105,12 +107,12 @@ func LoadAllFromReader(r io.Reader, pass *meta.Passphrase) (keys []asym.Key, ret
 			keys = nil
 		}
 	}()
-	if bytes.Contains(data, []byte("-----BEGIN")) {
+	if bytes.HasPrefix(bytes.TrimSpace(data), []byte("-----BEGIN")) {
 		rest := data
 		for len(bytes.TrimSpace(rest)) > 0 {
-			b, tail := pem.Decode(rest)
-			if b == nil {
-				return keys, fmt.Errorf("keystore: malformed PEM")
+			b, tail, pemErr := core.DecodeLeadingPEM(rest)
+			if pemErr != nil {
+				return keys, fmt.Errorf("keystore: %w", pemErr)
 			}
 			rest = tail
 			encoded := pem.EncodeToMemory(b)
