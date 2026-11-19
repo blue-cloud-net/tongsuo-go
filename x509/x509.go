@@ -722,11 +722,13 @@ func (c *Certificate) ReplaceExtension(name, value string) error {
 
 // Fingerprint 计算证书指纹（十六进制小写）。
 // alg 支持 "sha1"、"sha256"、"sm3"、"md5"、"sha384"、"sha512"。
+// SHA-1 和 MD5 仅用于遗留兼容。安全比对请选择 SHA-256 等抗碰撞算法。
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
 // Fingerprint computes the certificate's fingerprint as a lowercase hexadecimal string. The alg parameter accepts "sha1", "sha256", "sm3", "md5", "sha384", and "sha512".
 //
+// SHA-1 and MD5 are for legacy compatibility. Use a collision-resistant algorithm such as SHA-256 for security comparisons.
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (c *Certificate) Fingerprint(alg string) (string, error) {
 	var md *core.Digest
