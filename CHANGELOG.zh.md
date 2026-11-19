@@ -22,6 +22,14 @@
 
 ---
 
+## [0.13.0] - 2026-11-19
+
+### 新增功能
+
+- 新增 `asym.GenerateKey` 按名生成密钥，并提供 `MarshalSPKI` / `LoadSPKI` 读写 PEM 和 DER 公钥。
+- 新增原生 ML-DSA、SLH-DSA 密钥生成与签验，支持签名上下文、标准预哈希、X.509 证书和 CSR。新增原生 ML-KEM 封装与解封装，并提供 PQC 密钥生成能力探测。
+- 在铜锁 8.5.0 验证三组纯 ML-KEM、四组混合 TLS 1.3 密钥交换，以及 ML-DSA 服务端证书认证和双向认证。
+
 ## [0.12.0] - 2026-11-18
 
 ### 新增功能
@@ -948,7 +956,8 @@
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.9.0...v0.10.0

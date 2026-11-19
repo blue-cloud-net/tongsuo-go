@@ -609,3 +609,10 @@ CT 回调恒允许，getter 补全回调未触发时的已接收数据。无 SM2
 恢复后重新执行当前原生链/用途/名称验证再进入 API 回调，已验证链独立复制。
 WaitSession 与读取串行，fd 等待时释放原生锁，允许写入；最多暂存 64 KiB 应用数据。
 详细公开行为、默认值与持久化边界见 [TLS 会话规则](tls-sessions.md)。
+
+### 0.13.0 后量子密钥路径
+
+`asym` 用统一的密钥接口和 PEM 加载器接入 provider 密钥，通过
+`internal/core` 调用 `internal/native` 的按名生成、签验和 KEM 绑定。
+PQC 证书和 CSR 复用 X.509 的无摘要签名入口。TLS 配置和协商状态继续复用
+`CurvePreferences`、`SignatureAlgorithms` 与 `ConnectionState`。
