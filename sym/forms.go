@@ -90,6 +90,9 @@ func cryptSource(name string, key, iv []byte, src *meta.Source, sink *meta.Sink,
 		return err
 	}
 	defer r.Close()
+	if err := sink.ProtectInputFile(r); err != nil {
+		return err
+	}
 
 	buf := make([]byte, streamChunk)
 	for {
@@ -128,14 +131,14 @@ func cryptSource(name string, key, iv []byte, src *meta.Source, sink *meta.Sink,
 // EncryptSource 按「算法-模式」名流式加密 src 的全部内容并写入 sink。
 // 仅支持无填充冲突的模式：ECB / CBC（PKCS#7 填充）、CTR / OFB / CFB /
 // ChaCha20（流式，无需 IV 的模式传 nil）。AEAD 模式与 XTS 返回 ErrUnsupported。
-// src 为 nil 等价于标准输入，sink 为 nil 等价于标准输出。
+// src 为 nil 等价于标准输入，sink 为 nil 等价于标准输出。文件输入输出不能指向同一文件。
 //
 // EncryptSource streams everything src yields through the named
 // algorithm-mode and writes the ciphertext to sink. Only modes that are
 // safe to stream are accepted: ECB / CBC (PKCS#7 padding) and CTR / OFB /
 // CFB / ChaCha20 (IV-less modes take a nil IV). The AEAD modes and XTS
 // return ErrUnsupported. A nil src means standard input and a nil sink
-// means standard output.
+// means standard output. A file source and sink may not refer to the same file.
 func EncryptSource(name string, key, iv []byte, src *meta.Source, sink *meta.Sink) error {
 	return cryptSource(name, key, iv, src, sink, true)
 }

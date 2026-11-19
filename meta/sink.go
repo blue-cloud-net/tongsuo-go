@@ -29,16 +29,17 @@ import (
 // Sink is not safe for concurrent use; callers must finish all writes
 // before Close.
 type Sink struct {
-	mu      sync.Mutex
-	kind    sinkKind
-	buf     bytes.Buffer
-	writer  io.Writer
-	path    string
-	file    *os.File
-	enc     Encoding
-	encoder io.WriteCloser
-	wrote   bool
-	closed  bool
+	mu        sync.Mutex
+	kind      sinkKind
+	buf       bytes.Buffer
+	writer    io.Writer
+	path      string
+	file      *os.File
+	enc       Encoding
+	encoder   io.WriteCloser
+	wrote     bool
+	closed    bool
+	inputFile os.FileInfo
 }
 
 // sinkKind 区分 Sink 的四种去处。
@@ -201,6 +202,30 @@ func (s *Sink) write(p []byte, sensitive bool) (int, error) {
 	return 0, fmt.Errorf("meta: unknown encoding %q", string(s.enc))
 }
 
+// ProtectInputFile 阻止文件 Sink 写入输入读取器指向的同一文件。
+// 仅对文件 Sink 和 *os.File 生效，须在首次写入前调用。
+//
+// ProtectInputFile prevents a file sink from writing to the opened input
+// file, including aliases. Call before the first write. Other readers
+// and destination types are left to the caller.
+func (s *Sink) ProtectInputFile(r io.Reader) error {
+	f, ok := r.(*os.File)
+	if s == nil || s.kind != sinkFile || !ok {
+		return nil
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("meta: stat source: %w", err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.wrote || s.closed {
+		return fmt.Errorf("meta: input-file protection requires an unused sink")
+	}
+	s.inputFile = info
+	return nil
+}
+
 // ensureOpen 按需打开底层去处（调用方须持有锁）。
 //
 // ensureOpen opens the underlying destination on demand (the caller must
@@ -220,6 +245,9 @@ func (s *Sink) ensureOpen(sensitive bool) error {
 		if sensitive {
 			flags, mode = os.O_WRONLY|os.O_CREATE, 0o600
 		}
+		if s.inputFile != nil {
+			flags &^= os.O_TRUNC
+		}
 		f, err := os.OpenFile(s.path, flags, mode)
 		if err != nil {
 			return fmt.Errorf("meta: open sink %q: %w", s.path, err)
@@ -229,9 +257,22 @@ func (s *Sink) ensureOpen(sensitive bool) error {
 				_ = f.Close()
 				return err
 			}
-			if err := f.Truncate(0); err != nil {
+		}
+		if flags&os.O_TRUNC == 0 {
+			info, err := f.Stat()
+			if err != nil {
 				_ = f.Close()
-				return fmt.Errorf("meta: truncate sink %q: %w", s.path, err)
+				return fmt.Errorf("meta: stat sink %q: %w", s.path, err)
+			}
+			if s.inputFile != nil && os.SameFile(s.inputFile, info) {
+				_ = f.Close()
+				return fmt.Errorf("meta: sink and source refer to the same file")
+			}
+			if info.Mode().IsRegular() {
+				if err := f.Truncate(0); err != nil {
+					_ = f.Close()
+					return fmt.Errorf("meta: truncate sink %q: %w", s.path, err)
+				}
 			}
 		}
 		s.file = f

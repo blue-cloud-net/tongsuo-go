@@ -41,7 +41,7 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 - ✍️ **签名格式与 RSA 摘要**（`asym`）：SM2 / ECDSA 的 DER ↔ 裸 `r‖s` 互转（`SignatureParts` / `SignatureDER` / `FormatSignature`）；RSA-OAEP 接受 `sm3`；RSA-SM3 签名先用 `SupportsRSASignatureDigest` 探测，8.4.0 不支持时返回 `ErrUnsupported`，8.5.0 的 PKCS#1 v1.5/PSS 可用；PSS 可用 `SupportsRSAPSSDigest` 单独探测
 - 🌊 **流密码**（`sym`）：ChaCha20、ChaCha20-Poly1305、ZUC-128-EEA3（原生 5 字节 IV）
 - 🧬 **密钥派生**（`kdf`）：10 种 KDF —— HKDF / PBKDF2 / scrypt / SSKDF / TLS1-PRF / TLS13-KDF / KBKDF / X942KDF / X963KDF / HMAC-DRBG-KDF，均含类型化入口与按名分发 `Derive`
-- 🧰 **CLI 式形态入口**：`meta` 提供 `Source`（bytes / reader / 文件 / stdin）、`Sink`（含 raw / hex / base64 编码）、`Format`（PEM / DER）与 `Passphrase`（`pass:` / `env:` / `file:` / `fd:` / `stdin:`）；各原语包提供 `SumSource` / `SumTo` / `EncryptSource` / `DeriveTo` / `MarshalPrivateKeyTo` / `LoadCertificateSource` 等一行式入口 文件 Sink 对私钥和派生密钥输出要求仅所有者可访问。
+- 🧰 **CLI 式形态入口**：`meta` 提供 `Source`（bytes / reader / 文件 / stdin）、`Sink`（含 raw / hex / base64 编码）、`Format`（PEM / DER）与 `Passphrase`（`pass:` / `env:` / `file:` / `fd:` / `stdin:`）；各原语包提供 `SumSource` / `SumTo` / `EncryptSource` / `DeriveTo` / `MarshalPrivateKeyTo` / `LoadCertificateSource` 等一行式入口 文件 Sink 对私钥和派生密钥输出要求仅所有者可访问。 流式加解密会拒绝指向同一文件的输入与输出。
 - 🗂️ **算法与 provider 枚举**（`meta`）：`Digests` / `Ciphers` / `MACs` / `KDFs` / `Signatures` / `KeyExchanges` / `KEMs` / `TLSGroups` / `Providers` / `SeedingSource`
 - 📝 **Ed25519 / Ed448 签名算法**（RFC 8032，`asym`）：pure EdDSA 与 Ed25519ctx / Ed25519ph / Ed448ph、Ed448 上下文签验（原生完成预哈希），32B / 57B 原始种子与公钥字节可与 Go 标准库、WireGuard 互操作；通过 `X509_sign_ctx` 路径支持证书 / CSR / CRL 签发
 - 🤝 **X25519 / X448 ECDH 密钥交换**（RFC 7748，`ecdh`）：32 / 56 字节共享密钥派生，可与 Go `crypto/ecdh`、WireGuard 互操作

@@ -336,3 +336,37 @@ func TestSensitiveSinkFilePermissions(t *testing.T) {
 		t.Fatalf("existing file changed: %v", err)
 	}
 }
+
+// TestFileSinkProtectsInputAlias 验证通过其他路径引用输入文件时也不会截断。
+//
+// TestFileSinkProtectsInputAlias verifies that input protection recognizes hard links.
+func TestFileSinkProtectsInputAlias(t *testing.T) {
+	dir := t.TempDir()
+	input, alias := filepath.Join(dir, "input"), filepath.Join(dir, "alias")
+	if err := os.WriteFile(input, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(input, alias); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	s, err := NewFileSink(alias)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.ProtectInputFile(f); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Write([]byte("replacement")); err == nil {
+		t.Fatal("input alias was accepted as output")
+	}
+	data, err := os.ReadFile(input)
+	if err != nil || string(data) != "original" {
+		t.Fatalf("input changed: %v", err)
+	}
+}
