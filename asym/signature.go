@@ -3,6 +3,7 @@ package asym
 import (
 	"encoding/asn1"
 	"fmt"
+	"math"
 	"math/big"
 )
 
@@ -193,6 +194,9 @@ func joinRawComponents(r, s []byte, width int) ([]byte, error) {
 	if len(r) > width || len(s) > width {
 		return nil, fmt.Errorf("asym: signature: component wider than %d bytes (r=%d, s=%d)",
 			width, len(r), len(s))
+	}
+	if width > math.MaxInt/2 {
+		return nil, fmt.Errorf("asym: signature: width %d exceeds output size range", width)
 	}
 	out := make([]byte, 2*width)
 	copy(out[width-len(r):width], r)

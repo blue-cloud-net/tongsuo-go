@@ -2,6 +2,7 @@ package asym
 
 import (
 	"bytes"
+	"math"
 	"testing"
 )
 
@@ -227,4 +228,17 @@ func mustECDSASignature(t *testing.T, msg []byte) []byte {
 		t.Fatalf("ECDSA Sign: %v", err)
 	}
 	return sig
+}
+
+// TestSignatureWidthOverflow 验证输出长度溢出时返回错误。
+//
+// TestSignatureWidthOverflow checks that an overflowing output width returns an error.
+func TestSignatureWidthOverflow(t *testing.T) {
+	der, err := FormatSignature([]byte{1, 1}, "raw", "der", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FormatSignature(der, "der", "raw", math.MaxInt/2+1); err == nil {
+		t.Fatal("expected an error for overflowing signature width")
+	}
 }
