@@ -754,7 +754,7 @@ func TestHandshakeWriteDeadlineBeforeNativeWrite(t *testing.T) {
 	if ce != nil || se != nil {
 		t.Fatalf("client=%v server=%v", ce, se)
 	}
-	if err := c.SetWriteDeadline(time.Now().Add(-time.Second)); err != nil {
+	if err := c.SetWriteDeadline(time.Unix(0, 0)); err != nil {
 		t.Fatal(err)
 	}
 	payload := []byte("different")

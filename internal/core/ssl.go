@@ -430,8 +430,8 @@ type SSLConn struct {
 	// 构造后不再变更，由 Close 负责关闭。
 	fd int
 
-	readDeadline  atomic.Int64
-	writeDeadline atomic.Int64
+	readDeadline  atomic.Pointer[time.Time]
+	writeDeadline atomic.Pointer[time.Time]
 	ioMu          sync.Mutex // serializes each native operation, never fd waits
 	closeOnce     sync.Once
 	closeErr      error

@@ -181,7 +181,7 @@ func (s *SSLConn) PumpSession(ctx context.Context) ([]byte, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if d := s.readDeadline.Load(); d != 0 && time.Now().UnixNano() >= d {
+		if d := loadDeadline(&s.readDeadline); !d.IsZero() && !time.Now().Before(d) {
 			return nil, &timeoutError{op: "wait session"}
 		}
 		if len(s.SessionDER()) > 0 {
@@ -204,8 +204,8 @@ func (s *SSLConn) PumpSession(ctx context.Context) ([]byte, error) {
 		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < budget {
 			budget = time.Until(deadline)
 		}
-		if d := s.readDeadline.Load(); d != 0 && time.Until(time.Unix(0, d)) < budget {
-			budget = time.Until(time.Unix(0, d))
+		if d := loadDeadline(&s.readDeadline); !d.IsZero() {
+			budget = min(budget, time.Until(d))
 		}
 		if budget <= 0 {
 			continue
