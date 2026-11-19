@@ -33,6 +33,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - PKCS#7 certificate extraction rejects a SignedData container with missing content.
 - PKCS#12 pack and parse reject NUL in passwords, matching the password-change APIs.
 - Sinks report short writes from caller-supplied writers, including during base64 finalization.
+- Key parameter queries return an error for closed keys.
 
 ---
 

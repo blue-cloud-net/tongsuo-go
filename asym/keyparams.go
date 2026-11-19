@@ -74,11 +74,11 @@ func keyParamsFromCore(kp *core.KeyParams) *KeyParams {
 }
 
 // Params 返回密钥的公开参数快照（算法无关）。
-// key 可为私钥或公钥；nil 时返回错误。
+// key 可为私钥或公钥；nil 或已关闭时返回错误。
 // 解析出的参数由底层铜锁决定，未涉及的分量为 nil。
 //
 // Params returns a public parameter snapshot of the key, regardless of
-// algorithm. key may be a private or a public key; nil yields an error.
+// algorithm. key may be a private or a public key; a nil or closed key yields an error.
 // Which fields carry values is decided by Tongsuo; unrelated fields are
 // nil.
 func Params(key Key) (*KeyParams, error) {
@@ -86,10 +86,16 @@ func Params(key Key) (*KeyParams, error) {
 		return nil, fmt.Errorf("asym: nil key")
 	}
 	pk := key.corePKey()
+	var params *core.KeyParams
 	if _, ok := key.(PrivateKey); ok {
-		return keyParamsFromCore(pk.Params()), nil
+		params = pk.Params()
+	} else {
+		params = pk.PublicParams()
 	}
-	return keyParamsFromCore(pk.PublicParams()), nil
+	if params == nil {
+		return nil, fmt.Errorf("asym: key closed")
+	}
+	return keyParamsFromCore(params), nil
 }
 
 // Match 判断私钥的公钥分量是否与给定公钥一致（算法无关，nil-safe）。

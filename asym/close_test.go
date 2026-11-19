@@ -156,3 +156,22 @@ func TestCloseIsNotAnErrorBeforeUse(t *testing.T) {
 		t.Fatalf("重复 Close(loaded): %v", err)
 	}
 }
+
+// TestParamsClosedKey 验证关闭后私钥和公钥视图均返回错误。
+//
+// TestParamsClosedKey checks that both views return an error after closing the key.
+func TestParamsClosedKey(t *testing.T) {
+	key, err := asym.GenerateEC(asym.CurveP256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := key.Public()
+	if err := asym.Close(key); err != nil {
+		t.Fatal(err)
+	}
+	for _, view := range []asym.Key{key, pub} {
+		if params, err := asym.Params(view); params != nil || err == nil {
+			t.Fatalf("Params for closed %T should return no parameters and an error", view)
+		}
+	}
+}
