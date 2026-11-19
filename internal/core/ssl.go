@@ -371,31 +371,12 @@ func (c *TLSContext) SetDefaultVerifyPaths() error {
 	return nil
 }
 
-// SSLConn 表示一个 TLS 连接（SSL 的包装）。
-// 使用完毕必须调用 Close 释放底层句柄。
+// SSLConn 封装铜锁 SSL 连接并接管其套接字副本。调用方须调用 Close。
+// 读写分别设置期限，原生操作串行，就绪等待不占用原生操作锁。
 //
-// SSLConn is the Go wrapper around an OpenSSL SSL connection bound to a
-// raw socket file descriptor.
-//
-// 0.9.0 起以下 ctx/fd 所有权及单一期限的描述为历史行为：SSLConn 接管 fd，
-// 构造失败、Close 与 Handle/finalizer 释放路径均关闭 fd；读写期限独立。
-//
-// 类型通过内部 Handle 拥有底层 SSL 句柄，使用完毕须调用 Close 释放连接。
-// 持有的 ctx 与 fd 不属于 *SSLConn：关闭上下文或底层 socket 由调用方负责。
-// deadline（unix nano）由 SetDeadline 写入，Connect/Accept/Read/Write 在
-// retry 时按剩余时间调用 waitFD——未设置 deadline 时使用 waitFDTimeout
-// 的最大单次等待时长（每次 retry 都完整重置）。
-//
-// Since 0.9.0, the ctx/fd ownership and single-deadline description below
-// is historical: SSLConn takes ownership of fd, closing it on constructor
-// failure, Close or Handle finalization; read/write deadlines are independent.
-//
-// The type owns the underlying SSL handle through an internal Handle
-// value; callers must invoke Close to release the connection once they
-// are done with it. The retained ctx and fd are not owned by *SSLConn;
-// closing the context or the underlying socket is the caller's
-// responsibility. The deadline (unix nano) is set via SetDeadline and
-// bounds the cumulative wait of Connect/Accept/Read/Write retry loops.
+// SSLConn owns the SSL connection and its socket duplicate.
+// Call Close to release them. Read and write have independent deadlines,
+// and readiness waits do not hold the native operation lock.
 type SSLConn struct {
 	deliveryMu    sync.Mutex
 	dispatch      TLSAcknowledge
@@ -409,7 +390,7 @@ type SSLConn struct {
 	ctx           *TLSContext
 
 	// fd 是**本连接持有**的 socket 副本（由 tls 层用 dup(2) 产生，见
-	// internal/core/fd_unix.go 的 DupFD 与 docs/issues/2026-09-24/P1011）。
+	// internal/core/fd_unix.go 的 DupFD）。
 	// 构造后不再变更，由 Close 负责关闭。
 	fd int
 
@@ -501,12 +482,10 @@ func NewSSLConn(ctx *TLSContext, fd int) (*SSLConn, error) {
 // SetDeadline sets the the deadline for subsequent handshake / I/O
 // retry loops. Passing the zero time.Time clears it.
 //
-// deadline 在内部按 unix nano 存储；retry 时按剩余时间切分到每次
-// waitFD 调用。已关闭连接返回错误。
+// 每次等待按剩余时间计算预算。已关闭连接返回错误。
 //
-// The deadline is stored as unix-nano and is consumed by the retry
-// loop on every WANT_READ/WANT_WRITE; returns an error on a closed
-// connection.
+// Each readiness wait uses the remaining time budget. Closed connections
+// return an error.
 func (s *SSLConn) SetDeadline(t time.Time) error {
 	if err := s.SetReadDeadline(t); err != nil {
 		return err
@@ -517,20 +496,12 @@ func (s *SSLConn) SetDeadline(t time.Time) error {
 	return nil
 }
 
-// Stop 停止本连接：禁止后续 SSL 调用，并 shutdown(2) 唤醒在途的 select / recv。
+// Stop 停止启动新的 SSL 操作并调用 shutdown 唤醒在途等待。
+// Close 在关闭底层连接前调用 Stop。Stop 幂等且支持并发调用。
 //
-// 由 tls.Conn.Close 在关闭底层 net.Conn **之前**调用。理由见
-// docs/issues/2026-09-24/P1011：SSL 一旦在 fd 已关闭（乃至被其它连接复用）之后继续
-// 调用，就会读写**别的连接**的 socket。shutdown 还让对端立刻看到 FIN —— 只要还有 fd
-// 副本存在，单靠 close(2) 不会关闭套接字。幂等且并发安全。
-//
-// Stop stops the connection: no further SSL call may start, and shutdown(2) wakes
-// in-flight select / recv.
-//
-// It is called by tls.Conn.Close before the underlying net.Conn is closed; see
-// docs/issues/2026-09-24/P1011. shutdown also makes the peer observe a FIN
-// immediately — close(2) alone cannot close the socket while a duplicate exists.
-// The method is idempotent and safe for concurrent use.
+// Stop prevents new SSL operations and calls shutdown to wake blocked
+// I/O. Close calls Stop before closing the underlying connection.
+// Stop is idempotent and safe for concurrent use.
 func (s *SSLConn) Stop() {
 	if s == nil {
 		return
@@ -585,7 +556,7 @@ func (s *SSLConn) begin() bool {
 //
 // Connect performs the TLS client handshake.
 //
-// The method locks the current OS thread and drives SSL_connect in a
+// Each native SSL_connect step and its error capture run on one OS thread in a
 // retry loop: SSL_ERROR_WANT_READ / SSL_ERROR_WANT_WRITE are answered by
 // waiting for fd readiness via waitFD with the remaining deadline (or
 // waitFDTimeout per iteration when no deadline is set), after which the
@@ -599,7 +570,7 @@ func (s *SSLConn) Connect() error {
 //
 // Accept performs the TLS server handshake.
 //
-// The method locks the current OS thread and drives SSL_accept in the
+// Each native SSL_accept step captures errors on the same OS thread in the
 // same WANT_READ / WANT_WRITE retry loop described in Connect. Returns
 // nil once the handshake completes; any other SSL error is wrapped as
 // OpError.
@@ -611,7 +582,7 @@ func (s *SSLConn) Accept() error {
 //
 // Read reads decrypted application data into buf.
 //
-// The method locks the current OS thread and retries on
+// Each native step captures errors on the same OS thread and retries on
 // SSL_ERROR_WANT_READ / SSL_ERROR_WANT_WRITE using waitFD with the
 // remaining deadline (or waitFDTimeout when no deadline is set).
 // A return value of (0, error) indicates EOF or a fatal SSL error
@@ -625,7 +596,7 @@ func (s *SSLConn) Read(buf []byte) (int, error) {
 //
 // Write encrypts and sends application data from buf.
 //
-// The method locks the current OS thread and retries on
+// Each native step captures errors on the same OS thread and retries on
 // SSL_ERROR_WANT_READ / SSL_ERROR_WANT_WRITE using waitFD with the
 // remaining deadline (or waitFDTimeout when no deadline is set).
 // A return value of (0, error) indicates a fatal SSL error (wrapped as
@@ -684,7 +655,7 @@ var errWaitFDTimeout = errors.New("tls: wait fd timeout")
 // has already been closed returns nil without further side effects and does NOT
 // invoke SSL_shutdown again. It first waits for any in-flight SSL call to finish,
 // because a handle release or fd close concurrent with an SSL call is exactly the
-// bug described in docs/issues/2026-09-24/P1011.
+// descriptor-reuse bug.
 func (s *SSLConn) Close() error {
 	if s == nil {
 		return nil
