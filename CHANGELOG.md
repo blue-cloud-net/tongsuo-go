@@ -25,6 +25,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 ### Fixed
 
 - Public key views returned by `Public()` now expose only public parameters in `asym.Params` and JWK exports.
+- Typed PBKDF2 rejects iteration counts that exceed the native integer range.
 
 ---
 

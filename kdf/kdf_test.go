@@ -134,6 +134,14 @@ func TestPBKDF2Rounds(t *testing.T) {
 
 // TestPBKDF2InvalidArgs 验证参数校验。
 func TestPBKDF2InvalidArgs(t *testing.T) {
+	// On 64-bit targets the value would previously narrow to one iteration.
+	tooMany := int64(1<<32 + 1)
+	if int64(int(tooMany)) == tooMany {
+		if _, err := PBKDF2(HashSHA256, []byte("password"), []byte("salt"), int(tooMany), 32); err == nil {
+			t.Error("PBKDF2 accepted an unrepresentable iteration count")
+		}
+	}
+
 	t.Run("empty-password", func(t *testing.T) {
 		if _, err := PBKDF2(HashSHA256, nil, []byte("salt"), 1, 16); err == nil {
 			t.Error("want error for empty password")

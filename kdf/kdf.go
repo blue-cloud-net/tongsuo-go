@@ -92,11 +92,11 @@ func HKDF(md Hash, secret, salt, info []byte, length int) ([]byte, error) {
 }
 
 // PBKDF2 使用 PBKDF2（RFC 8018）从口令派生 keyLen 字节。
-// md 为摘要算法；iter 为迭代次数（>=1）；password 不能为空。失败返回包装
+// md 为摘要算法；iter 为迭代次数（1 至 2³¹−1）；password 不能为空。失败返回包装
 // OpError 的错误。
 //
 // PBKDF2 derives keyLen bytes from a password using PBKDF2 (RFC 8018).
-// md selects the digest; iter is the iteration count (>= 1); password
+// md selects the digest; iter is the iteration count (1 to 2³¹−1); password
 // must be non-empty. On failure it returns an error wrapping an OpError.
 func PBKDF2(md Hash, password, salt []byte, iter, keyLen int) ([]byte, error) {
 	if err := validateHash(md); err != nil {
