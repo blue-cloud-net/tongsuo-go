@@ -111,14 +111,14 @@ func marshalCore(key *core.PKey, includePrivate bool) (*Key, error) {
 		return k, nil
 	case "EC", "SM2":
 		k := &Key{Kty: "EC", Crv: crvName(p.Curve)}
-		if p.X != nil {
-			k.X = b64(p.X)
-		}
-		if p.Y != nil {
-			k.Y = b64(p.Y)
-		}
-		if p.D != nil {
-			k.D = b64(p.D)
+		if curve, err := curveByName(k.Crv); err == nil {
+			coordWidth := (curve.Params().BitSize + 7) / 8
+			scalarWidth := (curve.Params().N.BitLen() + 7) / 8
+			k.X = b64Fixed(p.X, coordWidth)
+			k.Y = b64Fixed(p.Y, coordWidth)
+			k.D = b64Fixed(p.D, scalarWidth)
+		} else {
+			k.X, k.Y, k.D = b64Fixed(p.X, 0), b64Fixed(p.Y, 0), b64Fixed(p.D, 0)
 		}
 		return k, nil
 	default:
@@ -370,6 +370,16 @@ func FromPEM(pemBytes []byte) (*Key, error) {
 	}
 	defer pk.Close()
 	return marshalCore(pk, true)
+}
+
+func b64Fixed(n *big.Int, width int) string {
+	if n == nil {
+		return ""
+	}
+	if width == 0 {
+		return b64(n)
+	}
+	return base64.RawURLEncoding.EncodeToString(n.FillBytes(make([]byte, width)))
 }
 
 // b64 将大整数编码为 base64url（无填充）。

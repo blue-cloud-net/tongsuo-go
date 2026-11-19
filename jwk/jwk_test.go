@@ -1,6 +1,11 @@
 package jwk
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	stdx509 "crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
 	"math/big"
 	"testing"
 
@@ -272,5 +277,31 @@ func TestPublicKeyExportOmitsPrivateParameters(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestECJWKFixedWidth 验证 P-521 导出保留前导零。
+//
+// TestECJWKFixedWidth verifies that P-521 export retains leading zero bytes.
+func TestECJWKFixedWidth(t *testing.T) {
+	curve := elliptic.P521()
+	x, y := curve.ScalarBaseMult([]byte{1})
+	key := &ecdsa.PrivateKey{PublicKey: ecdsa.PublicKey{Curve: curve, X: x, Y: y}, D: big.NewInt(1)}
+	der, err := stdx509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j, err := FromPEM(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{j.X, j.Y, j.D} {
+		raw, err := base64.RawURLEncoding.DecodeString(value)
+		if err != nil || len(raw) != 66 {
+			t.Fatalf("encoded value width = %d, error = %v", len(raw), err)
+		}
+	}
+	if _, err := j.ToPEM(); err != nil {
+		t.Fatal(err)
 	}
 }

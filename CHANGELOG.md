@@ -49,6 +49,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - Session resumption honors optional client certificates when the peer provided none.
 - TLS socket readiness supports file descriptors beyond the select bitmap limit.
 - Signature and SM2 ciphertext conversion validates the complete DER structure and required fields.
+- EC JWKs encode NIST-curve coordinates and private scalars at their required fixed widths.
 
 ---
 
