@@ -3724,3 +3724,25 @@ func RevocationCheck(cert *Certificate, crls []*CRL) error {
 	}
 	return nil
 }
+
+// SelfSigned 比较证书主题与签发者的 X.509 名称，并用证书自身公钥验签。
+//
+// SelfSigned compares subject and issuer as X.509 names and verifies the signature using the certificate's own key.
+func (c *Certificate) SelfSigned() (bool, error) {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return false, fmt.Errorf("x509: invalid certificate")
+	}
+	defer runtime.KeepAlive(c)
+	ptr := c.handle.Ptr()
+	subject := native.X509_get_subject_name(ptr)
+	issuer := native.X509_get_issuer_name(ptr)
+	if subject == nil || issuer == nil || native.X509_NAME_cmp(subject, issuer) != 0 {
+		return false, nil
+	}
+	key, err := c.PublicKey()
+	if err != nil {
+		return false, err
+	}
+	defer key.Close()
+	return c.Verify(key) == nil, nil
+}

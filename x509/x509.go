@@ -977,25 +977,14 @@ func (c *Certificate) Verify(signerPub asym.PublicKey) error {
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
-// SelfSigned reports whether the certificate is self-signed (subject and issuer names match exactly, and the signature verifies against the certificate's own public key).
+// SelfSigned reports whether the certificate is self-signed (subject and issuer names are equal under X.509 name comparison, and the signature verifies against the certificate's own public key).
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (c *Certificate) SelfSigned() (bool, error) {
 	if c == nil {
 		return false, fmt.Errorf("x509: nil certificate")
 	}
-	if c.SubjectText() != c.IssuerText() {
-		return false, nil
-	}
-	pub, err := c.PublicKey()
-	if err != nil {
-		return false, err
-	}
-	if err := c.Verify(pub); err != nil {
-		// 签名不通过：仍视为"主题/签发者同名"但非真正自签，返回 false 且无错误。
-		return false, nil
-	}
-	return true, nil
+	return c.cert.SelfSigned()
 }
 
 // Signature 返回证书的原始签名字节（DER 编码）；证书无效或未签名返回 nil。

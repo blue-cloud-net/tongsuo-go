@@ -51,6 +51,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - Signature and SM2 ciphertext conversion validates the complete DER structure and required fields.
 - EC JWKs encode NIST-curve coordinates and private scalars at their required fixed widths.
 - PEM-to-JWK conversion also supports OKP keys.
+- SelfSigned compares native X.509 names and explicitly releases the verification key.
 
 ---
 
