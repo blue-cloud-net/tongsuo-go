@@ -199,7 +199,7 @@ API 层内部存在必须先拿到 `*core.PKey` 才能工作的场景（如 `ecd
 证书句柄走同构的 `internal/certaccess`：`Certificate(v any) (*core.Certificate, bool)`
 供 `tls` / `pkcs/pkcs7` / `pkcs/pkcs12` 取句柄，反向的 `Wrap(*core.Certificate)` 用
 **DER 往返**产出 owned 副本（因此 `x509.Certificate.CoreCertificate()` 是**已接受的残余**：
-方法虽在 godoc，但外部模块无法 import `internal/core`，拿到也用不了；且 owned 副本语义与
+外部调用方可以借助类型推断访问借用对象，须遵守不得关闭或修改的约定。owned 副本语义与
 `tls.peerCertificateChain` 声明的契约「每个返回的证书由调用方各自 `Close`」一致）。
 
 #### `0.9.0` TLS / NTLS 连接模型（已发布，2026-11-06）

@@ -13,8 +13,7 @@
 //
 // 方案：用结构化接口满足 + 集中断言点。`x509.Certificate` 提供导出方法
 // `CoreCertificate() *core.Certificate`（宿主类型已导出，因此该方法会出现在
-// `go doc` 中——这是**已接受的残余瑕疵**，理由见 roadmap §5.2：外部包即使断言
-// 成功也无法 import `internal/core`，拿到句柄也用不了），本包对该形状做类型断言。
+// `go doc` 中。外部调用方可通过类型推断访问返回对象，仍须遵守借用约定），本包对该形状做类型断言。
 //
 // **所有权约定**：与 internal/keyaccess 不同，本包**不要求调用方 Dup**。
 // 证书句柄的共享语义由消费方自行处理（`SSL_CTX_use_certificate` 与
@@ -39,9 +38,8 @@
 // The mechanism is a structural interface plus a single assertion point:
 // x509.Certificate exposes an exported method
 // CoreCertificate() *core.Certificate. Because the host type is exported, the
-// method does appear in `go doc` — an accepted residual (see roadmap §5.2):
-// an external package that satisfies the assertion still cannot import
-// internal/core and therefore cannot use the handle. This package performs
+// method appears in `go doc`. External callers can access the result via
+// type inference and must respect its borrowed lifetime. This package performs
 // the type assertion on that shape.
 //
 // **Ownership**: unlike internal/keyaccess, this package does NOT require

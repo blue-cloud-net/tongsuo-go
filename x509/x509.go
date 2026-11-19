@@ -113,8 +113,7 @@ func (c *Certificate) Close() error {
 //
 // 本方法不属于稳定公共 API：它存在的唯一目的是让 tls / pkcs/pkcs7 /
 // pkcs/pkcs12 跨包取到底层句柄，而这些消费方的公开签名中不得出现 internal/ 类型
-// （roadmap §5 E1-8）。外部包即使满足该结构化断言，也无法 import internal/core，
-// 因此拿到句柄也无法使用 —— 与 roadmap §5.2「残余瑕疵（已接受）」同理。
+// （roadmap §5 E1-8）。外部调用方可通过类型推断访问返回对象。返回值借用原证书的句柄，调用方不得关闭或修改它。
 //
 // CoreCertificate returns the underlying core certificate (used by the
 // internal/certaccess bridge).
@@ -122,9 +121,8 @@ func (c *Certificate) Close() error {
 // This method is not part of the stable public API: it exists solely so that
 // tls, pkcs/pkcs7 and pkcs/pkcs12 can reach the underlying handle while no
 // public signature of those consumers mentions an internal/ type (roadmap §5,
-// E1-8). An external package that satisfies the structural assertion still
-// cannot import internal/core and therefore cannot use the result — the same
-// accepted residual as roadmap §5.2.
+// E1-8). External callers can use type inference to access the result.
+// It borrows the original certificate handle and must not be closed or mutated.
 func (c *Certificate) CoreCertificate() *core.Certificate { return c.cert }
 
 // LoadCertificatePEM 从 PEM 加载证书。
