@@ -99,13 +99,11 @@ func GenerateEC(curve string) (PrivateKey, error) {
 }
 
 // SignECDSA 使用 ECDSA-SHA256 对 data 签名，返回 ASN.1 DER 签名。
-// 摘要固定为 SHA-256（由铜锁 EVP 管线决定）；需要其它摘要的调用方须自行
-// 预哈希后再调用。
+// 函数始终使用 SHA-256 对 data 求摘要，再生成签名。
 //
 // SignECDSA produces an ECDSA-SHA256 signature over data and returns it
-// in ASN.1 DER encoding. The digest is fixed to SHA-256 by the Tongsuo
-// EVP pipeline; callers who need a different digest must hash the data
-// themselves first.
+// in ASN.1 DER encoding. The Tongsuo EVP pipeline always hashes data
+// with SHA-256 before signing.
 func SignECDSA(priv PrivateKey, data []byte) ([]byte, error) {
 	if priv == nil {
 		return nil, fmt.Errorf("asym: ec: nil private key")
