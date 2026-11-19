@@ -31,6 +31,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - TLS marks duplicated connection descriptors close-on-exec when creating them.
 - PEM parsing keeps input in a native-owned BIO buffer across cgo calls.
 - PKCS#7 certificate extraction rejects a SignedData container with missing content.
+- PKCS#12 pack and parse reject NUL in passwords, matching the password-change APIs.
 
 ---
 

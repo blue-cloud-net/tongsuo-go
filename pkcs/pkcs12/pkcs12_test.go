@@ -137,3 +137,25 @@ func TestChangePassword(t *testing.T) {
 		t.Fatal("changed password cert mismatch")
 	}
 }
+
+// TestPackAndParseRejectNULPassword 验证打包和解析拒绝含 NUL 的口令。
+//
+// TestPackAndParseRejectNULPassword verifies that pack and parse reject a NUL password.
+func TestPackAndParseRejectNULPassword(t *testing.T) {
+	cert, key, ca := buildTestCert(t)
+	defer cert.Close()
+	defer asym.Close(key)
+	defer ca.Close()
+	const password = "fixture"
+	const invalid = password + "\x00suffix"
+	if _, err := Pack(cert, key, nil, invalid, ""); err == nil {
+		t.Fatal("Pack accepted a password containing NUL")
+	}
+	der, err := Pack(cert, key, nil, password, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(der, invalid); err == nil {
+		t.Fatal("Parse accepted a password containing NUL")
+	}
+}

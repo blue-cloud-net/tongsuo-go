@@ -29,6 +29,7 @@
 - TLS 连接副本在创建时即设置 close-on-exec。
 - PEM 解析跨 cgo 调用时使用 BIO 自有的原生输入缓冲区。
 - PKCS#7 证书提取拒绝缺失 SignedData 内容的容器。
+- PKCS#12 打包和解析拒绝包含 NUL 的口令，与改密接口一致。
 
 ---
 

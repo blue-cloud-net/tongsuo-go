@@ -61,13 +61,13 @@ type Bundle struct {
 }
 
 // Pack 将证书、私钥与 CA 链打包为 PKCS#12（DER）。
-// password 为口令；name 为友好名称（可空）。
+// password 为口令；name 为友好名称（可空）。两者包含 NUL 时返回错误。
 // cert 与 key 必须非 nil；ca 中的 nil 条目会被静默跳过。
 //
 // Pack packages a certificate, private key and CA chain into a PKCS#12
 // container (DER). cert and key must be non-nil; nil entries in ca are
 // silently skipped. password is the encryption password; name is the
-// friendly name (may be empty).
+// friendly name (may be empty). A NUL in either value returns an error.
 func Pack(cert *x509.Certificate, key PrivateKey, ca []*x509.Certificate, password, name string) ([]byte, error) {
 	if cert == nil {
 		return nil, fmt.Errorf("pkcs12: nil certificate")
@@ -106,7 +106,7 @@ func Pack(cert *x509.Certificate, key PrivateKey, ca []*x509.Certificate, passwo
 // 容器不含主证书时 Certificate 为 nil。
 //
 // 实现上先把内部句柄经 internal/keyaccess 的 PEM 往返换成 asym 对象
-// （roadmap §5 E1-12：字段由原生句柄改为 asym.PrivateKey）。
+// （roadmap §5 E1-12：字段由原生句柄改为 asym.PrivateKey）。口令包含 NUL 时返回错误。
 //
 // Parse parses a PKCS#12 container from DER. On success it returns a Bundle
 // whose PrivateKey field is an asym.PrivateKey (release it with asym.Close);
@@ -114,7 +114,7 @@ func Pack(cert *x509.Certificate, key PrivateKey, ca []*x509.Certificate, passwo
 //
 // Internally the raw handle goes through internal/keyaccess's PEM round trip to
 // become an asym value (roadmap §5, E1-12: the field changed from the native
-// handle to asym.PrivateKey).
+// handle to asym.PrivateKey). A password containing NUL returns an error.
 func Parse(data []byte, password string) (*Bundle, error) {
 	p12, err := core.LoadPKCS12DER(data)
 	if err != nil {

@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"runtime"
+	"strings"
 	"unsafe"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
@@ -118,6 +119,9 @@ func CreatePKCS12(pass, name string, key *PKey, cert *Certificate, ca []*Certifi
 			caPtrs = append(caPtrs, c.handle.Ptr())
 		}
 	}
+	if strings.IndexByte(pass, 0) >= 0 || strings.IndexByte(name, 0) >= 0 {
+		return nil, fmt.Errorf("pkcs12: NUL in password or name")
+	}
 	p := native.X_PKCS12_create(pass, name, key.handle.Ptr(), cert.handle.Ptr(), caPtrs)
 	if p == nil {
 		return nil, NewOpError("pkcs12: PKCS12_create", native.PopError())
@@ -169,6 +173,9 @@ func (p *PKCS12) MarshalDER() ([]byte, error) {
 func (p *PKCS12) Parse(pass string) (*PKey, *Certificate, []*Certificate, error) {
 	if p == nil || p.handle == nil || p.handle.IsClosed() {
 		return nil, nil, nil, fmt.Errorf("pkcs12: closed")
+	}
+	if strings.IndexByte(pass, 0) >= 0 {
+		return nil, nil, nil, fmt.Errorf("pkcs12: NUL in password")
 	}
 	pkey, cert, caSk, ok := native.X_PKCS12_parse(p.handle.Ptr(), pass)
 	if !ok {
@@ -227,6 +234,9 @@ func (p *PKCS12) ChangePassword(oldPass, newPass string) error {
 func (p *PKCS12) SetMAC(pass string) error {
 	if p == nil || p.handle == nil || p.handle.IsClosed() {
 		return fmt.Errorf("pkcs12: closed")
+	}
+	if strings.IndexByte(pass, 0) >= 0 {
+		return fmt.Errorf("pkcs12: NUL in password")
 	}
 	if !native.PKCS12_set_mac(p.handle.Ptr(), pass) {
 		return NewOpError("pkcs12: PKCS12_set_mac", native.PopError())
@@ -473,6 +483,9 @@ func CreatePKCS12WithOptions(pass, name string, key *PKey, cert *Certificate, ca
 	nid := native.OBJ_txt2nid(pbe)
 	if nid <= 0 || iter <= 0 {
 		return nil, fmt.Errorf("pkcs12: invalid PBE or iterations")
+	}
+	if strings.IndexByte(pass, 0) >= 0 || strings.IndexByte(name, 0) >= 0 {
+		return nil, fmt.Errorf("pkcs12: NUL in password or name")
 	}
 	p := native.X_PKCS12_create_options(pass, name, key.handle.Ptr(), cert.handle.Ptr(), caPtrs, nid, iter)
 	if p == nil {
