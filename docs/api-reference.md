@@ -611,7 +611,7 @@
 
 **生命周期**
 
-- ➕ `func Close(k Key) error` — 释放密钥持有的底层原生句柄（幂等；`k` 为 nil 或未持句柄时返回 nil）。之前本包**完全没有释放入口**，释放只能靠 finalizer 兜底，违反 AGENTS.md §4.4；缺口记录见 `docs/issues/2026-09-24/P1006`
+- ➕ `func Close(k Key) error` — 释放密钥持有的底层原生句柄（幂等；`k` 为 nil 或未持句柄时返回 nil）。资源敏感的调用方应显式释放。
   - ⚠️ **别名陷阱**：`priv.Public()` 返回的公钥**共享同一底层句柄**（不做 Dup），对二者之一 `Close` 即释放该共享句柄、另一个随之失效；需要「销毁别名不影响原件」时请经 `internal/keyaccess` 取句柄后自行 `EVP_PKEY_dup`（`ecdh` 即如此），而不要依赖 `Public()`
   - 取包级函数而非接口方法的理由：三个接口刻意保持最小，把 `Close` 做成接口方法会让「可关闭」成为公开契约并需在 14 个具体类型上各补实现；包级函数返回值只有 `error`、**不暴露句柄**，导出面最小
 
@@ -854,7 +854,7 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
 > *Certificate, hash string) ([]byte, error)`，不返回 `*Request`；而原 `ocsp` 包也
 > 不存在所谓「隐式请求类型」（`ocsp.CreateRequest` 返回的就是 `[]byte`）。二者矛盾，
 > 已按可执行的那一条收敛：**OCSP 请求在公开层就是一段 DER 字节**，调用方直接 POST，
-> 无需句柄语义。详见 `docs/issues/2026-09-24/P1007`。
+> 无需句柄语义。
 
 **类型｜链验证**
 
@@ -1439,8 +1439,7 @@ Verify/Decrypt 接受 DER/PKCS7 PEM，二进制输入不做换行转换；分离
 与 .NET `RSAKeyValue` 格式双向互转。**密钥参数由 `*crypto/rsa.PrivateKey` /
 `*crypto/rsa.PublicKey` 改为 `asym.PrivateKey` / `asym.PublicKey`**——原签名直接
 引用本库自己的 `crypto/rsa`（commit 21 删除），不换不可能；实现内部仍以 PKCS#1 /
-SPKI PEM 往返 + `asym.Load*KeyPEM` 落地，**零新增 API、零新增 cgo**（详见
-`docs/issues/2026-09-24/P1009`）。
+SPKI PEM 往返 + `asym.Load*KeyPEM` 落地，**零新增 API、零新增 cgo**。
 
 **函数**
 

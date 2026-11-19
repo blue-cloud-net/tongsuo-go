@@ -12,7 +12,7 @@
 | GoDoc 注释、命名、cgo、核心层、错误、内存、代码风格 | `docs/development-guide.md` |
 | 测试组织、各算法必测用例、标准向量来源 | `docs/testing-guide.md` |
 | 双语 GoDoc 段式细则、八条规则、中英对照词典 | `docs/bilingual-doc-guide.md` |
-| 历史审计发现（19 份报告） | `docs/issues/2026-09-18/` |
+| 本地审计报告（按日期生成，Git 忽略） | `docs/issues/` |
 
 ---
 
