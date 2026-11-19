@@ -113,13 +113,13 @@ func main() {
 			log.Printf("server handshake err: %v", err)
 			return
 		}
+		defer conn.Close()
 		if tc, ok := conn.(*tls.Conn); ok {
 			if err := tc.Handshake(); err != nil {
 				log.Printf("server handshake: %v", err)
 				return
 			}
 		}
-		defer conn.Close()
 
 		buf := make([]byte, 4096)
 		for {

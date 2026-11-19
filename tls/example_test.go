@@ -23,15 +23,23 @@ import (
 // deployments should keep the signing and encryption keys distinct.
 func ExampleDial() {
 	// 生成密钥
-	signPriv, _ := asym.GenerateSM2()
-	encPriv, _ := asym.GenerateSM2()
-
+	signPriv, err := asym.GenerateSM2()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	defer asym.Close(signPriv)
+	encPriv, err := asym.GenerateSM2()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	defer asym.Close(encPriv)
 
 	// 自签证书（实际应用：CA 签发）
 	now := time.Now()
 	subject := x509.NewName().Add("CN", "example.com")
+	defer subject.Close()
 	build := func(priv asym.PrivateKey, serial int64, usage string) (*x509.Certificate, error) {
 		cert := x509.NewCertificate()
 		steps := []func() error{
@@ -71,19 +79,34 @@ func ExampleDial() {
 		EncCert: encCert, EncKey: encPriv,
 	}
 
-	// 回环 listener
-	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	defer ln.Close()
 
-	// 服务端
-	srv, _ := tls.NewServer(cfg)
+	srv, err := tls.NewServer(cfg)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	defer srv.Close()
+	serverDone := make(chan error, 1)
 	go func() {
-		raw, _ := ln.Accept()
-		conn, _ := srv.Accept(raw)
-		if tc, ok := conn.(*tls.Conn); ok {
-			_ = tc.Handshake()
+		raw, err := ln.Accept()
+		if err != nil {
+			serverDone <- err
+			return
 		}
+		conn, err := srv.Accept(raw)
+		if err != nil {
+			_ = raw.Close()
+			serverDone <- err
+			return
+		}
+		defer conn.Close()
+		serverDone <- conn.(*tls.Conn).Handshake()
 	}()
 
 	// 客户端
@@ -93,6 +116,10 @@ func ExampleDial() {
 		return
 	}
 	defer c.Close()
+	if err := <-serverDone; err != nil {
+		fmt.Println("server:", err)
+		return
+	}
 
 	// 双方版本与套件
 	cc, ok := c.(*tls.Conn)
