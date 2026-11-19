@@ -1005,6 +1005,17 @@ func crtParams(d, p, q, ex1, ex2, co1 *big.Int) (dmp1, dmq1, iqmp *big.Int) {
 // scalar and the public affine coordinates. See KeyParams for the
 // populated fields.
 func (k *PKey) Params() *KeyParams {
+	return k.params(true)
+}
+
+// PublicParams 返回密钥的公开参数快照。密钥为空或已关闭时返回 nil。
+//
+// PublicParams returns the public key parameters, or nil for a nil or closed key.
+func (k *PKey) PublicParams() *KeyParams {
+	return k.params(false)
+}
+
+func (k *PKey) params(includePrivate bool) *KeyParams {
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil
 	}
@@ -1012,6 +1023,9 @@ func (k *PKey) Params() *KeyParams {
 	if p.Type == "RSA" {
 		p.N = bnParam(k, "n")
 		p.E = bnParam(k, "e")
+		if !includePrivate {
+			return p
+		}
 		p.D = bnParam(k, "d")
 		// provider 暴露的素因子参数名为 rsa-factor1/rsa-factor2。
 		p.P = bnParam(k, "rsa-factor1")
@@ -1030,7 +1044,9 @@ func (k *PKey) Params() *KeyParams {
 	if curve, ok := native.EVP_PKEY_get_utf8_string_param(k.handle.Ptr(), "group"); ok {
 		p.Curve = curve
 	}
-	p.D = bnParam(k, "priv")
+	if includePrivate {
+		p.D = bnParam(k, "priv")
+	}
 	// 公钥仿射坐标直接以 BIGNUM 参数 qx/qy 读取（OSSL_PKEY_PARAM_EC_PUB_X/PUB_Y），
 	// 兼容不同 Tongsuo 版本：8.4 的 EC/SM2 provider 以压缩点（0x02/0x03）导出 "pub"
 	// 参数、8.5 起以未压缩点（0x04）导出；而 qx/qy 仿射坐标在两个版本下均可取到，

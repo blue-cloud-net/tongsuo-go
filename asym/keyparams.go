@@ -15,9 +15,7 @@ import (
 //	EC / SM2    Curve / X / Y / D
 //	Ed25519 等  Type 仅为算法名，数值字段留空（请改用 RawPrivateKey / RawPublicKey）
 //
-// 公钥视图仅填充公开分量；私钥视图额外填充私钥分量。注意若公钥由私钥的
-// Public() 取得（共享底层句柄），其 D 等私钥分量同样可见——需要「仅公开分量」
-// 的快照时，请从 SPKI PEM 独立加载公钥后再调用 Params。
+// 公钥视图仅填充公开分量，包括由 Public() 取得的公钥。私钥视图额外填充私钥分量。
 //
 // KeyParams is a public parameter snapshot of a key that does not depend
 // on any internal type.
@@ -29,11 +27,8 @@ import (
 //	Ed25519 et al. only Type carries the algorithm name; the numeric
 //	               fields stay nil (use RawPrivateKey / RawPublicKey)
 //
-// A public-key view fills only the public components while a private-key
-// view additionally fills the private ones. Note that a public key obtained
-// from a private key's Public() shares the underlying handle, so private
-// components such as D remain visible; for a public-only snapshot, load the
-// public key independently from SPKI PEM and then call Params.
+// A public-key view, including one returned by Public(), fills only
+// public components. A private-key view additionally fills private components.
 type KeyParams struct {
 	Type string // "RSA" / "EC" / "SM2" / "ED25519" / ...
 
@@ -90,7 +85,11 @@ func Params(key Key) (*KeyParams, error) {
 	if key == nil {
 		return nil, fmt.Errorf("asym: nil key")
 	}
-	return keyParamsFromCore(key.corePKey().Params()), nil
+	pk := key.corePKey()
+	if _, ok := key.(PrivateKey); ok {
+		return keyParamsFromCore(pk.Params()), nil
+	}
+	return keyParamsFromCore(pk.PublicParams()), nil
 }
 
 // Match 判断私钥的公钥分量是否与给定公钥一致（算法无关，nil-safe）。

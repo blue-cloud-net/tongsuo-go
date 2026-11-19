@@ -22,6 +22,10 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Public key views returned by `Public()` now expose only public parameters in `asym.Params` and JWK exports.
+
 ---
 
 ## [0.13.0] - 2026-11-19

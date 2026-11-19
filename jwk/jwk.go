@@ -66,11 +66,16 @@ type Key struct {
 // It used to be exported as Marshal(key *core.PKey) and was made package-private
 // because no public signature may mention an internal/ type (roadmap §5, E1-7);
 // the public entry point is MarshalKey.
-func marshalCore(key *core.PKey) (*Key, error) {
+func marshalCore(key *core.PKey, includePrivate bool) (*Key, error) {
 	if key == nil {
 		return nil, fmt.Errorf("jwk: nil key")
 	}
-	p := key.Params()
+	var p *core.KeyParams
+	if includePrivate {
+		p = key.Params()
+	} else {
+		p = key.PublicParams()
+	}
 	if p == nil {
 		return nil, fmt.Errorf("jwk: failed to read key params")
 	}
@@ -148,7 +153,8 @@ func MarshalKey(k asym.Key) (*Key, error) {
 	if !ok || pk == nil {
 		return nil, fmt.Errorf("jwk: unsupported key type %T", k)
 	}
-	return marshalCore(pk)
+	_, includePrivate := k.(asym.PrivateKey)
+	return marshalCore(pk, includePrivate)
 }
 
 // Parse 解析 JWK JSON。
@@ -359,7 +365,7 @@ func FromPEM(pemBytes []byte) (*Key, error) {
 		return nil, fmt.Errorf("jwk: unsupported PEM: %w", err)
 	}
 	defer pk.Close()
-	return marshalCore(pk)
+	return marshalCore(pk, true)
 }
 
 // b64 将大整数编码为 base64url（无填充）。
