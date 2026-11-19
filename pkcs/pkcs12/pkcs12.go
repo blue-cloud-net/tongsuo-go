@@ -1,11 +1,12 @@
 // Package pkcs12 基于铜锁原生实现实现 PKCS#12 容器（.p12 / .pfx）。
 // 提供打包（证书 + 私钥 + CA 链 + 口令）、解析与改密。输入输出均为 DER 编码，
-// 与 `openssl pkcs12` 互通。
+// 与 `openssl pkcs12` 互通。口令以 string 传入，调用者无法原地清零该字符串。
 //
 // Package pkcs12 implements the PKCS#12 container (.p12 / .pfx) backed by the
 // Tongsuo native library. It provides Pack (certificate + private key + CA
 // chain + password), Parse and ChangePassword; inputs and outputs are DER
-// and interoperable with `openssl pkcs12`.
+// and interoperable with `openssl pkcs12`. Passwords are passed as strings
+// and cannot be cleared in place.
 package pkcs12
 
 import (
@@ -51,9 +52,11 @@ type PrivateKey = asym.PrivateKey
 // Bundle 表示解析后的 PKCS#12 内容。
 //
 // PrivateKey 为 asym.PrivateKey（拥有自己的底层句柄，调用方需用 asym.Close 释放）。
+// 调用方也负责关闭 Certificate 和 CACerts 中的每张非 nil 证书。
 //
 // Bundle is the parsed content of a PKCS#12 container. PrivateKey is an
 // asym.PrivateKey owning its underlying handle; release it with asym.Close.
+// The caller must also close the non-nil Certificate and each certificate in CACerts.
 type Bundle struct {
 	PrivateKey  asym.PrivateKey     // 私钥（调用方负责 asym.Close）
 	Certificate *x509.Certificate   // 主证书
