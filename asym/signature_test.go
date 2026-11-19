@@ -242,3 +242,17 @@ func TestSignatureWidthOverflow(t *testing.T) {
 		t.Fatal("expected an error for overflowing signature width")
 	}
 }
+
+// TestSignatureExactDER 验证签名转换要求两个正整数。
+//
+// TestSignatureExactDER verifies that conversion requires exactly two positive integers.
+func TestSignatureExactDER(t *testing.T) {
+	for _, sig := range [][]byte{
+		{0x30, 0x09, 0x02, 0x01, 1, 0x02, 0x01, 1, 0x02, 0x01, 1},
+		{0x30, 0x06, 0x02, 0x01, 0, 0x02, 0x01, 1},
+	} {
+		if _, _, err := SignatureParts(sig); err == nil {
+			t.Fatal("accepted a signature outside the DER signature format")
+		}
+	}
+}

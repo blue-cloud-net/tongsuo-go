@@ -55,6 +55,7 @@ var DefaultID = DefaultSM2ID
 // private because they only matter to Format / EncryptWithOrder /
 // DecryptWithOrder.
 const (
+	sm2HashLen           = 32   // C3 摘要字节长度
 	sm2CoordBytes        = 32   // 单坐标字节长度
 	sm2C1UncompressedLen = 65   // 未压缩 C1 点（0x04 前缀 + X + Y）
 	sm2C1CompressedLen   = 33   // 压缩 C1 点（0x02/0x03 前缀 + X）

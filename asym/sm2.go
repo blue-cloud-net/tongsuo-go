@@ -249,11 +249,17 @@ func parseSM2DER(ct []byte) (*sm2Cipher, error) {
 		Hash []byte
 		CT   []byte
 	}
-	if _, err := asn1.Unmarshal(ct, &s); err != nil {
+	if err := unmarshalExactDER(ct, &s); err != nil {
 		return nil, fmt.Errorf("asym: sm2: invalid DER ciphertext: %w", err)
 	}
 	if s.X == nil || s.Y == nil {
 		return nil, fmt.Errorf("asym: sm2: invalid DER ciphertext: missing coordinates")
+	}
+	if s.X.Sign() < 0 || s.Y.Sign() < 0 {
+		return nil, fmt.Errorf("asym: sm2: invalid DER ciphertext: negative coordinate")
+	}
+	if len(s.Hash) != sm2HashLen {
+		return nil, fmt.Errorf("asym: sm2: invalid DER ciphertext: incorrect digest length")
 	}
 	x := s.X.Bytes()
 	y := s.Y.Bytes()
