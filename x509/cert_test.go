@@ -706,3 +706,22 @@ func TestCertificateNonASCIISubjectRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// TestCertificateCloseContract 验证公开证书关闭幂等且关闭后拒绝序列化。
+//
+// TestCertificateCloseContract verifies idempotent Close and rejects serialization after Close.
+func TestCertificateCloseContract(t *testing.T) {
+	var nilCertificate *Certificate
+	if err := nilCertificate.Close(); err != nil {
+		t.Fatal(err)
+	}
+	c := NewCertificate()
+	for i := 0; i < 2; i++ {
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if der, err := c.MarshalDER(); err == nil || der != nil {
+		t.Fatal("MarshalDER on a closed certificate should return an error")
+	}
+}
