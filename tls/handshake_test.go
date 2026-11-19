@@ -706,18 +706,66 @@ func TestHandshakeWriteTimeoutIsTerminal(t *testing.T) {
 	if err := s.UnderlyingConn().(*net.TCPConn).SetReadBuffer(4096); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+	payload := make([]byte, 8<<20)
+	watchdog := time.Now().Add(5 * time.Second)
+	if err := c.SetWriteDeadline(watchdog); err != nil {
 		t.Fatal(err)
 	}
-	n, err := c.Write(make([]byte, 8<<20))
-	if n >= 8<<20 || !errors.Is(err, os.ErrDeadlineExceeded) {
-		t.Fatalf("write=%d err=%v", n, err)
+	if err := s.SetReadDeadline(watchdog); err != nil {
+		t.Fatal(err)
+	}
+	type writeResult struct {
+		n   int
+		err error
+	}
+	done := make(chan writeResult, 1)
+	go func() {
+		n, err := c.Write(payload)
+		done <- writeResult{n, err}
+	}()
+	// Reading a byte proves that the native write has started.
+	if _, err := io.ReadFull(s, make([]byte, 1)); err != nil {
+		t.Fatalf("waiting for the write to start: %v", err)
+	}
+	if err := c.SetWriteDeadline(time.Now().Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case result := <-done:
+		if result.n >= len(payload) || !errors.Is(result.err, os.ErrDeadlineExceeded) {
+			t.Fatalf("write=%d err=%v", result.n, result.err)
+		}
+	case <-time.After(time.Until(watchdog)):
+		t.Fatal("write did not return after its deadline")
 	}
 	if err := c.SetWriteDeadline(time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	if n, retry := c.Write([]byte("different")); n != 0 || !errors.Is(retry, os.ErrDeadlineExceeded) {
 		t.Fatalf("retry=%d err=%v", n, retry)
+	}
+}
+
+// TestHandshakeWriteDeadlineBeforeNativeWrite 验证写入开始前超时后可以恢复写入。
+//
+// TestHandshakeWriteDeadlineBeforeNativeWrite verifies writes can resume after a pre-write timeout.
+func TestHandshakeWriteDeadlineBeforeNativeWrite(t *testing.T) {
+	c, _, ce, se := handshakePair(t, testServerConfig(t), &Config{Verification: VerifyNone})
+	if ce != nil || se != nil {
+		t.Fatalf("client=%v server=%v", ce, se)
+	}
+	if err := c.SetWriteDeadline(time.Now().Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte("different")
+	if n, err := c.Write(payload); n != 0 || !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("write=%d err=%v", n, err)
+	}
+	if err := c.SetWriteDeadline(time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := c.Write(payload); n != len(payload) || err != nil {
+		t.Fatalf("retry=%d err=%v", n, err)
 	}
 }
 
