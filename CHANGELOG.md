@@ -36,6 +36,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - Key parameter queries return an error for closed keys.
 - The DER viewer rejects overflowing tags and non-minimal tag or length encodings.
 - Signature conversion reports an error when the output width would overflow.
+- Cipher suite ID lookup interprets unprefixed numbers as decimal, including leading zeros.
 
 ---
 

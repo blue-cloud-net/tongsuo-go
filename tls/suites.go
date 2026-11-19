@@ -212,9 +212,12 @@ func CipherSuiteByName(name string) (CipherSuiteInfo, error) {
 // else (including cipher names) yields (0, false), meaning the caller should
 // match by name instead.
 func parseCipherSuiteID(s string) (uint16, bool) {
-	// base 0 同时接受 "0x1301"（十六进制）与 "4865"（十进制），但**不**把
-	// 无前缀的 "1301" 当十六进制。
-	v, err := strconv.ParseUint(s, 0, 16)
+	base := 10
+	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
+		base = 16
+		s = s[2:]
+	}
+	v, err := strconv.ParseUint(s, base, 16)
 	if err != nil {
 		return 0, false
 	}

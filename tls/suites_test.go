@@ -39,7 +39,7 @@ func TestCipherSuiteByName(t *testing.T) {
 	}
 
 	// 按 ID：0x 前缀十六进制与十进制两种写法等价（0x1301 == 4865）。
-	for _, idText := range []string{"0x1301", "0X1301", "4865"} {
+	for _, idText := range []string{"0x1301", "0X1301", "4865", "04865"} {
 		got, err := CipherSuiteByName(idText)
 		if err != nil {
 			t.Fatalf("CipherSuiteByName(%q): %v", idText, err)
