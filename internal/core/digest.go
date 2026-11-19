@@ -208,6 +208,8 @@ func (d *Digest) BlockSize() int { return d.block }
 // already-released handle; underlying OpenSSL failures are wrapped as
 // OpError.
 func (d *Digest) OneShot(data []byte) ([]byte, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(d)
 
 	if d == nil || d.handle == nil || d.handle.IsClosed() {
@@ -231,6 +233,8 @@ func (d *Digest) OneShot(data []byte) ([]byte, error) {
 // returns "digest: invalid digest"; underlying failures are wrapped as
 // OpError.
 func (d *Digest) XOFOneShot(data []byte, outLen int) ([]byte, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(d)
 
 	if d == nil || d.handle == nil || d.handle.IsClosed() {
@@ -281,6 +285,8 @@ type DigestCtx struct {
 // or an already-closed d yields the error "digest: invalid digest";
 // failures from the binding layer are wrapped as OpError.
 func NewDigestCtx(d *Digest) (*DigestCtx, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(d)
 
 	if d == nil || d.handle == nil || d.handle.IsClosed() {
@@ -306,6 +312,8 @@ func NewDigestCtx(d *Digest) (*DigestCtx, error) {
 // "digest: context closed" when the context has been released and
 // wraps any underlying OpenSSL failure as OpError.
 func (c *DigestCtx) Update(data []byte) error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c.handle.IsClosed() {
@@ -325,6 +333,8 @@ func (c *DigestCtx) Update(data []byte) error {
 // internally so that Final may still be invoked afterwards. The result
 // has length Digest.Size().
 func (c *DigestCtx) Sum() ([]byte, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c.handle.IsClosed() {
@@ -354,6 +364,8 @@ func (c *DigestCtx) Sum() ([]byte, error) {
 // with the same digest) or Close before any further Update call;
 // otherwise subsequent operations are undefined.
 func (c *DigestCtx) Final() ([]byte, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c.handle.IsClosed() {
@@ -374,6 +386,8 @@ func (c *DigestCtx) Final() ([]byte, error) {
 // algorithm bound to the context, so the receiver may be reused for a
 // new digest computation.
 func (c *DigestCtx) Reset() error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c.handle.IsClosed() {

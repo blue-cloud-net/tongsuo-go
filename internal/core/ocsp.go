@@ -33,6 +33,8 @@ type OCSPRequest struct {
 // already closed, or a wrapped OpError when the underlying OpenSSL
 // calls fail.
 func CreateOCSPRequest(cert, issuer *Certificate, hash string) (*OCSPRequest, error) {
+	defer nativeErrorScope()()
+
 	if cert == nil || cert.handle == nil || cert.handle.IsClosed() {
 		return nil, fmt.Errorf("ocsp: invalid certificate")
 	}
@@ -76,6 +78,8 @@ func CreateOCSPRequest(cert, issuer *Certificate, hash string) (*OCSPRequest, er
 // request has been released; underlying OpenSSL failures are wrapped
 // as OpError.
 func (r *OCSPRequest) MarshalDER() ([]byte, error) {
+	defer nativeErrorScope()()
+
 	if r == nil || r.handle == nil || r.handle.IsClosed() {
 		return nil, fmt.Errorf("ocsp: request closed")
 	}
@@ -120,6 +124,8 @@ type OCSPResponse struct {
 // failures (malformed DER, unsupported response type) are wrapped as
 // OpError.
 func LoadOCSPResponseDER(der []byte) (*OCSPResponse, error) {
+	defer nativeErrorScope()()
+
 	p := native.D2i_OCSP_RESPONSE(der)
 	if p == nil {
 		return nil, NewOpError("ocsp: d2i_OCSP_RESPONSE", native.PopError())
@@ -196,6 +202,8 @@ type CertStatus struct {
 // CreateOCSPRequest match, and offline parsing (without the request
 // context) works too.
 func (r *OCSPResponse) Check(cert, issuer *Certificate) (*CertStatus, error) {
+	defer nativeErrorScope()()
+
 	if r == nil || r.handle == nil || r.handle.IsClosed() {
 		return nil, fmt.Errorf("ocsp: response closed")
 	}
@@ -282,6 +290,8 @@ func (r *OCSPResponse) ProducedAt() time.Time {
 // "ocsp: response closed" is returned when the response has been
 // released; underlying OpenSSL failures are wrapped as OpError.
 func (r *OCSPResponse) ResponderCerts() ([]*Certificate, error) {
+	defer nativeErrorScope()()
+
 	if r == nil || r.handle == nil || r.handle.IsClosed() {
 		return nil, fmt.Errorf("ocsp: response closed")
 	}
@@ -325,6 +335,8 @@ func (r *OCSPResponse) ResponderCerts() ([]*Certificate, error) {
 // is nil or closed, or a wrapped OpError when OCSP_basic_verify
 // reports a signature / chain failure.
 func (r *OCSPResponse) Verify(roots *Store, certs []*Certificate) error {
+	defer nativeErrorScope()()
+
 	if r == nil || r.handle == nil || r.handle.IsClosed() {
 		return fmt.Errorf("ocsp: response closed")
 	}

@@ -12,6 +12,8 @@ import (
 //
 // AddTrust adds a trusted or rejected purpose; closed certificates return errors.
 func (c *Certificate) AddTrust(purpose string, reject bool) error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return fmt.Errorf("x509: certificate closed")
@@ -41,6 +43,8 @@ func (c *Certificate) ClearTrust(reject bool) error {
 //
 // MarshalTrustedPEM exports PEM with local trust attributes, which are outside the certificate signature.
 func (c *Certificate) MarshalTrustedPEM() ([]byte, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return nil, fmt.Errorf("x509: certificate closed")
@@ -60,6 +64,8 @@ func (c *Certificate) MarshalTrustedPEM() ([]byte, error) {
 //
 // LoadTrustedCertificatePEM loads ordinary or TRUSTED CERTIFICATE PEM; callers must Close it.
 func LoadTrustedCertificatePEM(data []byte) (*Certificate, error) {
+	defer nativeErrorScope()()
+
 	bio := native.BIO_new(native.BIO_s_mem())
 	if bio == nil {
 		return nil, NewOpError("x509: BIO_new", native.PopError())

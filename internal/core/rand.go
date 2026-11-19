@@ -30,6 +30,8 @@ import (
 // exposed to the public crypto/rand package so that the latter does not
 // need to import internal/native.
 func RandomBytes(b []byte) error {
+	defer nativeErrorScope()()
+
 	if !native.RAND_bytes_ex(b) {
 		return NewOpError("rand: RAND_bytes_ex", native.PopError())
 	}

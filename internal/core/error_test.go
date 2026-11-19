@@ -2,6 +2,8 @@ package core
 
 import (
 	"errors"
+	"github.com/blue-cloud-net/tongsuo-go/internal/native"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -80,5 +82,23 @@ func TestOpErrorImplementsError(t *testing.T) {
 	var e error = NewOpError("test: iface", 0)
 	if !strings.Contains(e.Error(), "test: iface") {
 		t.Fatalf("Error() should contain op: %q", e.Error())
+	}
+}
+
+// TestNativeErrorScopeClearsQueue 验证一次成功的操作清理线程里的残留错误。
+//
+// TestNativeErrorScopeClearsQueue checks cleanup of stale thread-local errors.
+func TestNativeErrorScopeClearsQueue(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	defer native.ERR_clear_error()
+	if md := native.EVP_MD_Fetch("tongsuo-go-test-unknown-digest"); md != nil {
+		t.Fatal("unexpected digest match")
+	}
+	if err := RandomBytes(make([]byte, 8)); err != nil {
+		t.Fatal(err)
+	}
+	if code := native.PopError(); code != 0 {
+		t.Fatalf("stale native error left in queue: %#x", code)
 	}
 }

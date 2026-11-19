@@ -53,6 +53,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - PEM-to-JWK conversion also supports OKP keys.
 - SelfSigned compares native X.509 names and explicitly releases the verification key.
 - Native primitive operations keep owning Go handles live until the final native access.
+- Non-TLS operations collect native error codes on the same thread and isolate the error queue per operation.
 
 ---
 

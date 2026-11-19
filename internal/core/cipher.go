@@ -390,6 +390,8 @@ type CipherCtx struct {
 // for mismatched sizes, or a wrapped OpError when the underlying
 // OpenSSL call fails.
 func NewCipherCtx(c *Cipher, key, iv []byte, enc bool) (*CipherCtx, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
@@ -427,6 +429,8 @@ func NewCipherCtx(c *Cipher, key, iv []byte, enc bool) (*CipherCtx, error) {
 // "cipher: context closed" when the context has been released;
 // underlying OpenSSL failures are wrapped as OpError.
 func (c *CipherCtx) SetPadding(pad bool) error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c.handle.IsClosed() {
@@ -455,6 +459,8 @@ func (c *CipherCtx) SetPadding(pad bool) error {
 // un-verified. Returns "cipher: context closed" when the context has
 // been released; underlying OpenSSL failures are wrapped as OpError.
 func (c *CipherCtx) Update(in []byte) ([]byte, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c.handle.IsClosed() {
@@ -485,6 +491,8 @@ func (c *CipherCtx) Update(in []byte) ([]byte, error) {
 // after Update(s) and before Close. Returns "cipher: context closed"
 // when the context has been released.
 func (c *CipherCtx) Final() ([]byte, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c.handle.IsClosed() {
@@ -581,6 +589,8 @@ func (c *CipherCtx) Close() error {
 // concurrent use: the implementation keeps an untouched "template"
 // context and copies it on every Encrypt/Decrypt call.
 func (c *CipherCtx) Clone() (*CipherCtx, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
@@ -631,6 +641,8 @@ func (c *CipherCtx) Clone() (*CipherCtx, error) {
 // "cipher: empty nonce" for a zero-length nonce, or a wrapped OpError
 // when the underlying OpenSSL call fails.
 func NewGcmCtx(c *Cipher, key, nonce []byte, enc bool) (*CipherCtx, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
@@ -720,6 +732,8 @@ func NewGcmCtx(c *Cipher, key, nonce []byte, enc bool) (*CipherCtx, error) {
 // (pad is forced to false). The returned *CipherCtx owns the underlying
 // EVP_CIPHER_CTX and the caller MUST invoke Close.
 func NewCCMCtx(c *Cipher, key, nonce []byte, plaintextLen, tagLen int, enc bool) (*CipherCtx, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
@@ -781,6 +795,8 @@ func NewCCMCtx(c *Cipher, key, nonce []byte, plaintextLen, tagLen int, enc bool)
 // setCCMLength tells CCM the total length through an update with an empty
 // output and empty input.
 func setCCMLength(ctx unsafe.Pointer, n int, enc bool) error {
+	defer nativeErrorScope()()
+
 	if !native.EVP_CipherSetLength(ctx, n, enc) {
 		return NewOpError("cipher: CCM set total length", native.PopError())
 	}
@@ -797,6 +813,8 @@ func setCCMLength(ctx unsafe.Pointer, n int, enc bool) error {
 // EVP_CIPHER_CTX. Returns "cipher: context closed" when the context has
 // been released; underlying OpenSSL failures are wrapped as OpError.
 func (c *CipherCtx) SetIVLength(n int) error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c.handle.IsClosed() {
@@ -823,6 +841,8 @@ func (c *CipherCtx) SetIVLength(n int) error {
 // closed" when the context has been released; OpenSSL failures are
 // wrapped as OpError.
 func (c *CipherCtx) SetAad(aad []byte) error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c.handle.IsClosed() {
@@ -845,6 +865,8 @@ func (c *CipherCtx) SetAad(aad []byte) error {
 // released, "cipher: empty tag buffer" for a zero-length slice, or a
 // wrapped OpError when the underlying ctrl fails.
 func (c *CipherCtx) GetTag(tag []byte) error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c.handle.IsClosed() {
@@ -872,6 +894,8 @@ func (c *CipherCtx) GetTag(tag []byte) error {
 // "cipher: empty tag" for a zero-length slice, or a wrapped OpError
 // when the underlying ctrl fails.
 func (c *CipherCtx) SetTag(tag []byte) error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c.handle.IsClosed() {

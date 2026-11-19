@@ -18,6 +18,8 @@ func FetchCipher(name string) *Cipher { return newCipherOwned(native.EVP_CIPHER_
 // NewAEADCtx creates an OCB or SIV context, setting the tag before decryption.
 // The caller must Close it; native failures return OpError.
 func NewAEADCtx(c *Cipher, key, nonce, tag []byte, enc bool, siv bool) (*CipherCtx, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 	if c == nil || c.handle.IsClosed() || len(key) != c.KeySize() {
 		return nil, fmt.Errorf("cipher: invalid cipher or key")

@@ -44,6 +44,8 @@ func (c *Certificate) SerialBigInt() (*big.Int, error) {
 //
 // SetSerialBigInt copies and writes a positive serial, rejecting signed certificates and values over 20 octets.
 func (c *Certificate) SetSerialBigInt(serial *big.Int) error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 	if err := c.ensureMutable("set serial"); err != nil {
 		return err
@@ -61,6 +63,8 @@ func (c *Certificate) SetSerialBigInt(serial *big.Int) error {
 //
 // AddExtensionOIDDER adds raw DER before signing; invalid parameters and native failures return errors.
 func (c *Certificate) AddExtensionOIDDER(oid string, critical bool, der []byte) error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 	if err := c.ensureMutable("add extension DER"); err != nil {
 		return err
@@ -80,6 +84,8 @@ func (c *Certificate) AddExtensionOIDDER(oid string, critical bool, der []byte) 
 //
 // SetDefaultPaths loads Tongsuo trust paths; closed stores and native failures return errors.
 func (s *Store) SetDefaultPaths() error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(s)
 	if s == nil || s.handle == nil || s.handle.IsClosed() {
 		return fmt.Errorf("x509: store closed")
@@ -94,6 +100,8 @@ func (s *Store) SetDefaultPaths() error {
 //
 // LoadLocations loads a CA file/directory without implicitly trusting input chains.
 func (s *Store) LoadLocations(file, dir string) error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(s)
 	if s == nil || s.handle == nil || s.handle.IsClosed() {
 		return fmt.Errorf("x509: store closed")
@@ -111,6 +119,8 @@ func (s *Store) LoadLocations(file, dir string) error {
 //
 // ExpandSM2Point expands a validated SM2 public point through Tongsuo or returns an error.
 func ExpandSM2Point(point []byte) ([]byte, error) {
+	defer nativeErrorScope()()
+
 	out, ok := native.X_SM2_expand_point(point)
 	if !ok {
 		return nil, NewOpError("sm2: invalid compressed C1", native.PopError())
@@ -122,6 +132,8 @@ func ExpandSM2Point(point []byte) ([]byte, error) {
 //
 // ReencryptPassword changes passwords losslessly, replacing the handle only on success; empty pbe preserves algorithms.
 func (p *PKCS12) ReencryptPassword(oldPass, newPass, pbe string, iter int, name string) error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(p)
 	if p == nil || p.handle == nil || p.handle.IsClosed() {
 		return fmt.Errorf("pkcs12: closed")

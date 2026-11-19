@@ -16,6 +16,8 @@ const maxSM2DHOutputSize = 1<<31 - 1
 var ErrAlgorithmUnavailable = errors.New("core: algorithm parameters unavailable")
 
 func (k *PKey) edDSAContext(instance string, context []byte, sign bool) (*Handle, error) {
+	defer nativeErrorScope()()
+
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return nil, fmt.Errorf("pkey: key closed")
 	}
@@ -60,6 +62,8 @@ func (k *PKey) SupportsEdDSAInstance(instance string, context []byte, sign bool)
 //
 // SignEdDSAInstance signs a complete message once; ph prehashing occurs in the native provider.
 func (k *PKey) SignEdDSAInstance(msg []byte, instance string, context []byte) ([]byte, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(k)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -83,6 +87,8 @@ func (k *PKey) SignEdDSAInstance(msg []byte, instance string, context []byte) ([
 //
 // VerifyEdDSAInstance verifies a complete message using the requested instance, returning OpError on failure.
 func (k *PKey) VerifyEdDSAInstance(msg, sig []byte, instance string, context []byte) error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(k)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -103,6 +109,8 @@ func (k *PKey) VerifyEdDSAInstance(msg, sig []byte, instance string, context []b
 // DeriveSM2DH derives a key using four handles and SM3, without key-confirmation messages.
 // Callers must wipe the returned key and must not close input handles concurrently.
 func DeriveSM2DH(ephemeral, peerEphemeral, selfStatic, peerStatic *PKey, initiator bool, selfID, peerID []byte, outLen int) ([]byte, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(ephemeral)
 	defer runtime.KeepAlive(peerEphemeral)
 	defer runtime.KeepAlive(selfStatic)

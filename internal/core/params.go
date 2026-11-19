@@ -12,6 +12,8 @@ import (
 //
 // MarshalECParameters encodes EC parameters as PEM.
 func MarshalECParameters(name string, explicit bool) ([]byte, error) {
+	defer nativeErrorScope()()
+
 	bio := native.BIO_new(native.BIO_s_mem())
 	if bio == nil {
 		return nil, NewOpError("ec: BIO_new", native.PopError())
@@ -27,6 +29,8 @@ func MarshalECParameters(name string, explicit bool) ([]byte, error) {
 //
 // LoadECParameters validates PEM parameters and returns the named curve.
 func LoadECParameters(data []byte) (string, error) {
+	defer nativeErrorScope()()
+
 	bio := native.BIO_new(native.BIO_s_mem())
 	if bio == nil {
 		return "", NewOpError("ec: BIO_new", native.PopError())
@@ -47,6 +51,8 @@ func LoadECParameters(data []byte) (string, error) {
 //
 // Check validates the key; public selects public-key validation only.
 func (k *PKey) Check(public bool) error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(k)
 	if k == nil || k.handle == nil || k.handle.IsClosed() {
 		return fmt.Errorf("pkey: key closed")

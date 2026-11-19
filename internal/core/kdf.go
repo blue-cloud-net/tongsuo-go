@@ -16,6 +16,8 @@ import (
 // "SHA256", "SHA1" or "SM3"); secret must be non-empty; salt and info may be
 // empty. On failure it returns an error wrapping an OpError.
 func HKDF(mdName string, secret, salt, info []byte, length int) ([]byte, error) {
+	defer nativeErrorScope()()
+
 	if mdName == "" {
 		return nil, fmt.Errorf("kdf: empty digest name")
 	}
@@ -41,6 +43,8 @@ func HKDF(mdName string, secret, salt, info []byte, length int) ([]byte, error) 
 // the iteration count (1 to 2³¹−1); password must be non-empty. On failure it
 // returns an error wrapping an OpError.
 func PBKDF2(mdName string, password, salt []byte, iter, keyLen int) ([]byte, error) {
+	defer nativeErrorScope()()
+
 	if mdName == "" {
 		return nil, fmt.Errorf("kdf: empty digest name")
 	}
@@ -176,6 +180,8 @@ type KDFParams struct {
 // (meaning "use the defaults"); the length of out is the requested output
 // length. On failure it returns an error wrapping an OpError.
 func Derive(alg string, p *KDFParams, out []byte) error {
+	defer nativeErrorScope()()
+
 	if alg == "" {
 		return fmt.Errorf("kdf: empty algorithm name")
 	}

@@ -28,6 +28,8 @@ type MAC struct {
 // matched case-insensitively by the provider. An unavailable name yields
 // an error wrapping an OpError.
 func MACFetch(name string) (*MAC, error) {
+	defer nativeErrorScope()()
+
 	if name == "" {
 		return nil, fmt.Errorf("mac: empty algorithm name")
 	}
@@ -122,6 +124,8 @@ type MACCtx struct {
 // already-closed descriptor yields the error "mac: invalid mac";
 // initialisation failures are wrapped as OpError.
 func NewMACCtx(m *MAC, key []byte, opts *MACOptions) (*MACCtx, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(m)
 
 	if m == nil || m.handle == nil || m.handle.IsClosed() {
@@ -149,6 +153,8 @@ func NewMACCtx(m *MAC, key []byte, opts *MACOptions) (*MACCtx, error) {
 // init initialises the context with the current parameters (shared by the
 // constructor and Reset).
 func (c *MACCtx) init() error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	mask := 0
@@ -192,6 +198,8 @@ func (c *MACCtx) init() error {
 // returns the error "mac: context closed" when the context has been
 // released; underlying failures are wrapped as OpError.
 func (c *MACCtx) Update(data []byte) error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c.handle.IsClosed() {
@@ -213,6 +221,8 @@ func (c *MACCtx) Update(data []byte) error {
 // method returns the error "mac: context closed" when the context has
 // been released.
 func (c *MACCtx) Final() ([]byte, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c.handle.IsClosed() {
@@ -242,6 +252,8 @@ func (c *MACCtx) Final() ([]byte, error) {
 // still be invoked afterwards. The method returns the error "mac: context
 // closed" when the context has been released.
 func (c *MACCtx) Sum() ([]byte, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 
 	if c.handle.IsClosed() {
