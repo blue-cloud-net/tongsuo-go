@@ -476,7 +476,7 @@ P7 BIO/证书资源。绑定在 `binding_reliability.go` / `binding_pkcs7_ops.go
 
 ### 6.1 环境要求
 
-- Go 1.21+（启用 CGO；已在 Go 1.26 验证）
+- Go 1.21+，启用 CGO。持续验证以 [CI 的 Go 版本与平台矩阵](../.github/workflows/ci.yml) 为准。
 - 铜锁 8.4.0+（固定验证 8.4.0 / 8.5.0），安装路径 `/opt/tongsuo`（可通过环境变量覆盖）
 - 平台：**Linux 优先，macOS 兼容，Windows 后置**
 
