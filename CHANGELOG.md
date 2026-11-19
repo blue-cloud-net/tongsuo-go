@@ -58,6 +58,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - Native temporary copies of key passphrases and sensitive KDF inputs are cleared before release.
 - Cipher operations reject inputs, AAD and CCM lengths that cannot be passed safely to Tongsuo.
 - Single-object DER decoding rejects trailing bytes for X.509, PKCS and OCSP formats.
+- File sinks protect private-key and derived-key output with owner-only permissions.
 
 ---
 

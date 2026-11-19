@@ -140,6 +140,7 @@
     🆕 `func NewFileSink(path string) (*Sink, error)` / 🆕 `func StdoutSink() *Sink`
   - 🆕 `func (s *Sink) SetEncoding(enc Encoding) error` — 只能在首次写入前设置
   - 🆕 `func (s *Sink) Write(p []byte) (int, error)` — 实现 `io.Writer`
+  - ➕ `func (s *Sink) WriteSensitive(p []byte) (int, error)` — 敏感文件以 0600 创建，拒绝覆盖其他用户可访问的文件
   - 🆕 `func (s *Sink) Bytes() []byte` / 🆕 `func (s *Sink) Close() error`（幂等）/
     🆕 `func (s *Sink) Encoding() Encoding` / 🆕 `func (s *Sink) Path() string`
 - 🆕 `type Encoding int` 与常量 `EncodingRaw` / `EncodingHex` / `EncodingBase64` —

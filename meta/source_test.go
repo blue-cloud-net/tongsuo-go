@@ -295,3 +295,44 @@ func TestSinkShortWrite(t *testing.T) {
 		t.Fatalf("Close error = %v, want io.ErrShortWrite", err)
 	}
 }
+
+// TestSensitiveSinkFilePermissions 验证敏感文件权限及拒绝覆盖后的内容。
+//
+// TestSensitiveSinkFilePermissions verifies private file creation and unchanged unsafe destinations.
+func TestSensitiveSinkFilePermissions(t *testing.T) {
+	newFile := filepath.Join(t.TempDir(), "new")
+	s, err := NewFileSink(newFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.WriteSensitive([]byte("fixture")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(newFile)
+	if err != nil || info.Mode().Perm()&0o077 != 0 {
+		t.Fatalf("new file was not created with owner-only permissions: %v", err)
+	}
+
+	existing := filepath.Join(t.TempDir(), "existing")
+	if err := os.WriteFile(existing, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(existing, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err = NewFileSink(existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err := s.WriteSensitive([]byte("fixture")); err == nil {
+		t.Fatal("accepted a shared file")
+	}
+	data, err := os.ReadFile(existing)
+	if err != nil || string(data) != "original" {
+		t.Fatalf("existing file changed: %v", err)
+	}
+}
