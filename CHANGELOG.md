@@ -41,6 +41,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - Passphrase sources leave caller-owned file descriptors open.
 - File, descriptor and standard input passphrase sources read a single line, and bare stdin selects standard input.
 - TLS retains absolute deadline values, including the Unix epoch.
+- TLS I/O returns the diagnostic error alongside any transferred bytes.
 
 ---
 

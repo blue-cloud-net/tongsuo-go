@@ -189,13 +189,13 @@ func (s *SSLConn) PumpSession(ctx context.Context) ([]byte, error) {
 		}
 		n, code, err := s.diagnosticStep("SSL_read", buf)
 		if n > 0 {
-			return buf[:n], nil
-		}
-		if len(s.SessionDER()) > 0 {
-			return nil, nil
+			return buf[:n], err
 		}
 		if err != nil {
 			return nil, err
+		}
+		if len(s.SessionDER()) > 0 {
+			return nil, nil
 		}
 		if code == native.SSLErrorZeroReturn {
 			return nil, errors.New("tls: peer closed before session receipt")

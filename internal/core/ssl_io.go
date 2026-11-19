@@ -140,7 +140,7 @@ func (s *SSLConn) runIO(op string, buf []byte) (n int, err error) {
 		stepped = true
 		ret, code, failure := s.diagnosticStep(op, buf)
 		if ret > 0 {
-			return ret, nil
+			return ret, failure
 		}
 		if failure != nil {
 			return 0, failure
