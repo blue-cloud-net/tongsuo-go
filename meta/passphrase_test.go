@@ -105,6 +105,9 @@ func TestPassphraseFD(t *testing.T) {
 	if got := string(p.Bytes()); got != "fd-secret" {
 		t.Errorf("Bytes = %q, want %q", got, "fd-secret")
 	}
+	if _, err := f.Stat(); err != nil {
+		t.Fatalf("caller descriptor was closed: %v", err)
+	}
 }
 
 // TestPassphraseUnknownScheme 验证未知来源前缀被拒绝。

@@ -38,6 +38,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - Signature conversion reports an error when the output width would overflow.
 - Cipher suite ID lookup interprets unprefixed numbers as decimal, including leading zeros.
 - PKCS#7 certificate extraction explicitly closes intermediate and partially converted certificates.
+- Passphrase sources leave caller-owned file descriptors open.
 
 ---
 

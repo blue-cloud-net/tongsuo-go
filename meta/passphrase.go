@@ -3,9 +3,12 @@ package meta
 import (
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
 // Passphrase 是口令的来源抽象。
@@ -13,7 +16,7 @@ import (
 // `fd:` / `stdin` 五种来源。
 //
 // 口令在构造时即被读取（`stdin` 与 `fd:` 同理），因此构造完成后不再
-// 依赖外部环境；口令内容**不会**出现在 String() 的输出里。
+// 依赖外部环境；口令内容**不会**出现在 String() 的输出里。fd: 不关闭调用方的描述符。
 //
 // Passphrase abstracts where a passphrase comes from, mirroring the
 // Tongsuo CLI's -passin / -passout: the pass:, env:, file:, fd: and stdin
@@ -22,7 +25,7 @@ import (
 // The passphrase is read eagerly at construction time (including for
 // stdin and fd:), so the value no longer depends on the environment once
 // the Passphrase exists; its content NEVER appears in the output of
-// String().
+// String(). The fd: source leaves the caller’s descriptor open.
 type Passphrase struct {
 	value []byte
 	desc  string
@@ -71,11 +74,16 @@ func NewPassphrase(spec string) (*Passphrase, error) {
 		return &Passphrase{value: trimPassphraseNewline(data), desc: "file:***"}, nil
 	case "fd":
 		fd, err := strconv.Atoi(strings.TrimSpace(arg))
-		if err != nil {
+		if err != nil || fd < 0 || fd > math.MaxInt32 {
 			return nil, fmt.Errorf("meta: invalid file descriptor %q", arg)
 		}
-		f := os.NewFile(uintptr(fd), "passphrase-fd")
+		dup, err := core.DupFD(fd)
+		if err != nil {
+			return nil, fmt.Errorf("meta: duplicate passphrase fd %d: %w", fd, err)
+		}
+		f := os.NewFile(uintptr(dup), "passphrase-fd")
 		if f == nil {
+			_ = core.CloseFD(dup)
 			return nil, fmt.Errorf("meta: invalid file descriptor %d", fd)
 		}
 		defer f.Close()
