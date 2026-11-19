@@ -1,4 +1,4 @@
-// Package tls 提供密码套件枚举、按名查找与 Config.CipherSuites 混合语义。
+// 本文件提供密码套件枚举、按名查找与 Config.CipherSuites 混合语义。
 //
 // CipherSuites(version) 返回指定版本下 ctx 启用的全部套件（Name/ID/
 // MinVersion/MaxVersion）；CipherSuiteByName(name) 按名称或 16 位 ID 查找单个
