@@ -217,7 +217,7 @@ func (s *Sink) raw() io.Writer {
 	case sinkBytes:
 		return &s.buf
 	case sinkWriter:
-		return s.writer
+		return checkedSinkWriter{s.writer}
 	case sinkFile:
 		if s.file != nil {
 			return s.file
@@ -227,6 +227,18 @@ func (s *Sink) raw() io.Writer {
 		return os.Stdout
 	}
 	return io.Discard
+}
+
+type checkedSinkWriter struct {
+	io.Writer
+}
+
+func (w checkedSinkWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	if err == nil && n < len(p) {
+		err = io.ErrShortWrite
+	}
+	return n, err
 }
 
 // Bytes 返回内存汇已写入内容的副本。

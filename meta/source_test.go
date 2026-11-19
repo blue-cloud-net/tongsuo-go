@@ -3,6 +3,7 @@ package meta
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -261,5 +262,36 @@ func TestSinkWriter(t *testing.T) {
 	}
 	if s.Bytes() != nil {
 		t.Error("Bytes on a writer sink should be nil")
+	}
+}
+
+type shortSinkWriter struct{}
+
+func (shortSinkWriter) Write(p []byte) (int, error) {
+	return max(0, len(p)-1), nil
+}
+
+// TestSinkShortWrite 验证原始和编码写入及 Base64 结束时报告短写。
+//
+// TestSinkShortWrite checks short writes in raw and encoded output and base64 finalization.
+func TestSinkShortWrite(t *testing.T) {
+	for _, enc := range []Encoding{EncodingRaw, EncodingHex, EncodingBase64} {
+		s := NewWriterSink(shortSinkWriter{})
+		if err := s.SetEncoding(enc); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Write([]byte("abc")); err != io.ErrShortWrite {
+			t.Errorf("%s: Write error = %v, want io.ErrShortWrite", enc, err)
+		}
+	}
+	s := NewWriterSink(shortSinkWriter{})
+	if err := s.SetEncoding(EncodingBase64); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Write([]byte("a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != io.ErrShortWrite {
+		t.Fatalf("Close error = %v, want io.ErrShortWrite", err)
 	}
 }
