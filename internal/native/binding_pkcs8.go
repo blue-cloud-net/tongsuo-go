@@ -52,7 +52,7 @@ import "unsafe"
 // X_PKEY_write_pkcs8 writes PKCS#8 PEM using explicit encryption parameters.
 func X_PKEY_write_pkcs8(bio, key unsafe.Pointer, pass, cipher, prf string, version, iter int, encrypt bool) bool {
 	p := C.CString(pass)
-	defer C.free(unsafe.Pointer(p))
+	defer clearNativePassphrase(unsafe.Pointer(p), len(pass))
 	c := C.CString(cipher)
 	defer C.free(unsafe.Pointer(c))
 	h := C.CString(prf)

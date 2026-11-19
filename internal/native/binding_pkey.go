@@ -338,7 +338,7 @@ const PEMPassphraseLimit = C.PEM_BUFSIZE
 // from bio using pass. Returns NULL on failure; caller owns the EVP_PKEY.
 func X_PEM_read_bio_PrivateKey_pass(bio unsafe.Pointer, pass string) unsafe.Pointer {
 	c := C.CString(pass)
-	defer C.free(unsafe.Pointer(c))
+	defer clearNativePassphrase(unsafe.Pointer(c), len(pass))
 	return unsafe.Pointer(C.X_PEM_read_bio_PrivateKey_pass((*C.BIO)(bio), c, C.int(len(pass))))
 }
 
@@ -347,7 +347,7 @@ func X_PEM_read_bio_PrivateKey_pass(bio unsafe.Pointer, pass string) unsafe.Poin
 // protected PEM using AES-256-CBC. Returns true on success.
 func X_PEM_write_bio_PrivateKey_enc(bio, pkey unsafe.Pointer, pass string) bool {
 	c := C.CString(pass)
-	defer C.free(unsafe.Pointer(c))
+	defer clearNativePassphrase(unsafe.Pointer(c), len(pass))
 	return C.X_PEM_write_bio_PrivateKey_enc((*C.BIO)(bio), (*C.EVP_PKEY)(pkey), c, C.int(len(pass))) == 1
 }
 
@@ -362,8 +362,13 @@ func X_PEM_write_bio_PrivateKey_enc_cipher(bio, pkey unsafe.Pointer, cipher, pas
 		defer C.free(unsafe.Pointer(cCipher))
 	}
 	cPass := C.CString(pass)
-	defer C.free(unsafe.Pointer(cPass))
+	defer clearNativePassphrase(unsafe.Pointer(cPass), len(pass))
 	return C.X_PEM_write_bio_PrivateKey_enc_cipher((*C.BIO)(bio), (*C.EVP_PKEY)(pkey), cCipher, cPass, C.int(len(pass))) == 1
+}
+
+func clearNativePassphrase(p unsafe.Pointer, length int) {
+	C.X_OPENSSL_cleanse(p, C.size_t(length))
+	C.free(p)
 }
 
 // X_PEM_read_bio_RSAPrivateKey 从 BIO 读取 PKCS#1 PEM 私钥（返回 RSA*）。

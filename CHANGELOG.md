@@ -55,6 +55,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - Native primitive operations keep owning Go handles live until the final native access.
 - Non-TLS operations collect native error codes on the same thread and isolate the error queue per operation.
 - Encrypted PEM uses explicit password lengths and rejects lengths beyond the PEM reader capacity.
+- Native temporary copies of key passphrases and sensitive KDF inputs are cleared before release.
 
 ---
 
