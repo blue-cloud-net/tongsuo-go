@@ -9,6 +9,7 @@ package asn1
 import (
 	"encoding/hex"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -145,10 +146,20 @@ func parseHeader(der []byte, base int) (*Node, int, error) {
 			}
 			b := der[off]
 			off++
-			number = number*128 + int(b&0x7f)
+			part := int(b & 0x7f)
+			if number == 0 && b == 0x80 {
+				return nil, 0, fmt.Errorf("asn1: non-minimal tag")
+			}
+			if number > (math.MaxInt-part)/128 {
+				return nil, 0, fmt.Errorf("asn1: tag number out of range")
+			}
+			number = number*128 + part
 			if b&0x80 == 0 {
 				break
 			}
+		}
+		if number < 31 {
+			return nil, 0, fmt.Errorf("asn1: non-minimal tag")
 		}
 	}
 	length, nLen, err := parseLength(der[off:])
@@ -187,9 +198,15 @@ func parseLength(b []byte) (int, int, error) {
 	if n > 4 || 1+n > len(b) {
 		return 0, 0, fmt.Errorf("asn1: bad long-form length")
 	}
+	if b[1] == 0 || (n == 1 && b[1] < 128) {
+		return 0, 0, fmt.Errorf("asn1: non-minimal length")
+	}
 	length := 0
-	for i := 0; i < n; i++ {
-		length = length*256 + int(b[1+i])
+	for _, digit := range b[1 : 1+n] {
+		if length > (math.MaxInt-int(digit))/256 {
+			return 0, 0, fmt.Errorf("asn1: length out of range")
+		}
+		length = length*256 + int(digit)
 	}
 	return length, 1 + n, nil
 }
