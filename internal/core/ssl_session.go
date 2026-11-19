@@ -163,7 +163,7 @@ func (s *SSLConn) ReverifySession(chain [][]byte) error {
 // PumpSession 处理握手后消息，最多读取 maxRead 字节应用数据；不修改期限。
 //
 // PumpSession reads up to maxRead application bytes while processing post-handshake messages without changing deadlines.
-func (s *SSLConn) PumpSession(ctx context.Context, maxRead int) ([]byte, error) {
+func (s *SSLConn) PumpSession(ctx context.Context, maxRead int, previousSession []byte) ([]byte, error) {
 	if maxRead <= 0 {
 		return nil, errors.New("tls: session wait application buffer limit")
 	}
@@ -187,7 +187,7 @@ func (s *SSLConn) PumpSession(ctx context.Context, maxRead int) ([]byte, error) 
 		if d := loadDeadline(&s.readDeadline); !d.IsZero() && !time.Now().Before(d) {
 			return nil, &timeoutError{op: "wait session"}
 		}
-		if len(s.SessionDER()) > 0 {
+		if data := s.SessionDER(); len(data) > 0 && !bytes.Equal(data, previousSession) {
 			return nil, nil
 		}
 		n, code, err := s.diagnosticStep("SSL_read", buf)
@@ -197,7 +197,7 @@ func (s *SSLConn) PumpSession(ctx context.Context, maxRead int) ([]byte, error) 
 		if err != nil {
 			return nil, err
 		}
-		if len(s.SessionDER()) > 0 {
+		if data := s.SessionDER(); len(data) > 0 && !bytes.Equal(data, previousSession) {
 			return nil, nil
 		}
 		if code == native.SSLErrorZeroReturn {
