@@ -13,26 +13,9 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
 
-// waitFDTimeout 为 fd 轮询等待超时（单次 select 的最长阻塞时间）。
+// waitFDTimeout 限制单次 poll 等待。每次等待结束后重新检查取消和期限。
 //
-// 这是**取消延迟的上界**：Connect / Accept / Read / Write 的重试循环只在
-// waitFD 返回后才重新检查 deadline 与 ctx，而在 Linux 上从另一线程关闭 fd
-// 并不能可靠唤醒已阻塞在 select(2) 里的调用（POSIX 未定义该行为）——因此
-// 单次 select 阻塞多久，取消就要等多久。
-//
-// 取值 250ms 的理由：把最坏取消延迟从 30s 降到 250ms（诊断/探针类场景里
-// "总预算"必须可强制执行），代价只是每 250ms 一次空转的 SSL_connect /
-// SSL_read 重试（该调用在 WANT_READ 时立即返回，开销可忽略）。
-//
-// 彻底方案是改用 poll(2)/epoll 以实现可中断等待（计划 v0.1.3+）。
-//
-// waitFDTimeout is the deadline for a single select(2) wait inside the
-// poll-based retry loop driven by Connect / Accept / Read / Write. It bounds
-// how long a cancellation can take: the retry loop only re-checks the
-// deadline / ctx after waitFD returns, and on Linux closing an fd from
-// another thread does not reliably wake a blocked select(2). 250ms keeps
-// cancellation prompt at negligible cost; a poll(2)/epoll rewrite is the
-// long-term fix.
+// waitFDTimeout bounds a single poll wait before rechecking cancellation and deadlines.
 const waitFDTimeout = 250 * time.Millisecond
 
 // TLSContext 表示一个 TLS / NTLS 上下文（SSL_CTX 的包装）。
@@ -690,19 +673,6 @@ func (e *timeoutError) Is(target error) bool { return target == os.ErrDeadlineEx
 // retry SSL_* and wait again with the recomputed remaining time, so that the
 // ctx / deadline stays the effective termination condition.
 var errWaitFDTimeout = errors.New("tls: wait fd timeout")
-
-// waitFD 在内部平台实现文件里定义（waitfd_linux.go / waitfd_darwin.go）。
-//
-// waitFD 仅承担"一次 select(2) 切片"的职责：返回 nil / errWaitFDTimeout
-// （切片到期）/ 其他 fd 错误（EBADF、FD_SETSIZE 越界等）。上层通过
-// waitPlan / waitReady 将切片轮询节奏与 ctx/deadline 终止条件解耦。
-//
-// waitFD is implemented in the per-OS build files
-// waitfd_linux.go and waitfd_darwin.go because syscall.Timeval field
-// types differ between Linux and macOS. waitFD only owns one slice's
-// outcome (nil / errWaitFDTimeout / other fd error); the slice cadence
-// and the ctx / deadline termination condition live in waitPlan /
-// waitReady so they stay free of platform branching.
 
 // Close 发送关闭通知、释放底层句柄，并关闭本连接持有的 socket 副本。幂等。
 //

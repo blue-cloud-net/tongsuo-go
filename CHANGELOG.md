@@ -47,6 +47,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - An explicit verification name or email enables the default client verification policy.
 - Listener.Close closes connections still handshaking in Accept.
 - Session resumption honors optional client certificates when the peer provided none.
+- TLS socket readiness supports file descriptors beyond the select bitmap limit.
 
 ---
 

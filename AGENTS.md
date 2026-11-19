@@ -254,7 +254,7 @@ internal/core/                 # 核心层：句柄包装 + 生命周期 + 错�
 ├── pkcs7_ops.go  reliability.go # PKCS 容器编排、完整序列号与可靠性增量
 ├── x509.go  ssl.go            # X509 证书 / CRL / Store / SSL 会话（Close 幂等）
 ├── rand.go  zero.go           # RandomBytes 包装 / 清零辅助
-└── waitfd_linux.go  waitfd_darwin.go   # epoll / kqueue 等待 fd 可读
+└── waitfd_unix.go   # poll 等待 fd 可读或可写
 
 internal/keyaccess/            # 桥接：公开密钥对象 → *core.PKey（结构化接口断言，无注册表）
 internal/certaccess/           # 桥接：公开证书对象 ↔ *core.Certificate（断言 + DER 往返）

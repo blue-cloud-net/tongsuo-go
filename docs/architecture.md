@@ -387,7 +387,7 @@ tongsuo-go/
 │   │   ├── mac.go  meta.go
 │   │   ├── pkey.go  pkey_id.go  pkcs.go  ocsp.go
 │   │   ├── x509.go  ssl.go  ssl_config.go  ssl_io.go  ssl_diagnostics.go  ssl_session.go  rand.go  zero.go
-│   │   └── waitfd_linux.go  waitfd_darwin.go
+│   │   └── waitfd_unix.go
 │   ├── keyaccess/             # 【桥接】公开密钥对象 → *core.PKey（结构化接口断言，叶子包）
 │   │   └── keyaccess.go       # corePKeyer + PKey(v any)
 │   ├── certaccess/            # 【桥接】公开证书对象 ↔ *core.Certificate（断言 + DER 往返）
