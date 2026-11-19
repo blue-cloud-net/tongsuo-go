@@ -7,13 +7,18 @@ on:
   pull_request:
     branches: [main]
   workflow_call:
+    inputs:
+      ref:
+        description: Git ref to test
+        type: string
+        required: false
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ inputs.ref || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -47,6 +52,8 @@ jobs:
       TONGSUO_OPENSSL_BIN: ${{ github.workspace }}/.tongsuo-install-${{ matrix.tongsuo }}/bin/openssl
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-go@v6
         with:
           go-version: '1.21'
