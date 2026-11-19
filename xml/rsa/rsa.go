@@ -1,7 +1,7 @@
 // Package rsa 提供 RSA 密钥的 .NET RSAKeyValue XML 序列化。
 //
 // 与铜锁 openssl / .NET 互操作：Marshal* 将本库 RSA 密钥导出为 XML，
-// Unmarshal* 从 XML 解析并加载为本库 RSA 密钥。
+// Unmarshal* 从 XML 解析并加载为本库 RSA 密钥。XML 与 .NET 互通，铜锁 CLI 使用转换后的 PKCS#1 或 SPKI PEM。
 //
 // 注意：本包路径为 xml/rsa，但包名为 rsa；调用方若同时用到标准库
 // `crypto/rsa`，需给其中之一起别名（本库侧不再有同名的 `crypto/rsa` 包）。
@@ -10,8 +10,8 @@
 //
 // Marshal* exports an RSA key from this library to XML; Unmarshal*
 // parses the XML and loads the result back as an RSA key in this
-// library. This interoperates with Tongsuo's openssl CLI and with the
-// .NET Framework.
+// library. XML interoperates with .NET. Tongsuo’s openssl CLI uses the
+// converted PKCS#1 or SPKI PEM.
 //
 // Note: the import path is xml/rsa but the package name is rsa. Callers that
 // also use the standard library's crypto/rsa must alias one of them (this
@@ -46,13 +46,14 @@ type rsaKeyValue struct {
 }
 
 // MarshalPrivate 导出 RSA 私钥为 XML（含 D/P/Q/DP/DQ/InverseQ）；priv 必须为 RSA 类型私钥，非 nil 错值或类型不符返回 error。
+// 结果包含未加密的私钥分量，应按敏感材料保护。
 //
 // MarshalPrivate exports an RSA private key to XML containing Modulus,
 // Exponent, D, and—when the CRT factors are available—P, Q, DP, DQ,
 // InverseQ. priv must be a non-nil RSA key (asym.PrivateKey, produced by
 // asym.GenerateRSA / asym.LoadPrivateKeyPEM); otherwise, or when the key is
-// not RSA, an error is returned. The result is indented XML suitable for
-// storage or transport.
+// not RSA, an error is returned. The indented XML contains unencrypted
+// private fields and must be protected as sensitive material.
 func MarshalPrivate(priv asym.PrivateKey) ([]byte, error) {
 	if priv == nil {
 		return nil, fmt.Errorf("rsaxml: nil private key")
