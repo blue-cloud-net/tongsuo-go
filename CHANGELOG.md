@@ -46,6 +46,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - Session waiting keeps processing input when the latest ticket is no longer usable.
 - An explicit verification name or email enables the default client verification policy.
 - Listener.Close closes connections still handshaking in Accept.
+- Session resumption honors optional client certificates when the peer provided none.
 
 ---
 
