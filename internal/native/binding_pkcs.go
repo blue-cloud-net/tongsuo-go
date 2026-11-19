@@ -161,11 +161,14 @@ func PKCS7_add_certificate(p7, cert unsafe.Pointer) bool {
 	return C.PKCS7_add_certificate((*C.PKCS7)(p7), (*C.X509)(cert)) == 1
 }
 
-// PKCS7_get0_certificates 返回 SignedData 的证书栈（内部指针，勿释放）。
+// PKCS7_get0_certificates 返回 SignedData 的证书栈（内部指针，勿释放），SignedData 缺失时返回 false。
 // PKCS7_get0_certificates returns the internal cert stack of a SignedData
 // PKCS7. The pointer is owned by p7 and must NOT be freed.
-func PKCS7_get0_certificates(p7 unsafe.Pointer) unsafe.Pointer {
-	return unsafe.Pointer(C.X_PKCS7_get0_certificates((*C.PKCS7)(p7)))
+// A SignedData container without content returns false.
+func PKCS7_get0_certificates(p7 unsafe.Pointer) (unsafe.Pointer, bool) {
+	var certs unsafe.Pointer
+	ok := C.X_PKCS7_get0_certificates((*C.PKCS7)(p7), &certs) == 1
+	return certs, ok
 }
 
 // PKCS7_add_crl 向 SignedData 追加一个 CRL（对应 CLI `crl2pkcs7`）。

@@ -993,11 +993,17 @@ int X_PKCS12_parse(PKCS12 *p12, const char *pass, EVP_PKEY **pkey,
     return ok;
 }
 
-void *X_PKCS7_get0_certificates(PKCS7 *p7)
+int X_PKCS7_get0_certificates(PKCS7 *p7, void **certs)
 {
-    if (p7 == NULL || OBJ_obj2nid(p7->type) != NID_pkcs7_signed)
-        return NULL;
-    return p7->d.sign->cert;
+    *certs = NULL;
+    if (p7 == NULL)
+        return 0;
+    if (OBJ_obj2nid(p7->type) != NID_pkcs7_signed)
+        return 1;
+    if (p7->d.sign == NULL)
+        return 0;
+    *certs = p7->d.sign->cert;
+    return 1;
 }
 
 int X_OCSP_basic_verify(OCSP_BASICRESP *bs, void *certs, X509_STORE *st,

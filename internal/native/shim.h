@@ -297,7 +297,7 @@ PKCS12 *X_PKCS12_create_options(const char *pass, const char *name, EVP_PKEY *pk
  X509 *cert, void **ca, int ca_len, int pbe, int iter);
 int X_PKCS12_parse(PKCS12 *p12, const char *pass, EVP_PKEY **pkey,
                    X509 **cert, void **ca);
-void *X_PKCS7_get0_certificates(PKCS7 *p7); /* STACK_OF(X509)* 内部指针，勿释放 */
+int X_PKCS7_get0_certificates(PKCS7 *p7, void **certs); /* STACK_OF(X509)* 内部指针，勿释放 */
 
 /* OCSP 响应签名验证（STACK_OF(X509) 以 void* 传递）。 */
 int X_OCSP_basic_verify(OCSP_BASICRESP *bs, void *certs, X509_STORE *st,

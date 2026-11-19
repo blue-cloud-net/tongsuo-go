@@ -411,7 +411,10 @@ func (p *PKCS7) Certificates() ([]*Certificate, error) {
 	if p == nil || p.handle == nil || p.handle.IsClosed() {
 		return nil, fmt.Errorf("pkcs7: closed")
 	}
-	sk := native.PKCS7_get0_certificates(p.handle.Ptr())
+	sk, ok := native.PKCS7_get0_certificates(p.handle.Ptr())
+	if !ok {
+		return nil, fmt.Errorf("pkcs7: missing SignedData content")
+	}
 	if sk == nil {
 		return nil, nil
 	}
