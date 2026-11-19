@@ -289,7 +289,10 @@ func DecryptSM4CFB(key, iv, data []byte) ([]byte, error) {
 
 // EncryptSM4GCM 使用 SM4-GCM 认证加密。
 //
-// 安全：nonce 必须在每 (key, message) 对下唯一。
+// 安全：每次使用同一密钥加密时，nonce 必须不同。key 或 nonce 长度无效时返回错误。
+//
+// EncryptSM4GCM encrypts and authenticates plaintext with SM4-GCM.
+// Use a different nonce for every encryption with the same key. Invalid key or nonce lengths return an error.
 func EncryptSM4GCM(key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, err error) {
 	if len(nonce) != NonceSize {
 		return nil, nil, fmt.Errorf("sym: invalid nonce size %d, want %d", len(nonce), NonceSize)
@@ -314,7 +317,9 @@ func EncryptSM4GCM(key, nonce, plaintext, aad []byte) (ciphertext, tag []byte, e
 	return ct, tag, nil
 }
 
-// DecryptSM4GCM 使用 SM4-GCM 认证解密。tag 或 aad 错误时返回错误。
+// DecryptSM4GCM 使用 SM4-GCM 认证解密。tag 或 aad 错误时返回错误。长度错误也返回错误。
+//
+// DecryptSM4GCM authenticates and decrypts with SM4-GCM. Invalid lengths or authentication failures return an error.
 func DecryptSM4GCM(key, nonce, ciphertext, tag, aad []byte) ([]byte, error) {
 	if len(nonce) != NonceSize {
 		return nil, fmt.Errorf("sym: invalid nonce size %d, want %d", len(nonce), NonceSize)
