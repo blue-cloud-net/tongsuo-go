@@ -415,9 +415,8 @@ func Dial(network, addr string, config *Config) (net.Conn, error) {
 
 // shouldSkipVerify 按 D1 方案 A 判定客户端是否跳过对端验证。
 //
-// shouldSkipVerify implements the D1 方案 A policy: VERIFY_NONE by
-// default; PEER enabled only when RootCAs is non-empty AND
-// InsecureSkipVerify is false.
+// shouldSkipVerify selects legacy defaults. Trust roots or an explicit
+// identity enable verification unless InsecureSkipVerify is set.
 func shouldSkipVerify(config *Config) bool {
 	if config == nil {
 		return true
@@ -425,10 +424,11 @@ func shouldSkipVerify(config *Config) bool {
 	if config.InsecureSkipVerify {
 		return true
 	}
-	if len(config.RootCAs) == 0 && config.ServerName == "" {
-		return true
-	}
-	return false
+	return len(config.RootCAs) == 0 && config.ServerName == "" && !hasExplicitVerificationIdentity(config)
+}
+
+func hasExplicitVerificationIdentity(config *Config) bool {
+	return config.VerificationName != "" || config.HostnameOptions.Email != ""
 }
 
 // Server 表示一个 TLS / NTLS 服务端。
@@ -1201,7 +1201,7 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 		if err := ctx.AddVerifyRoots(certs); err != nil {
 			return nil, err
 		}
-	} else if policy != VerifyNone && cfg.Verification != VerifyDefault {
+	} else if policy != VerifyNone && (cfg.Verification != VerifyDefault || (client && hasExplicitVerificationIdentity(cfg))) {
 		if err := ctx.SetDefaultVerifyPaths(); err != nil {
 			return nil, err
 		}

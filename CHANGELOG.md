@@ -44,6 +44,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - TLS I/O returns the diagnostic error alongside any transferred bytes.
 - Session waiting enforces the documented 64 KiB application buffer limit.
 - Session waiting keeps processing input when the latest ticket is no longer usable.
+- An explicit verification name or email enables the default client verification policy.
 
 ---
 

@@ -910,3 +910,21 @@ func TestHandshakeSelectionRetry(t *testing.T) {
 		})
 	}
 }
+
+// TestExplicitVerificationIdentityEnablesVerification 验证显式身份参数启用默认验证。
+//
+// TestExplicitVerificationIdentityEnablesVerification verifies that explicit identities enable default verification.
+func TestExplicitVerificationIdentityEnablesVerification(t *testing.T) {
+	for _, cc := range []*Config{
+		{VerificationName: "wrong.example", DisableSNI: true},
+		{HostnameOptions: HostnameOptions{Email: "wrong@example.test"}, DisableSNI: true},
+	} {
+		if got := effectiveVerification(cc, true); got != VerifyStrict {
+			t.Fatalf("verification policy = %v, want VerifyStrict", got)
+		}
+		_, _, clientErr, _ := handshakePair(t, testServerConfig(t), cc)
+		if clientErr == nil {
+			t.Fatal("untrusted server unexpectedly passed explicit identity check")
+		}
+	}
+}
