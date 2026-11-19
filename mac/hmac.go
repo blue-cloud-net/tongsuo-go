@@ -3,99 +3,127 @@ package mac
 import "hash"
 
 // 新HMAC 返回基于 SM3 的 HMAC 计算器（hash.Hash）。
+// 铜锁无法初始化 HMAC 时 panic。
 //
 // NewHMACSM3 returns an HMAC computation over SM3 (hash.Hash).
+// Panics if Tongsuo cannot initialize HMAC.
 func NewHMACSM3(key []byte) hash.Hash {
 	return mustHMAC("HMAC-SM3", key)
 }
 
 // SumHMACSM3 一次性计算基于 SM3 的 HMAC 值。
+// HMAC 计算失败时 panic。
 //
 // SumHMACSM3 computes the HMAC over SM3 in one shot.
+// Panics if the HMAC computation fails.
 func SumHMACSM3(key, data []byte) []byte {
 	return mustSum("HMAC-SM3", key, data)
 }
 
 // NewHMACMD5 返回基于 MD5 的 HMAC 计算器（hash.Hash）。
+// 铜锁无法初始化 HMAC 时 panic。
 //
 // NewHMACMD5 returns an HMAC computation over MD5 (hash.Hash).
+// Panics if Tongsuo cannot initialize HMAC.
 func NewHMACMD5(key []byte) hash.Hash {
 	return mustHMAC("HMAC-MD5", key)
 }
 
 // SumHMACMD5 一次性计算基于 MD5 的 HMAC 值。
+// HMAC 计算失败时 panic。
 //
 // SumHMACMD5 computes the HMAC over MD5 in one shot.
+// Panics if the HMAC computation fails.
 func SumHMACMD5(key, data []byte) []byte {
 	return mustSum("HMAC-MD5", key, data)
 }
 
 // NewHMACSHA1 返回基于 SHA-1 的 HMAC 计算器（hash.Hash）。
+// 铜锁无法初始化 HMAC 时 panic。
 //
 // NewHMACSHA1 returns an HMAC computation over SHA-1 (hash.Hash).
+// Panics if Tongsuo cannot initialize HMAC.
 func NewHMACSHA1(key []byte) hash.Hash {
 	return mustHMAC("HMAC-SHA1", key)
 }
 
 // SumHMACSHA1 一次性计算基于 SHA-1 的 HMAC 值。
+// HMAC 计算失败时 panic。
 //
 // SumHMACSHA1 computes the HMAC over SHA-1 in one shot.
+// Panics if the HMAC computation fails.
 func SumHMACSHA1(key, data []byte) []byte {
 	return mustSum("HMAC-SHA1", key, data)
 }
 
 // NewHMACSHA224 返回基于 SHA-224 的 HMAC 计算器（hash.Hash）。
+// 铜锁无法初始化 HMAC 时 panic。
 //
 // NewHMACSHA224 returns an HMAC computation over SHA-224 (hash.Hash).
+// Panics if Tongsuo cannot initialize HMAC.
 func NewHMACSHA224(key []byte) hash.Hash {
 	return mustHMAC("HMAC-SHA224", key)
 }
 
 // SumHMACSHA224 一次性计算基于 SHA-224 的 HMAC 值。
+// HMAC 计算失败时 panic。
 //
 // SumHMACSHA224 computes the HMAC over SHA-224 in one shot.
+// Panics if the HMAC computation fails.
 func SumHMACSHA224(key, data []byte) []byte {
 	return mustSum("HMAC-SHA224", key, data)
 }
 
 // NewHMACSHA256 返回基于 SHA-256 的 HMAC 计算器（hash.Hash）。
+// 铜锁无法初始化 HMAC 时 panic。
 //
 // NewHMACSHA256 returns an HMAC computation over SHA-256 (hash.Hash).
+// Panics if Tongsuo cannot initialize HMAC.
 func NewHMACSHA256(key []byte) hash.Hash {
 	return mustHMAC("HMAC-SHA256", key)
 }
 
 // SumHMACSHA256 一次性计算基于 SHA-256 的 HMAC 值。
+// HMAC 计算失败时 panic。
 //
 // SumHMACSHA256 computes the HMAC over SHA-256 in one shot.
+// Panics if the HMAC computation fails.
 func SumHMACSHA256(key, data []byte) []byte {
 	return mustSum("HMAC-SHA256", key, data)
 }
 
 // NewHMACSHA384 返回基于 SHA-384 的 HMAC 计算器（hash.Hash）。
+// 铜锁无法初始化 HMAC 时 panic。
 //
 // NewHMACSHA384 returns an HMAC computation over SHA-384 (hash.Hash).
+// Panics if Tongsuo cannot initialize HMAC.
 func NewHMACSHA384(key []byte) hash.Hash {
 	return mustHMAC("HMAC-SHA384", key)
 }
 
 // SumHMACSHA384 一次性计算基于 SHA-384 的 HMAC 值。
+// HMAC 计算失败时 panic。
 //
 // SumHMACSHA384 computes the HMAC over SHA-384 in one shot.
+// Panics if the HMAC computation fails.
 func SumHMACSHA384(key, data []byte) []byte {
 	return mustSum("HMAC-SHA384", key, data)
 }
 
 // NewHMACSHA512 返回基于 SHA-512 的 HMAC 计算器（hash.Hash）。
+// 铜锁无法初始化 HMAC 时 panic。
 //
 // NewHMACSHA512 returns an HMAC computation over SHA-512 (hash.Hash).
+// Panics if Tongsuo cannot initialize HMAC.
 func NewHMACSHA512(key []byte) hash.Hash {
 	return mustHMAC("HMAC-SHA512", key)
 }
 
 // SumHMACSHA512 一次性计算基于 SHA-512 的 HMAC 值。
+// HMAC 计算失败时 panic。
 //
 // SumHMACSHA512 computes the HMAC over SHA-512 in one shot.
+// Panics if the HMAC computation fails.
 func SumHMACSHA512(key, data []byte) []byte {
 	return mustSum("HMAC-SHA512", key, data)
 }

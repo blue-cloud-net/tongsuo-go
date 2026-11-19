@@ -250,7 +250,7 @@ func (a algo) coreOptions(opts *Options) (*core.MACOptions, error) {
 
 // New 按算法名返回可流式写入的 hash.Hash。
 // 未知算法名返回 ErrUnknownAlgorithm；缺少算法必需参数返回 ErrInvalidOptions。
-// 仅当底层铜锁初始化失败（正常使用不会发生）时 panic。
+// 初始化失败通过 error 返回。hash.Hash.Sum 无错误返回值，可另用 Err() 查询计算错误。
 //
 // New returns a streaming hash.Hash for the named algorithm. Unknown
 // names return ErrUnknownAlgorithm; a missing mandatory parameter
