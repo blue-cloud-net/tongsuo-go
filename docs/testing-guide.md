@@ -55,8 +55,8 @@ go test -fuzz FuzzRoundTrip ./sym
 - CLI 测试依赖铜锁 openssl 命令行，路径通过环境变量 `TONGSUO_OPENSSL_BIN` 指定
   （默认 `/opt/tongsuo/bin/openssl`）或由 `TONGSUO_HOME` 推导
 - 覆盖目标：核心算法包（`digest` / `mac` / `sym` / `asym` / `ecdh` / `kdf` / `x509`）
-  行覆盖 **≥ 80%**（参考值，**不**由 CI 强制；本地可通过
-  `./scripts/check-coverage.sh` 手动检查）
+  语句覆盖参考目标为 **≥ 80%**。本地脚本默认阈值为 **60%**，可用
+  `THRESHOLD=80 ./scripts/check-coverage.sh` 检查 80% 目标。CI 不执行覆盖率门禁。
 
 ---
 
