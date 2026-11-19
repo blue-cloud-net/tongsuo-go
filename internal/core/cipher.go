@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"math"
 	"runtime"
 	"unsafe"
 
@@ -466,6 +467,9 @@ func (c *CipherCtx) Update(in []byte) ([]byte, error) {
 	if c.handle.IsClosed() {
 		return nil, fmt.Errorf("cipher: context closed")
 	}
+	if len(in) > math.MaxInt32-2*c.cipher.BlockSize() {
+		return nil, fmt.Errorf("cipher: input length exceeds native limit")
+	}
 	out := make([]byte, len(in)+2*c.cipher.BlockSize())
 	var outl int
 	var ok bool
@@ -797,6 +801,9 @@ func NewCCMCtx(c *Cipher, key, nonce []byte, plaintextLen, tagLen int, enc bool)
 func setCCMLength(ctx unsafe.Pointer, n int, enc bool) error {
 	defer nativeErrorScope()()
 
+	if n < 0 || n > math.MaxInt32 {
+		return fmt.Errorf("cipher: CCM total length exceeds native limit")
+	}
 	if !native.EVP_CipherSetLength(ctx, n, enc) {
 		return NewOpError("cipher: CCM set total length", native.PopError())
 	}
@@ -847,6 +854,9 @@ func (c *CipherCtx) SetAad(aad []byte) error {
 
 	if c.handle.IsClosed() {
 		return fmt.Errorf("cipher: context closed")
+	}
+	if len(aad) > math.MaxInt32 {
+		return fmt.Errorf("cipher: input length exceeds native limit")
 	}
 	if !native.EVP_UpdateAAD(c.handle.Ptr(), aad, c.enc) {
 		return NewOpError("cipher: EVP_UpdateAAD", native.PopError())
