@@ -295,9 +295,9 @@ func NewCertificate() (*Certificate, error) {
 // *Certificate owns the underlying X509 handle and the caller must
 // invoke Close to release it. Errors are wrapped as OpError.
 func LoadCertificatePEM(pem []byte) (*Certificate, error) {
-	bio := native.BIO_new_mem_buf(pem)
+	bio := native.X_BIO_new_input(pem)
 	if bio == nil {
-		return nil, NewOpError("x509: BIO_new_mem_buf", native.PopError())
+		return nil, NewOpError("x509: X_BIO_new_input", native.PopError())
 	}
 	defer native.BIO_free(bio)
 	x := native.X_PEM_read_bio_X509(bio)
@@ -1859,9 +1859,9 @@ func NewCertificateRequest() (*CertificateRequest, error) {
 // and the caller must invoke Close to release it. Errors are wrapped as
 // OpError.
 func LoadCertificateRequestPEM(pem []byte) (*CertificateRequest, error) {
-	bio := native.BIO_new_mem_buf(pem)
+	bio := native.X_BIO_new_input(pem)
 	if bio == nil {
-		return nil, NewOpError("x509: BIO_new_mem_buf", native.PopError())
+		return nil, NewOpError("x509: X_BIO_new_input", native.PopError())
 	}
 	defer native.BIO_free(bio)
 	r := native.X_PEM_read_bio_X509_REQ(bio)
@@ -2940,9 +2940,9 @@ type CRL struct {
 // The returned *CRL owns the underlying X509_CRL handle and the caller
 // must invoke Close to release it. Errors are wrapped as OpError.
 func LoadCRLPEM(pem []byte) (*CRL, error) {
-	bio := native.BIO_new_mem_buf(pem)
+	bio := native.X_BIO_new_input(pem)
 	if bio == nil {
-		return nil, NewOpError("x509: BIO_new_mem_buf", native.PopError())
+		return nil, NewOpError("x509: X_BIO_new_input", native.PopError())
 	}
 	defer native.BIO_free(bio)
 	c := native.X_PEM_read_bio_X509_CRL(bio)

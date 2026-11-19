@@ -367,7 +367,7 @@ internal/testutil ← 仅被 *_test.go 使用
 
 ### 2.8 `binding_bio.go` — BIO
 
-`BIO_s_mem` `BIO_new` `BIO_new_mem_buf` `BIO_free` `BIO_read` `BIO_write`
+`BIO_s_mem` `BIO_new` `X_BIO_new_input`（复制到 BIO 自有缓冲区） `BIO_free` `BIO_read` `BIO_write`
 
 ### 2.9 `binding_error.go` — 错误与清零
 

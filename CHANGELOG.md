@@ -29,6 +29,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - Random byte generation now passes the full buffer length to Tongsuo.
 - OCSP status matching rejects closed certificate and issuer handles.
 - TLS marks duplicated connection descriptors close-on-exec when creating them.
+- PEM parsing keeps input in a native-owned BIO buffer across cgo calls.
 
 ---
 

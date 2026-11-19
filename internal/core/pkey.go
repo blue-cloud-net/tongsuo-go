@@ -164,9 +164,9 @@ func LoadPublicKeyPEM(pem []byte) (*PKey, error) {
 // OpenSSL reader and returns a *PKey. On failure it returns an error
 // wrapping an OpError that names the underlying OpenSSL operation.
 func loadPEM(op string, read func(bio unsafe.Pointer) unsafe.Pointer, pem []byte) (*PKey, error) {
-	bio := native.BIO_new_mem_buf(pem)
+	bio := native.X_BIO_new_input(pem)
 	if bio == nil {
-		return nil, NewOpError(op+"(BIO_new_mem_buf)", native.PopError())
+		return nil, NewOpError(op+"(X_BIO_new_input)", native.PopError())
 	}
 	defer native.BIO_free(bio)
 	p := read(bio)
@@ -1128,9 +1128,9 @@ func (k *PKey) MarshalEncryptedPEMWithCipher(cipher, pass string) ([]byte, error
 // *PKey owns the underlying EVP_PKEY and the caller must invoke Close
 // to release it.
 func LoadPrivateKeyPEMEncrypted(pemBytes []byte, pass string) (*PKey, error) {
-	bio := native.BIO_new_mem_buf(pemBytes)
+	bio := native.X_BIO_new_input(pemBytes)
 	if bio == nil {
-		return nil, NewOpError("pkey: BIO_new_mem_buf", native.PopError())
+		return nil, NewOpError("pkey: X_BIO_new_input", native.PopError())
 	}
 	defer native.BIO_free(bio)
 	p := native.X_PEM_read_bio_PrivateKey_pass(bio, pass)
