@@ -127,6 +127,7 @@ func marshalCore(key *core.PKey, includePrivate bool) (*Key, error) {
 }
 
 // MarshalKey 将 asym 密钥导出为 JWK。
+// 私钥 JWK 包含未加密的私钥字段，应按敏感材料保护。
 //
 // k 可为 asym.PrivateKey 或 asym.PublicKey（SM2 / RSA / EC / Ed25519 / Ed448 /
 // X25519 / X448）；跨包取底层句柄经 internal/keyaccess。公钥 JWK 不含私钥材料。
@@ -135,6 +136,7 @@ func marshalCore(key *core.PKey, includePrivate bool) (*Key, error) {
 // RSA 与 EC 参数导出）。
 //
 // MarshalKey converts an asym key into a JWK.
+// A private JWK contains unencrypted private key fields and must be protected as sensitive material.
 //
 // k may be an asym.PrivateKey or asym.PublicKey (SM2 / RSA / EC / Ed25519 / Ed448 /
 // X25519 / X448); the underlying handle is obtained through internal/keyaccess.
@@ -349,8 +351,10 @@ func (k *Key) ecPrivate() (*ecdsa.PrivateKey, error) {
 
 // FromPEM 从 PEM（PKCS#8 / PKCS#1 私钥或 SPKI 公钥）构建 JWK。
 // 按 PKCS#8 → PKCS#1 → SPKI 的顺序依次尝试解析；均不匹配时返回错误。
+// 私钥输入转换后的 JWK 包含未加密的私钥字段。
 //
 // FromPEM parses a PEM block (PKCS#8 or PKCS#1 private key, or SPKI public key) and returns the equivalent JWK Key. It tries PKCS#8 first, then PKCS#1, then SPKI, returning an error if none match.
+// A private PEM key is converted to a JWK with unencrypted private fields.
 func FromPEM(pemBytes []byte) (*Key, error) {
 	var pk *core.PKey
 	var err error
