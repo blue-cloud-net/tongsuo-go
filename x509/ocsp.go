@@ -75,6 +75,7 @@ func CreateOCSPRequest(cert, issuer *Certificate, hash string) ([]byte, error) {
 // Status 为响应级状态码（0=successful）；
 // CertStatus 是目标证书状态（Good / Revoked / Unknown）；
 // RevocationReason 为 -1 时表示无吊销原因；RevocationTime 未吊销时为零值。
+// ResponderCerts 中的证书由调用方逐一关闭，其生命周期独立于 Response。
 //
 // Response holds the decoded fields of one OCSP response. resp carries
 // the underlying native handle used by Verify; the caller must invoke
@@ -84,7 +85,7 @@ func CreateOCSPRequest(cert, issuer *Certificate, hash string) ([]byte, error) {
 // Revoked / Unknown). For Revoked responses RevocationTime and
 // RevocationReason are populated; RevocationReason is -1 when no reason
 // is supplied. ResponderCerts holds the certificates embedded in the
-// response (signer chain).
+// response (signer chain). The caller must close each certificate separately from the Response.
 type Response struct {
 	resp *core.OCSPResponse // 持有底层响应（供 Verify），调用方负责 Close
 
@@ -147,16 +148,35 @@ func ParseOCSPResponse(der []byte, cert, issuer *Certificate) (*Response, error)
 	r.ReasonText = cs.ReasonText
 	r.ThisUpdate = cs.ThisUpdate
 	r.NextUpdate = cs.NextUpdate
-	if certs, err := resp.ResponderCerts(); err == nil {
-		for _, c := range certs {
-			wrapped, werr := wrapCertificate(c)
-			if werr != nil {
-				return nil, werr
-			}
-			r.ResponderCerts = append(r.ResponderCerts, wrapped)
-		}
+	if err := r.loadResponderCertificates(); err != nil {
+		_ = r.Close()
+		return nil, err
 	}
 	return r, nil
+}
+
+func (r *Response) loadResponderCertificates() error {
+	certs, err := r.resp.ResponderCerts()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		for _, cert := range certs {
+			_ = cert.Close()
+		}
+	}()
+	for _, cert := range certs {
+		wrapped, err := wrapCertificate(cert)
+		if err != nil {
+			for _, done := range r.ResponderCerts {
+				_ = done.Close()
+			}
+			r.ResponderCerts = nil
+			return err
+		}
+		r.ResponderCerts = append(r.ResponderCerts, wrapped)
+	}
+	return nil
 }
 
 // Verify 验证响应签名；roots 为信任锚，intermediates 为中间证书（nil 时自动用响应内证书）；roots 必须非 nil，r.resp 必须未被 Close（否则返回 "response closed" 错误）。

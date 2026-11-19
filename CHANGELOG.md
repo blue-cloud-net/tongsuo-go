@@ -61,6 +61,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - File sinks protect private-key and derived-key output with owner-only permissions.
 - Streaming encryption and decryption reject identical input and destination files, including aliases.
 - Certificate, CSR and CRL name snapshots retain independent native resources and support Close.
+- OCSP parsing and fetching release intermediate responder certificates and fail cleanly on partial conversion.
 
 ---
 

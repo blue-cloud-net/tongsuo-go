@@ -313,7 +313,11 @@ func (r *OCSPResponse) ResponderCerts() ([]*Certificate, error) {
 		}
 		dup := native.X509_dup(x)
 		if dup == nil {
-			continue
+			err := NewOpError("ocsp: X509_dup", native.PopError())
+			for _, cert := range out {
+				_ = cert.Close()
+			}
+			return nil, err
 		}
 		out = append(out, &Certificate{handle: NewHandle(dup, true, native.X509_free)})
 	}

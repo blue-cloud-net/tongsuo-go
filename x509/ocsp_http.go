@@ -126,25 +126,9 @@ func FetchOCSP(url string, request []byte, timeout time.Duration) (*Response, er
 	r.ReasonText = cs.ReasonText
 	r.ThisUpdate = cs.ThisUpdate
 	r.NextUpdate = cs.NextUpdate
-	certs, err := resp.ResponderCerts()
-	if err != nil {
-		r.Close()
+	if err := r.loadResponderCertificates(); err != nil {
+		_ = r.Close()
 		return nil, err
-	}
-	for i, c := range certs {
-		wrapped, e := wrapCertificate(c)
-		c.Close()
-		if e != nil {
-			for _, remaining := range certs[i:] {
-				remaining.Close()
-			}
-			for _, done := range r.ResponderCerts {
-				done.Close()
-			}
-			r.Close()
-			return nil, e
-		}
-		r.ResponderCerts = append(r.ResponderCerts, wrapped)
 	}
 	return r, nil
 }
