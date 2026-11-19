@@ -20,6 +20,10 @@ type Listener struct {
 	raw    net.Listener
 	once   sync.Once
 	err    error
+
+	mu      sync.Mutex
+	closed  bool
+	pending map[*Conn]struct{}
 }
 
 // NewListener 用 config 构建 TLS / NTLS 服务端并把原始监听器包装为
@@ -62,7 +66,7 @@ func NewListener(config *Config, ln net.Listener) (*Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Listener{server: srv, raw: ln}, nil
+	return &Listener{server: srv, raw: ln, pending: make(map[*Conn]struct{})}, nil
 }
 
 // validateServerConfig 校验服务端凭证是否齐备。
@@ -107,20 +111,40 @@ func (l *Listener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	l.mu.Lock()
+	if l.closed {
+		l.mu.Unlock()
+		_ = raw.Close()
+		return nil, net.ErrClosed
+	}
 	wrapped, err := l.server.Accept(raw)
 	if err != nil {
+		l.mu.Unlock()
 		_ = raw.Close()
 		return nil, err
 	}
 	conn, ok := wrapped.(*Conn)
 	if !ok {
+		l.mu.Unlock()
 		// 理论上不会发生：Server.Accept 只会返回 *Conn。
 		// 仍做防御，避免把未握手的连接交给调用方。
 		_ = wrapped.Close()
 		return nil, fmt.Errorf("tls: unexpected connection type %T", wrapped)
 	}
-	if err := conn.Handshake(); err != nil {
-		// Conn.Close 会把底层 socket 一并关闭。
+	l.pending[conn] = struct{}{}
+	l.mu.Unlock()
+
+	err = conn.Handshake()
+	l.mu.Lock()
+	delete(l.pending, conn)
+	closed := l.closed
+	l.mu.Unlock()
+
+	if closed {
+		_ = conn.Close()
+		return nil, net.ErrClosed
+	}
+	if err != nil {
 		_ = conn.Close()
 		return nil, err
 	}
@@ -128,14 +152,24 @@ func (l *Listener) Accept() (net.Conn, error) {
 }
 
 // Close 关闭监听器与 TLS 上下文；重复调用安全（幂等），并发调用同样安全。
-// 关闭后 Accept 返回底层 net.ErrClosed 风格的错误。
+// 尚在 Accept 中握手的连接会被关闭，Accept 返回 net.ErrClosed。已交付的连接由调用方关闭。
 //
 // Close closes the listener and the TLS context; it is safe to call
-// repeatedly and from multiple goroutines (idempotent). After Close,
-// Accept returns the underlying net.ErrClosed-style error.
+// repeatedly and from multiple goroutines (idempotent). Connections
+// still handshaking inside Accept are closed and Accept returns
+// net.ErrClosed. Callers own connections already returned by Accept.
 func (l *Listener) Close() error {
 	l.once.Do(func() {
+		l.mu.Lock()
+		l.closed = true
+		pending := l.pending
+		l.pending = nil
+		l.mu.Unlock()
+
 		rawErr := l.raw.Close()
+		for conn := range pending {
+			_ = conn.Close()
+		}
 		ctxErr := l.server.Close()
 		if rawErr != nil {
 			l.err = rawErr

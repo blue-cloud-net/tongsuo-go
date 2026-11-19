@@ -45,6 +45,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 - Session waiting enforces the documented 64 KiB application buffer limit.
 - Session waiting keeps processing input when the latest ticket is no longer usable.
 - An explicit verification name or email enables the default client verification policy.
+- Listener.Close closes connections still handshaking in Accept.
 
 ---
 
