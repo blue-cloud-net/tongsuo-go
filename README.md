@@ -87,7 +87,7 @@ The release series covers:
 - `0.11.0`: Session resumption, caches, import/export, ticket controls and key rotation
 - `0.12.0`: HTTP/1.1 client/server integration and OCSP stapling
 - `0.13.0`: PQC
-- `0.14.0` (pending release): audit fixes and selectable X.509 certificate and CSR signing digests
+- `0.14.0`: audit fixes and selectable X.509 certificate and CSR signing digests
 - `0.15.0`: CMS and RFC 3161 timestamps
 - `0.16.0`: Standard KDFs and public key encoding interoperability
 - `1.0.0`: Public API convergence and stability
