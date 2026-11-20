@@ -691,6 +691,18 @@ func X509_REQ_free(r unsafe.Pointer) {
 	C.X509_REQ_free((*C.X509_REQ)(r))
 }
 
+// X509ReqVersion1 是 PKCS#10 v1 请求的版本值。
+//
+// X509ReqVersion1 is the version value for a PKCS#10 v1 request.
+const X509ReqVersion1 = C.X509_REQ_VERSION_1
+
+// X509_REQ_set_version 设置 CSR 版本。
+//
+// X509_REQ_set_version sets the version of a CSR.
+func X509_REQ_set_version(r unsafe.Pointer, version int) bool {
+	return C.X509_REQ_set_version((*C.X509_REQ)(r), C.long(version)) == 1
+}
+
 // X509_REQ_set_pubkey 设置 CSR 公钥。
 // X509_REQ_set_pubkey installs pkey as the CSR's public key. The reference
 // count is incremented internally so the caller retains ownership of pkey.

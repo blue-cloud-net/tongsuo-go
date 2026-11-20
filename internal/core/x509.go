@@ -1910,6 +1910,11 @@ func NewCertificateRequest() (*CertificateRequest, error) {
 	if r == nil {
 		return nil, NewOpError("x509: X509_REQ_new", native.PopError())
 	}
+	if !native.X509_REQ_set_version(r, native.X509ReqVersion1) {
+		err := NewOpError("x509: X509_REQ_set_version", native.PopError())
+		native.X509_REQ_free(r)
+		return nil, err
+	}
 	return &CertificateRequest{handle: NewHandle(r, true, native.X509_REQ_free)}, nil
 }
 

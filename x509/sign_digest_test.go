@@ -91,6 +91,9 @@ func TestSignWithDigest(t *testing.T) {
 			}
 
 			checkSignWithDigest(t, req.SignWithDigest, priv, tc.digest, tc.incompatible)
+			if err := req.Verify(); err != nil {
+				t.Fatalf("verify CSR before DER round trip: %v", err)
+			}
 			reqDER, err := req.MarshalDER()
 			if err != nil {
 				t.Fatal(err)

@@ -187,7 +187,7 @@ internal/testutil ← 仅被 *_test.go 使用
 - `func (c *Certificate) MarshalDER() ([]byte, error)` / `Close() error` — 导出与释放
 - `type Extension struct { …（内部字段） }` — 单个扩展
 - `type CertificateRequest struct { …（内部字段） }` — PKCS#10 请求（同样带 `signed` 标记与 `ensureMutable`）
-- `func NewCertificateRequest() (*CertificateRequest, error)` — 创建空白请求
+- `func NewCertificateRequest() (*CertificateRequest, error)` — 创建空白 PKCS#10 v1 请求
 - `func LoadCertificateRequestPEM(pem []byte) (*CertificateRequest, error)` / `LoadCertificateRequestDER(der []byte) (*CertificateRequest, error)` — 加载
 - `func (r *CertificateRequest) MarshalPEM() ([]byte, error)` / `MarshalDER() ([]byte, error)` — 导出
 - `func (r *CertificateRequest) SetSubject(n *Name) error` / `SetPublicKey(k *PKey) error` / `Sign(priv *PKey, md *Digest) error` / `Verify() error` — 构建与校验，RSA 和 ECDSA 验签使用 CSR 中记录的签名算法
@@ -395,7 +395,7 @@ internal/testutil ← 仅被 *_test.go 使用
   > `subjectAltName` 的 `email:copy`），缺失即段错误。本库的
   > `X_X509V3_EXT_conf_nid_ctx_new` 负责统一注入两者。
 - **扩展语义读取**：`X509_get_san` `X509_get_key_usage` `X509_get_eku` `X509_get_basic_constraints`、`X509_get0_subject_key_id` `X509_get0_authority_key_id`、`X509_GENERAL_NAMES_{free,num,value}` `X509_GENERAL_NAME_{type,to_string}`、`X509_EXTENDED_KEY_USAGE_{free,num,value}`、`X509_BASIC_CONSTRAINTS_{free,ca,pathlen}`、`X509_ASN1_BIT_STRING_free` `ASN1_BIT_STRING_get_bit`
-- **CSR**：`X509_REQ_new` `free` `set_pubkey` `get_pubkey` `set_subject_name` `get_subject_name` `sign` `sign_ctx` `verify`、`X509_REQ_add_extensions` `get_extensions`、`X509_REQ_set/get_challenge_password`、`I2d_X509_REQ` `D2i_X509_REQ` `I2d_X509_REQ_INFO`、`X509_REQ_get0_signature` `_get_signature_info`、`X_PEM_read_bio_X509_REQ` `X_PEM_write_bio_X509_REQ`
+- **CSR**：`X509_REQ_new` `free` `set_version` `set_pubkey` `get_pubkey` `set_subject_name` `get_subject_name` `sign` `sign_ctx` `verify`、`X509_REQ_add_extensions` `get_extensions`、`X509_REQ_set/get_challenge_password`、`I2d_X509_REQ` `D2i_X509_REQ` `I2d_X509_REQ_INFO`、`X509_REQ_get0_signature` `_get_signature_info`、`X_PEM_read_bio_X509_REQ` `X_PEM_write_bio_X509_REQ`
 - **Store 与链验证**：`X509_STORE_new` `free` `add_cert` `add_crl` `set_flags` `get0_param`、`X509_VERIFY_PARAM_set_time`、`X509_STORE_CTX_new` `free` `init` `set0_untrusted` `get_error` `get_error_depth` `get_current_cert` `get0_chain`、`X509_verify_cert` `X509_verify_cert_error_string`、`X509_sk_X509_*`
 - **主机名校验**：`X509_check_host` `X509_check_ip_asc`
 - **CRL**：`X509_CRL_new` `free` `verify` `sign` `sign_ctx` `sort` `add0_revoked`、`X509_CRL_set_version` `set_issuer_name` `set1_lastUpdate` `set1_nextUpdate` `set_crl_number`、`X509_CRL_get_version` `get0_lastUpdate` `get0_nextUpdate` `get_issuer` `get_REVOKED` `get_ext_count` `get_ext` `get0_authority_key_id` `get_crl_number` `get_signature_info`、`X509_sk_X509_REVOKED_{num,value}`、`X509_REVOKED_new` `free` `set_serial_int` `set_revocation_date` `set_reason`、`X509_REVOKED_get0_serialNumber` `_get0_revocationDate` `_crl_reason`、`I2d_X509_CRL` `D2i_X509_CRL`、`X_PEM_read_bio_X509_CRL` `X_PEM_write_bio_X509_CRL`
