@@ -81,13 +81,15 @@ The released `0.8.0` implements Tongsuo 8.4.0/8.5.0 compatibility, GCM-SIV, EdDS
 
 `0.9.0` was released on 2026-11-06; it covers TLS / NTLS handshakes and authentication, mixed ports, SNI, ALPN, verification policies, connection state and client/server examples.
 
-`0.10.0` was released on 2026-11-12; later releases remain planned:
+The release series covers:
 
 - `0.10.0`: RFC 8998 ShangMi TLS 1.3, structured handshake diagnostics, optional detailed trace and keylog
 - `0.11.0`: Session resumption, caches, import/export, ticket controls and key rotation
 - `0.12.0`: HTTP/1.1 client/server integration and OCSP stapling
 - `0.13.0`: PQC
-- `0.14.0`: CMS and RFC 3161 timestamps
+- `0.14.0` (pending release): audit fixes and selectable X.509 certificate and CSR signing digests
+- `0.15.0`: CMS and RFC 3161 timestamps
+- `0.16.0`: Standard KDFs and public key encoding interoperability
 - `1.0.0`: Public API convergence and stability
 
 The transport releases deliver SDK APIs and runnable examples for downstream handshake tests similar to `s_client` / `s_server`.
@@ -444,7 +446,7 @@ Binding layer (internal/native/)   ← cgo + inline C shim; maps directly to Ton
 - **Concurrency model**: distinct handles can be used in parallel; serialize ordinary handles, while `tls.Conn` supports concurrent reads, writes and Close with serialized native calls
 - **Internal implementation is hidden**: `internal/` is protected by Go's `internal` mechanism and cannot be imported from outside; no `internal/` type appears in a public signature
 
-See [docs/architecture.md](docs/architecture.md) for the detailed design and the dependency graph, and [docs/roadmap.md](docs/roadmap.md) for the `0.14.0`–`1.0.0` version plan.
+See [docs/architecture.md](docs/architecture.md) for the detailed design and the dependency graph, and [docs/roadmap.md](docs/roadmap.md) for the `0.15.0`–`1.0.0` version plan.
 
 ## License
 

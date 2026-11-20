@@ -1,6 +1,6 @@
 # 铜锁 CLI 与 tongsuo-go 能力对比
 
-> 复核日期：2026-11-18 ｜ 本库基线：`0.13.0` 于 2026-11-19 定版，待标签发布。
+> 复核日期：2026-11-18 ｜ 本库基线：`0.14.0`（待发布）。
 > CLI 基线：本机 `/opt/tongsuo-8.4.0/bin/openssl` 与 `/opt/tongsuo-8.5.0/bin/openssl`。
 > 本次核对公开源码并重新执行版本、命令及算法枚举；未重新执行全部密码学操作或互通测试。
 > 已交付能力的验收证据见 [测试规范](testing-guide.md)，不把本次静态核对写成测试通过。
@@ -46,10 +46,10 @@
 | `ca` 数据库工作流 | 内存证书/CSR/CRL 原语 | 部分覆盖：SDK 签发原语已有；文件锁、serial/index.txt、审计与续期数据库暂缓，见 I-41 |
 | `ocsp` | [x509/ocsp.go](../x509/ocsp.go)、[ocsp_http.go](../x509/ocsp_http.go) | 部分覆盖：请求/响应、验证、HTTP 获取与 nonce 已有；不提供完整 OCSP responder 服务，TLS staple 另见 I-29 |
 | `pkcs7` / `crl2pkcs7` | [pkcs/pkcs7](../pkcs/pkcs7/) 的 `Build` / `Extract` / `FromCRL` / `ExtractCRLs` / `Sign` / `Verify` / `Encrypt` / `Decrypt` | 已有证书/CRL 容器与基础签验、信封；现有 `FromCRL` 不是“CRL + 任意证书”的通用 Bundle 构建器；按原生支持限制签名/接收者算法 |
-| `cms` | PKCS#7 基础流程不能替代 CMS 实现 | 未封装：CMS 签验、信封、DigestedData 归 0.14.0，见 I-37；PKCS#7 与 CMS 不作为同一格式选项 |
+| `cms` | PKCS#7 基础流程不能替代 CMS 实现 | 未封装：CMS 签验、信封、DigestedData 归 0.15.0，见 I-37；PKCS#7 与 CMS 不作为同一格式选项 |
 | `pkcs8` | [asym/pkcs8.go](../asym/pkcs8.go) 的 `MarshalPKCS8` / `LoadPKCS8` / `PKCS8Options` | 已有 PEM/DER、PBE/PRF 参数，不再列作缺失的 `-topk8` 能力 |
 | `pkcs12` | [pkcs/pkcs12](../pkcs/pkcs12/) 的 Pack/Parse/改密及 Options | 已有 PBE、迭代、口令选项；复杂 safe/bag 无损改密已交付；不承诺 Pack/Parse 覆盖所有复杂容器结构 |
-| `ts` | 尚无公开 `ts` 包 | 未封装：RFC 3161 请求/响应、验证与 HTTP 归 0.14.0，见 I-39 |
+| `ts` | 尚无公开 `ts` 包 | 未封装：RFC 3161 请求/响应、验证与 HTTP 归 0.15.0，见 I-39 |
 | `storeutl` | [keystore/load.go](../keystore/load.go)、[x509/load.go](../x509/load.go) | 部分覆盖：本地 PEM/DER/PKCS#12 与证书/CRL 多对象加载已有；非文件 provider/硬件 URI 不支持，见 I-42 |
 | `asn1parse` | [asn1](../asn1/) 的 `Parse` / `ParseWithLimits` / `Dump` | 部分覆盖：纯 Go DER viewer 与限额；不实现 `-genstr` / `-genconf` 配置语言，见 I-45 |
 | `version` / `info` / `errstr` / `list` | [meta](../meta/) 的版本、`ReadBuildInfo`、错误码与算法枚举 | 已覆盖查询任务；枚举结果不保证每种算法可实际操作 |
@@ -76,9 +76,9 @@
 | 需求 | 价值与决策 | 目标 |
 |---|---|---|
 | I-31 / I-29 | 会话恢复降低握手成本，HTTP/OCSP 完成典型客户端与服务端集成 | 已在 0.11.0 / 0.12.0 实现 |
-| I-37 / I-39 | CMS 与 RFC 3161 有标准格式和现成 CLI 互通对象；CMS 补摘要封装/验证 | 0.14.0 |
-| I-34 | SSHKDF / PKCS12KDF 填补已存在原生接口的协议派生缺口，可独立验向量 | 0.15.0 |
-| I-35 | EC/SM2 压缩/未压缩公钥导出用于标准密钥交换与存储互通 | 0.15.0 |
+| I-37 / I-39 | CMS 与 RFC 3161 有标准格式和现成 CLI 互通对象；CMS 补摘要封装/验证 | 0.15.0 |
+| I-34 | SSHKDF / PKCS12KDF 填补已存在原生接口的协议派生缺口，可独立验向量 | 0.16.0 |
+| I-35 | EC/SM2 压缩/未压缩公钥导出用于标准密钥交换与存储互通 | 0.16.0 |
 | I-36 | 配置式 CRL 签发与现有多步原语组合，随 API 稳定集中设计 | 1.0.0 |
 | I-05 / I-40–I-48 | 标准混合加密、通用流传输、CA 状态管理、硬件/provider、特殊协议或参数 | 暂缓；价值、限制与重开条件见需求台账 |
 
