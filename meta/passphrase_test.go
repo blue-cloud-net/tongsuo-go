@@ -73,7 +73,7 @@ func TestPassphraseEnvUnset(t *testing.T) {
 // newline.
 func TestPassphraseFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "pass.txt")
-	if err := os.WriteFile(path, []byte("file-secret\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("file-secret\r\nsecond\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	p, err := NewPassphrase("file:" + path)
@@ -104,6 +104,9 @@ func TestPassphraseFD(t *testing.T) {
 	}
 	if got := string(p.Bytes()); got != "fd-secret" {
 		t.Errorf("Bytes = %q, want %q", got, "fd-secret")
+	}
+	if _, err := f.Stat(); err != nil {
+		t.Fatalf("caller descriptor was closed: %v", err)
 	}
 }
 
@@ -147,5 +150,32 @@ func TestPassphraseNil(t *testing.T) {
 	}
 	if !p.IsEmpty() {
 		t.Error("IsEmpty on a nil passphrase should be true")
+	}
+}
+
+// TestPassphraseStdinReadsOneLine 验证连续读取标准输入口令。
+//
+// TestPassphraseStdinReadsOneLine verifies that each call consumes one input line.
+func TestPassphraseStdinReadsOneLine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stdin.txt")
+	if err := os.WriteFile(path, []byte("first\nsecond\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	original := os.Stdin
+	os.Stdin = input
+	defer func() { os.Stdin = original }()
+	for _, tc := range []struct{ spec, want string }{{"stdin", "first"}, {"stdin:", "second"}} {
+		p, err := NewPassphrase(tc.spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(p.Bytes()) != tc.want {
+			t.Fatalf("%s did not read the expected line", tc.spec)
+		}
 	}
 }

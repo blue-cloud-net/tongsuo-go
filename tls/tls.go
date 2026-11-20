@@ -74,45 +74,22 @@ func coreCertOf(c *x509.Certificate) (*core.Certificate, error) {
 	return h, nil
 }
 
-// Config 表示 TLS / NTLS 配置。
+// Config 表示 TLS / NTLS 配置。标准 TLS 使用 Cert / Key，NTLS 使用签名与加密两对凭证。
+// 构造连接后不得修改配置。选择回调可能并发执行，且不得重入同一连接。
 //
-// Cert / Key 用于标准 TLS 路径（服务端必填，客户端用于双向认证时可选）；启用 NTLS
-// 时由 SignCert / SignKey 与 EncCert / EncKey 提供 GM/T 0024 TLCP 双证书
-// （签名证书 + 加密证书）。MinVersion / MaxVersion 与 CipherSuites 非空时覆盖库默认。
+// 客户端 VerifyDefault 在配置了信任根、ServerName 或独立验证名称/邮箱时启用验证。
+// InsecureSkipVerify 覆盖默认策略。VerifyStrict、VerifyReport 或独立验证名称/邮箱
+// 在没有显式信任根时使用铜锁默认信任路径。ServerName 控制 SNI 并可作为验证名称。
 //
-// 0.9.0 起请优先使用 Verification 显式指定策略。以下 D1 描述是历史说明；
-// 零值实际行为是 RootCAs 非空或 ServerName 非空且未跳过时启用验证。
-// VerifyReport 与 VerifyStrict 在未配置根时使用铜锁默认信任路径。
-// 配置构造后不可修改；选择回调可能并发执行，不得重入同一连接。
+// Config configures TLS and NTLS. TLS uses Cert and Key. NTLS uses separate
+// signing and encryption credentials. Do not mutate the config after it is
+// used. Selection callbacks may run concurrently and must not reenter the connection.
 //
-// 客户端对端验证（D1，方案 A，默认不验证）：
-//
-//   - RootCAs 为 nil 或 InsecureSkipVerify 为 true：客户端不验证对端证书，
-//     与 crypto/tls 默认行为的语义不同（crypto/tls 默认开启）；本库出于对国密
-//     生态（私有 CA、自签双证书为主）的适配默认关闭，**强烈建议生产环境显式
-//     配置 RootCAs**——OpenSSL 在 PEER 模式下未提供 CA 时会立即握手失败。
-//
-//   - RootCAs 非 nil 且 InsecureSkipVerify == false：客户端开启 PEER 验证
-//     并注入信任根；ServerName 非空时同时启用主机名校验。
-//
-//   - ServerName 空时 Dial 会从 network/addr  推导 host 部分。
-//
-// **NTLS 警告**：本库对 NTLS/TLCP 的对端验证接线遵循与 TLS 完全相同的策略；
-// 但 Tongsuo NTLS 路径是否执行标准 X509_STORE 链/主机名校验依赖 Tongsuo
-// 版本，生产部署前请先实测握手行为。
-//
-// Config represents a TLS or NTLS configuration shared by Dial and Server.
-//
-// Since 0.9.0, prefer an explicit Verification policy. The following D1
-// description is historical; the zero policy actually verifies when RootCAs
-// is nonempty or ServerName is set, unless verification is skipped.
-// VerifyReport and VerifyStrict use Tongsuo default trust paths when roots
-// are absent. Do not mutate configurations after construction; selection
-// callbacks may run concurrently and must not reenter the same connection.
-//
-// See the package-level "客户端对端验证" Chinese comment above for the
-// D1 default-verify policy (方案 A: VERIFY_NONE by default; PEER enabled
-// only when RootCAs is set AND InsecureSkipVerify is false).
+// The client default enables verification when roots, ServerName, or a
+// separate verification name or email is specified, unless InsecureSkipVerify
+// is set. VerifyStrict, VerifyReport and separate identity checks use Tongsuo
+// default trust paths when explicit roots are absent. ServerName controls SNI
+// and can also supply the verification name.
 type Config struct {
 	// OCSPPolicy 控制客户端装订验证。
 	//
@@ -329,11 +306,10 @@ type Config struct {
 	// CipherSuites lists allowed suites; empty preserves native defaults.
 	CipherSuites []string
 
-	// RootCAs 为客户端用于信证书池（nil 表示不进行对端验证）；
-	// InsecureSkipVerify 为 true 时强制跳过验证（覆盖 RootCAs）。
+	// RootCAs 为客户端用于验证的信任根。为空时的行为取决于 Verification 和身份配置。
 	//
-	// RootCAs contains client trust roots. The preceding skip description is
-	// historical; explicit policies also permit default Tongsuo trust paths.
+	// RootCAs contains client trust roots. Behavior without explicit roots
+	// depends on Verification and the configured verification identity.
 	RootCAs []*x509.Certificate
 	// InsecureSkipVerify 为旧策略强制关闭验证；与显式 Verification 冲突。
 	//
@@ -345,43 +321,12 @@ type Config struct {
 	ServerName string
 }
 
-// Dial 与指定地址建立 TLS 连接（含握手）；成功时返回包装底层 socket 的 *Conn 并已完成握手，失败时返回错误并关闭已部分初始化的资源。
+// DialContext 拨号并完成 TLS 或 NTLS 握手。ctx 控制拨号和握手的期限与取消。
+// 成功返回已完成握手的 *Conn，失败关闭中途创建的资源。对端验证失败以 HandshakeError 报告。
 //
-// 客户端对端验证（D1 方案 A 默认行为）：
-//   - config.InsecureSkipVerify 为 true：跳过验证；
-//   - 否则若 config.RootCAs 非 nil 或 config.ServerName 非空：开启 PEER
-//     验证 + 注入根 + 主机名校验；
-//   - 否则保持 VERIFY_NONE（与 crypto/tls 默认行为不同）。
-//
-// 握手完成后若开启了 PEER 验证，额外调用 SSL_get_verify_result 检查错误码；
-// 验证失败关闭连接并返回 *x509.VerifyError 风格的错误。
-//
-// Dial connects to the given network address using a TLS or NTLS client
-// handshake. On success it returns a *Conn wrapping the underlying socket
-// after the handshake completes; on failure it returns an error and closes
-// any partially initialised resources.
-// DialContext 与指定地址建立 TLS 连接。ctx 同时控制 TCP 拨号超时/取消与握手超时/取消。
-//
-// 握手完成后若开启了 PEER 验证，额外调用 SSL_get_verify_result 检查错误码；
-// 验证失败关闭连接并返回 *HandshakeError{Kind:HandshakeErrorPeerVerify}。
-//
-// 取消/超时：ctx 取消/超时经 net.Dialer.DialContext 传播为底层 error；
-// 握手阶段的取消由 *Conn.HandshakeContext 负责。
-//
-// **Linux 平台限制**：握手阶段使用 syscall.Select 等待 fd 可读，该调用
-// 在 Linux 上不可从 Go 侧直接打断；握手循环以 waitFDTimeout 为切片
-// 等待，并在每片超时后重新检查 ctx / deadline，使 ctx 取消的实际
-// 响应延迟不超过一个切片（当前 250ms）。完整 epoll/poll(2) 改造计划
-// 在 v0.1.3+。
-//
-// DialContext dials network/addr under ctx and completes a TLS or NTLS
-// handshake. Cancellation of ctx aborts the TCP dial (via net.Dialer)
-// and the TLS handshake (via *Conn.HandshakeContext); the returned
-// error is the raw ctx.Err() (context.Canceled or context.DeadlineExceeded).
-//
-// On peer-verification failure (when PEER mode is enabled) the returned
-// error is a *HandshakeError{Kind:HandshakeErrorPeerVerify} wrapping
-// the Tongsuo X509 verification result text.
+// DialContext dials and completes a TLS or NTLS handshake under ctx. It
+// returns a handshaken *Conn and releases partially initialized resources
+// on failure. Peer verification failures are reported as HandshakeError.
 func DialContext(ctx context.Context, network, addr string, config *Config) (net.Conn, error) {
 	if ctx == nil {
 		return nil, errors.New("tls: nil context")
@@ -415,9 +360,8 @@ func Dial(network, addr string, config *Config) (net.Conn, error) {
 
 // shouldSkipVerify 按 D1 方案 A 判定客户端是否跳过对端验证。
 //
-// shouldSkipVerify implements the D1 方案 A policy: VERIFY_NONE by
-// default; PEER enabled only when RootCAs is non-empty AND
-// InsecureSkipVerify is false.
+// shouldSkipVerify selects legacy defaults. Trust roots or an explicit
+// identity enable verification unless InsecureSkipVerify is set.
 func shouldSkipVerify(config *Config) bool {
 	if config == nil {
 		return true
@@ -425,10 +369,11 @@ func shouldSkipVerify(config *Config) bool {
 	if config.InsecureSkipVerify {
 		return true
 	}
-	if len(config.RootCAs) == 0 && config.ServerName == "" {
-		return true
-	}
-	return false
+	return len(config.RootCAs) == 0 && config.ServerName == "" && !hasExplicitVerificationIdentity(config)
+}
+
+func hasExplicitVerificationIdentity(config *Config) bool {
+	return config.VerificationName != "" || config.HostnameOptions.Email != ""
 }
 
 // Server 表示一个 TLS / NTLS 服务端。
@@ -439,11 +384,10 @@ type Server struct {
 	ctx *core.TLSContext
 }
 
-// NewServer 创建 TLS 服务端；失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
+// NewServer 根据配置创建 TLS 或 NTLS 服务端。配置无效或底层操作失败时返回错误。
 //
 // NewServer creates a TLS or NTLS server from the given configuration.
-// On failure it returns an error wrapping an OpError that describes the
-// underlying operation.
+// Invalid configurations and native setup failures are returned as errors.
 func NewServer(config *Config) (*Server, error) {
 	ctx, err := newContext(config, false)
 	if err != nil {
@@ -473,27 +417,14 @@ func (s *Server) Close() error {
 	return s.ctx.Close()
 }
 
-// Conn 是一个 TLS / NTLS 连接（net.Conn），基于底层 socket fd 上的 SSL。
+// Conn 是使用底层套接字的 TLS / NTLS net.Conn。
+// 同方向读写各自串行，等待套接字就绪时另一方向可继续。首次 I/O 触发握手。
+// Close 幂等并释放连接、底层套接字及其原生副本。
 //
-// Read 与 Write 通过内部互斥锁序列化；多 goroutine 并发调用安全但不能并行。
-// Close 通过 sync.Once 保证幂等：先停止 SSL 层并 shutdown 底层 socket（唤醒在途阻塞
-// 的 SSL_read / SSL_write / select 调用），再释放 SSL 句柄（含其持有的 dup socket
-// 副本）；之后 Read/Write 立即返回 `io.EOF`/错误而非传 nil 进 cgo。
-//
-// 0.9.0 起以下读写串行化描述为历史行为：读取与写入分别串行，原生单步互斥，等待就绪时允许另一方向推进。
-//
-// Conn is a net.Conn implementation that performs TLS or NTLS I/O on top
-// of an underlying socket file descriptor.
-//
-// Read and Write are serialized with an internal mutex; concurrent calls
-// from multiple goroutines are safe but not parallel. Close uses a
-// sync.Once to remain idempotent: it stops the SSL layer and shuts the socket
-// down (waking any in-progress SSL_read / SSL_write / select call) and then
-// releases the SSL handle, including the dup'ed socket duplicate it owns.
-// Subsequent Read/Write calls return io.EOF / an error rather than passing nil
-// across the cgo boundary.
-//
-// Since 0.9.0, the serialization description below is historical: reads and writes progress independently, with serialized native steps and unlocked readiness waits.
+// Conn implements net.Conn over a TLS or NTLS socket. Reads and writes each
+// serialize with their own direction and can progress during the other
+// direction’s readiness waits. First I/O triggers a handshake. Close is
+// idempotent and releases the connection, socket, and native duplicate.
 type Conn struct {
 	sessionKey     string
 	sessionPending []byte
@@ -739,21 +670,12 @@ func classifyHandshakeErr(op string, err error) error {
 	return result
 }
 
-// Read 读取解密后的应用层数据。
+// Read 读取解密后的应用数据。读取与其他读取串行，首次 I/O 触发握手。
+// 返回已读取的字节数及错误。连接关闭后返回 io.EOF。
 //
-// 与同一 Conn 上的并发 Write 调用互斥序列化。连接已关闭时返回 io.EOF；
-// 短读返回 n > 0 与 nil（与 io.Reader 契约一致）。
-//
-// Read reads decrypted application data from the TLS or NTLS connection
-// into b.
-//
-// 0.9.0 起以下与 Write 互斥的描述为历史行为：读取仅与其他读取串行，首次 I/O 自动握手。
-//
-// Read is serialized with concurrent Write calls on the same Conn.
-// Returns io.EOF after Close. Returns (n, nil) for partial reads
-// (matching the io.Reader contract).
-//
-// Since 0.9.0, the Write-exclusion description below is historical: reads serialize only with other reads, and first I/O triggers a handshake.
+// Read reads decrypted application data, serializing with other reads.
+// First I/O triggers a handshake. It returns the byte count and error,
+// and returns io.EOF after the connection is closed.
 func (c *Conn) Read(b []byte) (int, error) {
 	if err := c.Handshake(); err != nil {
 		return 0, err
@@ -786,22 +708,12 @@ func (c *Conn) Read(b []byte) (int, error) {
 	return n, err
 }
 
-// Write 加密并发送应用层数据。
+// Write 加密并发送应用数据，与其他写入串行，首次 I/O 触发握手。
+// 返回已写入的字节数及错误。原生写入开始后发生错误，该连接的后续写入仍会失败。
 //
-// 0.9.0 起下述读写互斥为历史行为：写入仅与其他写入串行；
-// 原生写入开始后的超时或错误会使后续写入保持失败，须关闭连接。
-//
-// 与同一 Conn 上的并发 Read 调用互斥序列化。连接已关闭时返回 ErrClosed。
-//
-// Write encrypts and sends application data b over the TLS or NTLS
-// connection.
-//
-// Since 0.9.0, the read/write exclusion below is historical: writes serialize
-// only with other writes. A timeout or error after native writing begins
-// permanently fails subsequent writes; close the connection.
-//
-// Write is serialized with concurrent Read calls on the same Conn.
-// Returns ErrClosed after Close.
+// Write encrypts and sends application data and serializes with other writes.
+// First I/O triggers a handshake. It returns the byte count and error. After
+// an error once native writing starts, subsequent writes on the connection fail.
 func (c *Conn) Write(b []byte) (int, error) {
 	if err := c.Handshake(); err != nil {
 		return 0, err
@@ -844,21 +756,20 @@ func isCleanShutdownErr(err error) bool {
 }
 
 // Close 关闭 TLS 连接与底层连接。幂等（多次调用安全）。顺序为：停止 SSL 层并
-// shutdown 底层 socket（唤醒在途阻塞的 SSL_read / SSL_write / select，并让对端立刻
+// shutdown 底层 socket（唤醒在途阻塞的 SSL_read / SSL_write / poll，并让对端立刻
 // 看到 FIN）→ 关闭 raw socket → 释放 SSL 句柄与它持有的 socket 副本 →（DialContext
 // 路径）释放 *core.TLSContext。
 //
-// 给 SSL 的是 dup 得到的 socket 副本（见 connFD 与 docs/issues/2026-09-24/P1011）：
+// 给 SSL 的是 dup 得到的 socket 副本（见 connFD）：
 // 这样 SSL 用的 fd 号在本连接生命周期内不会被内核回收给别人，避免跨连接数据串扰。
 //
 // Close shuts down the TLS or NTLS session and closes the underlying socket. The
 // order is: stop the SSL layer and shutdown(2) the socket (waking in-flight
-// SSL_read / SSL_write / select and letting the peer observe a FIN immediately) →
+// SSL_read / SSL_write / poll and letting the peer observe a FIN immediately) →
 // close the raw socket → release the SSL handle together with the socket duplicate
 // it owns → (DialContext path only) release the *core.TLSContext.
 //
-// The SSL handle is bound to a dup'ed socket duplicate (see connFD and
-// docs/issues/2026-09-24/P1011), so its fd number cannot be recycled to another
+// The SSL handle is bound to a dup'ed socket duplicate (see connFD), so its fd number cannot be recycled to another
 // connection for the lifetime of this Conn — which is what caused cross-connection
 // crosstalk.
 //
@@ -872,7 +783,7 @@ func (c *Conn) Close() error {
 		c.closed.Store(true)
 		// 0) 先停 SSL 并 shutdown 底层 socket：唤醒在途 select/recv，并让对端立刻看到
 		//    FIN —— 本库给 SSL 的是 dup 出来的副本，单靠关 raw 既不会关闭套接字，
-		//    也唤不醒在途等待（P1011）。
+		//    也唤不醒在途等待。
 		if c.ssl != nil {
 			c.ssl.Stop()
 		}
@@ -927,18 +838,11 @@ func (c *Conn) SetDeadline(t time.Time) error {
 	return c.raw.SetDeadline(t)
 }
 
-// SetReadDeadline 设置读取期限（仅 SSL 层；raw socket 层同时设置）。
-// 同时清空 raw socket 的写入 deadline，避免用户后续 Write 因旧写入
-// deadline 而意外超时。
+// SetReadDeadline 设置原生 TLS 层和底层套接字的读取期限，保留写入期限。
+// 零值时间清除读取期限。
 //
-// 0.9.0 起以下清空写入期限的描述为历史行为：读取期限独立设置，保留写入期限。
-//
-// SetReadDeadline sets the read deadline on both the SSL and the
-// underlying socket; the raw socket's write deadline is also cleared to
-// zero so that subsequent Write calls are not impacted by a stale write
-// timeout.
-//
-// Since 0.9.0, clearing the write deadline as described below is historical: read and write deadlines remain independent.
+// SetReadDeadline updates the native TLS and socket read deadlines and
+// preserves the write deadline. A zero time removes the read deadline.
 func (c *Conn) SetReadDeadline(t time.Time) error {
 	if c == nil || c.ssl == nil {
 		return errors.New("tls: SSL closed")
@@ -949,18 +853,11 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
 	return c.raw.SetReadDeadline(t)
 }
 
-// SetWriteDeadline 设置写入期限（仅 SSL 层；raw socket 层同时设置）。
-// 同时清空 raw socket 的读取 deadline，避免用户后续 Read 因旧读取
-// deadline 而意外超时。
+// SetWriteDeadline 设置原生 TLS 层和底层套接字的写入期限，保留读取期限。
+// 零值时间清除写入期限。
 //
-// 0.9.0 起上述清空读取期限的描述为历史行为；写入期限独立设置，保留读取期限。
-//
-// SetWriteDeadline sets the write deadline on both the SSL and the
-// underlying socket; the raw socket's read deadline is also cleared to
-// zero so that subsequent Read calls are not impacted by a stale read
-// timeout.
-//
-// Since 0.9.0, the read-deadline clearing described above is historical; write deadlines preserve read deadlines.
+// SetWriteDeadline updates the native TLS and socket write deadlines and
+// preserves the read deadline. A zero time removes the write deadline.
 func (c *Conn) SetWriteDeadline(t time.Time) error {
 	if c == nil || c.ssl == nil {
 		return errors.New("tls: SSL closed")
@@ -1201,7 +1098,7 @@ func newContext(config *Config, client bool) (*core.TLSContext, error) {
 		if err := ctx.AddVerifyRoots(certs); err != nil {
 			return nil, err
 		}
-	} else if policy != VerifyNone && cfg.Verification != VerifyDefault {
+	} else if policy != VerifyNone && (cfg.Verification != VerifyDefault || (client && hasExplicitVerificationIdentity(cfg))) {
 		if err := ctx.SetDefaultVerifyPaths(); err != nil {
 			return nil, err
 		}
@@ -1258,7 +1155,6 @@ const defaultVerifyDepth = 100
 // 必须复制（而不是直接把 fd 号交给 OpenSSL）：`net.Conn` 关闭后该号码会被内核回收
 // 并可能分配给新连接，而 SSL 的 BIO 仍记着它 —— 之后的 SSL_read / SSL_write 会
 // 读写**别的连接**的 socket（跨连接串扰、握手随机失败）。
-// 见 docs/issues/2026-09-24/P1011。
 //
 // 复制在 `SyscallConn().Control` 回调**内部**完成：该契约要求不得在回调外持有底层
 // fd，而 dup 出来的副本属于我们自己，可以安全长期持有。返回的 fd 由 tls.Conn 持有，
@@ -1271,7 +1167,7 @@ const defaultVerifyDepth = 100
 // once the net.Conn is closed the kernel may recycle that number for a new
 // connection while the SSL BIO still remembers it, after which SSL_read /
 // SSL_write touch another connection's socket — cross-connection crosstalk and
-// intermittent handshake failures. See docs/issues/2026-09-24/P1011.
+// intermittent handshake failures.
 //
 // The duplication happens inside the SyscallConn().Control callback, whose
 // contract forbids retaining the underlying fd outside it; the duplicate is ours

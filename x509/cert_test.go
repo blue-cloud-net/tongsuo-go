@@ -706,3 +706,48 @@ func TestCertificateNonASCIISubjectRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// TestCertificateCloseContract 验证公开证书关闭幂等且关闭后拒绝序列化。
+//
+// TestCertificateCloseContract verifies idempotent Close and rejects serialization after Close.
+func TestCertificateCloseContract(t *testing.T) {
+	var nilCertificate *Certificate
+	if err := nilCertificate.Close(); err != nil {
+		t.Fatal(err)
+	}
+	c := NewCertificate()
+	for i := 0; i < 2; i++ {
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if der, err := c.MarshalDER(); err == nil || der != nil {
+		t.Fatal("MarshalDER on a closed certificate should return an error")
+	}
+}
+
+// TestNameOutlivesCertificate 验证关闭证书后名称副本仍可读取。
+//
+// TestNameOutlivesCertificate verifies the independent lifetime of a name snapshot.
+func TestNameOutlivesCertificate(t *testing.T) {
+	cert := NewCertificate()
+	original := NewName().Add("CN", "fixture")
+	defer original.Close()
+	if err := cert.SetSubject(original); err != nil {
+		t.Fatal(err)
+	}
+	name := cert.SubjectName()
+	defer name.Close()
+	if err := cert.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := name.Get("CN"); got != "fixture" {
+		t.Fatalf("independent name lost subject: %q", got)
+	}
+	if err := name.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := name.Close(); err != nil || name.Len() != 0 {
+		t.Fatalf("name close contract: %v", err)
+	}
+}

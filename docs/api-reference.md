@@ -9,7 +9,7 @@
 > 4. 类型给出导出字段；未导出字段以「（内部字段）」表示其存在；
 > 5. 本文描述的是**重构后的目标形态**：`crypto/` 整目录与 `key/` 已被 `digest` / `mac` / `sym` / `asym` / `ecdh` / `kdf` / `rand` / `keystore` 取代；`csr` / `crl` / `ocsp` **未拆**，全部留在 `x509`。
 >
-> **范围**：**16 个包**。实现基线：`0.13.0`（2026-11-19 定版，待标签发布）；未来目标均以 🧭 标注。
+> **范围**：**16 个包**。实现基线：`0.13.0`（2026-11-19 定版，标签 `v0.13.0`）；未来目标均以 🧭 标注。
 > **版本归属**：本文件不负责版本分配，哪个 🧭 符号落在哪个版本见 [roadmap.md](roadmap.md) §2。
 >
 > **状态标记**：
@@ -140,6 +140,8 @@
     🆕 `func NewFileSink(path string) (*Sink, error)` / 🆕 `func StdoutSink() *Sink`
   - 🆕 `func (s *Sink) SetEncoding(enc Encoding) error` — 只能在首次写入前设置
   - 🆕 `func (s *Sink) Write(p []byte) (int, error)` — 实现 `io.Writer`
+  - ➕ `func (s *Sink) ProtectInputFile(r io.Reader) error` — 在写入前避免覆盖已打开的同一输入文件
+  - ➕ `func (s *Sink) WriteSensitive(p []byte) (int, error)` — 敏感文件以 0600 创建，拒绝覆盖其他用户可访问的文件
   - 🆕 `func (s *Sink) Bytes() []byte` / 🆕 `func (s *Sink) Close() error`（幂等）/
     🆕 `func (s *Sink) Encoding() Encoding` / 🆕 `func (s *Sink) Path() string`
 - 🆕 `type Encoding int` 与常量 `EncodingRaw` / `EncodingHex` / `EncodingBase64` —
@@ -611,7 +613,7 @@
 
 **生命周期**
 
-- ➕ `func Close(k Key) error` — 释放密钥持有的底层原生句柄（幂等；`k` 为 nil 或未持句柄时返回 nil）。之前本包**完全没有释放入口**，释放只能靠 finalizer 兜底，违反 AGENTS.md §4.4；缺口记录见 `docs/issues/2026-09-24/P1006`
+- ➕ `func Close(k Key) error` — 释放密钥持有的底层原生句柄（幂等；`k` 为 nil 或未持句柄时返回 nil）。资源敏感的调用方应显式释放。
   - ⚠️ **别名陷阱**：`priv.Public()` 返回的公钥**共享同一底层句柄**（不做 Dup），对二者之一 `Close` 即释放该共享句柄、另一个随之失效；需要「销毁别名不影响原件」时请经 `internal/keyaccess` 取句柄后自行 `EVP_PKEY_dup`（`ecdh` 即如此），而不要依赖 `Public()`
   - 取包级函数而非接口方法的理由：三个接口刻意保持最小，把 `Close` 做成接口方法会让「可关闭」成为公开契约并需在 14 个具体类型上各补实现；包级函数返回值只有 `error`、**不暴露句柄**，导出面最小
 
@@ -839,6 +841,7 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
 - ✨ `type UserNotice struct { Organization string; NoticeNumbers []int; ExplicitText string }` — certificatePolicies 的 userNotice 限定符（RFC 5280 §4.2.1.4）
 - ♻️ `type Name struct { …（内部字段） }` — 证书 subject / issuer 名字（RDN 值按 **UTF-8** 写入，非 ASCII 字符原样保存为 `UTF8String`；非法 UTF-8 报错；`Add` 按**调用顺序追加**，DER 顺序 = 书写顺序，与 `openssl -subj` 一致；`Entries()` / `Get()` 不再受 256 字节缓冲限制）
 - ♻️ `type NameEntry struct { Nid int; Field string; Value string }` — 名字中的单个 RDN 条目
+- ➕ `func (n *Name) Close() error` — 关闭独立名称对象，可重复调用
 
 **类型｜CSR / CRL / OCSP**
 
@@ -854,7 +857,7 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
 > *Certificate, hash string) ([]byte, error)`，不返回 `*Request`；而原 `ocsp` 包也
 > 不存在所谓「隐式请求类型」（`ocsp.CreateRequest` 返回的就是 `[]byte`）。二者矛盾，
 > 已按可执行的那一条收敛：**OCSP 请求在公开层就是一段 DER 字节**，调用方直接 POST，
-> 无需句柄语义。详见 `docs/issues/2026-09-24/P1007`。
+> 无需句柄语义。
 
 **类型｜链验证**
 
@@ -885,7 +888,7 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
 - ♻️ `func (c *Certificate) Subject() string` / `Issuer() string` — 单行 subject / issuer
 - ♻️ `func (c *Certificate) NotBefore() time.Time` / `NotAfter() time.Time` — 有效期
 - ♻️ `func (c *Certificate) Serial() int64` / `Version() int` — 序列号与版本
-- ♻️ `func (c *Certificate) SubjectName() *Name` / `IssuerName() *Name` — 结构化名字
+- ♻️ `func (c *Certificate) SubjectName() *Name` / `IssuerName() *Name` — 独立的结构化名字，调用方负责 `Name.Close`
 - ♻️ `func (c *Certificate) SubjectEntries() []NameEntry` / `IssuerEntries() []NameEntry` — RDN 条目
 - ♻️ `func (c *Certificate) SubjectText() string` / `IssuerText() string` — OpenSSL 风格文本
 - ♻️ `func (c *Certificate) SAN() []string` — 主题备用名
@@ -1439,8 +1442,7 @@ Verify/Decrypt 接受 DER/PKCS7 PEM，二进制输入不做换行转换；分离
 与 .NET `RSAKeyValue` 格式双向互转。**密钥参数由 `*crypto/rsa.PrivateKey` /
 `*crypto/rsa.PublicKey` 改为 `asym.PrivateKey` / `asym.PublicKey`**——原签名直接
 引用本库自己的 `crypto/rsa`（commit 21 删除），不换不可能；实现内部仍以 PKCS#1 /
-SPKI PEM 往返 + `asym.Load*KeyPEM` 落地，**零新增 API、零新增 cgo**（详见
-`docs/issues/2026-09-24/P1009`）。
+SPKI PEM 往返 + `asym.Load*KeyPEM` 落地，**零新增 API、零新增 cgo**。
 
 **函数**
 

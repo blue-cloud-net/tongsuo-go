@@ -1,8 +1,10 @@
 package asym
 
 import (
+	"bytes"
 	"encoding/asn1"
 	"fmt"
+	"math"
 	"math/big"
 )
 
@@ -57,18 +59,14 @@ type signatureRS struct {
 // rejecting trailing bytes, negative values and any other structure.
 func parseSignatureDER(sig []byte) (r, s []byte, err error) {
 	var rs signatureRS
-	rest, err := asn1.Unmarshal(sig, &rs)
-	if err != nil {
+	if err := unmarshalExactDER(sig, &rs); err != nil {
 		return nil, nil, fmt.Errorf("asym: signature: invalid DER: %w", err)
-	}
-	if len(rest) != 0 {
-		return nil, nil, fmt.Errorf("asym: signature: invalid DER: %d trailing bytes", len(rest))
 	}
 	if rs.R == nil || rs.S == nil {
 		return nil, nil, fmt.Errorf("asym: signature: invalid DER: missing r or s")
 	}
-	if rs.R.Sign() < 0 || rs.S.Sign() < 0 {
-		return nil, nil, fmt.Errorf("asym: signature: invalid DER: negative component")
+	if rs.R.Sign() <= 0 || rs.S.Sign() <= 0 {
+		return nil, nil, fmt.Errorf("asym: signature: invalid DER: nonpositive component")
 	}
 	return rs.R.Bytes(), rs.S.Bytes(), nil
 }
@@ -194,8 +192,29 @@ func joinRawComponents(r, s []byte, width int) ([]byte, error) {
 		return nil, fmt.Errorf("asym: signature: component wider than %d bytes (r=%d, s=%d)",
 			width, len(r), len(s))
 	}
+	if width > math.MaxInt/2 {
+		return nil, fmt.Errorf("asym: signature: width %d exceeds output size range", width)
+	}
 	out := make([]byte, 2*width)
 	copy(out[width-len(r):width], r)
 	copy(out[2*width-len(s):], s)
 	return out, nil
+}
+
+func unmarshalExactDER[T any](der []byte, value *T) error {
+	rest, err := asn1.Unmarshal(der, value)
+	if err != nil {
+		return err
+	}
+	if len(rest) != 0 {
+		return fmt.Errorf("%d trailing bytes", len(rest))
+	}
+	canonical, err := asn1.Marshal(*value)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(der, canonical) {
+		return fmt.Errorf("unexpected fields or noncanonical DER")
+	}
+	return nil
 }

@@ -2,6 +2,7 @@ package x509
 
 import (
 	"fmt"
+	"runtime"
 
 	"github.com/blue-cloud-net/tongsuo-go/asym"
 	"github.com/blue-cloud-net/tongsuo-go/internal/core"
@@ -300,13 +301,16 @@ func (r *CertificateRequest) SignatureAlgorithmOID() string {
 }
 
 // SubjectName 返回 CSR 主题的完整名字（含全部 RDN 条目）。
+// 返回独立副本，调用方负责 Close。无名称、原对象已关闭或复制失败时返回 nil。
 //
 // SubjectName returns the full CSR subject name containing all RDN entries; inspect it with Entries, Get, or String.
+// The caller owns the copy and must Close it. An absent, closed or unavailable name returns nil.
 func (r *CertificateRequest) SubjectName() *Name {
-	if r == nil || r.req == nil {
+	if r == nil {
 		return nil
 	}
-	return &Name{name: r.req.SubjectName()}
+	defer runtime.KeepAlive(r)
+	return copiedName(r.req.SubjectName())
 }
 
 // SubjectEntries 返回 CSR 主题的完整 RDN 条目。

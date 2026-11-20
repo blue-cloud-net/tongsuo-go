@@ -199,6 +199,12 @@ func X509_NAME_new() unsafe.Pointer {
 	return unsafe.Pointer(C.X509_NAME_new())
 }
 
+// X509_NAME_dup 复制 X509_NAME；调用方负责释放返回的副本。
+// X509_NAME_dup returns an owned copy of an X509_NAME.
+func X509_NAME_dup(name unsafe.Pointer) unsafe.Pointer {
+	return unsafe.Pointer(C.X509_NAME_dup((*C.X509_NAME)(name)))
+}
+
 // X509_NAME_free 释放 X509_NAME。
 // X509_NAME_free releases n. Safe on NULL; the pointer must not be used
 // after free.
@@ -1014,7 +1020,12 @@ func D2i_X509(der []byte) unsafe.Pointer {
 	defer C.free(buf)
 	C.memcpy(buf, unsafe.Pointer(&der[0]), C.size_t(len(der)))
 	p := (*C.uchar)(buf)
-	return unsafe.Pointer(C.d2i_X509(nil, &p, C.long(len(der))))
+	interpreted := C.d2i_X509(nil, &p, C.long(len(der)))
+	if interpreted != nil && unsafe.Pointer(p) != unsafe.Add(buf, len(der)) {
+		C.X509_free(interpreted)
+		return nil
+	}
+	return unsafe.Pointer(interpreted)
 }
 
 // I2d_X509_REQ 将 CSR 编码为 DER。
@@ -1049,7 +1060,12 @@ func D2i_X509_REQ(der []byte) unsafe.Pointer {
 	defer C.free(buf)
 	C.memcpy(buf, unsafe.Pointer(&der[0]), C.size_t(len(der)))
 	p := (*C.uchar)(buf)
-	return unsafe.Pointer(C.d2i_X509_REQ(nil, &p, C.long(len(der))))
+	interpreted := C.d2i_X509_REQ(nil, &p, C.long(len(der)))
+	if interpreted != nil && unsafe.Pointer(p) != unsafe.Add(buf, len(der)) {
+		C.X509_REQ_free(interpreted)
+		return nil
+	}
+	return unsafe.Pointer(interpreted)
 }
 
 // X509_get_san 返回 SAN 扩展的 GENERAL_NAMES 栈（无则 nil）。调用方负责 X509_GENERAL_NAMES_free。
@@ -1522,7 +1538,12 @@ func D2i_X509_CRL(der []byte) unsafe.Pointer {
 	defer C.free(buf)
 	C.memcpy(buf, unsafe.Pointer(&der[0]), C.size_t(len(der)))
 	p := (*C.uchar)(buf)
-	return unsafe.Pointer(C.d2i_X509_CRL(nil, &p, C.long(len(der))))
+	interpreted := C.d2i_X509_CRL(nil, &p, C.long(len(der)))
+	if interpreted != nil && unsafe.Pointer(p) != unsafe.Add(buf, len(der)) {
+		C.X509_CRL_free(interpreted)
+		return nil
+	}
+	return unsafe.Pointer(interpreted)
 }
 
 // I2d_X509_CRL 将 CRL 编码为 DER。

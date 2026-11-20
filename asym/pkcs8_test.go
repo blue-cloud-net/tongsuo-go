@@ -81,3 +81,31 @@ func TestPKCS8Options(t *testing.T) {
 		t.Fatal("closed key accepted")
 	}
 }
+
+// TestPEMPasswordBytes 验证两种加密入口按完整字节序列使用口令。
+//
+// TestPEMPasswordBytes verifies both encrypted PEM writers use the entire password.
+func TestPEMPasswordBytes(t *testing.T) {
+	priv, err := GenerateEC(CurveP256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer Close(priv)
+
+	const pass = "fixture\x00suffix"
+	explicit, err := MarshalPKCS8(priv, meta.FormatPEM, &PKCS8Options{Encrypt: true, Passphrase: pass})
+	if err != nil {
+		t.Fatal(err)
+	}
+	regular, err := MarshalEncryptedPrivateKeyPEM(priv, pass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, blob := range [][]byte{explicit, regular} {
+		k, err := LoadEncryptedPrivateKeyPEM(blob, pass)
+		if err != nil {
+			t.Fatal(err)
+		}
+		Close(k)
+	}
+}

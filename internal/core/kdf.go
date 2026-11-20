@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
@@ -15,6 +16,8 @@ import (
 // "SHA256", "SHA1" or "SM3"); secret must be non-empty; salt and info may be
 // empty. On failure it returns an error wrapping an OpError.
 func HKDF(mdName string, secret, salt, info []byte, length int) ([]byte, error) {
+	defer nativeErrorScope()()
+
 	if mdName == "" {
 		return nil, fmt.Errorf("kdf: empty digest name")
 	}
@@ -32,21 +35,23 @@ func HKDF(mdName string, secret, salt, info []byte, length int) ([]byte, error) 
 }
 
 // PBKDF2 使用 PBKDF2（RFC 8018）从口令派生 keyLen 字节。
-// mdName 为摘要算法名（如 "SHA1"、"SHA256"）；iter 为迭代次数（>=1）。
+// mdName 为摘要算法名（如 "SHA1"、"SHA256"）；iter 为迭代次数（1 至 2³¹−1）。
 // password 不能为空。失败时返回包装了 OpError 的错误。
 //
 // PBKDF2 derives keyLen bytes from a password using PBKDF2 (RFC 8018).
 // mdName is the message-digest name (for example "SHA1" or "SHA256"); iter is
-// the iteration count (>= 1); password must be non-empty. On failure it
+// the iteration count (1 to 2³¹−1); password must be non-empty. On failure it
 // returns an error wrapping an OpError.
 func PBKDF2(mdName string, password, salt []byte, iter, keyLen int) ([]byte, error) {
+	defer nativeErrorScope()()
+
 	if mdName == "" {
 		return nil, fmt.Errorf("kdf: empty digest name")
 	}
 	if len(password) == 0 {
 		return nil, fmt.Errorf("kdf: empty password")
 	}
-	if iter < 1 {
+	if iter < 1 || iter > math.MaxInt32 {
 		return nil, fmt.Errorf("kdf: invalid iteration count %d", iter)
 	}
 	if keyLen <= 0 {
@@ -175,6 +180,8 @@ type KDFParams struct {
 // (meaning "use the defaults"); the length of out is the requested output
 // length. On failure it returns an error wrapping an OpError.
 func Derive(alg string, p *KDFParams, out []byte) error {
+	defer nativeErrorScope()()
+
 	if alg == "" {
 		return fmt.Errorf("kdf: empty algorithm name")
 	}

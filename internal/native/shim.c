@@ -888,32 +888,30 @@ EVP_PKEY *X_EVP_PKEY_Q_keygen_ec(const char *curve)
     return EVP_PKEY_Q_keygen(NULL, NULL, "EC", (char *)curve);
 }
 
+struct x_pem_passphrase {
+    const char *data;
+    int len;
+};
+
 static int X_PEM_pass_cb(char *buf, int size, int rwflag, void *u)
 {
-    const char *pass = (const char *)u;
-    if (pass == NULL)
-        return 0;
-    int n = (int)strlen(pass);
-    if (n > size)
-        n = size;
-    memcpy(buf, pass, n);
-    /* 注意：不要 cleanse buf——OpenSSL 在 cb 返回后还会读取 buf 的前 n 字节
-     * 用作解密口令，立即清零会让 OpenSSL 解密失败。
-     * OpenSSL 自身负责 buf 的生命周期（其内部的 umem / stack 缓冲会随
-     * PEM 解析结束被覆盖或释放）；本回调专注于"复制口令"，不干预后续。
-     * 对 Go 侧 C.CString 拷贝的清零应在调用方控制，参见 native.Cleanse。 */
-    return n;
+    const struct x_pem_passphrase *pass = u;
+    (void)rwflag;
+    if (pass == NULL || pass->len < 0 || pass->len > size)
+        return -1;
+    memcpy(buf, pass->data, (size_t)pass->len);
+    return pass->len;
 }
 
-EVP_PKEY *X_PEM_read_bio_PrivateKey_pass(BIO *bp, const char *pass)
+EVP_PKEY *X_PEM_read_bio_PrivateKey_pass(BIO *bp, const char *pass, int pass_len)
 {
-    return PEM_read_bio_PrivateKey(bp, NULL, X_PEM_pass_cb, (void *)pass);
+    struct x_pem_passphrase input = {pass, pass_len};
+    return PEM_read_bio_PrivateKey(bp, NULL, X_PEM_pass_cb, &input);
 }
 
-int X_PEM_write_bio_PrivateKey_enc(BIO *bp, EVP_PKEY *x, const char *pass)
+int X_PEM_write_bio_PrivateKey_enc(BIO *bp, EVP_PKEY *x, const char *pass, int pass_len)
 {
-    return PEM_write_bio_PrivateKey(bp, x, EVP_aes_256_cbc(), NULL, 0,
-                                    X_PEM_pass_cb, (void *)pass);
+    return X_PEM_write_bio_PrivateKey_enc_cipher(bp, x, NULL, pass, pass_len);
 }
 
 /*
@@ -928,7 +926,7 @@ int X_PEM_write_bio_PrivateKey_enc(BIO *bp, EVP_PKEY *x, const char *pass)
  * 默认 provider；AES-GCM 等不适用 PBES2 的 cipher 会返回 0，由调用方捕获。
  */
 int X_PEM_write_bio_PrivateKey_enc_cipher(BIO *bp, EVP_PKEY *x,
-                                          const char *cipher, const char *pass)
+                                          const char *cipher, const char *pass, int pass_len)
 {
     const EVP_CIPHER *c = NULL;
     if (cipher != NULL && cipher[0] != '\0') {
@@ -938,8 +936,8 @@ int X_PEM_write_bio_PrivateKey_enc_cipher(BIO *bp, EVP_PKEY *x,
     }
     if (c == NULL)
         c = EVP_aes_256_cbc();
-    return PEM_write_bio_PrivateKey(bp, x, c, NULL, 0,
-                                    X_PEM_pass_cb, (void *)pass);
+    return PEM_write_bio_PrivateKey(bp, x, c, (const unsigned char *)pass,
+                                    pass_len, NULL, NULL);
 }
 
 RSA *X_PEM_read_bio_RSAPrivateKey(BIO *bp)
@@ -993,11 +991,17 @@ int X_PKCS12_parse(PKCS12 *p12, const char *pass, EVP_PKEY **pkey,
     return ok;
 }
 
-void *X_PKCS7_get0_certificates(PKCS7 *p7)
+int X_PKCS7_get0_certificates(PKCS7 *p7, void **certs)
 {
-    if (p7 == NULL || OBJ_obj2nid(p7->type) != NID_pkcs7_signed)
-        return NULL;
-    return p7->d.sign->cert;
+    *certs = NULL;
+    if (p7 == NULL)
+        return 0;
+    if (OBJ_obj2nid(p7->type) != NID_pkcs7_signed)
+        return 1;
+    if (p7->d.sign == NULL)
+        return 0;
+    *certs = p7->d.sign->cert;
+    return 1;
 }
 
 int X_OCSP_basic_verify(OCSP_BASICRESP *bs, void *certs, X509_STORE *st,

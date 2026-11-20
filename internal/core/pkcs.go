@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"runtime"
+	"strings"
 	"unsafe"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
@@ -22,6 +23,8 @@ type MemBIO struct {
 //
 // NewMemBIO creates a fresh empty in-memory BIO.
 func NewMemBIO() (*MemBIO, error) {
+	defer nativeErrorScope()()
+
 	b := native.BIO_new(native.BIO_s_mem())
 	if b == nil {
 		return nil, NewOpError("bio: BIO_new(BIO_s_mem)", native.PopError())
@@ -37,6 +40,8 @@ func NewMemBIO() (*MemBIO, error) {
 // the error "bio: closed" if the BIO has been closed, or a wrapped
 // OpError when BIO_write reports a short write.
 func (m *MemBIO) Write(data []byte) error {
+	defer nativeErrorScope()()
+
 	if m == nil || m.bio == nil {
 		return fmt.Errorf("bio: closed")
 	}
@@ -106,6 +111,8 @@ type PKCS12 struct {
 //
 // Errors from the underlying PKCS12_create call are wrapped as OpError.
 func CreatePKCS12(pass, name string, key *PKey, cert *Certificate, ca []*Certificate) (*PKCS12, error) {
+	defer nativeErrorScope()()
+
 	if key == nil || key.handle == nil || key.handle.IsClosed() {
 		return nil, fmt.Errorf("pkcs12: invalid private key")
 	}
@@ -117,6 +124,9 @@ func CreatePKCS12(pass, name string, key *PKey, cert *Certificate, ca []*Certifi
 		if c != nil && c.handle != nil && !c.handle.IsClosed() {
 			caPtrs = append(caPtrs, c.handle.Ptr())
 		}
+	}
+	if strings.IndexByte(pass, 0) >= 0 || strings.IndexByte(name, 0) >= 0 {
+		return nil, fmt.Errorf("pkcs12: NUL in password or name")
 	}
 	p := native.X_PKCS12_create(pass, name, key.handle.Ptr(), cert.handle.Ptr(), caPtrs)
 	if p == nil {
@@ -130,6 +140,8 @@ func CreatePKCS12(pass, name string, key *PKey, cert *Certificate, ca []*Certifi
 //
 // LoadPKCS12DER parses an ASN.1 DER-encoded PKCS#12 container.
 func LoadPKCS12DER(der []byte) (*PKCS12, error) {
+	defer nativeErrorScope()()
+
 	p := native.D2i_PKCS12(der)
 	if p == nil {
 		return nil, NewOpError("pkcs12: d2i_PKCS12", native.PopError())
@@ -144,6 +156,8 @@ func LoadPKCS12DER(der []byte) (*PKCS12, error) {
 // Returns an error when the container has been closed via Close, or when
 // the underlying i2d_PKCS12 call fails (wrapped as OpError).
 func (p *PKCS12) MarshalDER() ([]byte, error) {
+	defer nativeErrorScope()()
+
 	if p == nil || p.handle == nil || p.handle.IsClosed() {
 		return nil, fmt.Errorf("pkcs12: closed")
 	}
@@ -167,8 +181,13 @@ func (p *PKCS12) MarshalDER() ([]byte, error) {
 // CA chain may be empty when the container does not embed intermediates.
 // Returns "pkcs12: closed" if the container has been closed via Close.
 func (p *PKCS12) Parse(pass string) (*PKey, *Certificate, []*Certificate, error) {
+	defer nativeErrorScope()()
+
 	if p == nil || p.handle == nil || p.handle.IsClosed() {
 		return nil, nil, nil, fmt.Errorf("pkcs12: closed")
+	}
+	if strings.IndexByte(pass, 0) >= 0 {
+		return nil, nil, nil, fmt.Errorf("pkcs12: NUL in password")
 	}
 	pkey, cert, caSk, ok := native.X_PKCS12_parse(p.handle.Ptr(), pass)
 	if !ok {
@@ -225,8 +244,13 @@ func (p *PKCS12) ChangePassword(oldPass, newPass string) error {
 // returns "pkcs12: closed". Errors from the underlying PKCS12_set_mac
 // call are wrapped as OpError.
 func (p *PKCS12) SetMAC(pass string) error {
+	defer nativeErrorScope()()
+
 	if p == nil || p.handle == nil || p.handle.IsClosed() {
 		return fmt.Errorf("pkcs12: closed")
+	}
+	if strings.IndexByte(pass, 0) >= 0 {
+		return fmt.Errorf("pkcs12: NUL in password")
 	}
 	if !native.PKCS12_set_mac(p.handle.Ptr(), pass) {
 		return NewOpError("pkcs12: PKCS12_set_mac", native.PopError())
@@ -278,6 +302,8 @@ type PKCS7 struct {
 // The returned *PKCS7 owns the underlying handle and the caller must
 // invoke Close to release it.
 func NewPKCS7SignedData() (*PKCS7, error) {
+	defer nativeErrorScope()()
+
 	p := native.PKCS7_new()
 	if p == nil {
 		return nil, NewOpError("pkcs7: PKCS7_new", native.PopError())
@@ -302,6 +328,8 @@ func NewPKCS7SignedData() (*PKCS7, error) {
 // returns "pkcs7: closed" or "pkcs7: invalid certificate". Errors from
 // the underlying PKCS7_add_certificate call are wrapped as OpError.
 func (p *PKCS7) AddCertificate(c *Certificate) error {
+	defer nativeErrorScope()()
+
 	if p == nil || p.handle == nil || p.handle.IsClosed() {
 		return fmt.Errorf("pkcs7: closed")
 	}
@@ -320,6 +348,8 @@ func (p *PKCS7) AddCertificate(c *Certificate) error {
 // AddCRL appends a CRL to the SignedData container (the CLI `crl2pkcs7`
 // equivalent). c must be live; failures are wrapped as OpError.
 func (p *PKCS7) AddCRL(c *CRL) error {
+	defer nativeErrorScope()()
+
 	if p == nil || p.handle == nil || p.handle.IsClosed() {
 		return fmt.Errorf("pkcs7: closed")
 	}
@@ -374,6 +404,8 @@ func (p *PKCS7) CRLs() ([]*CRL, error) {
 //
 // LoadPKCS7DER parses an ASN.1 DER-encoded PKCS#7 container.
 func LoadPKCS7DER(der []byte) (*PKCS7, error) {
+	defer nativeErrorScope()()
+
 	p := native.D2i_PKCS7(der)
 	if p == nil {
 		return nil, NewOpError("pkcs7: d2i_PKCS7", native.PopError())
@@ -388,6 +420,8 @@ func LoadPKCS7DER(der []byte) (*PKCS7, error) {
 // Returns an error when the container has been closed via Close, or when
 // the underlying i2d_PKCS7 call fails (wrapped as OpError).
 func (p *PKCS7) MarshalDER() ([]byte, error) {
+	defer nativeErrorScope()()
+
 	if p == nil || p.handle == nil || p.handle.IsClosed() {
 		return nil, fmt.Errorf("pkcs7: closed")
 	}
@@ -411,7 +445,10 @@ func (p *PKCS7) Certificates() ([]*Certificate, error) {
 	if p == nil || p.handle == nil || p.handle.IsClosed() {
 		return nil, fmt.Errorf("pkcs7: closed")
 	}
-	sk := native.PKCS7_get0_certificates(p.handle.Ptr())
+	sk, ok := native.PKCS7_get0_certificates(p.handle.Ptr())
+	if !ok {
+		return nil, fmt.Errorf("pkcs7: missing SignedData content")
+	}
 	if sk == nil {
 		return nil, nil
 	}
@@ -452,6 +489,8 @@ func (p *PKCS7) Close() error {
 //
 // CreatePKCS12WithOptions creates a container with explicit PBE and iterations; callers must Close it.
 func CreatePKCS12WithOptions(pass, name string, key *PKey, cert *Certificate, ca []*Certificate, pbe string, iter int) (*PKCS12, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(key)
 	defer runtime.KeepAlive(cert)
 	defer runtime.KeepAlive(ca)
@@ -470,6 +509,9 @@ func CreatePKCS12WithOptions(pass, name string, key *PKey, cert *Certificate, ca
 	nid := native.OBJ_txt2nid(pbe)
 	if nid <= 0 || iter <= 0 {
 		return nil, fmt.Errorf("pkcs12: invalid PBE or iterations")
+	}
+	if strings.IndexByte(pass, 0) >= 0 || strings.IndexByte(name, 0) >= 0 {
+		return nil, fmt.Errorf("pkcs12: NUL in password or name")
 	}
 	p := native.X_PKCS12_create_options(pass, name, key.handle.Ptr(), cert.handle.Ptr(), caPtrs, nid, iter)
 	if p == nil {

@@ -56,6 +56,7 @@ package x509
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -113,8 +114,7 @@ func (c *Certificate) Close() error {
 //
 // 本方法不属于稳定公共 API：它存在的唯一目的是让 tls / pkcs/pkcs7 /
 // pkcs/pkcs12 跨包取到底层句柄，而这些消费方的公开签名中不得出现 internal/ 类型
-// （roadmap §5 E1-8）。外部包即使满足该结构化断言，也无法 import internal/core，
-// 因此拿到句柄也无法使用 —— 与 roadmap §5.2「残余瑕疵（已接受）」同理。
+// （roadmap §5 E1-8）。外部调用方可通过类型推断访问返回对象。返回值借用原证书的句柄，调用方不得关闭或修改它。
 //
 // CoreCertificate returns the underlying core certificate (used by the
 // internal/certaccess bridge).
@@ -122,9 +122,8 @@ func (c *Certificate) Close() error {
 // This method is not part of the stable public API: it exists solely so that
 // tls, pkcs/pkcs7 and pkcs/pkcs12 can reach the underlying handle while no
 // public signature of those consumers mentions an internal/ type (roadmap §5,
-// E1-8). An external package that satisfies the structural assertion still
-// cannot import internal/core and therefore cannot use the result — the same
-// accepted residual as roadmap §5.2.
+// E1-8). External callers can use type inference to access the result.
+// It borrows the original certificate handle and must not be closed or mutated.
 func (c *Certificate) CoreCertificate() *core.Certificate { return c.cert }
 
 // LoadCertificatePEM 从 PEM 加载证书。
@@ -341,14 +340,30 @@ func (c *Certificate) IssuerHash() uint32 { return c.cert.IssuerHash() }
 func (c *Certificate) Version() int { return c.cert.Version() }
 
 // SubjectName 返回主题的完整名字（含全部 RDN 条目，可配合 Entries/Get/String 使用）。
+// 返回独立副本，调用方负责 Close。无名称、原对象已关闭或复制失败时返回 nil。
 //
 // SubjectName returns the full subject name containing all RDN entries; inspect it with Entries, Get, or String.
-func (c *Certificate) SubjectName() *Name { return &Name{name: c.cert.SubjectName()} }
+// The caller owns the copy and must Close it. An absent, closed or unavailable name returns nil.
+func (c *Certificate) SubjectName() *Name {
+	if c == nil {
+		return nil
+	}
+	defer runtime.KeepAlive(c)
+	return copiedName(c.cert.SubjectName())
+}
 
 // IssuerName 返回签发者的完整名字（含全部 RDN 条目）。
+// 返回独立副本，调用方负责 Close。无名称、原对象已关闭或复制失败时返回 nil。
 //
 // IssuerName returns the full issuer name containing all RDN entries; inspect it with Entries, Get, or String.
-func (c *Certificate) IssuerName() *Name { return &Name{name: c.cert.IssuerName()} }
+// The caller owns the copy and must Close it. An absent, closed or unavailable name returns nil.
+func (c *Certificate) IssuerName() *Name {
+	if c == nil {
+		return nil
+	}
+	defer runtime.KeepAlive(c)
+	return copiedName(c.cert.IssuerName())
+}
 
 // SubjectEntries 返回主题的完整 RDN 条目。
 //
@@ -722,11 +737,13 @@ func (c *Certificate) ReplaceExtension(name, value string) error {
 
 // Fingerprint 计算证书指纹（十六进制小写）。
 // alg 支持 "sha1"、"sha256"、"sm3"、"md5"、"sha384"、"sha512"。
+// SHA-1 和 MD5 仅用于遗留兼容。安全比对请选择 SHA-256 等抗碰撞算法。
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
 // Fingerprint computes the certificate's fingerprint as a lowercase hexadecimal string. The alg parameter accepts "sha1", "sha256", "sm3", "md5", "sha384", and "sha512".
 //
+// SHA-1 and MD5 are for legacy compatibility. Use a collision-resistant algorithm such as SHA-256 for security comparisons.
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (c *Certificate) Fingerprint(alg string) (string, error) {
 	var md *core.Digest
@@ -977,25 +994,14 @@ func (c *Certificate) Verify(signerPub asym.PublicKey) error {
 //
 // 失败时返回包装了 OpError 的错误，OpError 描述了失败的底层操作。
 //
-// SelfSigned reports whether the certificate is self-signed (subject and issuer names match exactly, and the signature verifies against the certificate's own public key).
+// SelfSigned reports whether the certificate is self-signed (subject and issuer names are equal under X.509 name comparison, and the signature verifies against the certificate's own public key).
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (c *Certificate) SelfSigned() (bool, error) {
 	if c == nil {
 		return false, fmt.Errorf("x509: nil certificate")
 	}
-	if c.SubjectText() != c.IssuerText() {
-		return false, nil
-	}
-	pub, err := c.PublicKey()
-	if err != nil {
-		return false, err
-	}
-	if err := c.Verify(pub); err != nil {
-		// 签名不通过：仍视为"主题/签发者同名"但非真正自签，返回 false 且无错误。
-		return false, nil
-	}
-	return true, nil
+	return c.cert.SelfSigned()
 }
 
 // Signature 返回证书的原始签名字节（DER 编码）；证书无效或未签名返回 nil。

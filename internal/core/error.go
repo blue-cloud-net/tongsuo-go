@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"runtime"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
@@ -62,3 +63,15 @@ func (e *OpError) Error() string {
 // errors.Is and errors.As to traverse the error chain. When e.Err is
 // nil the chain terminates at OpError.
 func (e *OpError) Unwrap() error { return e.Err }
+
+// nativeErrorScope confines one operation and its error handling to the
+// same native thread. Clear both stale errors and unused errors left by
+// the operation before returning the thread to the Go scheduler.
+func nativeErrorScope() func() {
+	runtime.LockOSThread()
+	native.ERR_clear_error()
+	return func() {
+		native.ERR_clear_error()
+		runtime.UnlockOSThread()
+	}
+}

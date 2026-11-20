@@ -43,14 +43,14 @@ interfaces and a CLI-style by-name entry point; see the
 - ✍️ **Signature formats and RSA digests** (`asym`): DER ↔ bare `r‖s` conversion for SM2 / ECDSA (`SignatureParts` / `SignatureDER` / `FormatSignature`); RSA-OAEP accepts `sm3`; probe RSA-SM3 signing with `SupportsRSASignatureDigest`, which is unavailable on 8.4.0 and returns `ErrUnsupported`; PKCS#1 v1.5/PSS work on 8.5.0, with separate PSS probing through `SupportsRSAPSSDigest`
 - 🌊 **Stream ciphers** (`sym`): ChaCha20, ChaCha20-Poly1305, ZUC-128-EEA3 (native 5-byte IV)
 - 🧬 **Key derivation** (`kdf`): 10 KDFs — HKDF / PBKDF2 / scrypt / SSKDF / TLS1-PRF / TLS13-KDF / KBKDF / X942KDF / X963KDF / HMAC-DRBG-KDF, each with a typed entry plus the by-name `Derive`
-- 🧰 **CLI-style form entries**: `meta` provides `Source` (bytes / reader / file / stdin), `Sink` (with raw / hex / base64 encoding), `Format` (PEM / DER) and `Passphrase` (`pass:` / `env:` / `file:` / `fd:` / `stdin:`); the primitive packages add one-liners such as `SumSource` / `SumTo` / `EncryptSource` / `DeriveTo` / `MarshalPrivateKeyTo` / `LoadCertificateSource`
+- 🧰 **CLI-style form entries**: `meta` provides `Source` (bytes / reader / file / stdin), `Sink` (with raw / hex / base64 encoding), `Format` (PEM / DER) and `Passphrase` (`pass:` / `env:` / `file:` / `fd:` / `stdin:`); the primitive packages add one-liners such as `SumSource` / `SumTo` / `EncryptSource` / `DeriveTo` / `MarshalPrivateKeyTo` / `LoadCertificateSource` File sinks protect private-key and derived-key output with owner-only permissions. Streaming encryption and decryption reject identical input and output files.
 - 🗂️ **Algorithm and provider enumeration** (`meta`): `Digests` / `Ciphers` / `MACs` / `KDFs` / `Signatures` / `KeyExchanges` / `KEMs` / `TLSGroups` / `Providers` / `SeedingSource`
 - 📝 **Ed25519 / Ed448 signatures** (RFC 8032, `asym`): pure EdDSA plus Ed25519ctx / Ed25519ph / Ed448ph and Ed448 contexts (native prehashing), raw 32B / 57B seed and public-key bytes interoperable with Go standard library, WireGuard; X.509 certificate / CSR / CRL signing via the `X509_sign_ctx` path
 - 🤝 **X25519 / X448 ECDH key agreement** (RFC 7748, `ecdh`): 32 / 56-byte shared secret, interoperable with Go `crypto/ecdh` and WireGuard
 - 🤝 **Curve-based ECDH** (`ecdh`): NIST P-256 / P-384 / P-521 (X9.63), the OKP curves X25519 / X448 (RFC 7748) and secp256k1; PEM (PKCS#8 / SPKI) round-trip and shared-secret derivation matching Go's standard `crypto/ecdh` semantics; named/explicit EC parameter PEM files and parameter-based key generation; `DeriveSharedSecret` directly adapts asym keys and `DeriveSM2DH` takes explicit static/ephemeral keys, IDs and roles (without key confirmation)
 - 🎲 **Cryptographically secure random** (`rand`): based on Tongsuo `RAND_bytes`
 - 🗄️ **Key storage and rotation** (`keystore`): key metadata, in-memory / custom stores, version rotation and history; `Load` / `LoadAllFromReader` detect local multiple PEM objects, DER and PKCS#12
-- 📜 **X.509 certificate management** (`x509`): parse and issue certificates / CSR / CRL / OCSP, one-line self-signed certificates (`CreateSelfSigned`), step-by-step CRL issuance (`CRLBuilder`), CA-signed certificates (SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448), arbitrary X.509 v3 extensions by NID or name (`AddExtension` / `AddExtensionByName` / `AddExtensions`), CSR-driven issuance (`IssueCertificateFromRequest`), hostname / IP / e-mail verification (`VerifyHostname` / `CheckEmail`), subject / issuer name hashes (`SubjectHash` / `IssuerHash`) and chain verification with an optional pinned verification instant (`Store.SetTime`); OCSP HTTP/nonces, trusted PEM purposes, unified certificate/CRL loading and named verification error codes
+- 📜 **X.509 certificate management** (`x509`): parse and issue certificates / CSR / CRL / OCSP, one-line self-signed certificates (`CreateSelfSigned`), step-by-step CRL issuance (`CRLBuilder`), CA-signed certificates (SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448), arbitrary X.509 v3 extensions by NID or name (`AddExtension` / `AddExtensionByName` / `AddExtensions`), CSR-driven issuance (`IssueCertificateFromRequest`), hostname / IP / e-mail verification (`VerifyHostname` / `CheckEmail`), subject / issuer name hashes (`SubjectHash` / `IssuerHash`) and chain verification with an optional pinned verification instant (`Store.SetTime`); OCSP HTTP/nonces, trusted PEM purposes, unified certificate/CRL loading and named verification error codes Subject and issuer name snapshots are independent of their certificate, CSR or CRL. Release them with `Name.Close`.
 - 🌐 **TLS / NTLS transport** (`tls`): explicit TLS / NTLS and mixed server ports, complete credential chains, SNI selection, ALPN, mutual authentication, three verification policies and copied connection state; independent read/write deadlines and concurrent I/O; RFC 8998 strict TLS 1.3, ordered diagnostics, optional trace/keylog and TLS-extension SCT snapshots; [runnable handshake examples](examples/handshake/)
 - 📦 **Containers and formats**: PKCS#7 certificates/CRLs, signing/verification and envelopes (`pkcs/pkcs7`), configurable PKCS#12 PBE/iterations and complex lossless password changes (`pkcs/pkcs12`), PKCS#8 PBE/PRF/PEM/DER and RSA PKCS#1 public keys (`asym`), OKP/oct JWK (`jwk`), PEM splitting (`meta`), ASN.1 DER viewer with configurable limits (`asn1`), .NET-style RSA XML (`xml/rsa`)
 - 🧪 **Standard-vector tests**: every algorithm package covers national-standard vectors, round-trips, edge cases and error paths, with bidirectional cross-validation against the openssl CLI
@@ -86,7 +86,8 @@ The released `0.8.0` implements Tongsuo 8.4.0/8.5.0 compatibility, GCM-SIV, EdDS
 - `0.10.0`: RFC 8998 ShangMi TLS 1.3, structured handshake diagnostics, optional detailed trace and keylog
 - `0.11.0`: Session resumption, caches, import/export, ticket controls and key rotation
 - `0.12.0`: HTTP/1.1 client/server integration and OCSP stapling
-- `0.13.0` / `0.14.0`: PQC / CMS and RFC 3161 timestamps
+- `0.13.0`: PQC
+- `0.14.0`: CMS and RFC 3161 timestamps
 - `1.0.0`: Public API convergence and stability
 
 The transport releases deliver SDK APIs and runnable examples for downstream handshake tests similar to `s_client` / `s_server`.
@@ -441,7 +442,7 @@ Binding layer (internal/native/)   ← cgo + inline C shim; maps directly to Ton
 - **Concurrency model**: distinct handles can be used in parallel; serialize ordinary handles, while `tls.Conn` supports concurrent reads, writes and Close with serialized native calls
 - **Internal implementation is hidden**: `internal/` is protected by Go's `internal` mechanism and cannot be imported from outside; no `internal/` type appears in a public signature
 
-See [docs/architecture.md](docs/architecture.md) for the detailed design and the dependency graph, and [docs/roadmap.md](docs/roadmap.md) for the `0.13.0`–`1.0.0` version plan.
+See [docs/architecture.md](docs/architecture.md) for the detailed design and the dependency graph, and [docs/roadmap.md](docs/roadmap.md) for the `0.14.0`–`1.0.0` version plan.
 
 ## License
 

@@ -2,6 +2,7 @@ package tls
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net"
 	"sync"
@@ -262,5 +263,58 @@ func TestNewListenerRejectsBadConfig(t *testing.T) {
 	// 监听器仍归调用方所有，应仍可关闭（说明未被提前关闭两次）。
 	if err := raw.Close(); err != nil {
 		t.Errorf("raw.Close after failed NewListener: %v", err)
+	}
+}
+
+// TestListenerCloseCancelsPendingHandshake 验证关闭会终止等待握手的 Accept。
+//
+// TestListenerCloseCancelsPendingHandshake verifies that Close ends a pending Accept handshake.
+func TestListenerCloseCancelsPendingHandshake(t *testing.T) {
+	raw, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	listener, err := NewListener(testServerConfig(t), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	client, err := net.Dial("tcp", raw.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	accepted := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if conn != nil {
+			_ = conn.Close()
+		}
+		accepted <- err
+	}()
+	deadline := time.Now().Add(time.Second)
+	for {
+		listener.mu.Lock()
+		pending := len(listener.pending)
+		listener.mu.Unlock()
+		if pending > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("Accept did not reach the pending handshake")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-accepted:
+		if !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("Accept returned %v, want net.ErrClosed", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Accept remained blocked after Close")
 	}
 }

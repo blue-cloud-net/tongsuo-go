@@ -374,15 +374,20 @@ func (c *Conn) WaitSession(ctx context.Context) (*SessionState, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		// Snapshot before testing usability so a ticket arriving during the
+		// check is either accepted here or detected by PumpSession.
+		previousSession := c.ssl.SessionDER()
 		if s, err := c.SessionState(); err == nil {
 			return s, nil
 		} else if !errors.Is(err, ErrNoSession) {
 			return nil, err
 		}
-		if len(c.sessionPending) >= 64*1024 {
+		const pendingLimit = 64 * 1024
+		available := pendingLimit - len(c.sessionPending)
+		if available <= 0 {
 			return nil, errors.New("tls: session wait application buffer limit")
 		}
-		data, err := c.ssl.PumpSession(ctx)
+		data, err := c.ssl.PumpSession(ctx, available, previousSession)
 		c.sessionPending = append(c.sessionPending, data...)
 		if err != nil {
 			return nil, err

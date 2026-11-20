@@ -76,7 +76,12 @@ func D2i_OCSP_RESPONSE(der []byte) unsafe.Pointer {
 	defer C.free(buf)
 	C.memcpy(buf, unsafe.Pointer(&der[0]), C.size_t(len(der)))
 	p := (*C.uchar)(buf)
-	return unsafe.Pointer(C.d2i_OCSP_RESPONSE(nil, &p, C.long(len(der))))
+	interpreted := C.d2i_OCSP_RESPONSE(nil, &p, C.long(len(der)))
+	if interpreted != nil && unsafe.Pointer(p) != unsafe.Add(buf, len(der)) {
+		C.OCSP_RESPONSE_free(interpreted)
+		return nil
+	}
+	return unsafe.Pointer(interpreted)
 }
 
 // OCSP_RESPONSE_free 释放响应。

@@ -243,3 +243,31 @@ func genOKP(alg asym.Algorithm) (asym.PrivateKey, error) {
 	}
 	return nil, nil
 }
+
+// TestOKPFromPEM 验证 OKP 私钥和公钥均可从 PEM 转回 JWK。
+//
+// TestOKPFromPEM verifies PEM to JWK for private and public OKP keys.
+func TestOKPFromPEM(t *testing.T) {
+	priv, err := asym.GenerateEd25519()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer asym.Close(priv)
+	privPEM, err := priv.MarshalPrivateKeyPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubPEM, err := priv.Public().MarshalPublicKeyPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		pem     []byte
+		private bool
+	}{{privPEM, true}, {pubPEM, false}} {
+		j, err := FromPEM(tc.pem)
+		if err != nil || j.Kty != "OKP" || j.Crv != CrvEd25519 || j.IsPrivate() != tc.private {
+			t.Fatalf("unexpected OKP conversion: %v", err)
+		}
+	}
+}

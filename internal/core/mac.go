@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"runtime"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
@@ -27,6 +28,8 @@ type MAC struct {
 // matched case-insensitively by the provider. An unavailable name yields
 // an error wrapping an OpError.
 func MACFetch(name string) (*MAC, error) {
+	defer nativeErrorScope()()
+
 	if name == "" {
 		return nil, fmt.Errorf("mac: empty algorithm name")
 	}
@@ -121,6 +124,10 @@ type MACCtx struct {
 // already-closed descriptor yields the error "mac: invalid mac";
 // initialisation failures are wrapped as OpError.
 func NewMACCtx(m *MAC, key []byte, opts *MACOptions) (*MACCtx, error) {
+	defer nativeErrorScope()()
+
+	defer runtime.KeepAlive(m)
+
 	if m == nil || m.handle == nil || m.handle.IsClosed() {
 		return nil, fmt.Errorf("mac: invalid mac")
 	}
@@ -146,6 +153,10 @@ func NewMACCtx(m *MAC, key []byte, opts *MACOptions) (*MACCtx, error) {
 // init initialises the context with the current parameters (shared by the
 // constructor and Reset).
 func (c *MACCtx) init() error {
+	defer nativeErrorScope()()
+
+	defer runtime.KeepAlive(c)
+
 	mask := 0
 	if c.opts.Cipher != "" {
 		mask |= native.MacOptCipher
@@ -187,6 +198,10 @@ func (c *MACCtx) init() error {
 // returns the error "mac: context closed" when the context has been
 // released; underlying failures are wrapped as OpError.
 func (c *MACCtx) Update(data []byte) error {
+	defer nativeErrorScope()()
+
+	defer runtime.KeepAlive(c)
+
 	if c.handle.IsClosed() {
 		return fmt.Errorf("mac: context closed")
 	}
@@ -206,6 +221,10 @@ func (c *MACCtx) Update(data []byte) error {
 // method returns the error "mac: context closed" when the context has
 // been released.
 func (c *MACCtx) Final() ([]byte, error) {
+	defer nativeErrorScope()()
+
+	defer runtime.KeepAlive(c)
+
 	if c.handle.IsClosed() {
 		return nil, fmt.Errorf("mac: context closed")
 	}
@@ -233,6 +252,10 @@ func (c *MACCtx) Final() ([]byte, error) {
 // still be invoked afterwards. The method returns the error "mac: context
 // closed" when the context has been released.
 func (c *MACCtx) Sum() ([]byte, error) {
+	defer nativeErrorScope()()
+
+	defer runtime.KeepAlive(c)
+
 	if c.handle.IsClosed() {
 		return nil, fmt.Errorf("mac: context closed")
 	}
@@ -287,6 +310,8 @@ func (c *MACCtx) Size() int {
 // BlockSize returns the internal block size in bytes of the context. It
 // is 0 when the provider does not report one.
 func (c *MACCtx) BlockSize() int {
+	defer runtime.KeepAlive(c)
+
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return 0
 	}

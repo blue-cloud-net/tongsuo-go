@@ -12,7 +12,7 @@
 | GoDoc 注释、命名、cgo、核心层、错误、内存、代码风格 | `docs/development-guide.md` |
 | 测试组织、各算法必测用例、标准向量来源 | `docs/testing-guide.md` |
 | 双语 GoDoc 段式细则、八条规则、中英对照词典 | `docs/bilingual-doc-guide.md` |
-| 历史审计发现（19 份报告） | `docs/issues/2026-09-18/` |
+| 本地审计报告（按日期生成，Git 忽略） | `docs/issues/` |
 
 ---
 
@@ -129,7 +129,7 @@ API 层（16 个顶级包：meta / digest / mac / sym / asym / ecdh / kdf / rand
 
 - `crypto/` 整目录与 `key/` 已在 `0.3.0` 的包结构重构中**取消**；当前 16 包形态与依赖方向见 `docs/architecture.md` §2 / §3
 - API 层内部依赖：算法原语包只依赖 `internal/core`；`ecdh → asym`；`x509 → asym`；
-  `tls` / `jwk` / `pkcs7` / `pkcs12` → `x509` + `asym`；`0.6.0` 的统一加载器新增
+  `tls` / `pkcs7` / `pkcs12` → `x509` + `asym`；`jwk` → `asym` + `sym`；`0.6.0` 的统一加载器新增
   `keystore → asym` + `pkcs/pkcs12`（单向，无环）
 - **唯一例外（`0.5.0` 起）**：`digest` / `mac` / `sym` / `kdf` / `asym` / `x509`
   → `meta`；`0.6.0` 新增 `keystore → meta`（统一加载的口令参数）。`meta` 是形态词汇的**叶子包**（只依赖 `internal/core`），提供
@@ -201,6 +201,7 @@ tls/                # TLS / NTLS 传输层
 ├── tls.go          # Dial / DialContext / Server / Conn
 ├── chain.go        # 证书链构建
 ├── suites.go       # 套件枚举与命名
+├── http.go  ocsp.go # HTTP/1.1 和 OCSP 装订
 ├── listener.go     # Listener / NewListener（Accept 内完成握手）
 └── errors.go       # 错误分类
 
@@ -230,6 +231,8 @@ internal/native/               # 绑定层：cgo + shim
 ├── binding_rand.go            # RAND_bytes 系列
 ├── binding_bio.go             # BIO 系列
 ├── binding_ssl.go             # SSL_CTX / SSL / TLS 会话
+├── binding_pqc.go            # PQC 绑定
+├── binding_fd.go      # 原子复制 close-on-exec 文件描述符
 ├── binding_x509.go            # X509 / X509_CRL / X509_STORE / PEM / DER 系列
 ├── binding_pkcs.go            # PKCS#7 / PKCS#12 系列
 ├── binding_pkcs7_ops.go       # PKCS#7 签验、信封与空内容处理
@@ -251,7 +254,7 @@ internal/core/                 # 核心层：句柄包装 + 生命周期 + 错�
 ├── pkcs7_ops.go  reliability.go # PKCS 容器编排、完整序列号与可靠性增量
 ├── x509.go  ssl.go            # X509 证书 / CRL / Store / SSL 会话（Close 幂等）
 ├── rand.go  zero.go           # RandomBytes 包装 / 清零辅助
-└── waitfd_linux.go  waitfd_darwin.go   # epoll / kqueue 等待 fd 可读
+└── waitfd_unix.go   # poll 等待 fd 可读或可写
 
 internal/keyaccess/            # 桥接：公开密钥对象 → *core.PKey（结构化接口断言，无注册表）
 internal/certaccess/           # 桥接：公开证书对象 ↔ *core.Certificate（断言 + DER 往返）

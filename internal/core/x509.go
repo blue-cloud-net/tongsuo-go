@@ -45,6 +45,8 @@ type Name struct {
 // The returned *Name owns the underlying X509_NAME handle and the caller
 // is responsible for calling Close to release it.
 func NewName() (*Name, error) {
+	defer nativeErrorScope()()
+
 	n := native.X509_NAME_new()
 	if n == nil {
 		return nil, NewOpError("x509: X509_NAME_new", native.PopError())
@@ -72,6 +74,8 @@ func NewName() (*Name, error) {
 // emailAddress, which are PrintableString / IA5String) fails in the
 // underlying call.
 func (n *Name) AddEntry(field, value string) error {
+	defer nativeErrorScope()()
+
 	if n == nil || n.handle == nil || n.handle.IsClosed() {
 		return fmt.Errorf("x509: name closed")
 	}
@@ -201,6 +205,21 @@ func (n *Name) String() string {
 	return s
 }
 
+// Copy 返回独立的名称副本。名称为空、已关闭或复制失败时返回 nil。
+//
+// Copy returns an independent Name, or nil when the source is absent, closed or cannot be copied.
+func (n *Name) Copy() *Name {
+	if n == nil || n.handle == nil || n.handle.IsClosed() {
+		return nil
+	}
+	defer runtime.KeepAlive(n)
+	ptr := native.X509_NAME_dup(n.handle.Ptr())
+	if ptr == nil {
+		return nil
+	}
+	return &Name{handle: NewHandle(ptr, true, native.X509_NAME_free)}
+}
+
 // Close 释放底层 X509_NAME 句柄。
 //
 // 调用是幂等的：对 nil 接收者或已关闭的 Name 调用返回 nil，不产生副作用；Close 返回后，
@@ -275,6 +294,8 @@ func (c *Certificate) ensureMutable(op string) error {
 // The object starts out mutable; once Sign has run every mutating method
 // returns an error (see ensureMutable).
 func NewCertificate() (*Certificate, error) {
+	defer nativeErrorScope()()
+
 	x := native.X509_new()
 	if x == nil {
 		return nil, NewOpError("x509: X509_new", native.PopError())
@@ -295,9 +316,11 @@ func NewCertificate() (*Certificate, error) {
 // *Certificate owns the underlying X509 handle and the caller must
 // invoke Close to release it. Errors are wrapped as OpError.
 func LoadCertificatePEM(pem []byte) (*Certificate, error) {
-	bio := native.BIO_new_mem_buf(pem)
+	defer nativeErrorScope()()
+
+	bio := native.X_BIO_new_input(pem)
 	if bio == nil {
-		return nil, NewOpError("x509: BIO_new_mem_buf", native.PopError())
+		return nil, NewOpError("x509: X_BIO_new_input", native.PopError())
 	}
 	defer native.BIO_free(bio)
 	x := native.X_PEM_read_bio_X509(bio)
@@ -320,6 +343,8 @@ func LoadCertificatePEM(pem []byte) (*Certificate, error) {
 // "x509: certificate already signed" instead of silently producing a
 // DER whose signature no longer matches.
 func LoadCertificateDER(der []byte) (*Certificate, error) {
+	defer nativeErrorScope()()
+
 	x := native.D2i_X509(der)
 	if x == nil {
 		return nil, NewOpError("x509: d2i_X509", native.PopError())
@@ -338,6 +363,8 @@ func LoadCertificateDER(der []byte) (*Certificate, error) {
 // the underlying PEM_write_bio_X509 call fails (errors are wrapped as
 // OpError).
 func (c *Certificate) MarshalPEM() ([]byte, error) {
+	defer nativeErrorScope()()
+
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return nil, fmt.Errorf("x509: certificate closed")
 	}
@@ -361,6 +388,8 @@ func (c *Certificate) MarshalPEM() ([]byte, error) {
 // The convention matches OpenSSL's X509_set_version: 0 means v1 and 2
 // means v3. Must be invoked before Sign.
 func (c *Certificate) SetVersion(version int) error {
+	defer nativeErrorScope()()
+
 	if err := c.ensureMutable("set version"); err != nil {
 		return err
 	}
@@ -390,6 +419,8 @@ func (c *Certificate) SetSerial(serial int64) error { return c.SetSerialBigInt(b
 // returns the error "x509: invalid issuer name". Errors from the
 // underlying OpenSSL call are wrapped as OpError.
 func (c *Certificate) SetIssuer(n *Name) error {
+	defer nativeErrorScope()()
+
 	if err := c.ensureMutable("set issuer"); err != nil {
 		return err
 	}
@@ -412,6 +443,8 @@ func (c *Certificate) SetIssuer(n *Name) error {
 // returns the error "x509: invalid subject name". Errors from the
 // underlying OpenSSL call are wrapped as OpError.
 func (c *Certificate) SetSubject(n *Name) error {
+	defer nativeErrorScope()()
+
 	if err := c.ensureMutable("set subject"); err != nil {
 		return err
 	}
@@ -434,6 +467,8 @@ func (c *Certificate) SetSubject(n *Name) error {
 // returns the error "x509: invalid public key". Errors from the
 // underlying OpenSSL call are wrapped as OpError.
 func (c *Certificate) SetPublicKey(k *PKey) error {
+	defer nativeErrorScope()()
+
 	if err := c.ensureMutable("set public key"); err != nil {
 		return err
 	}
@@ -457,6 +492,8 @@ func (c *Certificate) SetPublicKey(k *PKey) error {
 // "x509: notAfter must be after notBefore" without invoking OpenSSL.
 // Errors from ASN1_TIME_set are wrapped as OpError.
 func (c *Certificate) SetValidity(notBefore, notAfter time.Time) error {
+	defer nativeErrorScope()()
+
 	if err := c.ensureMutable("set validity"); err != nil {
 		return err
 	}
@@ -532,6 +569,8 @@ func (c *Certificate) Sign(signer *PKey, md *Digest) error {
 // signWith performs the signing itself. It performs no mutability check and
 // does not set the signed flag; Sign owns both.
 func (c *Certificate) signWith(signer *PKey, md *Digest) error {
+	defer nativeErrorScope()()
+
 	// digestForSigner 对 EdDSA 返回 nil：走 X509_sign_ctx 路径（无摘要 EdDSA 签名）。
 	if md == nil {
 		return signWithEdDSA(c.handle.Ptr(), signer.handle.Ptr(),
@@ -554,6 +593,8 @@ func (c *Certificate) signWith(signer *PKey, md *Digest) error {
 // by the Tongsuo EdDSA provider). Returns nil on success or a wrapped
 // OpError on failure.
 func signWithEdDSA(x, pkey unsafe.Pointer, op string) error {
+	defer nativeErrorScope()()
+
 	mdctx := native.EVP_MD_CTX_new()
 	if mdctx == nil {
 		return NewOpError("x509: "+op+" (EVP_MD_CTX_new)", native.PopError())
@@ -574,6 +615,8 @@ func signWithEdDSA(x, pkey unsafe.Pointer, op string) error {
 // signCSRWithEdDSA signs a CSR using an EdDSA key via X509_REQ_sign_ctx;
 // mirrors signWithEdDSA but targets the CSR API.
 func signCSRWithEdDSA(r, pkey unsafe.Pointer) error {
+	defer nativeErrorScope()()
+
 	mdctx := native.EVP_MD_CTX_new()
 	if mdctx == nil {
 		return NewOpError("x509: X509_REQ_sign_ctx (EVP_MD_CTX_new)", native.PopError())
@@ -593,6 +636,8 @@ func signCSRWithEdDSA(r, pkey unsafe.Pointer) error {
 //
 // signCRLWithEdDSA signs a CRL using an EdDSA key via X509_CRL_sign_ctx.
 func signCRLWithEdDSA(crl, pkey unsafe.Pointer) error {
+	defer nativeErrorScope()()
+
 	mdctx := native.EVP_MD_CTX_new()
 	if mdctx == nil {
 		return NewOpError("x509: X509_CRL_sign_ctx (EVP_MD_CTX_new)", native.PopError())
@@ -621,6 +666,8 @@ func signCRLWithEdDSA(crl, pkey unsafe.Pointer) error {
 // checks). Errors from the underlying X509_verify call are wrapped as
 // OpError.
 func (c *Certificate) Verify(pub *PKey) error {
+	defer nativeErrorScope()()
+
 	if pub == nil || pub.handle == nil || pub.handle.IsClosed() {
 		return fmt.Errorf("x509: invalid public key")
 	}
@@ -1186,6 +1233,8 @@ func (c *Certificate) CertificateType() string {
 // been closed, when md is nil or closed, or when the underlying
 // X509_digest call fails (wrapped as OpError).
 func (c *Certificate) Fingerprint(md *Digest) (string, error) {
+	defer nativeErrorScope()()
+
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return "", fmt.Errorf("x509: certificate closed")
 	}
@@ -1274,6 +1323,8 @@ func (c *Certificate) Extensions() []Extension {
 // "x509: extension already present (nid N)"; use ReplaceExtension to
 // overwrite instead.
 func (c *Certificate) AddExtension(nid int, value string) error {
+	defer nativeErrorScope()()
+
 	if err := c.ensureMutable("add extension"); err != nil {
 		return err
 	}
@@ -1359,6 +1410,8 @@ func (c *Certificate) AddExtensionByName(name, value string) error {
 // of a configuration file). When an extension with the same NID is already
 // present it returns "x509: extension already present (nid N)".
 func (c *Certificate) AddExtensionDER(nid int, critical bool, der []byte) error {
+	defer nativeErrorScope()()
+
 	if err := c.ensureMutable("add extension"); err != nil {
 		return err
 	}
@@ -1484,6 +1537,8 @@ func (c *Certificate) HasExtension(name string) bool {
 // be re-signed for the signature to remain consistent. Calls on a signed
 // or closed certificate fail.
 func (c *Certificate) RemoveExtension(name string) error {
+	defer nativeErrorScope()()
+
 	if err := c.ensureMutable("remove extension"); err != nil {
 		return err
 	}
@@ -1527,6 +1582,8 @@ func (c *Certificate) RemoveExtension(name string) error {
 // "@polsect" is rejected by OpenSSL. Use AddExtensionDER for qualifiers (the
 // caller supplies the DER value).
 func (c *Certificate) ReplaceExtension(name, value string) error {
+	defer nativeErrorScope()()
+
 	if err := c.ensureMutable("replace extension"); err != nil {
 		return err
 	}
@@ -1638,6 +1695,8 @@ func (c *Certificate) AddAuthorityKeyID(issuer *Certificate) error {
 // method on the certificate, so it is also where mutability is checked.
 // Returns an error wrapping an OpError on failure.
 func (c *Certificate) addExtCtx(subject, issuer *Certificate, nid int, value string) error {
+	defer nativeErrorScope()()
+
 	if err := c.ensureMutable("add extension"); err != nil {
 		return err
 	}
@@ -1663,6 +1722,8 @@ func (c *Certificate) addExtCtx(subject, issuer *Certificate, nid int, value str
 // Returns an error when the certificate has been closed via Close, or
 // when the underlying i2d_X509 call fails (wrapped as OpError).
 func (c *Certificate) MarshalDER() ([]byte, error) {
+	defer nativeErrorScope()()
+
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return nil, fmt.Errorf("x509: certificate closed")
 	}
@@ -1683,6 +1744,8 @@ func (c *Certificate) MarshalDER() ([]byte, error) {
 // responsible for calling Close to release it. Errors from the underlying
 // X509_get_pubkey call are wrapped as OpError.
 func (c *Certificate) PublicKey() (*PKey, error) {
+	defer nativeErrorScope()()
+
 	p := native.X509_get_pubkey(c.handle.Ptr())
 	if p == nil {
 		return nil, NewOpError("x509: X509_get_pubkey", native.PopError())
@@ -1841,6 +1904,8 @@ func (r *CertificateRequest) ensureMutable(op string) error {
 // object must be filled in (subject, public key, optional extensions and
 // challenge password) and then signed with Sign.
 func NewCertificateRequest() (*CertificateRequest, error) {
+	defer nativeErrorScope()()
+
 	r := native.X509_REQ_new()
 	if r == nil {
 		return nil, NewOpError("x509: X509_REQ_new", native.PopError())
@@ -1859,9 +1924,11 @@ func NewCertificateRequest() (*CertificateRequest, error) {
 // and the caller must invoke Close to release it. Errors are wrapped as
 // OpError.
 func LoadCertificateRequestPEM(pem []byte) (*CertificateRequest, error) {
-	bio := native.BIO_new_mem_buf(pem)
+	defer nativeErrorScope()()
+
+	bio := native.X_BIO_new_input(pem)
 	if bio == nil {
-		return nil, NewOpError("x509: BIO_new_mem_buf", native.PopError())
+		return nil, NewOpError("x509: X_BIO_new_input", native.PopError())
 	}
 	defer native.BIO_free(bio)
 	r := native.X_PEM_read_bio_X509_REQ(bio)
@@ -1881,6 +1948,8 @@ func LoadCertificateRequestPEM(pem []byte) (*CertificateRequest, error) {
 // and the caller must invoke Close to release it. Errors are wrapped as
 // OpError.
 func LoadCertificateRequestDER(der []byte) (*CertificateRequest, error) {
+	defer nativeErrorScope()()
+
 	r := native.D2i_X509_REQ(der)
 	if r == nil {
 		return nil, NewOpError("x509: d2i_X509_REQ", native.PopError())
@@ -1899,6 +1968,8 @@ func LoadCertificateRequestDER(der []byte) (*CertificateRequest, error) {
 // underlying PEM_write_bio_X509_REQ call fails (errors are wrapped as
 // OpError).
 func (r *CertificateRequest) MarshalPEM() ([]byte, error) {
+	defer nativeErrorScope()()
+
 	if r == nil || r.handle == nil || r.handle.IsClosed() {
 		return nil, fmt.Errorf("x509: request closed")
 	}
@@ -1923,6 +1994,8 @@ func (r *CertificateRequest) MarshalPEM() ([]byte, error) {
 // returns the error "x509: invalid subject name". Errors from the
 // underlying OpenSSL call are wrapped as OpError.
 func (r *CertificateRequest) SetSubject(n *Name) error {
+	defer nativeErrorScope()()
+
 	if err := r.ensureMutable("set subject"); err != nil {
 		return err
 	}
@@ -1968,6 +2041,8 @@ func (r *CertificateRequest) SubjectName() *Name {
 // is rejected before the native call. Embedded NUL bytes still truncate the
 // password because the value is passed to OpenSSL as a C string.
 func (r *CertificateRequest) SetChallengePassword(pwd string) error {
+	defer nativeErrorScope()()
+
 	if r == nil || r.handle == nil || r.handle.IsClosed() {
 		return fmt.Errorf("x509: request closed")
 	}
@@ -2009,6 +2084,8 @@ func (r *CertificateRequest) ChallengePassword() string {
 // merges with the existing extensions), so committing incrementally would
 // drop the earlier extensions on 8.4. Errors are wrapped as OpError.
 func (r *CertificateRequest) AddExtensions(exts ...Extension) error {
+	defer nativeErrorScope()()
+
 	if len(exts) == 0 {
 		return nil
 	}
@@ -2096,6 +2173,8 @@ func (r *CertificateRequest) AddExtensionDER(nid int, critical bool, der []byte)
 // attribute. Errors are wrapped as OpError; on failure the staging area is
 // left intact so the call can be retried.
 func (r *CertificateRequest) flushExtensions() error {
+	defer nativeErrorScope()()
+
 	if len(r.pendingExts) == 0 {
 		return nil
 	}
@@ -2285,6 +2364,8 @@ func (r *CertificateRequest) Extensions() []Extension {
 // When an individual copy fails it returns how many were copied along with the
 // error (wrapped as OpError). A nil or closed CSR yields (0, nil).
 func (r *CertificateRequest) CopyExtensionTo(target *Certificate, filter func(nid int, field string, critical bool) bool) (int, error) {
+	defer nativeErrorScope()()
+
 	if r == nil || r.handle == nil || r.handle.IsClosed() {
 		return 0, nil
 	}
@@ -2330,6 +2411,8 @@ func (r *CertificateRequest) CopyExtensionTo(target *Certificate, filter func(ni
 // Returns an error when the CSR has been closed via Close, or when the
 // underlying i2d_X509_REQ call fails (wrapped as OpError).
 func (r *CertificateRequest) MarshalDER() ([]byte, error) {
+	defer nativeErrorScope()()
+
 	if r == nil || r.handle == nil || r.handle.IsClosed() {
 		return nil, fmt.Errorf("x509: request closed")
 	}
@@ -2353,6 +2436,8 @@ func (r *CertificateRequest) MarshalDER() ([]byte, error) {
 // returns the error "x509: invalid public key". Errors from the
 // underlying OpenSSL call are wrapped as OpError.
 func (r *CertificateRequest) SetPublicKey(k *PKey) error {
+	defer nativeErrorScope()()
+
 	if err := r.ensureMutable("set public key"); err != nil {
 		return err
 	}
@@ -2380,6 +2465,8 @@ func (r *CertificateRequest) SetPublicKey(k *PKey) error {
 // every later mutating call (Set*, Add*, Sign itself) fails with
 // "x509: request already signed".
 func (r *CertificateRequest) Sign(priv *PKey, md *Digest) error {
+	defer nativeErrorScope()()
+
 	if err := r.ensureMutable("sign"); err != nil {
 		return err
 	}
@@ -2425,6 +2512,8 @@ func (r *CertificateRequest) Sign(priv *PKey, md *Digest) error {
 // VerifyDigest with digestForSigner, EdDSA→VerifyMessage with no
 // digest). The result matches `openssl req -verify`.
 func (r *CertificateRequest) Verify() error {
+	defer nativeErrorScope()()
+
 	info, ok := native.I2d_X509_REQ_INFO(r.handle.Ptr())
 	if !ok {
 		return NewOpError("x509: i2d_X509_REQ_INFO", native.PopError())
@@ -2461,6 +2550,8 @@ func (r *CertificateRequest) Verify() error {
 // is responsible for calling Close to release it. Errors from the
 // underlying X509_REQ_get_pubkey call are wrapped as OpError.
 func (r *CertificateRequest) PublicKey() (*PKey, error) {
+	defer nativeErrorScope()()
+
 	p := native.X509_REQ_get_pubkey(r.handle.Ptr())
 	if p == nil {
 		return nil, NewOpError("x509: X509_REQ_get_pubkey", native.PopError())
@@ -2645,6 +2736,8 @@ type Store struct {
 // The returned *Store owns the underlying X509_STORE handle and the
 // caller is responsible for calling Close to release it.
 func NewStore() (*Store, error) {
+	defer nativeErrorScope()()
+
 	s := native.X509_STORE_new()
 	if s == nil {
 		return nil, NewOpError("x509: X509_STORE_new", native.PopError())
@@ -2664,6 +2757,8 @@ func NewStore() (*Store, error) {
 // Errors from the underlying X509_STORE_add_cert call are wrapped as
 // OpError.
 func (s *Store) AddCert(c *Certificate) error {
+	defer nativeErrorScope()()
+
 	if s == nil || s.handle == nil || s.handle.IsClosed() {
 		return fmt.Errorf("x509: store closed")
 	}
@@ -2687,6 +2782,8 @@ func (s *Store) AddCert(c *Certificate) error {
 // must be live, non-closed objects; errors from the underlying
 // X509_STORE_add_crl call are wrapped as OpError.
 func (s *Store) AddCRL(c *CRL) error {
+	defer nativeErrorScope()()
+
 	if s == nil || s.handle == nil || s.handle.IsClosed() {
 		return fmt.Errorf("x509: store closed")
 	}
@@ -2710,6 +2807,8 @@ func (s *Store) AddCRL(c *CRL) error {
 // AddCRL). The Store must be live and non-closed; errors from the
 // underlying X509_STORE_set_flags call are wrapped as OpError.
 func (s *Store) SetFlags(flags uint64) error {
+	defer nativeErrorScope()()
+
 	if s == nil || s.handle == nil || s.handle.IsClosed() {
 		return fmt.Errorf("x509: store closed")
 	}
@@ -2747,6 +2846,8 @@ func (s *Store) SetFlags(flags uint64) error {
 // A nil or closed store returns the error "x509: store closed". Errors are
 // wrapped as OpError.
 func (s *Store) SetTime(t time.Time) error {
+	defer nativeErrorScope()()
+
 	if s == nil || s.handle == nil || s.handle.IsClosed() {
 		return fmt.Errorf("x509: store closed")
 	}
@@ -2792,6 +2893,8 @@ func (s *Store) Close() error {
 // (each must be closed individually). On verification failure the error
 // is a *VerifyError carrying the X509_V_ERR_* code, depth and message.
 func ChainVerify(cert *Certificate, store *Store, intermediates []*Certificate) ([]*Certificate, error) {
+	defer nativeErrorScope()()
+
 	if cert == nil || cert.handle == nil || cert.handle.IsClosed() {
 		return nil, fmt.Errorf("x509: invalid certificate")
 	}
@@ -2940,9 +3043,11 @@ type CRL struct {
 // The returned *CRL owns the underlying X509_CRL handle and the caller
 // must invoke Close to release it. Errors are wrapped as OpError.
 func LoadCRLPEM(pem []byte) (*CRL, error) {
-	bio := native.BIO_new_mem_buf(pem)
+	defer nativeErrorScope()()
+
+	bio := native.X_BIO_new_input(pem)
 	if bio == nil {
-		return nil, NewOpError("x509: BIO_new_mem_buf", native.PopError())
+		return nil, NewOpError("x509: X_BIO_new_input", native.PopError())
 	}
 	defer native.BIO_free(bio)
 	c := native.X_PEM_read_bio_X509_CRL(bio)
@@ -3028,6 +3133,8 @@ func NewCRL(issuer *Name, priv *PKey, thisUpdate, nextUpdate time.Time) (*CRL, e
 // otherwise the error "x509: invalid issuer name" is returned. Errors are
 // wrapped as OpError.
 func NewCRLForIssuer(issuer *Name) (*CRL, error) {
+	defer nativeErrorScope()()
+
 	if issuer == nil || issuer.handle == nil || issuer.handle.IsClosed() {
 		return nil, fmt.Errorf("x509: invalid issuer name")
 	}
@@ -3057,6 +3164,8 @@ func NewCRLForIssuer(issuer *Name) (*CRL, error) {
 // Must be invoked before Sign. A nil or closed CRL returns the error
 // "x509: CRL closed". Errors are wrapped as OpError.
 func (c *CRL) SetThisUpdate(t time.Time) error {
+	defer nativeErrorScope()()
+
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return fmt.Errorf("x509: CRL closed")
 	}
@@ -3076,6 +3185,8 @@ func (c *CRL) SetThisUpdate(t time.Time) error {
 // Must be invoked before Sign. A nil or closed CRL returns the error
 // "x509: CRL closed". Errors are wrapped as OpError.
 func (c *CRL) SetNextUpdate(t time.Time) error {
+	defer nativeErrorScope()()
+
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return fmt.Errorf("x509: CRL closed")
 	}
@@ -3095,6 +3206,8 @@ func (c *CRL) SetNextUpdate(t time.Time) error {
 // Must be invoked before Sign. A nil or closed CRL returns the error
 // "x509: CRL closed". Errors are wrapped as OpError.
 func (c *CRL) SetNumber(n int64) error {
+	defer nativeErrorScope()()
+
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return fmt.Errorf("x509: CRL closed")
 	}
@@ -3134,6 +3247,8 @@ func (c *CRL) AddRevokedEntry(serial int64, at time.Time, reason int) error {
 //
 // AddRevokedSerial copies a full serial into a revocation entry, freeing temporaries on failure.
 func (c *CRL) AddRevokedSerial(serial *big.Int, at time.Time, reason int) error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(c)
 	if err := ValidateSerial(serial); err != nil {
 		return err
@@ -3179,6 +3294,8 @@ func (c *CRL) AddRevokedSerial(serial *big.Int, at time.Time, reason int) error 
 // already ordered) and exists to normalize the DER output when entries were
 // appended out of order.
 func (c *CRL) SortRevokedEntries() error {
+	defer nativeErrorScope()()
+
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return fmt.Errorf("x509: CRL closed")
 	}
@@ -3203,6 +3320,8 @@ func (c *CRL) SortRevokedEntries() error {
 // closed CRL returns "x509: CRL closed" and an invalid priv returns
 // "x509: invalid signing key". Errors are wrapped as OpError.
 func (c *CRL) Sign(priv *PKey) error {
+	defer nativeErrorScope()()
+
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return fmt.Errorf("x509: CRL closed")
 	}
@@ -3231,6 +3350,8 @@ func (c *CRL) Sign(priv *PKey) error {
 // The returned *CRL owns the underlying X509_CRL handle and the caller
 // must invoke Close to release it. Errors are wrapped as OpError.
 func LoadCRLDER(der []byte) (*CRL, error) {
+	defer nativeErrorScope()()
+
 	c := native.D2i_X509_CRL(der)
 	if c == nil {
 		return nil, NewOpError("x509: d2i_X509_CRL", native.PopError())
@@ -3249,6 +3370,8 @@ func LoadCRLDER(der []byte) (*CRL, error) {
 // underlying PEM_write_bio_X509_CRL call fails (errors are wrapped as
 // OpError).
 func (c *CRL) MarshalPEM() ([]byte, error) {
+	defer nativeErrorScope()()
+
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return nil, fmt.Errorf("x509: CRL closed")
 	}
@@ -3272,6 +3395,8 @@ func (c *CRL) MarshalPEM() ([]byte, error) {
 // Returns an error when the CRL has been closed via Close, or when the
 // underlying i2d_X509_CRL call fails (errors are wrapped as OpError).
 func (c *CRL) MarshalDER() ([]byte, error) {
+	defer nativeErrorScope()()
+
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return nil, fmt.Errorf("x509: CRL closed")
 	}
@@ -3296,6 +3421,8 @@ func (c *CRL) MarshalDER() ([]byte, error) {
 // MarshalPEM / MarshalDER. Errors from the underlying OpenSSL call are
 // wrapped as OpError.
 func (c *CRL) AddAuthorityKeyID(issuer *Certificate) error {
+	defer nativeErrorScope()()
+
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return fmt.Errorf("x509: CRL closed")
 	}
@@ -3324,6 +3451,8 @@ func (c *CRL) AddAuthorityKeyID(issuer *Certificate) error {
 // MarshalPEM / MarshalDER. Errors from the underlying OpenSSL call are
 // wrapped as OpError.
 func (c *CRL) AddExtension(nid int, value string, issuer *Certificate) error {
+	defer nativeErrorScope()()
+
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return fmt.Errorf("x509: CRL closed")
 	}
@@ -3377,6 +3506,8 @@ func (c *CRL) AddExtensionByName(name, value string, issuer *Certificate) error 
 // Unlike AddExtension, this method needs no issuer certificate: the
 // extension value is supplied in full and depends on no context.
 func (c *CRL) AddExtensionDER(nid int, critical bool, der []byte) error {
+	defer nativeErrorScope()()
+
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return fmt.Errorf("x509: CRL closed")
 	}
@@ -3640,6 +3771,8 @@ func (c *CRL) Extensions() []Extension {
 // verification returns an error wrapped as OpError; nil / closed
 // receivers or keys return explicit errors.
 func (c *CRL) Verify(pub *PKey) error {
+	defer nativeErrorScope()()
+
 	if c == nil || c.handle == nil || c.handle.IsClosed() {
 		return fmt.Errorf("x509: CRL closed")
 	}
@@ -3723,4 +3856,26 @@ func RevocationCheck(cert *Certificate, crls []*CRL) error {
 		}
 	}
 	return nil
+}
+
+// SelfSigned 比较证书主题与签发者的 X.509 名称，并用证书自身公钥验签。
+//
+// SelfSigned compares subject and issuer as X.509 names and verifies the signature using the certificate's own key.
+func (c *Certificate) SelfSigned() (bool, error) {
+	if c == nil || c.handle == nil || c.handle.IsClosed() {
+		return false, fmt.Errorf("x509: invalid certificate")
+	}
+	defer runtime.KeepAlive(c)
+	ptr := c.handle.Ptr()
+	subject := native.X509_get_subject_name(ptr)
+	issuer := native.X509_get_issuer_name(ptr)
+	if subject == nil || issuer == nil || native.X509_NAME_cmp(subject, issuer) != 0 {
+		return false, nil
+	}
+	key, err := c.PublicKey()
+	if err != nil {
+		return false, err
+	}
+	defer key.Close()
+	return c.Verify(key) == nil, nil
 }

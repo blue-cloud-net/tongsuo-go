@@ -160,10 +160,13 @@ func (s *SSLConn) ReverifySession(chain [][]byte) error {
 	return err
 }
 
-// PumpSession 处理握手后消息并返回已读取的应用数据；不修改期限。
+// PumpSession 处理握手后消息，最多读取 maxRead 字节应用数据；不修改期限。
 //
-// PumpSession processes post-handshake messages and returns consumed application data without changing deadlines.
-func (s *SSLConn) PumpSession(ctx context.Context) ([]byte, error) {
+// PumpSession reads up to maxRead application bytes while processing post-handshake messages without changing deadlines.
+func (s *SSLConn) PumpSession(ctx context.Context, maxRead int, previousSession []byte) ([]byte, error) {
+	if maxRead <= 0 {
+		return nil, errors.New("tls: session wait application buffer limit")
+	}
 	if ctx == nil {
 		return nil, errors.New("tls: nil session context")
 	}
@@ -173,7 +176,7 @@ func (s *SSLConn) PumpSession(ctx context.Context) ([]byte, error) {
 		return nil, errors.New("tls: connection closed")
 	}
 	defer s.inflight.Done()
-	buf := make([]byte, 16*1024)
+	buf := make([]byte, min(maxRead, 16*1024))
 	var pin runtime.Pinner
 	pin.Pin(&buf[0])
 	defer pin.Unpin()
@@ -181,21 +184,21 @@ func (s *SSLConn) PumpSession(ctx context.Context) ([]byte, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if d := s.readDeadline.Load(); d != 0 && time.Now().UnixNano() >= d {
+		if d := loadDeadline(&s.readDeadline); !d.IsZero() && !time.Now().Before(d) {
 			return nil, &timeoutError{op: "wait session"}
 		}
-		if len(s.SessionDER()) > 0 {
+		if data := s.SessionDER(); len(data) > 0 && !bytes.Equal(data, previousSession) {
 			return nil, nil
 		}
 		n, code, err := s.diagnosticStep("SSL_read", buf)
 		if n > 0 {
-			return buf[:n], nil
-		}
-		if len(s.SessionDER()) > 0 {
-			return nil, nil
+			return buf[:n], err
 		}
 		if err != nil {
 			return nil, err
+		}
+		if data := s.SessionDER(); len(data) > 0 && !bytes.Equal(data, previousSession) {
+			return nil, nil
 		}
 		if code == native.SSLErrorZeroReturn {
 			return nil, errors.New("tls: peer closed before session receipt")
@@ -204,8 +207,8 @@ func (s *SSLConn) PumpSession(ctx context.Context) ([]byte, error) {
 		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < budget {
 			budget = time.Until(deadline)
 		}
-		if d := s.readDeadline.Load(); d != 0 && time.Until(time.Unix(0, d)) < budget {
-			budget = time.Until(time.Unix(0, d))
+		if d := loadDeadline(&s.readDeadline); !d.IsZero() {
+			budget = min(budget, time.Until(d))
 		}
 		if budget <= 0 {
 			continue

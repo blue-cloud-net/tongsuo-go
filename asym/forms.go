@@ -46,13 +46,13 @@ func LoadPublicKeySource(src *meta.Source) (PublicKey, error) {
 // MarshalPrivateKeyTo 把私钥序列化后按 sink 的编码写出。
 // passphrase 为 nil 或空时输出未加密的 PKCS#8 PEM；否则输出加密 PEM
 // （默认算法由底层 provider 决定，见 MarshalEncryptedPrivateKeyPEM）。
-// sink 为 nil 等价于标准输出；本函数不调用 sink.Close。
+// sink 为 nil 等价于标准输出；本函数不调用 sink.Close。文件输出须仅所有者可访问。
 //
 // MarshalPrivateKeyTo serialises the private key and writes it using
 // sink's encoding. A nil or empty passphrase emits an unencrypted PKCS#8
 // PEM block; otherwise the output is an encrypted PEM block (the default
 // cipher comes from the provider, see MarshalEncryptedPrivateKeyPEM). A
-// nil sink means standard output; the function does not close sink.
+// nil sink means standard output; the function does not close sink. File output requires owner-only permissions.
 func MarshalPrivateKeyTo(priv PrivateKey, sink *meta.Sink, passphrase *meta.Passphrase) error {
 	if priv == nil {
 		return fmt.Errorf("asym: nil private key")
@@ -69,7 +69,7 @@ func MarshalPrivateKeyTo(priv PrivateKey, sink *meta.Sink, passphrase *meta.Pass
 	if err != nil {
 		return err
 	}
-	if _, err := sink.Write(blob); err != nil {
+	if _, err := sink.WriteSensitive(blob); err != nil {
 		return fmt.Errorf("asym: write private key: %w", err)
 	}
 	return nil

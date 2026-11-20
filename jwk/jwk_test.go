@@ -1,6 +1,11 @@
 package jwk
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	stdx509 "crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
 	"math/big"
 	"testing"
 
@@ -59,15 +64,6 @@ func TestMarshalKey(t *testing.T) {
 		t.Fatalf("unexpected RSA jwk: %+v", k1)
 	}
 
-	// 公钥（同一把密钥的 Public()，共享句柄）
-	//
-	// ⚠️ 已知问题 docs/issues/2026-09-24/P1008：`asym.PrivateKey.Public()` 返回的
-	// 对象与私钥**共享同一个底层 EVP_PKEY**（不 Dup、也不剥离私钥分量），因此
-	// MarshalKey(priv.Public()) 依然会导出**私钥** JWK（含 d/p/q/dp/dq/qi）。
-	// 这是既有行为（旧 crypto/rsa 与 key 的 Public() 同样共享句柄），不是本次重构
-	// 引入的；但它属于安全相关缺陷，故在此把当前行为**显式钉住**：一旦 P1008 修好，
-	// 下面的断言会失败并提示翻转。
-	// 需要真正的公钥 JWK 时，应先把公钥 PEM 走一遍 Load 再 MarshalKey。
 	k2, err := MarshalKey(rsaPriv.Public())
 	if err != nil {
 		t.Fatalf("MarshalKey(asym.PublicKey): %v", err)
@@ -75,8 +71,8 @@ func TestMarshalKey(t *testing.T) {
 	if k2.Kty != "RSA" {
 		t.Fatalf("unexpected RSA public jwk: %+v", k2)
 	}
-	if !k2.IsPrivate() {
-		t.Error("asym.PrivateKey.Public() 已不再携带私钥材料 —— 请翻转本断言并关闭 docs/issues/2026-09-24/P1008")
+	if k2.IsPrivate() || k2.P != "" || k2.Q != "" || k2.DP != "" || k2.DQ != "" || k2.QI != "" {
+		t.Fatal("RSA public JWK contains private parameters")
 	}
 
 	// EC
@@ -232,5 +228,80 @@ func TestParseAndFromPEM(t *testing.T) {
 	}
 	if k3.N != k.N {
 		t.Fatal("FromPEM mismatch")
+	}
+}
+
+func TestPublicKeyExportOmitsPrivateParameters(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		generate func() (asym.PrivateKey, error)
+	}{
+		{"RSA", func() (asym.PrivateKey, error) { return asym.GenerateRSA(2048) }},
+		{"ECDSA", func() (asym.PrivateKey, error) { return asym.GenerateEC(asym.CurveP256) }},
+		{"SM2", asym.GenerateSM2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			priv, err := tc.generate()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer asym.Close(priv)
+			private, err := asym.Params(priv)
+			if err != nil || private == nil || private.D == nil {
+				t.Fatalf("private parameters unavailable: %v", err)
+			}
+			pub := priv.Public()
+			pem, err := pub.MarshalPublicKeyPEM()
+			if err != nil {
+				t.Fatal(err)
+			}
+			independent, err := asym.LoadPublicKeyPEM(pem)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer asym.Close(independent)
+			for _, key := range []asym.PublicKey{pub, independent} {
+				p, err := asym.Params(key)
+				if err != nil || p == nil {
+					t.Fatalf("public parameters unavailable: %v", err)
+				}
+				if p.D != nil || p.P != nil || p.Q != nil || p.Dmp1 != nil || p.Dmq1 != nil || p.Iqmp != nil {
+					t.Fatal("public key snapshot contains private parameters")
+				}
+				j, err := MarshalKey(key)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if j.IsPrivate() || j.P != "" || j.Q != "" || j.DP != "" || j.DQ != "" || j.QI != "" {
+					t.Fatal("public JWK contains private parameters")
+				}
+			}
+		})
+	}
+}
+
+// TestECJWKFixedWidth 验证 P-521 导出保留前导零。
+//
+// TestECJWKFixedWidth verifies that P-521 export retains leading zero bytes.
+func TestECJWKFixedWidth(t *testing.T) {
+	curve := elliptic.P521()
+	x, y := curve.ScalarBaseMult([]byte{1})
+	key := &ecdsa.PrivateKey{PublicKey: ecdsa.PublicKey{Curve: curve, X: x, Y: y}, D: big.NewInt(1)}
+	der, err := stdx509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j, err := FromPEM(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{j.X, j.Y, j.D} {
+		raw, err := base64.RawURLEncoding.DecodeString(value)
+		if err != nil || len(raw) != 66 {
+			t.Fatalf("encoded value width = %d, error = %v", len(raw), err)
+		}
+	}
+	if _, err := j.ToPEM(); err != nil {
+		t.Fatal(err)
 	}
 }

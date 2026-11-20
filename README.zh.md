@@ -41,14 +41,14 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 - ✍️ **签名格式与 RSA 摘要**（`asym`）：SM2 / ECDSA 的 DER ↔ 裸 `r‖s` 互转（`SignatureParts` / `SignatureDER` / `FormatSignature`）；RSA-OAEP 接受 `sm3`；RSA-SM3 签名先用 `SupportsRSASignatureDigest` 探测，8.4.0 不支持时返回 `ErrUnsupported`，8.5.0 的 PKCS#1 v1.5/PSS 可用；PSS 可用 `SupportsRSAPSSDigest` 单独探测
 - 🌊 **流密码**（`sym`）：ChaCha20、ChaCha20-Poly1305、ZUC-128-EEA3（原生 5 字节 IV）
 - 🧬 **密钥派生**（`kdf`）：10 种 KDF —— HKDF / PBKDF2 / scrypt / SSKDF / TLS1-PRF / TLS13-KDF / KBKDF / X942KDF / X963KDF / HMAC-DRBG-KDF，均含类型化入口与按名分发 `Derive`
-- 🧰 **CLI 式形态入口**：`meta` 提供 `Source`（bytes / reader / 文件 / stdin）、`Sink`（含 raw / hex / base64 编码）、`Format`（PEM / DER）与 `Passphrase`（`pass:` / `env:` / `file:` / `fd:` / `stdin:`）；各原语包提供 `SumSource` / `SumTo` / `EncryptSource` / `DeriveTo` / `MarshalPrivateKeyTo` / `LoadCertificateSource` 等一行式入口
+- 🧰 **CLI 式形态入口**：`meta` 提供 `Source`（bytes / reader / 文件 / stdin）、`Sink`（含 raw / hex / base64 编码）、`Format`（PEM / DER）与 `Passphrase`（`pass:` / `env:` / `file:` / `fd:` / `stdin:`）；各原语包提供 `SumSource` / `SumTo` / `EncryptSource` / `DeriveTo` / `MarshalPrivateKeyTo` / `LoadCertificateSource` 等一行式入口 文件 Sink 对私钥和派生密钥输出要求仅所有者可访问。 流式加解密会拒绝指向同一文件的输入与输出。
 - 🗂️ **算法与 provider 枚举**（`meta`）：`Digests` / `Ciphers` / `MACs` / `KDFs` / `Signatures` / `KeyExchanges` / `KEMs` / `TLSGroups` / `Providers` / `SeedingSource`
 - 📝 **Ed25519 / Ed448 签名算法**（RFC 8032，`asym`）：pure EdDSA 与 Ed25519ctx / Ed25519ph / Ed448ph、Ed448 上下文签验（原生完成预哈希），32B / 57B 原始种子与公钥字节可与 Go 标准库、WireGuard 互操作；通过 `X509_sign_ctx` 路径支持证书 / CSR / CRL 签发
 - 🤝 **X25519 / X448 ECDH 密钥交换**（RFC 7748，`ecdh`）：32 / 56 字节共享密钥派生，可与 Go `crypto/ecdh`、WireGuard 互操作
 - 🤝 **曲线 ECDH**（`ecdh`）：NIST P-256 / P-384 / P-521（X9.63）、OKP 曲线 X25519 / X448（RFC 7748）与 secp256k1；PEM（PKCS#8 / SPKI）往返与共享密钥派生，语义对齐 Go 标准库 `crypto/ecdh`；命名/显式 EC 参数 PEM 文件读写与参数驱动密钥生成；`DeriveSharedSecret` 直接适配 asym 密钥，`DeriveSM2DH` 显式设置静态/临时密钥、ID 与角色（不含密钥确认）
 - 🎲 **安全随机数**（`rand`）：基于铜锁 `RAND_bytes`
 - 🗄️ **密钥存储与轮转**（`keystore`）：密钥元数据、内存 / 自定义 Store、版本轮转与历史；`Load` / `LoadAllFromReader` 自动识别本地 PEM 多对象、DER 与 PKCS#12
-- 📜 **X.509 证书管理**（`x509`）：证书 / CSR / CRL / OCSP 解析与签发、一行自签证书（`CreateSelfSigned`）、分步签发 CRL（`CRLBuilder`）、CA 签发证书（SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448）、按 NID 或名字添加任意 X.509 v3 扩展（`AddExtension` / `AddExtensionByName` / `AddExtensions`）、按 CSR 签发（`IssueCertificateFromRequest`）、主机名 / IP / 邮箱校验（`VerifyHostname` / `CheckEmail`）、subject / issuer 名字 hash（`SubjectHash` / `IssuerHash`）与链验证（可用 `Store.SetTime` 指定验证时刻）；OCSP HTTP/nonce、trusted PEM 用途属性、证书/CRL 统一加载与验证错误码常量
+- 📜 **X.509 证书管理**（`x509`）：证书 / CSR / CRL / OCSP 解析与签发、一行自签证书（`CreateSelfSigned`）、分步签发 CRL（`CRLBuilder`）、CA 签发证书（SM2 + SM3 + RSA + ECDSA + Ed25519 + Ed448）、按 NID 或名字添加任意 X.509 v3 扩展（`AddExtension` / `AddExtensionByName` / `AddExtensions`）、按 CSR 签发（`IssueCertificateFromRequest`）、主机名 / IP / 邮箱校验（`VerifyHostname` / `CheckEmail`）、subject / issuer 名字 hash（`SubjectHash` / `IssuerHash`）与链验证（可用 `Store.SetTime` 指定验证时刻）；OCSP HTTP/nonce、trusted PEM 用途属性、证书/CRL 统一加载与验证错误码常量 主题与签发者名字快照独立于证书、CSR 或 CRL。使用后调用 `Name.Close`。
 - 🌐 **TLS / NTLS 传输层**（`tls`）：显式 TLS / NTLS 与服务端混合端口、完整凭证链、SNI 选择、ALPN、双向认证、三种验证策略与独立状态快照；独立读写 deadline 与并发 I/O；RFC 8998 严格 TLS 1.3、有序诊断、可选 trace/keylog 与 TLS 扩展 SCT 快照；[可运行握手示例](examples/handshake/)
 - 📦 **容器与格式**：PKCS#7 证书/CRL、签验与信封（`pkcs/pkcs7`）、带 PBE/迭代选项及复杂容器无损改密的 PKCS#12（`pkcs/pkcs12`）、PKCS#8 PBE/PRF/PEM/DER 与 RSA PKCS#1 公钥（`asym`）、OKP/oct JWK（`jwk`）、PEM 切分（`meta`）、带可配置限额的 ASN.1 DER 查看（`asn1`）、.NET 风格 RSA XML（`xml/rsa`）
 - 🧪 **标准向量测试**：每个算法包覆盖国标标准向量、往返、边界与错误路径，并与 openssl CLI 双向交叉验证
@@ -81,7 +81,8 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 - `0.10.0`：RFC 8998 国密 TLS 1.3、结构化握手诊断、可选详细 trace 与 keylog
 - `0.11.0`：会话复用、缓存、导入导出、票据控制与密钥轮换
 - `0.12.0`：HTTP/1.1 客户端/服务端集成与 OCSP stapling
-- `0.13.0` / `0.14.0`：PQC / CMS 与 RFC 3161 时间戳
+- `0.13.0`：PQC
+- `0.14.0`：CMS 与 RFC 3161 时间戳
 - `1.0.0`：公开 API 收敛与稳定
 
 传输系列交付 SDK API 与可运行示例，供下游构建类似 `s_client` / `s_server` 的握手测试。
@@ -435,7 +436,7 @@ API 层（16 个顶级包）          ← 对外高层 API，仅此层可被外�
 - **并发模型**：不同句柄可并行使用；普通单句柄由调用方串行化，`tls.Conn` 支持并发读写与 Close，内部串行原生调用
 - **内部实现隐藏**：`internal/` 受 Go `internal` 机制保护，外部不可导入；公开签名中不出现 `internal/` 类型
 
-详细设计与依赖方向见 [docs/architecture.md](docs/architecture.md)，`0.13.0`–`1.0.0` 的版本规划见 [docs/roadmap.md](docs/roadmap.md)。
+详细设计与依赖方向见 [docs/architecture.md](docs/architecture.md)，`0.14.0`–`1.0.0` 的版本规划见 [docs/roadmap.md](docs/roadmap.md)。
 
 ## 协议
 

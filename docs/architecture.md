@@ -48,7 +48,7 @@ API 层（16 个顶级包：meta / digest / mac / sym / asym / ecdh / kdf / rand
 - 严格分层，**禁止跨层调用**：API 层不得直接调用绑定层；绑定层不得包含业务逻辑
 - 依赖方向**单向向下**，各层边界清晰，便于测试与替换
 - API 层内部：`ecdh → asym`（加载 `asym` 密钥对象）、`x509 → asym`（公钥/私钥接口）、
-  `tls/jwk/pkcs7/pkcs12 → x509` + `asym`；算法原语包只依赖 `internal/core`，不互相依赖
+  `tls/pkcs7/pkcs12 → x509` + `asym`，`jwk → asym` + `sym`。算法原语使用核心层与下述形态入口。
 - **唯一例外（`0.5.0` 起）**：`digest` / `mac` / `sym` / `kdf` / `asym` / `x509`
   → `meta`。`meta` 是**形态词汇的叶子包**（只依赖 `internal/core`），提供
   `Source` / `Sink` / `Encoding` / `Format` / `Passphrase`，供各原语包的「CLI 式
@@ -102,6 +102,8 @@ graph TD
   tls --> asym
   tls --> core
   jwk --> asym
+  jwk --> sym
+  jwk --> core
   pkcs12 --> x509
   pkcs12 --> asym
   pkcs7 --> x509
@@ -197,7 +199,7 @@ API 层内部存在必须先拿到 `*core.PKey` 才能工作的场景（如 `ecd
 证书句柄走同构的 `internal/certaccess`：`Certificate(v any) (*core.Certificate, bool)`
 供 `tls` / `pkcs/pkcs7` / `pkcs/pkcs12` 取句柄，反向的 `Wrap(*core.Certificate)` 用
 **DER 往返**产出 owned 副本（因此 `x509.Certificate.CoreCertificate()` 是**已接受的残余**：
-方法虽在 godoc，但外部模块无法 import `internal/core`，拿到也用不了；且 owned 副本语义与
+外部调用方可以借助类型推断访问借用对象，须遵守不得关闭或修改的约定。owned 副本语义与
 `tls.peerCertificateChain` 声明的契约「每个返回的证书由调用方各自 `Close`」一致）。
 
 #### `0.9.0` TLS / NTLS 连接模型（已发布，2026-11-06）
@@ -314,6 +316,7 @@ tongsuo-go/
 │   ├── params.go              # KeyParams
 │   ├── pkcs8.go  check.go      # PKCS#8 PBE/PRF/PEM/DER、PKCS#1 公钥与密钥检查
 │   ├── signature.go           # 签名 DER ↔ 裸 r‖s：SignatureParts / SignatureDER / FormatSignature
+│   ├── pqc.go  pqc_signature.go  kem.go  spki.go    # PQC 签验、KEM 和公开密钥编码
 │   └── forms.go               # 形态入口：LoadPrivateKeySource / MarshalPrivateKeyTo …
 ├── ecdh/                      # 【密钥】密钥协商
 │   ├── ecdh.go                # Curve / LoadPrivateKey / LoadPublicKey / SharedSecret
@@ -338,6 +341,7 @@ tongsuo-go/
 │   └── helpers.go             # convertEntries / convertExtensions
 ├── tls/                       # 【传输】TLS / NTLS
 │   ├── tls.go  config.go  rfc8998.go  diagnostics.go  state.go  chain.go  suites.go  errors.go  session.go
+│   ├── http.go  ocsp.go        # HTTP/1.1 和 OCSP 装订
 │   └── listener.go            # Listener / NewListener（Accept 内握手的 net.Listener）
 ├── asn1/                      # 【格式】DER viewer（纯 Go，cgo-free）
 ├── jwk/                       # 【格式】JWK ↔ PEM / JSON
@@ -363,6 +367,8 @@ tongsuo-go/
 │   │   ├── binding_rand.go    # RAND_bytes
 │   │   ├── binding_bio.go     # BIO 系列
 │   │   ├── binding_ssl.go     # SSL_CTX / SSL / TLS 会话
+│   │   ├── binding_pqc.go    # PQC 绑定
+│   │   ├── binding_fd.go      # 原子复制 close-on-exec 文件描述符
 │   │   ├── binding_ssl_session.go  ssl_session.c # 会话序列化、缓存、票据与恢复后验证
 │   │   ├── binding_ssl_handshake.go  binding_ssl_diagnostics.go # 参数、ClientHello/ALPN/验证回调与快照
 │   │   ├── ssl_handshake.c  ssl_handshake.h # SSL ex_data 整数句柄与 C 写缓冲
@@ -381,7 +387,7 @@ tongsuo-go/
 │   │   ├── mac.go  meta.go
 │   │   ├── pkey.go  pkey_id.go  pkcs.go  ocsp.go
 │   │   ├── x509.go  ssl.go  ssl_config.go  ssl_io.go  ssl_diagnostics.go  ssl_session.go  rand.go  zero.go
-│   │   └── waitfd_linux.go  waitfd_darwin.go
+│   │   └── waitfd_unix.go
 │   ├── keyaccess/             # 【桥接】公开密钥对象 → *core.PKey（结构化接口断言，叶子包）
 │   │   └── keyaccess.go       # corePKeyer + PKey(v any)
 │   ├── certaccess/            # 【桥接】公开证书对象 ↔ *core.Certificate（断言 + DER 往返）
@@ -404,7 +410,7 @@ tongsuo-go/
 > `internal/certaccess`（证书，断言 + DER 往返）供 `tls` / `pkcs7` / `pkcs12` 与 `x509`
 > 包内的 `ocsp` 使用。
 > 依赖方向单向：算法原语包只依赖 `internal/core`；`ecdh → asym`；`x509 → asym`；
-> `tls` / `jwk` / `pkcs12` → `x509` + `asym`。
+> `tls` / `pkcs12` → `x509` + `asym`，`jwk` → `asym` + `sym`。
 > `0.5.0` 起新增一条**叶子边**：`digest` / `mac` / `sym` / `kdf` / `asym` / `x509`
 > → `meta`，`0.6.0` 增加 `keystore → meta`（`meta` 只依赖 `internal/core`，提供 `Source` / `Sink` / `Encoding` /
 > `Format` / `Passphrase` 形态词汇）。该边单向、无环，不得反向（`meta` 不得
@@ -475,7 +481,7 @@ P7 BIO/证书资源。绑定在 `binding_reliability.go` / `binding_pkcs7_ops.go
 
 ### 6.1 环境要求
 
-- Go 1.21+（启用 CGO；已在 Go 1.26 验证）
+- Go 1.21+，启用 CGO。持续验证以 [CI 的 Go 版本与平台矩阵](../.github/workflows/ci.yml) 为准。
 - 铜锁 8.4.0+（固定验证 8.4.0 / 8.5.0），安装路径 `/opt/tongsuo`（可通过环境变量覆盖）
 - 平台：**Linux 优先，macOS 兼容，Windows 后置**
 

@@ -145,11 +145,11 @@ func ExtractCRLs(data []byte) ([]*tx509.CRL, error) {
 
 // Extract 从 PKCS#7（DER 或 PEM）提取证书。
 // 输入支持 DER 或 PEM（含 "BEGIN PKCS7" 头）；返回按叶到根顺序排列的
-// *x509.Certificate 包装列表。
+// *x509.Certificate 包装列表。调用方负责逐一关闭返回的证书。
 //
 // Extract reads certificates out of a PKCS#7 container given as DER or PEM
 // (with "BEGIN PKCS7" header); it returns the leaf-first list of
-// *x509.Certificate wrappers.
+// *x509.Certificate wrappers. The caller must close each returned certificate.
 func Extract(data []byte) ([]*tx509.Certificate, error) {
 	der, err := decode(data)
 	if err != nil {
@@ -164,10 +164,18 @@ func Extract(data []byte) ([]*tx509.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		for _, cert := range certs {
+			_ = cert.Close()
+		}
+	}()
 	out := make([]*tx509.Certificate, 0, len(certs))
 	for _, c := range certs {
 		wrapped, werr := certaccess.Wrap(c)
 		if werr != nil {
+			for _, cert := range out {
+				_ = cert.Close()
+			}
 			return nil, werr
 		}
 		out = append(out, wrapped)

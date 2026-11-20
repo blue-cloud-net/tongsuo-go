@@ -1,11 +1,15 @@
 package meta
 
 import (
+	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
 // Passphrase 是口令的来源抽象。
@@ -13,7 +17,7 @@ import (
 // `fd:` / `stdin` 五种来源。
 //
 // 口令在构造时即被读取（`stdin` 与 `fd:` 同理），因此构造完成后不再
-// 依赖外部环境；口令内容**不会**出现在 String() 的输出里。
+// 依赖外部环境；口令内容**不会**出现在 String() 的输出里。fd: 不关闭调用方的描述符。
 //
 // Passphrase abstracts where a passphrase comes from, mirroring the
 // Tongsuo CLI's -passin / -passout: the pass:, env:, file:, fd: and stdin
@@ -22,7 +26,7 @@ import (
 // The passphrase is read eagerly at construction time (including for
 // stdin and fd:), so the value no longer depends on the environment once
 // the Passphrase exists; its content NEVER appears in the output of
-// String().
+// String(). The fd: source leaves the caller’s descriptor open.
 type Passphrase struct {
 	value []byte
 	desc  string
@@ -35,18 +39,22 @@ var passphraseSchemes = []string{"pass", "env", "file", "fd", "stdin"}
 
 // NewPassphrase 按来源说明构造口令。
 // 说明形如 "pass:secret"、"env:NAME"、"file:/path"、"fd:3"、"stdin"。
-// 不带前缀时整串按明文口令处理（等价于 "pass:"）。
+// file:、fd:、stdin 和 stdin: 读取首行。其他不带前缀的说明按明文处理。
 // 未知前缀返回错误；来源不可读时返回底层错误。
 //
 // NewPassphrase builds a passphrase from a source specification.
 // The specification looks like "pass:secret", "env:NAME", "file:/path",
-// "fd:3" or "stdin". A specification without a prefix is taken as a
-// literal passphrase (equivalent to "pass:"). An unknown prefix yields an
+// "fd:3" or "stdin". File, descriptor and standard input sources read the
+// first line. Other unprefixed specifications are literal. An unknown prefix yields an
 // error; an unreadable source yields the underlying error.
 func NewPassphrase(spec string) (*Passphrase, error) {
 	scheme, arg, hasPrefix := splitPassphraseSpec(spec)
 	if !hasPrefix {
-		scheme, arg = "pass", spec
+		if spec == "stdin" {
+			scheme, arg = "stdin", ""
+		} else {
+			scheme, arg = "pass", spec
+		}
 	}
 	switch scheme {
 	case "pass":
@@ -64,32 +72,42 @@ func NewPassphrase(spec string) (*Passphrase, error) {
 		if arg == "" {
 			return nil, fmt.Errorf("meta: empty passphrase file path")
 		}
-		data, err := os.ReadFile(arg)
+		f, err := os.Open(arg)
+		if err != nil {
+			return nil, fmt.Errorf("meta: open passphrase file %q: %w", arg, err)
+		}
+		defer f.Close()
+		data, err := readPassphraseLine(f)
 		if err != nil {
 			return nil, fmt.Errorf("meta: read passphrase file %q: %w", arg, err)
 		}
-		return &Passphrase{value: trimPassphraseNewline(data), desc: "file:***"}, nil
+		return &Passphrase{value: data, desc: "file:***"}, nil
 	case "fd":
 		fd, err := strconv.Atoi(strings.TrimSpace(arg))
-		if err != nil {
+		if err != nil || fd < 0 || fd > math.MaxInt32 {
 			return nil, fmt.Errorf("meta: invalid file descriptor %q", arg)
 		}
-		f := os.NewFile(uintptr(fd), "passphrase-fd")
+		dup, err := core.DupFD(fd)
+		if err != nil {
+			return nil, fmt.Errorf("meta: duplicate passphrase fd %d: %w", fd, err)
+		}
+		f := os.NewFile(uintptr(dup), "passphrase-fd")
 		if f == nil {
+			_ = core.CloseFD(dup)
 			return nil, fmt.Errorf("meta: invalid file descriptor %d", fd)
 		}
 		defer f.Close()
-		data, err := io.ReadAll(f)
+		data, err := readPassphraseLine(f)
 		if err != nil {
 			return nil, fmt.Errorf("meta: read passphrase from fd %d: %w", fd, err)
 		}
-		return &Passphrase{value: trimPassphraseNewline(data), desc: "fd:***"}, nil
+		return &Passphrase{value: data, desc: "fd:***"}, nil
 	case "stdin":
-		data, err := io.ReadAll(os.Stdin)
+		data, err := readPassphraseLine(os.Stdin)
 		if err != nil {
 			return nil, fmt.Errorf("meta: read passphrase from stdin: %w", err)
 		}
-		return &Passphrase{value: trimPassphraseNewline(data), desc: "stdin:***"}, nil
+		return &Passphrase{value: data, desc: "stdin:***"}, nil
 	}
 	return nil, fmt.Errorf("meta: unknown passphrase source %q", scheme)
 }
@@ -117,15 +135,24 @@ func splitPassphraseSpec(spec string) (scheme, arg string, hasPrefix bool) {
 	return head, spec[idx+1:], true
 }
 
-// trimPassphraseNewline 去掉口令末尾的换行（CLI 的 file:/fd: 语义）。
-//
-// trimPassphraseNewline removes the trailing newline of a passphrase
-// (the CLI's file: / fd: semantics).
-func trimPassphraseNewline(b []byte) []byte {
-	for len(b) > 0 && (b[len(b)-1] == '\n' || b[len(b)-1] == '\r') {
-		b = b[:len(b)-1]
+// Read exactly one line without consuming data from the next one. Stdin
+// and duplicated descriptors can share their read position with the caller.
+func readPassphraseLine(r io.Reader) ([]byte, error) {
+	var line []byte
+	var b [1]byte
+	for {
+		_, err := io.ReadFull(r, b[:])
+		if err == io.EOF {
+			return line, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if b[0] == '\n' {
+			return bytes.TrimSuffix(line, []byte{'\r'}), nil
+		}
+		line = append(line, b[0])
 	}
-	return b
 }
 
 // Bytes 返回口令字节的副本。

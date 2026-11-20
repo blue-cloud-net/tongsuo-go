@@ -250,29 +250,16 @@ func (a algo) coreOptions(opts *Options) (*core.MACOptions, error) {
 
 // New 按算法名返回可流式写入的 hash.Hash。
 // 未知算法名返回 ErrUnknownAlgorithm；缺少算法必需参数返回 ErrInvalidOptions。
-// 仅当底层铜锁初始化失败（正常使用不会发生）时 panic。
+// 初始化失败通过 error 返回。hash.Hash.Sum 无错误返回值，可另用 Err() 查询计算错误。
 //
 // New returns a streaming hash.Hash for the named algorithm. Unknown
 // names return ErrUnknownAlgorithm; a missing mandatory parameter
 // returns ErrInvalidOptions. Failures surface as errors: the returned
 // hash.Hash exposes Err() for the (error-less) Sum path.
 func New(name string, key []byte, opts *Options) (hash.Hash, error) {
-	a, err := lookup(name)
+	a, ctx, err := newMACContext(name, key, opts)
 	if err != nil {
 		return nil, err
-	}
-	coreOpts, err := a.coreOptions(opts)
-	if err != nil {
-		return nil, err
-	}
-	desc, err := core.MACFetch(a.provider)
-	if err != nil {
-		return nil, fmt.Errorf("mac: %s: %w", a.name, err)
-	}
-	defer desc.Close()
-	ctx, err := core.NewMACCtx(desc, key, coreOpts)
-	if err != nil {
-		return nil, fmt.Errorf("mac: %s: %w", a.name, err)
 	}
 	block := a.block
 	if n := ctx.BlockSize(); n > 0 {
@@ -289,6 +276,38 @@ func New(name string, key []byte, opts *Options) (hash.Hash, error) {
 		h.replay = true
 	}
 	return h, nil
+}
+
+func newMACContext(name string, key []byte, opts *Options) (algo, *core.MACCtx, error) {
+	a, err := lookup(name)
+	if err != nil {
+		return algo{}, nil, err
+	}
+	coreOpts, err := a.coreOptions(opts)
+	if err != nil {
+		return algo{}, nil, err
+	}
+	desc, err := core.MACFetch(a.provider)
+	if err != nil {
+		return algo{}, nil, fmt.Errorf("mac: %s: %w", a.name, err)
+	}
+	defer desc.Close()
+	ctx, err := core.NewMACCtx(desc, key, coreOpts)
+	if err != nil {
+		return algo{}, nil, fmt.Errorf("mac: %s: %w", a.name, err)
+	}
+	return a, ctx, nil
+}
+
+type singleMACWriter struct {
+	ctx *core.MACCtx
+}
+
+func (w singleMACWriter) Write(p []byte) (int, error) {
+	if err := w.ctx.Update(p); err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
 
 // Sum 按算法名一次性计算 MAC 标签。
@@ -321,16 +340,16 @@ func Sum(name string, key, data []byte, opts *Options) ([]byte, error) {
 // algorithm. Unknown names return ErrUnknownAlgorithm; read failures are
 // returned wrapped. The reader is not closed.
 func SumReader(name string, key []byte, r io.Reader, opts *Options) ([]byte, error) {
-	h, err := New(name, key, opts)
+	_, ctx, err := newMACContext(name, key, opts)
 	if err != nil {
 		return nil, err
 	}
-	defer closeHash(h)
-	if _, err := io.Copy(h, r); err != nil {
+	defer ctx.Close()
+	if _, err := io.Copy(singleMACWriter{ctx}, r); err != nil {
 		return nil, fmt.Errorf("mac: %s: read: %w", name, err)
 	}
-	tag := h.Sum(nil)
-	if err := sumErr(h); err != nil {
+	tag, err := ctx.Final()
+	if err != nil {
 		return nil, fmt.Errorf("mac: %s: %w", name, err)
 	}
 	return tag, nil

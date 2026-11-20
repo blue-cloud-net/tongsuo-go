@@ -29,16 +29,17 @@ import (
 // Sink is not safe for concurrent use; callers must finish all writes
 // before Close.
 type Sink struct {
-	mu      sync.Mutex
-	kind    sinkKind
-	buf     bytes.Buffer
-	writer  io.Writer
-	path    string
-	file    *os.File
-	enc     Encoding
-	encoder io.WriteCloser
-	wrote   bool
-	closed  bool
+	mu        sync.Mutex
+	kind      sinkKind
+	buf       bytes.Buffer
+	writer    io.Writer
+	path      string
+	file      *os.File
+	enc       Encoding
+	encoder   io.WriteCloser
+	wrote     bool
+	closed    bool
+	inputFile os.FileInfo
 }
 
 // sinkKind 区分 Sink 的四种去处。
@@ -152,6 +153,20 @@ func (s *Sink) SetEncoding(enc Encoding) error {
 // Write writes data, converting it according to the current encoding. A
 // nil receiver is equivalent to standard output.
 func (s *Sink) Write(p []byte) (int, error) {
+	return s.write(p, false)
+}
+
+// WriteSensitive 写入敏感数据。文件以 0600 创建，已有文件须为仅所有者可访问的普通文件。
+// 自定义 Writer 或标准输出的访问控制由调用方负责。
+//
+// WriteSensitive writes sensitive data. File sinks create files with 0600
+// permissions and accept only owner-only regular files when overwriting.
+// Callers control access to custom writers and standard output.
+func (s *Sink) WriteSensitive(p []byte) (int, error) {
+	return s.write(p, true)
+}
+
+func (s *Sink) write(p []byte, sensitive bool) (int, error) {
 	if s == nil {
 		return os.Stdout.Write(p)
 	}
@@ -160,7 +175,7 @@ func (s *Sink) Write(p []byte) (int, error) {
 	if s.closed {
 		return 0, fmt.Errorf("meta: sink closed")
 	}
-	if err := s.ensureOpen(); err != nil {
+	if err := s.ensureOpen(sensitive); err != nil {
 		return 0, err
 	}
 	s.wrote = true
@@ -187,26 +202,94 @@ func (s *Sink) Write(p []byte) (int, error) {
 	return 0, fmt.Errorf("meta: unknown encoding %q", string(s.enc))
 }
 
+// ProtectInputFile 阻止文件 Sink 写入输入读取器指向的同一文件。
+// 仅对文件 Sink 和 *os.File 生效，须在首次写入前调用。
+//
+// ProtectInputFile prevents a file sink from writing to the opened input
+// file, including aliases. Call before the first write. Other readers
+// and destination types are left to the caller.
+func (s *Sink) ProtectInputFile(r io.Reader) error {
+	f, ok := r.(*os.File)
+	if s == nil || s.kind != sinkFile || !ok {
+		return nil
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("meta: stat source: %w", err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.wrote || s.closed {
+		return fmt.Errorf("meta: input-file protection requires an unused sink")
+	}
+	s.inputFile = info
+	return nil
+}
+
 // ensureOpen 按需打开底层去处（调用方须持有锁）。
 //
 // ensureOpen opens the underlying destination on demand (the caller must
 // hold the lock).
-func (s *Sink) ensureOpen() error {
+func (s *Sink) ensureOpen(sensitive bool) error {
 	switch s.kind {
 	case sinkBytes, sinkWriter, sinkStdout:
 		return nil
 	case sinkFile:
 		if s.file != nil {
+			if sensitive {
+				return validateSensitiveFile(s.file)
+			}
 			return nil
 		}
-		f, err := os.OpenFile(s.path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+		flags, mode := os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(0o644)
+		if sensitive {
+			flags, mode = os.O_WRONLY|os.O_CREATE, 0o600
+		}
+		if s.inputFile != nil {
+			flags &^= os.O_TRUNC
+		}
+		f, err := os.OpenFile(s.path, flags, mode)
 		if err != nil {
 			return fmt.Errorf("meta: open sink %q: %w", s.path, err)
+		}
+		if sensitive {
+			if err := validateSensitiveFile(f); err != nil {
+				_ = f.Close()
+				return err
+			}
+		}
+		if flags&os.O_TRUNC == 0 {
+			info, err := f.Stat()
+			if err != nil {
+				_ = f.Close()
+				return fmt.Errorf("meta: stat sink %q: %w", s.path, err)
+			}
+			if s.inputFile != nil && os.SameFile(s.inputFile, info) {
+				_ = f.Close()
+				return fmt.Errorf("meta: sink and source refer to the same file")
+			}
+			if info.Mode().IsRegular() {
+				if err := f.Truncate(0); err != nil {
+					_ = f.Close()
+					return fmt.Errorf("meta: truncate sink %q: %w", s.path, err)
+				}
+			}
 		}
 		s.file = f
 		return nil
 	}
 	return fmt.Errorf("meta: unknown sink kind")
+}
+
+func validateSensitiveFile(f *os.File) error {
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("meta: stat sensitive sink: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("meta: sensitive sink requires an owner-only regular file")
+	}
+	return nil
 }
 
 // raw 返回底层写入器（调用方须持有锁）。
@@ -217,7 +300,7 @@ func (s *Sink) raw() io.Writer {
 	case sinkBytes:
 		return &s.buf
 	case sinkWriter:
-		return s.writer
+		return checkedSinkWriter{s.writer}
 	case sinkFile:
 		if s.file != nil {
 			return s.file
@@ -227,6 +310,18 @@ func (s *Sink) raw() io.Writer {
 		return os.Stdout
 	}
 	return io.Discard
+}
+
+type checkedSinkWriter struct {
+	io.Writer
+}
+
+func (w checkedSinkWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	if err == nil && n < len(p) {
+		err = io.ErrShortWrite
+	}
+	return n, err
 }
 
 // Bytes 返回内存汇已写入内容的副本。

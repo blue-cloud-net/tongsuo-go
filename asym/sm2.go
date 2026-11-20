@@ -117,12 +117,12 @@ func VerifyWithID(pub PublicKey, data, sig, id []byte) error {
 	return fmt.Errorf("asym: Verify requires an SM2 key, got %s", pub.Algorithm())
 }
 
-// Encrypt 使用 SM2 公钥加密 data。
+// Encrypt 使用 SM2 公钥加密非空 data。空明文返回错误。
 // 输出为 ASN.1 DER 格式（C1C3C2），与 Tongsuo/OpenSSL 的 EVP_PKEY_encrypt 一致。
 //
 // Encrypt encrypts data with the given SM2 public key and returns the
 // ciphertext in ASN.1 DER (C1C3C2 internal order), matching the format
-// emitted by Tongsuo's EVP_PKEY_encrypt.
+// emitted by Tongsuo's EVP_PKEY_encrypt. Empty plaintext returns an error.
 func Encrypt(pub PublicKey, data []byte) ([]byte, error) {
 	if pub == nil {
 		return nil, fmt.Errorf("asym: nil public key")
@@ -208,11 +208,12 @@ func Format(ct []byte, from, to string) ([]byte, error) {
 }
 
 // EncryptWithOrder 使用 SM2 公钥加密，输出指定顺序的裸格式密文。
+// 先调用 Encrypt 处理非空明文，再转换格式。顺序支持 c1c3c2（默认）和 c1c2c3，C1 为未压缩点。
 //
 // EncryptWithOrder encrypts data with the SM2 public key and returns the
 // raw-format ciphertext in the requested order. order must be "c1c3c2"
 // (the default when empty) or "c1c2c3"; the returned C1 point is always
-// uncompressed.
+// uncompressed. It encrypts non-empty plaintext with Encrypt before converting the format.
 func EncryptWithOrder(pub PublicKey, data []byte, order string) ([]byte, error) {
 	if order == "" {
 		order = "c1c3c2"
@@ -248,11 +249,17 @@ func parseSM2DER(ct []byte) (*sm2Cipher, error) {
 		Hash []byte
 		CT   []byte
 	}
-	if _, err := asn1.Unmarshal(ct, &s); err != nil {
+	if err := unmarshalExactDER(ct, &s); err != nil {
 		return nil, fmt.Errorf("asym: sm2: invalid DER ciphertext: %w", err)
 	}
 	if s.X == nil || s.Y == nil {
 		return nil, fmt.Errorf("asym: sm2: invalid DER ciphertext: missing coordinates")
+	}
+	if s.X.Sign() < 0 || s.Y.Sign() < 0 {
+		return nil, fmt.Errorf("asym: sm2: invalid DER ciphertext: negative coordinate")
+	}
+	if len(s.Hash) != sm2HashLen {
+		return nil, fmt.Errorf("asym: sm2: invalid DER ciphertext: incorrect digest length")
 	}
 	x := s.X.Bytes()
 	y := s.Y.Bytes()

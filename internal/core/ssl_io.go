@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
@@ -46,11 +47,11 @@ func (e *SSLOperationError) Error() string { return fmt.Sprintf("tls: %s: %v", e
 // Unwrap returns the underlying error.
 func (e *SSLOperationError) Unwrap() error { return e.Err }
 
-func deadlineValue(t time.Time) int64 {
-	if t.IsZero() {
-		return 0
+func loadDeadline(deadline *atomic.Pointer[time.Time]) time.Time {
+	if t := deadline.Load(); t != nil {
+		return *t
 	}
-	return t.UnixNano()
+	return time.Time{}
 }
 
 // SetReadDeadline 仅更新读取期限，不改变写入期限。
@@ -60,7 +61,7 @@ func (s *SSLConn) SetReadDeadline(t time.Time) error {
 	if s == nil || s.handle == nil || s.handle.IsClosed() {
 		return errors.New("tls: SSL closed")
 	}
-	s.readDeadline.Store(deadlineValue(t))
+	s.readDeadline.Store(&t)
 	return nil
 }
 
@@ -71,7 +72,7 @@ func (s *SSLConn) SetWriteDeadline(t time.Time) error {
 	if s == nil || s.handle == nil || s.handle.IsClosed() {
 		return errors.New("tls: SSL closed")
 	}
-	s.writeDeadline.Store(deadlineValue(t))
+	s.writeDeadline.Store(&t)
 	return nil
 }
 
@@ -123,23 +124,23 @@ func (s *SSLConn) runIO(op string, buf []byte) (n int, err error) {
 		if stopped {
 			return 0, errors.New("tls: connection closed")
 		}
-		deadline := s.readDeadline.Load()
-		if wd := s.writeDeadline.Load(); wd != 0 && (deadline == 0 || wd < deadline) {
-			deadline = wd
-		}
+		deadline := loadDeadline(&s.readDeadline)
 		switch op {
 		case "SSL_read":
-			deadline = s.readDeadline.Load()
 		case "SSL_write":
-			deadline = s.writeDeadline.Load()
+			deadline = loadDeadline(&s.writeDeadline)
+		default:
+			if wd := loadDeadline(&s.writeDeadline); !wd.IsZero() && (deadline.IsZero() || wd.Before(deadline)) {
+				deadline = wd
+			}
 		}
-		if deadline != 0 && time.Now().UnixNano() >= deadline {
+		if !deadline.IsZero() && !time.Now().Before(deadline) {
 			return 0, &timeoutError{op: op}
 		}
 		stepped = true
 		ret, code, failure := s.diagnosticStep(op, buf)
 		if ret > 0 {
-			return ret, nil
+			return ret, failure
 		}
 		if failure != nil {
 			return 0, failure
@@ -148,8 +149,8 @@ func (s *SSLConn) runIO(op string, buf []byte) (n int, err error) {
 			return 0, io.EOF
 		}
 		slice := waitFDTimeout
-		if deadline != 0 && time.Until(time.Unix(0, deadline)) < slice {
-			slice = time.Until(time.Unix(0, deadline))
+		if !deadline.IsZero() {
+			slice = min(slice, time.Until(deadline))
 		}
 		err := waitFD(s.fd, code == native.SSLErrorWantWrite, slice)
 		if err != nil && !errors.Is(err, errWaitFDTimeout) {

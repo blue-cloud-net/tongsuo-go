@@ -27,15 +27,33 @@ type NameEntry struct {
 	Value string // 字段值（UTF-8）
 }
 
-// NewName 创建空名字。
+// NewName 创建空名字。调用方负责 Close。
 //
-// NewName creates an empty Name. Use Add to populate it.
+// NewName creates an empty Name. Use Add to populate it and Close to release it.
 func NewName() *Name {
 	n, err := core.NewName()
 	if err != nil {
 		panic(err)
 	}
 	return &Name{name: n}
+}
+
+// Close 释放名字持有的资源，允许重复调用。
+//
+// Close releases the resources owned by the name. Repeated calls are safe.
+func (n *Name) Close() error {
+	if n == nil {
+		return nil
+	}
+	return n.name.Close()
+}
+
+func copiedName(n *core.Name) *Name {
+	copied := n.Copy()
+	if copied == nil {
+		return nil
+	}
+	return &Name{name: copied}
 }
 
 // Add 添加名字字段并返回自身（链式）。
@@ -76,6 +94,9 @@ func (n *Name) TryAdd(field, value string) error {
 //
 // Entries returns every RDN attribute of the Name in the order they were added.
 func (n *Name) Entries() []NameEntry {
+	if n == nil {
+		return nil
+	}
 	es := n.name.Entries()
 	out := make([]NameEntry, 0, len(es))
 	for _, e := range es {
@@ -87,19 +108,39 @@ func (n *Name) Entries() []NameEntry {
 // Get 返回指定字段短名（如 "CN"、"O"）的值；未找到返回空串。
 //
 // Get returns the value of the attribute with the given short name (for example "CN" or "O"), or an empty string when no such attribute is present.
-func (n *Name) Get(field string) string { return n.name.Get(field) }
+func (n *Name) Get(field string) string {
+	if n == nil {
+		return ""
+	}
+	return n.name.Get(field)
+}
 
 // Nid 返回指定字段短名（如 "CN"、"O"）对应的 NID，未知字段返回 0（与 native.NidUndef 一致）。
 //
 // Nid returns the OpenSSL NID for the given short name (for example "CN" or "O"), or 0 (matching native.NidUndef) when the name is unknown.
-func (n *Name) Nid(field string) int { return n.name.Nid(field) }
+func (n *Name) Nid(field string) int {
+	if n == nil {
+		return 0
+	}
+	return n.name.Nid(field)
+}
 
 // Len 返回 Name 中的 RDN 条目数（已关闭或 nil Name 返回 0）。
 //
 // Len returns the number of RDN entries in the Name (0 for a nil or closed Name).
-func (n *Name) Len() int { return n.name.Len() }
+func (n *Name) Len() int {
+	if n == nil {
+		return 0
+	}
+	return n.name.Len()
+}
 
 // String 返回名字的完整单行文本（如 "/CN=example.com/O=Example Org"）。
 //
 // String returns the Name as a single-line string in OpenSSL-style format (for example "/CN=example.com/O=Example Org").
-func (n *Name) String() string { return n.name.String() }
+func (n *Name) String() string {
+	if n == nil {
+		return ""
+	}
+	return n.name.String()
+}

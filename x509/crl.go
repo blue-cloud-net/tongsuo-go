@@ -3,6 +3,7 @@ package x509
 import (
 	"bytes"
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/blue-cloud-net/tongsuo-go/asym"
@@ -115,10 +116,16 @@ func (c *CRL) MarshalDER() ([]byte, error) {
 }
 
 // Issuer 返回 CRL 签发者完整名字（含全部 RDN 条目）。
+// 返回独立副本，调用方负责 Close。无名称、原对象已关闭或复制失败时返回 nil。
 //
 // Issuer returns the full issuer name of the CRL containing all RDN entries; inspect it with Entries, Get, or String.
+// The caller owns the copy and must Close it. An absent, closed or unavailable name returns nil.
 func (c *CRL) Issuer() *Name {
-	return &Name{name: c.crl.Issuer()}
+	if c == nil {
+		return nil
+	}
+	defer runtime.KeepAlive(c)
+	return copiedName(c.crl.Issuer())
 }
 
 // Version 返回 CRL 版本字段值（0=v1，1=v2）。

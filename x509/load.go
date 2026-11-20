@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/blue-cloud-net/tongsuo-go/internal/core"
 )
 
 // LoadFromURI 从本地路径、file URI 或 "-"（stdin）加载证书与 CRL。
@@ -38,11 +40,11 @@ func LoadFromURI(uri string) ([]*Certificate, []*CRL, error) {
 }
 
 // LoadFromReader 加载 PEM 多对象或单个 DER 的证书/CRL，不关闭 reader。
-// 忽略 PEM 密钥块；其他未知块或错误返回错误并释放已解析资源。
+// PEM 块之间只允许空白。忽略 PEM 密钥块；其他未知块或错误返回错误并释放已解析资源。
 // 成功时调用方负责对每项调用 Close。
 //
 // LoadFromReader loads certificates/CRLs from multiple PEM objects or one DER object without closing the reader.
-// PEM key blocks are ignored; unknown blocks or errors release all parsed resources and return an error.
+// Only whitespace may appear between PEM blocks. PEM key blocks are ignored; unknown blocks or errors release all parsed resources and return an error.
 // On success callers must Close each result.
 func LoadFromReader(r io.Reader) (certs []*Certificate, crls []*CRL, retErr error) {
 	if r == nil {
@@ -64,7 +66,7 @@ func LoadFromReader(r io.Reader) (certs []*Certificate, crls []*CRL, retErr erro
 			crls = nil
 		}
 	}()
-	if !bytes.Contains(data, []byte("-----BEGIN")) {
+	if !bytes.HasPrefix(bytes.TrimSpace(data), []byte("-----BEGIN")) {
 		c, err := LoadCertificateDER(data)
 		if err == nil {
 			return []*Certificate{c}, nil, nil
@@ -77,9 +79,9 @@ func LoadFromReader(r io.Reader) (certs []*Certificate, crls []*CRL, retErr erro
 	}
 	rest := data
 	for len(bytes.TrimSpace(rest)) > 0 {
-		b, tail := pem.Decode(rest)
-		if b == nil {
-			return certs, crls, fmt.Errorf("x509: malformed PEM")
+		b, tail, pemErr := core.DecodeLeadingPEM(rest)
+		if pemErr != nil {
+			return certs, crls, fmt.Errorf("x509: %w", pemErr)
 		}
 		rest = tail
 		switch b.Type {

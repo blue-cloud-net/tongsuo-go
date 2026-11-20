@@ -10,6 +10,8 @@ import (
 )
 
 func pkcs7CertStack(certs []*Certificate) (unsafe.Pointer, error) {
+	defer nativeErrorScope()()
+
 	stack := native.X509_sk_X509_new_null()
 	if stack == nil {
 		return nil, NewOpError("pkcs7: certificate stack", native.PopError())
@@ -58,6 +60,8 @@ func pkcs7Key(key *PKey, rsaOnly bool) error {
 //
 // SignPKCS7 returns signed DER, borrowing certificate/key inputs and freeing all temporaries on failure.
 func SignPKCS7(data []byte, cert *Certificate, key *PKey, extra []*Certificate, digest string, detached bool) ([]byte, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(cert)
 	defer runtime.KeepAlive(key)
 	defer runtime.KeepAlive(extra)
@@ -95,6 +99,8 @@ func SignPKCS7(data []byte, cert *Certificate, key *PKey, extra []*Certificate, 
 // VerifySignatures verifies all signatures and copies signer certificates; the API verifies trust.
 // Callers Close returned certificates; failures return no content or partial certificates.
 func (p *PKCS7) VerifySignatures(content []byte, extra []*Certificate) ([]byte, []*Certificate, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(p)
 	defer runtime.KeepAlive(extra)
 	if p == nil || p.handle == nil || p.handle.IsClosed() {
@@ -161,6 +167,8 @@ func (p *PKCS7) VerifySignatures(content []byte, extra []*Certificate) ([]byte, 
 //
 // EncryptPKCS7 encrypts to multiple RSA recipients and returns DER; invalid parameters or native failures return errors.
 func EncryptPKCS7(data []byte, recipients []*Certificate, cipher string) ([]byte, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(recipients)
 	if len(recipients) == 0 {
 		return nil, fmt.Errorf("pkcs7: no recipients")
@@ -204,6 +212,8 @@ func EncryptPKCS7(data []byte, recipients []*Certificate, cipher string) ([]byte
 //
 // DecryptContent decrypts EnvelopedData without returning partial plaintext on failure.
 func (p *PKCS7) DecryptContent(cert *Certificate, key *PKey) ([]byte, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(p)
 	defer runtime.KeepAlive(cert)
 	defer runtime.KeepAlive(key)

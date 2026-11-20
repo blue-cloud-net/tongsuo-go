@@ -1,4 +1,4 @@
-// Package tls 提供对端证书链的获取与 leaf→root 重排。
+// 本文件提供对端证书链的获取与 leaf→root 重排。
 //
 // Tongsuo 的 SSL_get_peer_cert_chain 在以下两个角色上布局不一致：
 //

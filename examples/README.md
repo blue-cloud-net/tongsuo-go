@@ -4,13 +4,15 @@
 
 ## 运行前准备
 
-每个示例需要铜锁 8.4.0+ 环境。统一环境变量：
+每个示例需要铜锁 8.4.0+。按实际安装位置设置库目录，若库安装在 `lib64`，将下例的 `TONGSUO_LIB_DIR` 改为 `$TONGSUO_HOME/lib64`。
 
 ```bash
 export TONGSUO_HOME=/opt/tongsuo
-export LD_LIBRARY_PATH=${TONGSUO_HOME}/lib64
+export TONGSUO_LIB_DIR="${TONGSUO_HOME}/lib"
+export LD_LIBRARY_PATH="$TONGSUO_LIB_DIR"
+# export DYLD_LIBRARY_PATH="$TONGSUO_LIB_DIR"   # macOS
 export CGO_CFLAGS="-I${TONGSUO_HOME}/include -Wno-deprecated-declarations"
-export CGO_LDFLAGS="-L${TONGSUO_HOME}/lib64"
+export CGO_LDFLAGS="-L$TONGSUO_LIB_DIR"
 ```
 
 > 说明：`examples/` 下的每个示例都是**独立 Go module**（各自有 `go.mod`，并通过

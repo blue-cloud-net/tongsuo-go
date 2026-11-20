@@ -3,6 +3,7 @@ package meta
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -261,5 +262,111 @@ func TestSinkWriter(t *testing.T) {
 	}
 	if s.Bytes() != nil {
 		t.Error("Bytes on a writer sink should be nil")
+	}
+}
+
+type shortSinkWriter struct{}
+
+func (shortSinkWriter) Write(p []byte) (int, error) {
+	return max(0, len(p)-1), nil
+}
+
+// TestSinkShortWrite 验证原始和编码写入及 Base64 结束时报告短写。
+//
+// TestSinkShortWrite checks short writes in raw and encoded output and base64 finalization.
+func TestSinkShortWrite(t *testing.T) {
+	for _, enc := range []Encoding{EncodingRaw, EncodingHex, EncodingBase64} {
+		s := NewWriterSink(shortSinkWriter{})
+		if err := s.SetEncoding(enc); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Write([]byte("abc")); err != io.ErrShortWrite {
+			t.Errorf("%s: Write error = %v, want io.ErrShortWrite", enc, err)
+		}
+	}
+	s := NewWriterSink(shortSinkWriter{})
+	if err := s.SetEncoding(EncodingBase64); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Write([]byte("a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != io.ErrShortWrite {
+		t.Fatalf("Close error = %v, want io.ErrShortWrite", err)
+	}
+}
+
+// TestSensitiveSinkFilePermissions 验证敏感文件权限及拒绝覆盖后的内容。
+//
+// TestSensitiveSinkFilePermissions verifies private file creation and unchanged unsafe destinations.
+func TestSensitiveSinkFilePermissions(t *testing.T) {
+	newFile := filepath.Join(t.TempDir(), "new")
+	s, err := NewFileSink(newFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.WriteSensitive([]byte("fixture")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(newFile)
+	if err != nil || info.Mode().Perm()&0o077 != 0 {
+		t.Fatalf("new file was not created with owner-only permissions: %v", err)
+	}
+
+	existing := filepath.Join(t.TempDir(), "existing")
+	if err := os.WriteFile(existing, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(existing, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err = NewFileSink(existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err := s.WriteSensitive([]byte("fixture")); err == nil {
+		t.Fatal("accepted a shared file")
+	}
+	data, err := os.ReadFile(existing)
+	if err != nil || string(data) != "original" {
+		t.Fatalf("existing file changed: %v", err)
+	}
+}
+
+// TestFileSinkProtectsInputAlias 验证通过其他路径引用输入文件时也不会截断。
+//
+// TestFileSinkProtectsInputAlias verifies that input protection recognizes hard links.
+func TestFileSinkProtectsInputAlias(t *testing.T) {
+	dir := t.TempDir()
+	input, alias := filepath.Join(dir, "input"), filepath.Join(dir, "alias")
+	if err := os.WriteFile(input, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(input, alias); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	s, err := NewFileSink(alias)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.ProtectInputFile(f); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Write([]byte("replacement")); err == nil {
+		t.Fatal("input alias was accepted as output")
+	}
+	data, err := os.ReadFile(input)
+	if err != nil || string(data) != "original" {
+		t.Fatalf("input changed: %v", err)
 	}
 }

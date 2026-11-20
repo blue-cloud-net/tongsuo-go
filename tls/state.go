@@ -177,6 +177,10 @@ func cloneState(in ConnectionState) ConnectionState {
 
 func (c *Conn) captureState(success bool) error {
 	reused := c.ssl.SessionReused()
+	cfg := c.config
+	if selected, ok := c.ssl.SelectedConfiguration().(*Config); ok {
+		cfg = selected
+	}
 	var reverifyErr error
 	if success && reused {
 		var peers [][]byte
@@ -190,7 +194,10 @@ func (c *Conn) captureState(success bool) error {
 			}
 			peers = before.PeerCertificates
 		}
-		reverifyErr = c.ssl.ReverifySession(peers)
+		optionalClientCertificate := c.isServer && cfg != nil && cfg.ClientAuth == VerifyClientCertIfGiven
+		if len(peers) != 0 || !optionalClientCertificate {
+			reverifyErr = c.ssl.ReverifySession(peers)
+		}
 	}
 	raw, err := c.ssl.State()
 	if err != nil {
@@ -218,10 +225,6 @@ func (c *Conn) captureState(success bool) error {
 		} else if success && len(raw.VerifiedChain) > 0 {
 			state.VerifiedChains = [][][]byte{raw.VerifiedChain}
 		}
-	}
-	cfg := c.config
-	if selected, ok := c.ssl.SelectedConfiguration().(*Config); ok {
-		cfg = selected
 	}
 	if success && reused && reverifyErr != nil && cfg != nil && effectiveVerification(cfg, !c.isServer) != VerifyNone {
 		policy := effectiveVerification(cfg, !c.isServer)

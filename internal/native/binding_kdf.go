@@ -200,21 +200,21 @@ func EVP_KDF_Derive(algorithm string, p *KDFParams, out []byte) bool {
 	// 参数结构体里要存放字节序列的指针，而 Go 不允许把 Go 指针存进
 	// 传给 C 的结构体（cgo 会拒绝 "Go pointer to unpinned Go pointer"）。
 	// 因此这里把每个字节字段复制到 C 堆内存，再把 C 指针填进结构体。
-	keyPtr, freeKey := cbytes(p.Key)
+	keyPtr, freeKey := secretCBytes(p.Key)
 	defer freeKey()
-	secretPtr, freeSecret := cbytes(p.Secret)
+	secretPtr, freeSecret := secretCBytes(p.Secret)
 	defer freeSecret()
 	saltPtr, freeSalt := cbytes(p.Salt)
 	defer freeSalt()
 	infoPtr, freeInfo := cbytes(p.Info)
 	defer freeInfo()
-	passPtr, freePass := cbytes(p.Pass)
+	passPtr, freePass := secretCBytes(p.Pass)
 	defer freePass()
-	seedPtr, freeSeed := cbytes(p.Seed)
+	seedPtr, freeSeed := secretCBytes(p.Seed)
 	defer freeSeed()
 	labelPtr, freeLabel := cbytes(p.Label)
 	defer freeLabel()
-	entropyPtr, freeEntropy := cbytes(p.Entropy)
+	entropyPtr, freeEntropy := secretCBytes(p.Entropy)
 	defer freeEntropy()
 	noncePtr, freeNonce := cbytes(p.Nonce)
 	defer freeNonce()
@@ -278,6 +278,16 @@ func cbytes(b []byte) (unsafe.Pointer, func()) {
 	}
 	p := C.CBytes(b)
 	return p, func() { C.free(p) }
+}
+
+func secretCBytes(b []byte) (unsafe.Pointer, func()) {
+	p, free := cbytes(b)
+	return p, func() {
+		if p != nil {
+			C.X_OPENSSL_cleanse(p, C.size_t(len(b)))
+		}
+		free()
+	}
 }
 
 // boolToInt 把 Go 的 bool 转成 C 的 int（0/1）。

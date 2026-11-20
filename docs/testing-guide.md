@@ -55,8 +55,8 @@ go test -fuzz FuzzRoundTrip ./sym
 - CLI 测试依赖铜锁 openssl 命令行，路径通过环境变量 `TONGSUO_OPENSSL_BIN` 指定
   （默认 `/opt/tongsuo/bin/openssl`）或由 `TONGSUO_HOME` 推导
 - 覆盖目标：核心算法包（`digest` / `mac` / `sym` / `asym` / `ecdh` / `kdf` / `x509`）
-  行覆盖 **≥ 80%**（参考值，**不**由 CI 强制；本地可通过
-  `./scripts/check-coverage.sh` 手动检查）
+  语句覆盖参考目标为 **≥ 80%**。本地脚本默认阈值为 **60%**，可用
+  `THRESHOLD=80 ./scripts/check-coverage.sh` 检查 80% 目标。CI 不执行覆盖率门禁。
 
 ---
 
@@ -236,7 +236,10 @@ go test -fuzz FuzzRoundTrip ./sym
 |------|---------|
 | **TLS 回环** | 客户端 ↔ 服务端握手（TLSv1.3）、多轮读写、`Close` 关闭 |
 | **NTLS 回环** | 客户端 ↔ 服务端国密双证书握手（NTLSv1.1 / ECC-SM2-SM4-GCM-SM3） |
-| **协议 / 套件** | `Version()` / `CipherName()` 协商结果断言 |
+| **协议 / 套件** | `Version()` / `CipherName()` 协商结果断言，套件编号和 TLS/NTLS 版本过滤 |
+| **取消与期限** | `DialContext` 取消、握手取消、读取唤醒、独立读写期限及原生写入后的终止超时（`tls_test.go`、`handshake_test.go`） |
+| **身份与错误** | TLS/NTLS 对端证书链、双证书、验证名称与 SNI、验证策略及 `HandshakeError` 分类（`pki_test.go`、`tls_test.go`、`handshake_test.go`） |
+| **会话与诊断** | 会话恢复、票据轮换、可选客户端认证、等待缓存上限和回调失败（`session_test.go`、`diagnostics_test.go`） |
 | **互操作（CLI）** | ① 本库 NTLS 客户端 → `openssl s_server -ntls -enable_ntls`（双证书）→ HTTP 响应；② `openssl s_client -ntls -enable_ntls` → 本库 NTLS 服务端 |
 
 > ⚠️ **NTLS CLI 关键**：`openssl s_server` / `s_client` 必须同时传 `-enable_ntls`
@@ -250,7 +253,7 @@ go test -fuzz FuzzRoundTrip ./sym
 | Accept 即握手 | 客户端 `Dial`（开 RootCAs + ServerName）→ 服务端 `Accept` 返回的连接**不调 `Handshake`** 即可读写 |
 | NTLS 回环 | 双证书配置下 `Listener` 同样完成握手，`Version()` 非空 |
 | 握手失败关闭连接 | 裸 TCP 发垃圾字节 → `Accept` 返回错误且**不返回连接** |
-| Close 幂等 | 4 个 goroutine 并发 `Close` 均返回 nil；之后 `Accept` 返回错误；`Addr` 仍可用 |
+| Close 幂等与取消 | 并发 `Close` 幂等，已阻塞的 `Accept` 和尚在握手的连接退出，`Addr` 仍可用 |
 | 凭证校验 | `nil` 监听器、空 `Config`、NTLS 缺加密证书均在构造时报错，且**不关闭** `ln` |
 | 并发安全 | 涉及并发生命周期，改 `tls` 时必须加跑 `go test -race ./tls/` |
 

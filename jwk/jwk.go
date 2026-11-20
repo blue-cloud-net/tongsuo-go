@@ -66,11 +66,16 @@ type Key struct {
 // It used to be exported as Marshal(key *core.PKey) and was made package-private
 // because no public signature may mention an internal/ type (roadmap §5, E1-7);
 // the public entry point is MarshalKey.
-func marshalCore(key *core.PKey) (*Key, error) {
+func marshalCore(key *core.PKey, includePrivate bool) (*Key, error) {
 	if key == nil {
 		return nil, fmt.Errorf("jwk: nil key")
 	}
-	p := key.Params()
+	var p *core.KeyParams
+	if includePrivate {
+		p = key.Params()
+	} else {
+		p = key.PublicParams()
+	}
 	if p == nil {
 		return nil, fmt.Errorf("jwk: failed to read key params")
 	}
@@ -106,14 +111,14 @@ func marshalCore(key *core.PKey) (*Key, error) {
 		return k, nil
 	case "EC", "SM2":
 		k := &Key{Kty: "EC", Crv: crvName(p.Curve)}
-		if p.X != nil {
-			k.X = b64(p.X)
-		}
-		if p.Y != nil {
-			k.Y = b64(p.Y)
-		}
-		if p.D != nil {
-			k.D = b64(p.D)
+		if curve, err := curveByName(k.Crv); err == nil {
+			coordWidth := (curve.Params().BitSize + 7) / 8
+			scalarWidth := (curve.Params().N.BitLen() + 7) / 8
+			k.X = b64Fixed(p.X, coordWidth)
+			k.Y = b64Fixed(p.Y, coordWidth)
+			k.D = b64Fixed(p.D, scalarWidth)
+		} else {
+			k.X, k.Y, k.D = b64Fixed(p.X, 0), b64Fixed(p.Y, 0), b64Fixed(p.D, 0)
 		}
 		return k, nil
 	default:
@@ -122,21 +127,24 @@ func marshalCore(key *core.PKey) (*Key, error) {
 }
 
 // MarshalKey 将 asym 密钥导出为 JWK。
+// 私钥 JWK 包含未加密的私钥字段，应按敏感材料保护。
 //
 // k 可为 asym.PrivateKey 或 asym.PublicKey（SM2 / RSA / EC / Ed25519 / Ed448 /
 // X25519 / X448）；跨包取底层句柄经 internal/keyaccess。公钥 JWK 不含私钥材料。
 //
-// 失败时返回错误：k 为 nil、取不到底层句柄、或密钥类型不受支持（目前只支持
-// RSA 与 EC 参数导出）。
+// 失败时返回错误：k 为 nil、取不到底层句柄、或密钥类型不受支持。
+// 非 NIST 曲线的 EC 导出结果（例如 SM2 或 secp256k1）仅支持导出，无法通过 ToPEM 导入。
 //
 // MarshalKey converts an asym key into a JWK.
+// A private JWK contains unencrypted private key fields and must be protected as sensitive material.
 //
 // k may be an asym.PrivateKey or asym.PublicKey (SM2 / RSA / EC / Ed25519 / Ed448 /
 // X25519 / X448); the underlying handle is obtained through internal/keyaccess.
 // Public-key JWKs carry no private material.
 //
 // It returns an error when k is nil, exposes no underlying handle, or is of an
-// unsupported type (only RSA and EC parameters can be exported today).
+// unsupported type. Non-NIST EC keys such as SM2 and secp256k1 can be
+// exported, but ToPEM cannot convert those EC JWKs back to PEM.
 func MarshalKey(k asym.Key) (*Key, error) {
 	if k == nil {
 		return nil, fmt.Errorf("jwk: nil key")
@@ -148,12 +156,13 @@ func MarshalKey(k asym.Key) (*Key, error) {
 	if !ok || pk == nil {
 		return nil, fmt.Errorf("jwk: unsupported key type %T", k)
 	}
-	return marshalCore(pk)
+	_, includePrivate := k.(asym.PrivateKey)
+	return marshalCore(pk, includePrivate)
 }
 
-// Parse 解析 JWK JSON。
+// Parse 解析 RSA、EC、OKP 或 oct 类型的 JWK JSON。
 //
-// Parse decodes JWK JSON bytes into a Key. Only "RSA" and "EC" kty values are accepted; other types return an error.
+// Parse decodes JWK JSON bytes into a Key. It accepts RSA, EC, OKP, and oct key types.
 func Parse(data []byte) (*Key, error) {
 	var k Key
 	if err := json.Unmarshal(data, &k); err != nil {
@@ -341,25 +350,32 @@ func (k *Key) ecPrivate() (*ecdsa.PrivateKey, error) {
 	}, nil
 }
 
-// FromPEM 从 PEM（PKCS#8 / PKCS#1 私钥或 SPKI 公钥）构建 JWK。
-// 按 PKCS#8 → PKCS#1 → SPKI 的顺序依次尝试解析；均不匹配时返回错误。
+// FromPEM 从 PKCS#8、PKCS#1 或 SEC1 私钥，或从 SPKI 公钥构建 JWK。
+// 与 MarshalKey 支持相同的密钥。私钥转换结果含未加密字段。
 //
-// FromPEM parses a PEM block (PKCS#8 or PKCS#1 private key, or SPKI public key) and returns the equivalent JWK Key. It tries PKCS#8 first, then PKCS#1, then SPKI, returning an error if none match.
+// FromPEM converts PKCS#8, PKCS#1 or SEC1 private keys, or SPKI public keys,
+// to JWK. It supports the same keys as MarshalKey. Private output is unencrypted.
 func FromPEM(pemBytes []byte) (*Key, error) {
-	var pk *core.PKey
-	var err error
-	pk, err = core.LoadPrivateKeyPEM(pemBytes)
-	if err != nil {
-		pk, err = core.LoadPrivateKeyPKCS1PEM(pemBytes)
+	if priv, err := asym.LoadPrivateKeyPEM(pemBytes); err == nil {
+		defer asym.Close(priv)
+		return MarshalKey(priv)
 	}
-	if err != nil {
-		pk, err = core.LoadPublicKeyPEM(pemBytes)
-	}
+	pub, err := asym.LoadPublicKeyPEM(pemBytes)
 	if err != nil {
 		return nil, fmt.Errorf("jwk: unsupported PEM: %w", err)
 	}
-	defer pk.Close()
-	return marshalCore(pk)
+	defer asym.Close(pub)
+	return MarshalKey(pub)
+}
+
+func b64Fixed(n *big.Int, width int) string {
+	if n == nil {
+		return ""
+	}
+	if width == 0 {
+		return b64(n)
+	}
+	return base64.RawURLEncoding.EncodeToString(n.FillBytes(make([]byte, width)))
 }
 
 // b64 将大整数编码为 base64url（无填充）。

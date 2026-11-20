@@ -13,26 +13,9 @@ import (
 	"github.com/blue-cloud-net/tongsuo-go/internal/native"
 )
 
-// waitFDTimeout 为 fd 轮询等待超时（单次 select 的最长阻塞时间）。
+// waitFDTimeout 限制单次 poll 等待。每次等待结束后重新检查取消和期限。
 //
-// 这是**取消延迟的上界**：Connect / Accept / Read / Write 的重试循环只在
-// waitFD 返回后才重新检查 deadline 与 ctx，而在 Linux 上从另一线程关闭 fd
-// 并不能可靠唤醒已阻塞在 select(2) 里的调用（POSIX 未定义该行为）——因此
-// 单次 select 阻塞多久，取消就要等多久。
-//
-// 取值 250ms 的理由：把最坏取消延迟从 30s 降到 250ms（诊断/探针类场景里
-// "总预算"必须可强制执行），代价只是每 250ms 一次空转的 SSL_connect /
-// SSL_read 重试（该调用在 WANT_READ 时立即返回，开销可忽略）。
-//
-// 彻底方案是改用 poll(2)/epoll 以实现可中断等待（计划 v0.1.3+）。
-//
-// waitFDTimeout is the deadline for a single select(2) wait inside the
-// poll-based retry loop driven by Connect / Accept / Read / Write. It bounds
-// how long a cancellation can take: the retry loop only re-checks the
-// deadline / ctx after waitFD returns, and on Linux closing an fd from
-// another thread does not reliably wake a blocked select(2). 250ms keeps
-// cancellation prompt at negligible cost; a poll(2)/epoll rewrite is the
-// long-term fix.
+// waitFDTimeout bounds a single poll wait before rechecking cancellation and deadlines.
 const waitFDTimeout = 250 * time.Millisecond
 
 // TLSContext 表示一个 TLS / NTLS 上下文（SSL_CTX 的包装）。
@@ -388,31 +371,12 @@ func (c *TLSContext) SetDefaultVerifyPaths() error {
 	return nil
 }
 
-// SSLConn 表示一个 TLS 连接（SSL 的包装）。
-// 使用完毕必须调用 Close 释放底层句柄。
+// SSLConn 封装铜锁 SSL 连接并接管其套接字副本。调用方须调用 Close。
+// 读写分别设置期限，原生操作串行，就绪等待不占用原生操作锁。
 //
-// SSLConn is the Go wrapper around an OpenSSL SSL connection bound to a
-// raw socket file descriptor.
-//
-// 0.9.0 起以下 ctx/fd 所有权及单一期限的描述为历史行为：SSLConn 接管 fd，
-// 构造失败、Close 与 Handle/finalizer 释放路径均关闭 fd；读写期限独立。
-//
-// 类型通过内部 Handle 拥有底层 SSL 句柄，使用完毕须调用 Close 释放连接。
-// 持有的 ctx 与 fd 不属于 *SSLConn：关闭上下文或底层 socket 由调用方负责。
-// deadline（unix nano）由 SetDeadline 写入，Connect/Accept/Read/Write 在
-// retry 时按剩余时间调用 waitFD——未设置 deadline 时使用 waitFDTimeout
-// 的最大单次等待时长（每次 retry 都完整重置）。
-//
-// Since 0.9.0, the ctx/fd ownership and single-deadline description below
-// is historical: SSLConn takes ownership of fd, closing it on constructor
-// failure, Close or Handle finalization; read/write deadlines are independent.
-//
-// The type owns the underlying SSL handle through an internal Handle
-// value; callers must invoke Close to release the connection once they
-// are done with it. The retained ctx and fd are not owned by *SSLConn;
-// closing the context or the underlying socket is the caller's
-// responsibility. The deadline (unix nano) is set via SetDeadline and
-// bounds the cumulative wait of Connect/Accept/Read/Write retry loops.
+// SSLConn owns the SSL connection and its socket duplicate.
+// Call Close to release them. Read and write have independent deadlines,
+// and readiness waits do not hold the native operation lock.
 type SSLConn struct {
 	deliveryMu    sync.Mutex
 	dispatch      TLSAcknowledge
@@ -426,12 +390,12 @@ type SSLConn struct {
 	ctx           *TLSContext
 
 	// fd 是**本连接持有**的 socket 副本（由 tls 层用 dup(2) 产生，见
-	// internal/core/fd_unix.go 的 DupFD 与 docs/issues/2026-09-24/P1011）。
+	// internal/core/fd_unix.go 的 DupFD）。
 	// 构造后不再变更，由 Close 负责关闭。
 	fd int
 
-	readDeadline  atomic.Int64
-	writeDeadline atomic.Int64
+	readDeadline  atomic.Pointer[time.Time]
+	writeDeadline atomic.Pointer[time.Time]
 	ioMu          sync.Mutex // serializes each native operation, never fd waits
 	closeOnce     sync.Once
 	closeErr      error
@@ -518,12 +482,10 @@ func NewSSLConn(ctx *TLSContext, fd int) (*SSLConn, error) {
 // SetDeadline sets the the deadline for subsequent handshake / I/O
 // retry loops. Passing the zero time.Time clears it.
 //
-// deadline 在内部按 unix nano 存储；retry 时按剩余时间切分到每次
-// waitFD 调用。已关闭连接返回错误。
+// 每次等待按剩余时间计算预算。已关闭连接返回错误。
 //
-// The deadline is stored as unix-nano and is consumed by the retry
-// loop on every WANT_READ/WANT_WRITE; returns an error on a closed
-// connection.
+// Each readiness wait uses the remaining time budget. Closed connections
+// return an error.
 func (s *SSLConn) SetDeadline(t time.Time) error {
 	if err := s.SetReadDeadline(t); err != nil {
 		return err
@@ -534,20 +496,12 @@ func (s *SSLConn) SetDeadline(t time.Time) error {
 	return nil
 }
 
-// Stop 停止本连接：禁止后续 SSL 调用，并 shutdown(2) 唤醒在途的 select / recv。
+// Stop 停止启动新的 SSL 操作并调用 shutdown 唤醒在途等待。
+// Close 在关闭底层连接前调用 Stop。Stop 幂等且支持并发调用。
 //
-// 由 tls.Conn.Close 在关闭底层 net.Conn **之前**调用。理由见
-// docs/issues/2026-09-24/P1011：SSL 一旦在 fd 已关闭（乃至被其它连接复用）之后继续
-// 调用，就会读写**别的连接**的 socket。shutdown 还让对端立刻看到 FIN —— 只要还有 fd
-// 副本存在，单靠 close(2) 不会关闭套接字。幂等且并发安全。
-//
-// Stop stops the connection: no further SSL call may start, and shutdown(2) wakes
-// in-flight select / recv.
-//
-// It is called by tls.Conn.Close before the underlying net.Conn is closed; see
-// docs/issues/2026-09-24/P1011. shutdown also makes the peer observe a FIN
-// immediately — close(2) alone cannot close the socket while a duplicate exists.
-// The method is idempotent and safe for concurrent use.
+// Stop prevents new SSL operations and calls shutdown to wake blocked
+// I/O. Close calls Stop before closing the underlying connection.
+// Stop is idempotent and safe for concurrent use.
 func (s *SSLConn) Stop() {
 	if s == nil {
 		return
@@ -602,7 +556,7 @@ func (s *SSLConn) begin() bool {
 //
 // Connect performs the TLS client handshake.
 //
-// The method locks the current OS thread and drives SSL_connect in a
+// Each native SSL_connect step and its error capture run on one OS thread in a
 // retry loop: SSL_ERROR_WANT_READ / SSL_ERROR_WANT_WRITE are answered by
 // waiting for fd readiness via waitFD with the remaining deadline (or
 // waitFDTimeout per iteration when no deadline is set), after which the
@@ -616,7 +570,7 @@ func (s *SSLConn) Connect() error {
 //
 // Accept performs the TLS server handshake.
 //
-// The method locks the current OS thread and drives SSL_accept in the
+// Each native SSL_accept step captures errors on the same OS thread in the
 // same WANT_READ / WANT_WRITE retry loop described in Connect. Returns
 // nil once the handshake completes; any other SSL error is wrapped as
 // OpError.
@@ -628,7 +582,7 @@ func (s *SSLConn) Accept() error {
 //
 // Read reads decrypted application data into buf.
 //
-// The method locks the current OS thread and retries on
+// Each native step captures errors on the same OS thread and retries on
 // SSL_ERROR_WANT_READ / SSL_ERROR_WANT_WRITE using waitFD with the
 // remaining deadline (or waitFDTimeout when no deadline is set).
 // A return value of (0, error) indicates EOF or a fatal SSL error
@@ -642,7 +596,7 @@ func (s *SSLConn) Read(buf []byte) (int, error) {
 //
 // Write encrypts and sends application data from buf.
 //
-// The method locks the current OS thread and retries on
+// Each native step captures errors on the same OS thread and retries on
 // SSL_ERROR_WANT_READ / SSL_ERROR_WANT_WRITE using waitFD with the
 // remaining deadline (or waitFDTimeout when no deadline is set).
 // A return value of (0, error) indicates a fatal SSL error (wrapped as
@@ -691,19 +645,6 @@ func (e *timeoutError) Is(target error) bool { return target == os.ErrDeadlineEx
 // ctx / deadline stays the effective termination condition.
 var errWaitFDTimeout = errors.New("tls: wait fd timeout")
 
-// waitFD 在内部平台实现文件里定义（waitfd_linux.go / waitfd_darwin.go）。
-//
-// waitFD 仅承担"一次 select(2) 切片"的职责：返回 nil / errWaitFDTimeout
-// （切片到期）/ 其他 fd 错误（EBADF、FD_SETSIZE 越界等）。上层通过
-// waitPlan / waitReady 将切片轮询节奏与 ctx/deadline 终止条件解耦。
-//
-// waitFD is implemented in the per-OS build files
-// waitfd_linux.go and waitfd_darwin.go because syscall.Timeval field
-// types differ between Linux and macOS. waitFD only owns one slice's
-// outcome (nil / errWaitFDTimeout / other fd error); the slice cadence
-// and the ctx / deadline termination condition live in waitPlan /
-// waitReady so they stay free of platform branching.
-
 // Close 发送关闭通知、释放底层句柄，并关闭本连接持有的 socket 副本。幂等。
 //
 // Close sends the TLS close_notify alert (via SSL_shutdown), releases the
@@ -714,7 +655,7 @@ var errWaitFDTimeout = errors.New("tls: wait fd timeout")
 // has already been closed returns nil without further side effects and does NOT
 // invoke SSL_shutdown again. It first waits for any in-flight SSL call to finish,
 // because a handle release or fd close concurrent with an SSL call is exactly the
-// bug described in docs/issues/2026-09-24/P1011.
+// descriptor-reuse bug.
 func (s *SSLConn) Close() error {
 	if s == nil {
 		return nil
@@ -965,35 +906,11 @@ func (c *TLSContext) CipherList() []CipherInfo {
 // identifier without importing the binding layer.
 const NTLSVersion uint16 = native.NTLSVersion
 
-// ProbeCipherSuites 返回指定协议版本下铜锁原生支持的密码套件清单（临时 ctx 探测）。
+// ProbeCipherSuites 返回指定版本适用的已构建套件目录。
 //
-// version 取 TLS1Version / TLS1_1Version / TLS1_2Version / TLS1_3Version /
-// NTLSVersion；未识别或探测失败返回 nil。
-//
-// 与 `(*TLSContext).CipherList` 的差异：后者报告「某个已存在 ctx 上启用的」套件，
-// 而本函数自行建一个临时 ctx 并令 min = max = version，因此得到的是「该版本下
-// 可用的全部套件」。OpenSSL 没有按版本过滤 `SSL_CTX_get_ciphers` 的接口，临时
-// ctx 是唯一可靠办法；NTLS 走 `NTLS_method` + `SSL_CTX_enable_ntls`。
-//
-// 探测 ctx 刻意**不经** `core.Handle` 包装（不注册终结器），用毕立即
-// `SSL_CTX_free`：它是瞬时对象，不应进入 Go 的终结器队列。`MinVersion` 为
-// OpenSSL 的 min_tls 字符串（如 "TLSv1.2" / "NTLSv1.1"）。
-//
-// ProbeCipherSuites returns the cipher suites Tongsuo natively supports at the
-// given protocol version, using a scratch probe context.
-//
-// version is one of TLS1Version / TLS1_1Version / TLS1_2Version /
-// TLS1_3Version / NTLSVersion; unknown values, or a failed probe, return nil.
-//
-// Unlike (*TLSContext).CipherList, which reports the suites enabled on an
-// existing context, this function builds a scratch context with
-// min = max = version, so it yields every suite usable at that version. OpenSSL
-// offers no version filter for SSL_CTX_get_ciphers, making the scratch context
-// the only reliable approach; NTLS uses NTLS_method + SSL_CTX_enable_ntls.
-//
-// The probe context deliberately bypasses the core.Handle wrapper (no
-// finalizer) and is released with SSL_CTX_free immediately: it is
-// short-lived and must not enter Go's finalizer queue.
+// ProbeCipherSuites returns the compiled suite catalog filtered to the
+// requested protocol version. Connection credentials and security policy
+// may constrain the catalog further during negotiation.
 func ProbeCipherSuites(version uint16) []CipherInfo {
 	if CipherVersionToUint16(version) == 0 {
 		return nil
@@ -1014,7 +931,15 @@ func ProbeCipherSuites(version uint16) []CipherInfo {
 	if !native.SSL_CTX_set_cipher_list(ctx.handle, "ALL:eNULL") {
 		return nil
 	}
-	return ctx.cipherList()
+	all := ctx.cipherList()
+	out := all[:0]
+	for _, cipher := range all {
+		minVersion, maxVersion := CipherProtocolRange(cipher.MinVersion)
+		if minVersion != 0 && version >= minVersion && version <= maxVersion {
+			out = append(out, cipher)
+		}
+	}
+	return out
 }
 
 // probeSSLCTX 包装一个临时的 SSH_CTX 指针，让 defer 直接调用
@@ -1165,4 +1090,21 @@ func (s *SSLConn) PeerCertificates() ([]*Certificate, error) {
 		out = append(out, &Certificate{handle: NewHandle(dup, true, native.X509_free)})
 	}
 	return out, nil
+}
+
+// CipherProtocolRange 将原生套件协议名映射为本库支持的协议范围。
+//
+// CipherProtocolRange maps a native cipher protocol name to the supported version range.
+func CipherProtocolRange(name string) (uint16, uint16) {
+	version := VersionNameToUint16(name)
+	switch version {
+	case native.NTLSVersion, native.TLS1_3Version:
+		return version, version
+	case native.TLS1Version, native.TLS1_1Version, native.TLS1_2Version:
+		return version, native.TLS1_2Version
+	}
+	if name == "SSLv3" {
+		return native.TLS1Version, native.TLS1_2Version
+	}
+	return 0, 0
 }

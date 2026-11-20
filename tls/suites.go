@@ -1,9 +1,9 @@
-// Package tls 提供密码套件枚举、按名查找与 Config.CipherSuites 混合语义。
+// 本文件提供密码套件枚举、按名查找与 Config.CipherSuites 混合语义。
 //
 // CipherSuites(version) 返回指定版本下 ctx 启用的全部套件（Name/ID/
 // MinVersion/MaxVersion）；CipherSuiteByName(name) 按名称或 16 位 ID 查找单个
 // 套件。两者都由 core.ProbeCipherSuites 的「临时 ctx 探测」驱动，MinVersion /
-// MaxVersion 由探测结果的 min_tls 字符串解析派生（详见本文件的实现注）。
+// MaxVersion 由原生套件协议归属和值域派生。
 //
 // Config.CipherSuites 支持混合名单（OpenSSL 标准名如 "TLS_AES_128_GCM_SHA256"
 // 走 set_ciphersuites 路径；OpenSSL 经典名如 "ECDHE-RSA-AES256-GCM-SHA384"
@@ -73,40 +73,18 @@ type CipherSuiteInfo struct {
 	// for. Parsed from the OpenSSL c->min_tls string.
 	MinVersion uint16
 
-	// MaxVersion 是套件适用的最高协议版本。本库采用「MinVersion ==
-	// MaxVersion」语义（OpenSSL 表内 ciphers 的 min/max 通常相同；TLS1.3
-	// 套件 max 固定为 TLS1_3Version）；NTLS 套件固定为 NTLSVersion。
+	// MaxVersion 是本库支持且该密码套件适用的最高协议版本。
 	//
-	// MaxVersion is the maximum protocol version the cipher is allowed
-	// for. Set equal to MinVersion per OpenSSL convention (cipher
-	// tables typically have min == max; TLS1.3 ciphers cap at
-	// TLS1_3Version). NTLS ciphers cap at NTLSVersion.
+	// MaxVersion is the highest supported protocol version for this cipher suite.
 	MaxVersion uint16
 }
 
-// CipherSuites 返回指定协议版本下铜锁原生支持的密码套件集合。
+// CipherSuites 返回指定协议版本下铜锁编译提供的密码套件。
+// 握手时可选套件还取决于凭证和安全策略。未知版本返回 nil。
 //
-// version 取 TLS1Version / TLS1_1Version / TLS1_2Version / TLS1_3Version /
-// NTLSVersion；未识别返回 nil。
-//
-// 实现走「临时 ctx 探测」：创建一个用对应 method 的 ctx（version==NTLSVersion
-// 时用 NTLS_method + SSL_CTX_enable_ntls），限定 min=max=version，设
-// set_cipher_list("ALL:eNULL") 加载全量，遍历 SSL_CTX_get_ciphers 取
-// Name/ID 与 min_tls 字符串派生 MinVersion；MaxVersion 默认 = MinVersion。
-//
-// 同一 ID 在不同版本下的表现可能不同（OpenSSL 表内 ciphers 通常
-// min==max）；这里返回的是「在指定版本下确实存在的所有套件」全量，
-// MinVersion 由解析得到。注意：CipherSuites(TLS1_3) 与
-// CipherSuites(TLS1_2) 的结果可能有重叠（TLS1.3-only 套件不会被旧版
-// ctx 报告），调用方按 MinVersion 过滤即可。
-//
-// CipherSuites returns every cipher the Tongsuo native library supports
-// at the given protocol version. Pass one of TLS1Version / TLS1_1Version
-// / TLS1_2Version / TLS1_3Version / NTLSVersion; unknown values return nil.
-//
-// Implementation delegates to core.ProbeCipherSuites (a scratch ctx with
-// min=max=version, NTLS_method for NTLS) and converts each MinVersion from
-// OpenSSL's min_tls string to the uint16 wire version.
+// CipherSuites returns the compiled cipher suites for the given protocol
+// version. Credentials and security policy can further constrain negotiation.
+// An unknown protocol version yields nil.
 func CipherSuites(version uint16) []CipherSuiteInfo {
 	probed := core.ProbeCipherSuites(version)
 	if len(probed) == 0 {
@@ -114,7 +92,7 @@ func CipherSuites(version uint16) []CipherSuiteInfo {
 	}
 	out := make([]CipherSuiteInfo, 0, len(probed))
 	for _, c := range probed {
-		out = append(out, toCipherSuiteInfo(c, version))
+		out = append(out, toCipherSuiteInfo(c))
 	}
 	return out
 }
@@ -134,19 +112,9 @@ var cipherProbeVersions = []uint16{
 	TLS1Version, TLS1_1Version, TLS1_2Version, TLS1_3Version, NTLSVersion,
 }
 
-// toCipherSuiteInfo 把核心层的探测结果转成公开类型；fallback 用于 min_tls
-// 字符串无法解析时的版本回退。
-//
-// toCipherSuiteInfo converts a core-layer probe result into the public type;
-// fallback is the version used when the min_tls string cannot be parsed.
-func toCipherSuiteInfo(c core.CipherInfo, fallback uint16) CipherSuiteInfo {
-	minV := versionForCipher(c.MinVersion, fallback)
-	return CipherSuiteInfo{
-		Name:       c.Name,
-		ID:         c.ID,
-		MinVersion: minV,
-		MaxVersion: minV,
-	}
+func toCipherSuiteInfo(c core.CipherInfo) CipherSuiteInfo {
+	minVersion, maxVersion := core.CipherProtocolRange(c.MinVersion)
+	return CipherSuiteInfo{Name: c.Name, ID: c.ID, MinVersion: minVersion, MaxVersion: maxVersion}
 }
 
 // CipherSuiteByName 按名称或 16 位 ID 查找单个密码套件。
@@ -195,7 +163,7 @@ func CipherSuiteByName(name string) (CipherSuiteInfo, error) {
 			} else if !strings.EqualFold(c.Name, query) {
 				continue
 			}
-			return toCipherSuiteInfo(c, v), nil
+			return toCipherSuiteInfo(c), nil
 		}
 	}
 	return CipherSuiteInfo{}, fmt.Errorf("tls: unknown cipher suite %q", name)
@@ -212,28 +180,16 @@ func CipherSuiteByName(name string) (CipherSuiteInfo, error) {
 // else (including cipher names) yields (0, false), meaning the caller should
 // match by name instead.
 func parseCipherSuiteID(s string) (uint16, bool) {
-	// base 0 同时接受 "0x1301"（十六进制）与 "4865"（十进制），但**不**把
-	// 无前缀的 "1301" 当十六进制。
-	v, err := strconv.ParseUint(s, 0, 16)
+	base := 10
+	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
+		base = 16
+		s = s[2:]
+	}
+	v, err := strconv.ParseUint(s, base, 16)
 	if err != nil {
 		return 0, false
 	}
 	return uint16(v), true
-}
-
-// versionForCipher 从 OpenSSL 返回的 min_tls 字符串派生 uint16 协议版本。
-// NTLS 套件因 min_tls="NTLSv1.1" → NTLSVersion；其它情况回退为 version
-// （probe ctx 已限定范围）。
-//
-// versionForCipher derives a uint16 protocol version from the OpenSSL
-// min_tls string. NTLS ciphers (min_tls="NTLSv1.1") map to NTLSVersion;
-// everything else falls back to the supplied version (the probe ctx has
-// already constrained the range).
-func versionForCipher(minTLS string, fallback uint16) uint16 {
-	if v := core.VersionNameToUint16(minTLS); v != 0 {
-		return v
-	}
-	return fallback
 }
 
 // applyCipherSuites 在 ctx 上按名字集合混合配置 cipher list / ciphersuites。

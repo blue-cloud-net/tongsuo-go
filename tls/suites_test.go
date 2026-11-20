@@ -39,7 +39,7 @@ func TestCipherSuiteByName(t *testing.T) {
 	}
 
 	// 按 ID：0x 前缀十六进制与十进制两种写法等价（0x1301 == 4865）。
-	for _, idText := range []string{"0x1301", "0X1301", "4865"} {
+	for _, idText := range []string{"0x1301", "0X1301", "4865", "04865"} {
 		got, err := CipherSuiteByName(idText)
 		if err != nil {
 			t.Fatalf("CipherSuiteByName(%q): %v", idText, err)
@@ -66,20 +66,9 @@ func TestCipherSuiteByName(t *testing.T) {
 	}
 }
 
-// TestCipherSuiteByNameRoundTrip 验证枚举出来的每个套件都能被按名称与按 ID
-// 反查回来（名称与 ID 一致）。
+// TestCipherSuiteByNameRoundTrip 验证每个枚举项均可按名称和套件 ID 查回。
 //
-// 只比对 Name / ID，不比对 MinVersion：探测本身不做版本过滤（见
-// TestCipherSuitesEnumerated 的说明），因此反查命中的版本可能低于枚举时的入参，
-// 而 MinVersion 一律由 min_tls 字符串派生，两者本就同源。
-//
-// TestCipherSuiteByNameRoundTrip verifies that every enumerated suite can be
-// looked up again by name and by ID, yielding the same Name and ID.
-//
-// MinVersion is deliberately not compared: the probe does not version-filter
-// (see TestCipherSuitesEnumerated), so a lookup may match under a lower version
-// than the one enumerated under, while MinVersion always derives from the
-// min_tls string — the same source either way.
+// TestCipherSuiteByNameRoundTrip verifies every listed suite by both name and ID.
 func TestCipherSuiteByNameRoundTrip(t *testing.T) {
 	for _, v := range cipherProbeVersions {
 		suites := CipherSuites(v)

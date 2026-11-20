@@ -22,6 +22,50 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Public key views returned by `Public()` now expose only public parameters in `asym.Params` and JWK exports.
+- Typed PBKDF2 rejects iteration counts that exceed the native integer range.
+- Random byte generation now passes the full buffer length to Tongsuo.
+- OCSP status matching rejects closed certificate and issuer handles.
+- TLS marks duplicated connection descriptors close-on-exec when creating them.
+- PEM parsing keeps input in a native-owned BIO buffer across cgo calls.
+- PKCS#7 certificate extraction rejects a SignedData container with missing content.
+- PKCS#12 pack and parse reject NUL in passwords, matching the password-change APIs.
+- Sinks report short writes from caller-supplied writers, including during base64 finalization.
+- Key parameter queries return an error for closed keys.
+- The DER viewer rejects overflowing tags and non-minimal tag or length encodings.
+- Signature conversion reports an error when the output width would overflow.
+- Cipher suite ID lookup interprets unprefixed numbers as decimal, including leading zeros.
+- PKCS#7 certificate extraction explicitly closes intermediate and partially converted certificates.
+- Passphrase sources leave caller-owned file descriptors open.
+- File, descriptor and standard input passphrase sources read a single line, and bare stdin selects standard input.
+- TLS retains absolute deadline values, including the Unix epoch.
+- TLS I/O returns the diagnostic error alongside any transferred bytes.
+- Session waiting enforces the documented 64 KiB application buffer limit.
+- Session waiting keeps processing input when the latest ticket is no longer usable.
+- An explicit verification name or email enables the default client verification policy.
+- Listener.Close closes connections still handshaking in Accept.
+- Session resumption honors optional client certificates when the peer provided none.
+- TLS socket readiness supports file descriptors beyond the select bitmap limit.
+- Signature and SM2 ciphertext conversion validates the complete DER structure and required fields.
+- EC JWKs encode NIST-curve coordinates and private scalars at their required fixed widths.
+- PEM-to-JWK conversion also supports OKP keys.
+- SelfSigned compares native X.509 names and explicitly releases the verification key.
+- Native primitive operations keep owning Go handles live until the final native access.
+- Non-TLS operations collect native error codes on the same thread and isolate the error queue per operation.
+- Encrypted PEM uses explicit password lengths and rejects lengths beyond the PEM reader capacity.
+- Native temporary copies of key passphrases and sensitive KDF inputs are cleared before release.
+- Cipher operations reject inputs, AAD and CCM lengths that cannot be passed safely to Tongsuo.
+- Single-object DER decoding rejects trailing bytes for X.509, PKCS and OCSP formats.
+- File sinks protect private-key and derived-key output with owner-only permissions.
+- Streaming encryption and decryption reject identical input and destination files, including aliases.
+- Certificate, CSR and CRL name snapshots retain independent native resources and support Close.
+- OCSP parsing and fetching release intermediate responder certificates and fail cleanly on partial conversion.
+- Local certificate and key loaders reject malformed PEM blocks instead of skipping them.
+- SumReader streams directly to the native MAC context without retaining a copy of its input.
+- Cipher suite enumeration returns suites for the requested TLS or NTLS protocol and reports their version range.
+
 ---
 
 ## [0.13.0] - 2026-11-19

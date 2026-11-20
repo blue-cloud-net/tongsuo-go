@@ -754,7 +754,7 @@ func TestHandshakeWriteDeadlineBeforeNativeWrite(t *testing.T) {
 	if ce != nil || se != nil {
 		t.Fatalf("client=%v server=%v", ce, se)
 	}
-	if err := c.SetWriteDeadline(time.Now().Add(-time.Second)); err != nil {
+	if err := c.SetWriteDeadline(time.Unix(0, 0)); err != nil {
 		t.Fatal(err)
 	}
 	payload := []byte("different")
@@ -908,5 +908,23 @@ func TestHandshakeSelectionRetry(t *testing.T) {
 				t.Fatalf("client=%v server=%v", ce, se)
 			}
 		})
+	}
+}
+
+// TestExplicitVerificationIdentityEnablesVerification 验证显式身份参数启用默认验证。
+//
+// TestExplicitVerificationIdentityEnablesVerification verifies that explicit identities enable default verification.
+func TestExplicitVerificationIdentityEnablesVerification(t *testing.T) {
+	for _, cc := range []*Config{
+		{VerificationName: "wrong.example", DisableSNI: true},
+		{HostnameOptions: HostnameOptions{Email: "wrong@example.test"}, DisableSNI: true},
+	} {
+		if got := effectiveVerification(cc, true); got != VerifyStrict {
+			t.Fatalf("verification policy = %v, want VerifyStrict", got)
+		}
+		_, _, clientErr, _ := handshakePair(t, testServerConfig(t), cc)
+		if clientErr == nil {
+			t.Fatal("untrusted server unexpectedly passed explicit identity check")
+		}
 	}
 }

@@ -12,6 +12,8 @@ import (
 //
 // LoadOCSPRequestDER parses a request; callers must Close it.
 func LoadOCSPRequestDER(data []byte) (*OCSPRequest, error) {
+	defer nativeErrorScope()()
+
 	p := native.D2i_OCSP_REQUEST(data)
 	if p == nil {
 		return nil, NewOpError("ocsp: parse request", native.PopError())
@@ -23,6 +25,8 @@ func LoadOCSPRequestDER(data []byte) (*OCSPRequest, error) {
 //
 // AddNonce copies a 1..32-byte nonce into the request; closed requests return errors.
 func (r *OCSPRequest) AddNonce(nonce []byte) error {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(r)
 	if r == nil || r.handle == nil || r.handle.IsClosed() {
 		return fmt.Errorf("ocsp: request closed")
@@ -56,6 +60,8 @@ func (r *OCSPResponse) CheckNonce(req *OCSPRequest) error {
 //
 // CheckRequest gets the response status for a single-certificate request; unmatched or multiple requests return errors.
 func (r *OCSPResponse) CheckRequest(req *OCSPRequest) (*CertStatus, error) {
+	defer nativeErrorScope()()
+
 	defer runtime.KeepAlive(r)
 	defer runtime.KeepAlive(req)
 	if r == nil || r.handle == nil || r.handle.IsClosed() || req == nil || req.handle == nil || req.handle.IsClosed() {

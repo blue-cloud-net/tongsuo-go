@@ -93,3 +93,22 @@ func BenchmarkParseWithLimits(b *testing.B) {
 		}
 	}
 }
+
+// TestDERHeaderBounds 验证两种入口均拒绝非最短或超出表示范围的头部。
+//
+// TestDERHeaderBounds verifies rejection of invalid headers through both entry points.
+func TestDERHeaderBounds(t *testing.T) {
+	for _, data := range [][]byte{
+		{0x1f, 0x1e, 0},
+		{0x1f, 0x80, 0x1f, 0},
+		{0x1f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f, 0},
+		{0x04, 0x81, 0},
+	} {
+		if _, err := Parse(data); err == nil {
+			t.Error("Parse accepted an invalid DER header")
+		}
+		if _, err := ParseWithLimits(data, 4, 8); err == nil {
+			t.Error("ParseWithLimits accepted an invalid DER header")
+		}
+	}
+}

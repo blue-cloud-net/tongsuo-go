@@ -1,6 +1,6 @@
 # GitHub Actions Release workflow for tongsuo-go
 #
-# 触发：推送 v* 标签时（如 v0.1.0、v0.2.0-rc1）
+# 触发：推送 v* 标签或手动运行时指定已有标签。
 # 流程：
 #   1. 复用 CI 工作流跑测试（workflow_call，与 CI 完全同源，杜绝 CI 与 Release 分歧）
 #   2. 从 CHANGELOG.md (英文) + CHANGELOG.zh.md (中文) 抽取当前 tag 对应版本说明
@@ -26,10 +26,32 @@ permissions:
   contents: write   # 创建 release 需要写权限
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false  # release 不取消已运行的
 
 jobs:
+  resolve-tag:
+    name: Resolve release tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.select.outputs.tag }}
+      ref: ${{ steps.select.outputs.ref }}
+      version: ${{ steps.select.outputs.version }}
+    steps:
+      - name: Validate target tag
+        id: select
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]]; then
+            echo "::error::Expected a version tag such as v0.13.0"
+            exit 1
+          fi
+          printf 'tag=%s\nref=refs/tags/%s\nversion=%s\n' "$RELEASE_TAG" "$RELEASE_TAG" "${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+
   # ---------------------------------------------------------------------------
   # 1. 测试：复用 CI 工作流（ubuntu + macOS × amd64/arm64）
   #    - 与 CI 完全同源：从同一 workflow 文件读矩阵 / Tongsuo 配置 / 缓存键
@@ -37,7 +59,10 @@ jobs:
   # ---------------------------------------------------------------------------
   test:
     name: CI
+    needs: resolve-tag
     uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.resolve-tag.outputs.ref }}
 
   # ---------------------------------------------------------------------------
   # 2. 抽取 CHANGELOG 当前 tag 版本说明（中英两份），任一缺失即失败
@@ -49,32 +74,18 @@ jobs:
   # ---------------------------------------------------------------------------
   extract-notes:
     name: Extract release notes
-    needs: test
+    needs: [resolve-tag, test]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
-
-      - name: Determine version (without leading "v")
-        id: ver
-        shell: bash
-        run: |
-          set -euo pipefail
-          REF="${GITHUB_REF_NAME:-}"
-          # workflow_dispatch 时取输入的 tag；push tag 时 REF 即为 tag
-          if [ -z "$REF" ] || [ "$REF" = "refs/heads/main" ]; then
-            REF="${{ github.event.inputs.tag }}"
-          fi
-          VERSION="${REF#v}"   # 去掉前缀 v，CHANGELOG 标题里没有 v
-          echo "version=$VERSION"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        with:
+          ref: ${{ needs.resolve-tag.outputs.ref }}
 
       - name: Extract CHANGELOG sections (en + zh)
-        id: extract
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/extract_release_notes.py "${{ steps.ver.outputs.version }}"
+        env:
+          RELEASE_VERSION: ${{ needs.resolve-tag.outputs.version }}
+        run: python3 scripts/extract_release_notes.py "$RELEASE_VERSION"
 
       - name: Upload release-notes artifact
         uses: actions/upload-artifact@v5
@@ -89,8 +100,7 @@ jobs:
   # ---------------------------------------------------------------------------
   release:
     name: Create Release
-    needs: extract-notes
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [resolve-tag, extract-notes]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -103,6 +113,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.resolve-tag.outputs.tag }}
           generate_release_notes: false
           body_path: notes/release-notes.md
           fail_on_unmatched_files: false
