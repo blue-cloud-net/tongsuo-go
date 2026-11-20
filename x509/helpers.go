@@ -51,6 +51,21 @@ func corePrivateKey(priv asym.PrivateKey) (*core.PKey, error) {
 	return k, nil
 }
 
+// signingDigest 解析显式摘要名，空名称保留密钥类型的默认行为。
+//
+// signingDigest resolves an explicit digest name. An empty name keeps the
+// default behavior for the key type.
+func signingDigest(name string) (*core.Digest, error) {
+	if name == "" {
+		return nil, nil
+	}
+	md := core.LookupDigest(name)
+	if md == nil {
+		return nil, fmt.Errorf("x509: invalid or unknown signing digest %q", name)
+	}
+	return md, nil
+}
+
 // wrapCorePublicKey 把底层公钥句柄换成 asym.PublicKey。
 //
 // 直接委派给 internal/keyaccess.WrapPublicKey，保持「PEM 往返」实现只有一份；

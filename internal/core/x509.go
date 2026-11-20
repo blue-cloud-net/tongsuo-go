@@ -2499,20 +2499,33 @@ func (r *CertificateRequest) Sign(priv *PKey, md *Digest) error {
 // Verify 使用 CSR 自身公钥验证签名。
 //
 // 注意：Tongsuo 8.5-pre1 的 X509_REQ_verify 对 SM2 证书签名请求存在缺陷
-// （返回 -1），故此处手动重建 CertificationRequestInfo 的 DER 并按密钥
-// 类型选择验签路径（SM2→Verify 带 userId、RSA/ECDSA→VerifyDigest、EdDSA→
-// VerifyMessage 无摘要）。结果与 openssl req -verify 一致。
+// （返回 -1）。SM2、PQC 和 EdDSA 保留按密钥类型验签的路径，其余算法由
+// X509_REQ_verify 根据 CSR 中记录的签名算法验签。
 //
 // Verify checks the CSR signature against its own embedded public key.
 //
-// Note: Tongsuo 8.5-pre1's X509_REQ_verify has a known defect for SM2
-// CSRs (it returns -1), so this implementation rebuilds the
-// CertificationRequestInfo DER manually and dispatches to the correct
-// verification path (SM2→Verify with empty user id, RSA/ECDSA→
-// VerifyDigest with digestForSigner, EdDSA→VerifyMessage with no
-// digest). The result matches `openssl req -verify`.
+// Tongsuo 8.5-pre1's X509_REQ_verify has a known defect for SM2 CSRs.
+// SM2, PQC, and EdDSA retain their key-specific verification paths.
+// For other keys, X509_REQ_verify uses the signature algorithm in the CSR.
 func (r *CertificateRequest) Verify() error {
 	defer nativeErrorScope()()
+
+	pub := native.X509_REQ_get_pubkey(r.handle.Ptr())
+	if pub == nil {
+		return NewOpError("x509: X509_REQ_get_pubkey", native.PopError())
+	}
+	pkey := &PKey{handle: NewHandle(pub, true, native.EVP_PKEY_free)}
+	defer pkey.Close()
+
+	keyType := pkey.TypeID()
+	isPQC := pkey.isPQCSigner()
+	isEdDSA := keyType == native.EvpPkeyED25519 || keyType == native.EvpPkeyED448
+	if keyType != native.EvpPkeySM2 && !isPQC && !isEdDSA {
+		if !native.X509_REQ_verify(r.handle.Ptr(), pub) {
+			return NewOpError("x509: X509_REQ_verify", native.PopError())
+		}
+		return nil
+	}
 
 	info, ok := native.I2d_X509_REQ_INFO(r.handle.Ptr())
 	if !ok {
@@ -2522,21 +2535,13 @@ func (r *CertificateRequest) Verify() error {
 	if !ok {
 		return NewOpError("x509: X509_REQ_get0_signature", native.PopError())
 	}
-	pub := native.X509_REQ_get_pubkey(r.handle.Ptr())
-	if pub == nil {
-		return NewOpError("x509: X509_REQ_get_pubkey", native.PopError())
-	}
-	pkey := &PKey{handle: NewHandle(pub, true, native.EVP_PKEY_free)}
-	defer pkey.Close()
 	switch {
-	case pkey.TypeID() == native.EvpPkeySM2:
+	case keyType == native.EvpPkeySM2:
 		return pkey.Verify(info, sig, nil)
-	case pkey.isPQCSigner():
+	case isPQC:
 		return pkey.VerifyPQC(info, sig, nil, false)
-	case pkey.TypeID() == native.EvpPkeyED25519, pkey.TypeID() == native.EvpPkeyED448:
-		return pkey.VerifyMessage(info, sig)
 	default:
-		return pkey.VerifyDigest(info, sig, digestForSigner(pkey))
+		return pkey.VerifyMessage(info, sig)
 	}
 }
 

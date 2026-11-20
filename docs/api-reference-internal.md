@@ -64,6 +64,7 @@ internal/testutil ← 仅被 *_test.go 使用
 ### 1.2 摘要
 
 - `type Digest struct { …（内部字段） }` — `EVP_MD` 描述符包装（铜锁自有常量对象）
+- `func LookupDigest(name string) *Digest` — 查询借用的 OpenSSL 摘要描述符，支持带连字符的 SHA-256、SHA-384 和 SHA-512 名称
 - `func (d *Digest) Size() int` / `func (d *Digest) BlockSize() int` — 摘要长度 / 分组长度
 - `func (d *Digest) OneShot(data []byte) ([]byte, error)` — 一次性计算摘要
 - `func SM3() *Digest` / `MD5()` / `SHA1()` / `SHA224()` / `SHA256()` / `SHA384()` / `SHA512()` `*Digest` — 各算法描述符（⚠️ 通过公开签名泄漏，如 `rsa.EncryptOAEP`、`key.CoreKey`）
@@ -189,7 +190,7 @@ internal/testutil ← 仅被 *_test.go 使用
 - `func NewCertificateRequest() (*CertificateRequest, error)` — 创建空白请求
 - `func LoadCertificateRequestPEM(pem []byte) (*CertificateRequest, error)` / `LoadCertificateRequestDER(der []byte) (*CertificateRequest, error)` — 加载
 - `func (r *CertificateRequest) MarshalPEM() ([]byte, error)` / `MarshalDER() ([]byte, error)` — 导出
-- `func (r *CertificateRequest) SetSubject(n *Name) error` / `SetPublicKey(k *PKey) error` / `Sign(priv *PKey, md *Digest) error` / `Verify() error` — 构建与校验
+- `func (r *CertificateRequest) SetSubject(n *Name) error` / `SetPublicKey(k *PKey) error` / `Sign(priv *PKey, md *Digest) error` / `Verify() error` — 构建与校验，RSA 和 ECDSA 验签使用 CSR 中记录的签名算法
 - `func (r *CertificateRequest) SubjectName() *Name` / `SubjectEntries() []NameEntry` / `SubjectText() string` — subject 读取
 - `func (r *CertificateRequest) SetChallengePassword(pwd string) error` / `ChallengePassword() string` — challengePassword
 - `func (r *CertificateRequest) AddExtensions(exts ...Extension) error` / `AddExtension(nid int, value string) error` / `AddSubjectAltName(value string) error` / `Extensions() []Extension` — 扩展
@@ -328,7 +329,7 @@ internal/testutil ← 仅被 *_test.go 使用
 
 ### 2.2 `binding_digest.go` — 摘要与签名
 
-`EVP_sm3` `EVP_md5` `EVP_sha1` `EVP_sha224` `EVP_sha256` `EVP_sha384` `EVP_sha512`、`EVP_MD_get_size` `EVP_MD_get_block_size`、`EVP_MD_CTX_new` `EVP_MD_CTX_free` `EVP_MD_CTX_copy_ex`、`EVP_DigestInit_ex` `EVP_DigestUpdate` `EVP_DigestFinal_ex`、`EVP_DigestSign` `EVP_DigestVerify`、`X_EVP_Digest`
+`EVP_get_digestbyname`、`EVP_sm3` `EVP_md5` `EVP_sha1` `EVP_sha224` `EVP_sha256` `EVP_sha384` `EVP_sha512`、`EVP_MD_get_size` `EVP_MD_get_block_size`、`EVP_MD_CTX_new` `EVP_MD_CTX_free` `EVP_MD_CTX_copy_ex`、`EVP_DigestInit_ex` `EVP_DigestUpdate` `EVP_DigestFinal_ex`、`EVP_DigestSign` `EVP_DigestVerify`、`X_EVP_Digest`
 
 ### 2.3 `binding_cipher.go` — 对称密码
 

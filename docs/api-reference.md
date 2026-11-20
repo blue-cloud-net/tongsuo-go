@@ -945,6 +945,7 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
   > DER，且铜锁能正常读回。读侧四种 DisplayText 分支（UTF8String / VisibleString /
   > IA5String / BMPString）均接受，因此由 openssl 生成的证书也能读回。
 - ♻️ `func (c *Certificate) Sign(signer asym.PrivateKey) error` — 用签发者私钥签名（**单向终态**：成功后所有 `Set*` / `Add*` / 再次 `Sign` 均返回 `x509: certificate already signed`）
+- 🆕 `func (c *Certificate) SignWithDigest(signer asym.PrivateKey, digest string) error` — 指定 OpenSSL 摘要名签名，空字符串沿用密钥类型的默认行为，不兼容的组合返回错误
 - ♻️ `func CreateCertificate(subject, issuer *Name, serial int64, notBefore, notAfter time.Time, pub asym.PublicKey, signer asym.PrivateKey) (*Certificate, error)` — 一步创建并签发
 - 🆕 `func CreateSelfSigned(subject *Name, serial int64, notBefore, notAfter time.Time, pub asym.PublicKey, signer asym.PrivateKey) (*Certificate, error)` — 一行生成自签证书（等价 `req -x509`；内部自动设 issuer = subject 并补 SKID/AKID）
 
@@ -964,6 +965,7 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
 - ♻️ `func NewEmptyCertificateRequest() *CertificateRequest` — 空白 CSR（供分步构建）
 - ♻️ `func LoadCertificateRequestPEM(pemBytes []byte) (*CertificateRequest, error)` / `LoadCertificateRequestDER(der []byte) (*CertificateRequest, error)` — 加载
 - ♻️ `func (r *CertificateRequest) SetSubject(n *Name) error` / `SetPublicKey(pub asym.PublicKey) error` / `Sign(priv asym.PrivateKey) error` / `Verify() error` — 构建与自校验
+- 🆕 `func (r *CertificateRequest) SignWithDigest(priv asym.PrivateKey, digest string) error` — 指定 OpenSSL 摘要名签名，空字符串沿用密钥类型的默认行为，不兼容的组合返回错误
 - ♻️ `func (r *CertificateRequest) MarshalPEM() ([]byte, error)` / `MarshalDER() ([]byte, error)` — 导出
 - ♻️ `func (r *CertificateRequest) SubjectName() *Name` / `SubjectEntries() []NameEntry` / `SubjectText() string` — subject 读取
 - ♻️ `func (r *CertificateRequest) SetChallengePassword(pwd string) error` / `ChallengePassword() string` — challengePassword 属性（`pwd` 按 **UTF-8** 写入；内含 `\x00` 仍按 C 字符串截断）
