@@ -22,7 +22,7 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.14.0] - TBD
+## [0.14.0] - 2026-11-20
 
 ### Added
 
