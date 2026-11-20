@@ -462,7 +462,7 @@ tongsuo-go/
   三层架构和桥接；混合端口按实际协商协议区分状态，NTLS 双证书与 RFC 8998 单套
   签名凭证分别处理。保留旧入口行为，新增三种显式验证策略；状态分别表达握手完成、
   未验证/通过/失败，诊断回调传递数据副本，不暴露原生句柄。
-- `0.14.0` 的新顶级 `ts` 包与 x509 平级，实施时再更新包计数与依赖图；当前包数
+- `0.15.0` 的新顶级 `ts` 包与 x509 平级，实施时再更新包计数与依赖图；当前包数
   保持 16。传输能力分版验收后，`1.0.0` 再集中稳定公开 API。
 
 新增实现按职责分布：`asn1/limits.go` 使用显式栈；`x509/reliability.go` 公开完整序列号、
@@ -473,7 +473,7 @@ P7 BIO/证书资源。绑定在 `binding_reliability.go` / `binding_pkcs7_ops.go
 `pkcs/pkcs12/testdata/complex.c`，不需要额外库或 CLI。
 
 具体排期见 [roadmap.md](roadmap.md) §2；未完成需求与暂缓理由见
-[requirements.md](requirements.md)。0.12.0 及之前的交付范围已完成，0.13.0 起仍为规划。
+[requirements.md](requirements.md)。0.14.0 及之前的交付范围已完成，0.15.0 起为后续规划。
 
 ---
 
@@ -587,7 +587,7 @@ go build ./...
 - [参考项目（C# 封装）](https://github.com/blue-cloud-net/tongsuo-csharp)
 - [官方 Go SDK](https://github.com/tongsuo-project/tongsuo-go-sdk)
 - [与官方 SDK 的功能对比与对齐路线图](official-sdk-comparison.md)
-- [版本路线图（`0.13.0` 至 `1.0.0`）](roadmap.md)
+- [版本路线图（`0.15.0` 至 `1.0.0`）](roadmap.md)
 - [开发规范](development-guide.md) · [测试规范](testing-guide.md)
 - [公开 API 清单](api-reference.md) · [内部 API 清单](api-reference-internal.md)
 

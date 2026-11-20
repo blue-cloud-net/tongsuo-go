@@ -9,11 +9,11 @@
 > 4. 类型给出导出字段；未导出字段以「（内部字段）」表示其存在；
 > 5. 本文描述的是**重构后的目标形态**：`crypto/` 整目录与 `key/` 已被 `digest` / `mac` / `sym` / `asym` / `ecdh` / `kdf` / `rand` / `keystore` 取代；`csr` / `crl` / `ocsp` **未拆**，全部留在 `x509`。
 >
-> **范围**：**16 个包**。实现基线：`0.13.0`（2026-11-19 定版，标签 `v0.13.0`）；未来目标均以 🧭 标注。
+> **范围**：**16 个包**。实现基线：`0.14.0`（待发布）；未来目标均以 🧭 标注。
 > **版本归属**：本文件不负责版本分配，哪个 🧭 符号落在哪个版本见 [roadmap.md](roadmap.md) §2。
 >
 > **状态标记**：
-> - ✅ **已有** — 已实现（`0.13.0` 及之前；发布状态以版本标签为准）；
+> - ✅ **已有** — 已实现（`0.14.0` 及之前；发布状态以版本标签为准）；
 > - 🚧 **变更中** — 目标版本另标，尚不可用；
 > - 🧭 **规划中** — 仅表达**目标 API 形态**，尚不可用；**目标版本以 [roadmap.md](roadmap.md) §2 为准**，
 >   下表的版本列仅为速查，若与该文冲突以 roadmap 为准。
@@ -344,7 +344,7 @@
 
 | 目标形态 | 目标版本 / 处置 | 前置与边界 |
 |---|---|---|
-| 🧭 `SSHKDF` / `PKCS12KDF` 类型化与按名派生入口（I-34） | `0.15.0` | 复用 EVP_KDF，补 SSH 类型/session ID、P12 diversifier/口令编码及独立向量；最终签名实施时确定 |
+| 🧭 `SSHKDF` / `PKCS12KDF` 类型化与按名派生入口（I-34） | `0.16.0` | 复用 EVP_KDF，补 SSH 类型/session ID、P12 diversifier/口令编码及独立向量；最终签名实施时确定 |
 | 🧭 `KRB5KDF`（I-46） | 暂缓，不承诺版本 | 明确 Kerberos 互通对象与参数后评估，见需求台账 |
 
 **破坏性变更**
@@ -656,7 +656,7 @@
 | 🆕 ML-DSA-44 / 65 / 87 | `0.13.0` | `SignPQC` / `VerifyPQC` 支持纯消息、上下文和标准预哈希 |
 | 🆕 SLH-DSA 12 变体 | `0.13.0` | 同上 |
 | 🆕 ML-KEM-512/768/1024 与 `Encapsulate` / `Decapsulate`（I-38） | `0.13.0` | 原生 KEM 密钥生成/编码、封装与解封装；不以算法枚举代替实际操作 |
-| 🧭 EC/SM2 公钥压缩/未压缩 SPKI PEM/DER 输出（I-35） | `0.15.0` | 复用 asym 密钥并保持源对象与旧默认不变；最终选项签名实施时确定 |
+| 🧭 EC/SM2 公钥压缩/未压缩 SPKI PEM/DER 输出（I-35） | `0.16.0` | 复用 asym 密钥并保持源对象与旧默认不变；最终选项签名实施时确定 |
 
 > 明确不做：DSA、DH、EC-ElGamal、Paillier（见 `docs/roadmap.md` §4）。
 
@@ -945,7 +945,7 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
   > DER，且铜锁能正常读回。读侧四种 DisplayText 分支（UTF8String / VisibleString /
   > IA5String / BMPString）均接受，因此由 openssl 生成的证书也能读回。
 - ♻️ `func (c *Certificate) Sign(signer asym.PrivateKey) error` — 用签发者私钥签名（**单向终态**：成功后所有 `Set*` / `Add*` / 再次 `Sign` 均返回 `x509: certificate already signed`）
-- 🆕 `func (c *Certificate) SignWithDigest(signer asym.PrivateKey, digest string) error` — 指定 OpenSSL 摘要名签名，空字符串沿用密钥类型的默认行为，不兼容的组合返回错误
+- 🆕 `func (c *Certificate) SignWithDigest(signer asym.PrivateKey, digest string) error`（0.14.0）— 指定 OpenSSL 摘要名签名，空字符串沿用密钥类型的默认行为，不兼容的组合返回错误
 - ♻️ `func CreateCertificate(subject, issuer *Name, serial int64, notBefore, notAfter time.Time, pub asym.PublicKey, signer asym.PrivateKey) (*Certificate, error)` — 一步创建并签发
 - 🆕 `func CreateSelfSigned(subject *Name, serial int64, notBefore, notAfter time.Time, pub asym.PublicKey, signer asym.PrivateKey) (*Certificate, error)` — 一行生成自签证书（等价 `req -x509`；内部自动设 issuer = subject 并补 SKID/AKID）
 
@@ -965,7 +965,7 @@ Close 输入密钥，调用方负责认证静态公钥、重新生成临时私�
 - ♻️ `func NewEmptyCertificateRequest() *CertificateRequest` — 空白 CSR（供分步构建）
 - ♻️ `func LoadCertificateRequestPEM(pemBytes []byte) (*CertificateRequest, error)` / `LoadCertificateRequestDER(der []byte) (*CertificateRequest, error)` — 加载
 - ♻️ `func (r *CertificateRequest) SetSubject(n *Name) error` / `SetPublicKey(pub asym.PublicKey) error` / `Sign(priv asym.PrivateKey) error` / `Verify() error` — 构建与自校验
-- 🆕 `func (r *CertificateRequest) SignWithDigest(priv asym.PrivateKey, digest string) error` — 指定 OpenSSL 摘要名签名，空字符串沿用密钥类型的默认行为，不兼容的组合返回错误
+- 🆕 `func (r *CertificateRequest) SignWithDigest(priv asym.PrivateKey, digest string) error`（0.14.0）— 指定 OpenSSL 摘要名签名，空字符串沿用密钥类型的默认行为，不兼容的组合返回错误
 - ♻️ `func (r *CertificateRequest) MarshalPEM() ([]byte, error)` / `MarshalDER() ([]byte, error)` — 导出
 - ♻️ `func (r *CertificateRequest) SubjectName() *Name` / `SubjectEntries() []NameEntry` / `SubjectText() string` — subject 读取
 - ♻️ `func (r *CertificateRequest) SetChallengePassword(pwd string) error` / `ChallengePassword() string` — challengePassword 属性（`pwd` 按 **UTF-8** 写入；内含 `\x00` 仍按 C 字符串截断）
@@ -1375,7 +1375,7 @@ _（本包已无待实现项）_
 | 🆕 `Decrypt(data []byte, opts *DecryptOptions) ([]byte, error)` | `0.7.0` | RecipientCert/RecipientKey，失败无输出 |
 | 🆕 `SignOptions` / `VerifyOptions` / `EncryptOptions` / `DecryptOptions` | `0.7.0` | 证书用 x509.Certificate，私钥用 asym.PrivateKey，Roots 用 x509.Store；不暴露 internal 类型 |
 | 🆕 `SignedData` 与幂等 `Close() error` | `0.7.0` | Content、Signers、TrustVerified；返回证书资源归结果持有者释放 |
-| 🧭 CMS 签验/信封、DigestedData 生成/验证（I-37） | `0.14.0` | 新增 `CMS_*` 绑定；摘要校验不等于身份认证 |
+| 🧭 CMS 签验/信封、DigestedData 生成/验证（I-37） | `0.15.0` | 新增 `CMS_*` 绑定；摘要校验不等于身份认证 |
 
 `0.7.0` 覆盖附带/分离签名和多接收者 EnvelopedData。Verify 默认要求显式 Roots，
 验证全部签名者及其信任；SignatureOnly=true 时仍验签，结果 TrustVerified=false。
@@ -1383,9 +1383,9 @@ SignedData.Signers 为签名者证书；验证失败不返回内容，Close 幂�
 Verify/Decrypt 接受 DER/PKCS7 PEM，二进制输入不做换行转换；分离内容缺失与空内容
 必须可区分。8.4.0 必须支持 RSA/ECDSA 签名与 RSA 接收者加密，SM2 和其他不支持的
 组合明确报错；非认证加密不承诺检测全部篡改。CLI 双向互通使用 smime -sign/-verify
-和 -encrypt/-decrypt；CMS 扩展归 `0.14.0`，不混同为同一格式。
+和 -encrypt/-decrypt；CMS 扩展归 `0.15.0`，不混同为同一格式。
 
-**规划中｜新顶级包 `ts`（`0.14.0`，尚不存在）**
+**规划中｜新顶级包 `ts`（`0.15.0`，尚不存在）**
 
 - 🧭 RFC 3161 时间戳请求/响应、验证与 HTTP 传输（I-39）；需新增 `TS_*` 绑定并复用 CMS 基础设施。
 - 实施时同步包索引、依赖图与逐符号 API；当前公开包数仍为 16。

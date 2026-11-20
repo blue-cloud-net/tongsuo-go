@@ -1,6 +1,6 @@
 # 官方 tongsuo-go-sdk 与本库能力对比
 
-> 复核日期：2026-11-18 ｜ 本库：`0.13.0` 于 2026-11-19 定版，待标签发布。
+> 复核日期：2026-11-18 ｜ 本库：`0.14.0`（待发布）。
 > 官方基线：`Tongsuo-Project/tongsuo-go-sdk` main @
 > [`002a09631de785f2d984d9e0b3a7f1e9a169940c`](https://github.com/Tongsuo-Project/tongsuo-go-sdk/tree/002a09631de785f2d984d9e0b3a7f1e9a169940c)。
 > 本次用 `git ls-remote` 确认远端 main 未变，并只读核对该提交源码；未运行官方 SDK。

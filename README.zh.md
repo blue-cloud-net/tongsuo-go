@@ -76,13 +76,15 @@ API 层为 **16 个顶级包**（`meta` / `digest` / `mac` / `kdf` / `rand` / `s
 
 `0.9.0` 已于 2026-11-06 发布，覆盖 TLS / NTLS 握手与认证、混合端口、SNI、ALPN、验证策略、连接状态与客户端/服务端示例。
 
-`0.10.0` 已于 2026-11-12 发布；其后版本仍为规划：
+各版本的交付与规划如下：
 
 - `0.10.0`：RFC 8998 国密 TLS 1.3、结构化握手诊断、可选详细 trace 与 keylog
 - `0.11.0`：会话复用、缓存、导入导出、票据控制与密钥轮换
 - `0.12.0`：HTTP/1.1 客户端/服务端集成与 OCSP stapling
 - `0.13.0`：PQC
-- `0.14.0`：CMS 与 RFC 3161 时间戳
+- `0.14.0`（待发布）：审计修复与 X.509 证书、CSR 签名摘要选择
+- `0.15.0`：CMS 与 RFC 3161 时间戳
+- `0.16.0`：标准派生与公钥编码互通
 - `1.0.0`：公开 API 收敛与稳定
 
 传输系列交付 SDK API 与可运行示例，供下游构建类似 `s_client` / `s_server` 的握手测试。
@@ -438,7 +440,7 @@ API 层（16 个顶级包）          ← 对外高层 API，仅此层可被外�
 - **并发模型**：不同句柄可并行使用；普通单句柄由调用方串行化，`tls.Conn` 支持并发读写与 Close，内部串行原生调用
 - **内部实现隐藏**：`internal/` 受 Go `internal` 机制保护，外部不可导入；公开签名中不出现 `internal/` 类型
 
-详细设计与依赖方向见 [docs/architecture.md](docs/architecture.md)，`0.14.0`–`1.0.0` 的版本规划见 [docs/roadmap.md](docs/roadmap.md)。
+详细设计与依赖方向见 [docs/architecture.md](docs/architecture.md)，`0.15.0`–`1.0.0` 的版本规划见 [docs/roadmap.md](docs/roadmap.md)。
 
 ## 协议
 

@@ -20,6 +20,8 @@
 
 ## [Unreleased]
 
+## [0.14.0] - TBD
+
 ### 新增功能
 
 - X.509 证书和 CSR 新增 `SignWithDigest`，支持显式指定 OpenSSL 签名摘要。新建的 CSR 可在铜锁 8.5.0 中直接验签。
@@ -1004,7 +1006,8 @@
 
 ---
 
-[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/blue-cloud-net/tongsuo-go/compare/v0.10.0...v0.11.0
