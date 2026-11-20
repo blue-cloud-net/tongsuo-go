@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -35,6 +36,23 @@ func newDigest(md unsafe.Pointer) *Digest {
 		size:   native.EVP_MD_get_size(md),
 		block:  native.EVP_MD_get_block_size(md),
 	}
+}
+
+// LookupDigest 按 OpenSSL 摘要名查询描述符，未知名称返回 nil。
+// SHA-256、SHA-384 和 SHA-512 也可用，返回的描述符无需释放。
+//
+// LookupDigest looks up a descriptor by OpenSSL digest name and returns nil
+// for an unknown name. It also accepts SHA-256, SHA-384 and SHA-512. The
+// returned descriptor does not require release.
+func LookupDigest(name string) *Digest {
+	if strings.ContainsRune(name, 0) {
+		return nil
+	}
+	switch strings.ToUpper(name) {
+	case "SHA-256", "SHA-384", "SHA-512":
+		name = "SHA" + name[len("SHA-"):]
+	}
+	return newDigest(native.EVP_get_digestbyname(name))
 }
 
 // SM3 返回 SM3 摘要算法（GB/T 32905-2016）。

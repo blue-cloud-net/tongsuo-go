@@ -7,6 +7,16 @@ package native
 import "C"
 import "unsafe"
 
+// EVP_get_digestbyname 按名称查询借用的摘要描述符，未知名称返回 nil。
+//
+// EVP_get_digestbyname looks up a borrowed digest descriptor, returning nil
+// for an unknown name.
+func EVP_get_digestbyname(name string) unsafe.Pointer {
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+	return unsafe.Pointer(C.EVP_get_digestbyname(cname))
+}
+
 // EVP_sm3 返回 SM3 摘要算法描述符（常量指针，不拥有所有权）。
 // EVP_sm3 returns the SM3 message digest descriptor. The returned pointer
 // points to a static singleton; do NOT free it.

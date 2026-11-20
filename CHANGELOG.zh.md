@@ -20,6 +20,10 @@
 
 ## [Unreleased]
 
+### 新增功能
+
+- X.509 证书和 CSR 新增 `SignWithDigest`，支持显式指定 OpenSSL 签名摘要。新建的 CSR 可在铜锁 8.5.0 中直接验签。
+
 ### Bug 修复
 
 - 由 `Public()` 返回的公钥视图通过 `asym.Params` 和 JWK 导出时只包含公开参数。

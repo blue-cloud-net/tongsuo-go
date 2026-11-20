@@ -22,6 +22,10 @@ and the project uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Added `SignWithDigest` for X.509 certificates and CSRs to select an OpenSSL signing digest explicitly. Newly created CSRs can be verified in memory on Tongsuo 8.5.0.
+
 ### Fixed
 
 - Public key views returned by `Public()` now expose only public parameters in `asym.Params` and JWK exports.

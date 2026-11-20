@@ -173,6 +173,18 @@ func (r *CertificateRequest) SetPublicKey(pub asym.PublicKey) error {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (r *CertificateRequest) Sign(priv asym.PrivateKey) error {
+	return r.SignWithDigest(priv, "")
+}
+
+// SignWithDigest 使用指定的 OpenSSL 摘要名称对 CSR 签名，例如 SHA-384。
+// digest 为空时按密钥类型使用默认行为。未知摘要名或密钥不兼容时返回错误。
+// 签名成功后对象不可变。
+//
+// SignWithDigest signs the CSR using an OpenSSL digest name such as
+// SHA-384. An empty digest uses the default behavior for the key type.
+// Unknown digest names and incompatible keys cause an error. The object
+// becomes immutable after successful signing.
+func (r *CertificateRequest) SignWithDigest(priv asym.PrivateKey, digest string) error {
 	if r == nil || r.req == nil {
 		return fmt.Errorf("x509: request closed")
 	}
@@ -180,7 +192,11 @@ func (r *CertificateRequest) Sign(priv asym.PrivateKey) error {
 	if err != nil {
 		return err
 	}
-	return r.req.Sign(k, nil)
+	md, err := signingDigest(digest)
+	if err != nil {
+		return err
+	}
+	return r.req.Sign(k, md)
 }
 
 // LoadCertificateRequestPEM 从 PEM 加载 CSR。

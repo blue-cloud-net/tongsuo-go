@@ -882,11 +882,27 @@ func (c *Certificate) AddBasicConstraints(isCA bool) error {
 //
 // On failure, it returns an error wrapping an OpError describing the operation.
 func (c *Certificate) Sign(signer asym.PrivateKey) error {
+	return c.SignWithDigest(signer, "")
+}
+
+// SignWithDigest 使用指定的 OpenSSL 摘要名称对证书签名，例如 SHA-384。
+// digest 为空时按密钥类型使用默认行为。未知摘要名或密钥不兼容时返回错误。
+// 签名成功后对象不可变。
+//
+// SignWithDigest signs the certificate using an OpenSSL digest name such as
+// SHA-384. An empty digest uses the default behavior for the key type.
+// Unknown digest names and incompatible keys cause an error. The object
+// becomes immutable after successful signing.
+func (c *Certificate) SignWithDigest(signer asym.PrivateKey, digest string) error {
 	k, err := corePrivateKey(signer)
 	if err != nil {
 		return err
 	}
-	return c.cert.Sign(k, nil)
+	md, err := signingDigest(digest)
+	if err != nil {
+		return err
+	}
+	return c.cert.Sign(k, md)
 }
 
 // PublicKey 返回证书公钥，以 asym.PublicKey 呈现（适用任意算法）。
